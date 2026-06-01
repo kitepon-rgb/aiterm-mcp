@@ -24,6 +24,6 @@ Failures:
 4. [FAIL] proj/test_mix.py::test_fail_simple
      assert False
 5. [FAIL] proj/test_mix.py::test_fail_dash_reason
-     AssertionError: foo
+     AssertionError: foo - bar - baz
 6. [FAIL] proj/test_mix.py::test_fail_value
      ValueError: invalid value

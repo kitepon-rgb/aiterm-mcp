@@ -152,10 +152,10 @@ def reduce_pytest(output):
                 name = first.strip("_").strip()
                 out.append(f"{i + 1}. [FAIL] {name}")
             elif first.startswith("FAILED"):
-                parts = first.split(" - ")
+                parts = first.split(" - ", 1)
                 name = parts[0][len("FAILED"):].strip()
                 out.append(f"{i + 1}. [FAIL] {name}")
-                # rtk 0.42.0 互換: reason は最初の " - " セグメント(parts[1])のみ。continue で末尾セパレータも入れない。
+                # 失敗理由は全文保持（可読性優先。rtk 0.42.0 は最初の " - " segment で切る）。continue でセパレータは入れない。
                 if len(parts) > 1:
                     out.append("     " + _truncate(parts[1], 100))
                 continue

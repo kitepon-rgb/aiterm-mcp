@@ -74,7 +74,7 @@ claude mcp add --scope user --transport stdio aiterm -- aiterm-mcp
 - **`is_complete=False` は失敗ではない。** 「timeout 内に完了を観測できなかった」という意味。長時間コマンドでは `timeout` を伸ばすか `until`/`mark` を使う。
 - **破壊ゲートはサンドボックスではなく tripwire。** よくある破壊形だけを弾く。相対パスの `rm`、`$VAR` 展開後に危険化するもの、ssh 先で実行されるコマンドは捕捉しない。
 - **`pty_send({ rtk: true })` は単行コマンドのみ＋外部 `rtk` バイナリが必要**（無ければ素通し）。一方 `pty_read({ rtk: true })` の reducer は自前実装で rtk 非依存。
-- **`pytest` reducer は rtk 0.42.0 と byte 一致**（回帰テストで固定）。`-ra`/`-rf` 時の `FAILED` 要約行の理由は rtk 0.42.0 と同じく最初の `" - "` 区切りセグメントのみ表示する。rtk が大出力時に付ける `[full output: …]`（tee ポインタ）行は read 側では再現しない。
+- **`pytest` reducer は件数・罫線・`FAILURES` ブロック整形が rtk 0.42.0 と byte 一致**（回帰テストで固定）。ただし `-ra`/`-rf` 時の `FAILED` 要約行の理由は**全文を保持する**（rtk 0.42.0 は最初の `" - "` 区切りで切るが、本実装は可読性優先で情報を残すため、この行は意図的に rtk と完全一致させない）。rtk が大出力時に付ける `[full output: …]`（tee ポインタ）行は read 側では再現しない。
 - **tmux は `-f /dev/null` 起動**なので `~/.tmux.conf` を読まない（環境差を排除するため）。
 - **全セッションが単一 socket（`claude.sock`）上にある。** `tmux … kill-server` は全セッションを消す。
 

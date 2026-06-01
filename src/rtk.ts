@@ -141,8 +141,9 @@ export function reducePytest(output: string): string {
         const parts = first.split(" - ");
         const name = parts[0].slice("FAILED".length).trim();
         out.push(`${i + 1}. [FAIL] ${name}`);
-        // rtk 0.42.0 互換: reason は最初の " - " セグメント(parts[1])のみ。continue で末尾セパレータも入れない。
-        if (parts.length > 1) out.push("     " + truncate(parts[1], 100));
+        // 失敗理由は全文保持（可読性優先。rtk 0.42.0 は最初の " - " segment で切るが、本実装は情報を残す）。
+        // 末尾セパレータは continue で入れない（rtk 0.42.0 と同じ）。
+        if (parts.length > 1) out.push("     " + truncate(parts.slice(1).join(" - "), 100));
         continue;
       } else {
         out.push(`${i + 1}. [FAIL] ${first}`);

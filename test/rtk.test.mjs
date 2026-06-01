@@ -1,5 +1,6 @@
 // rtk reducer の回帰テスト（モデル非依存の核）。
-// - pytest: 実機 rtk 0.42.0 から採取した golden(tee 行除去) と byte 一致を固定。
+// - pytest: 実機 rtk 0.42.0 から採取した golden(tee 行除去) と一致を固定。
+//   例外: proj_ra(FAILED 要約行) は理由を全文保持する自前挙動を期待値にしている(可読性優先・rtk とは意図的に相違)。
 // - grep/git/filters: Python プロトタイプ(=同一アルゴリズム)で生成した期待値を固定。
 // - classify ルーティング / truncate コードポイント境界 / reduce フォールバックを検証。
 import { test } from "node:test";

@@ -74,7 +74,7 @@ Before sending, `pty_send` blocks destructive commands (`rm -rf /`, `mkfs`, `dd 
 - **`is_complete=False` is not a failure.** It means "completion was not observed within `timeout`." For long commands, raise `timeout` or use `until`/`mark`.
 - **The destructive gate is a tripwire, not a sandbox.** It blocks common destructive forms only. It does **not** catch relative-path `rm`, things that become dangerous after `$VAR` expansion, or commands run on the far side of an SSH session.
 - **`pty_send({ rtk: true })` is single-line only and needs the external `rtk` binary** (passthrough without it). The `pty_read({ rtk: true })` reducer, by contrast, is self-contained and rtk-independent.
-- **The `pytest` reducer is byte-exact with rtk 0.42.0** (locked by regression tests). For the `FAILED` summary lines emitted under `-ra`/`-rf`, it shows only the first `" - "`-delimited segment of the reason, matching rtk 0.42.0. The `[full output: …]` tee-pointer line rtk appends on large output is not reproduced on the read side.
+- **The `pytest` reducer matches rtk 0.42.0** on test counts, the rule line, and `FAILURES`-block formatting (locked by regression tests). It **deliberately preserves the full failure reason** on the `FAILED` summary lines (emitted under `-ra`/`-rf`), whereas rtk 0.42.0 truncates the reason at the first `" - "` — a readability choice, so those lines are intentionally not byte-identical to rtk. The `[full output: …]` tee-pointer line rtk appends on large output is not reproduced on the read side.
 - **tmux is started with `-f /dev/null`**, so it does not read `~/.tmux.conf` (to keep behavior reproducible across machines).
 - **All sessions live on a single socket (`claude.sock`).** `tmux … kill-server` removes them all.
 
