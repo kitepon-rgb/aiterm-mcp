@@ -57,7 +57,7 @@ One PTY is the only primitive. Everything else — SSH, containers, REPLs — is
 Register with Claude Code (CLI) at user scope (available in every project):
 
 ```bash
-# After publishing (npm)
+# Recommended — no install, npx fetches it each run
 claude mcp add --scope user --transport stdio aiterm -- npx -y aiterm-mcp
 
 # Or install globally and use the command name

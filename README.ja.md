@@ -57,7 +57,7 @@ flowchart LR
 Claude Code（CLI）にユーザースコープ（全プロジェクトで利用可）で登録する例:
 
 ```bash
-# 公開後（npm）
+# 推奨: インストール不要、npx が毎回取得して起動
 claude mcp add --scope user --transport stdio aiterm -- npx -y aiterm-mcp
 
 # またはグローバルインストールしてコマンド名で

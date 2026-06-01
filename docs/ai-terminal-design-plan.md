@@ -193,6 +193,6 @@ Host home
 - **C**: `read` は pipe-pane ログ→ 制御除去 / `\r`畳み / 反復圧縮 / head+tail 折りたたみ＋復元ヒント + メタ併記（RTK 由来）。TUI 向けに `--screen`(capture-pane) も用意。
 - **D**: `send` 前に破壊的コマンドゲート（`--force` で越える）＋ペイロードの ESC・ブラケットペースト終端除去。`read` は制御文字を無害化して返す。
 - **A（状態追跡）**: 層スタックの自動追跡は未実装（送った ssh/docker を呼び出し側で記録する方針。今後）。
-- **MCP 化（2026-06-01）→ 完了。さらに OSS/NPM 公開前提で Node/TS の npm パッケージ `aiterm-mcp` へ移行**: 実装は `src/index.ts`（`@modelcontextprotocol/sdk`/stdio で 6 ツール公開）/ `src/core.ts`（ロジック・stdout 非汚染）/ `src/rtk.ts`（reducer）。`npx -y aiterm-mcp` で起動、ユーザースコープ global 登録（絶対パス・venv なし）。ローカル/ネスト(192.168.1.2)/永続/削減を実機検証。旧 Python 実装は `prototype/python/`（移植元・検証基準）。
-- **`send rtk:true`（委譲）＋ `read rtk:true`（自前 reducer）→ 実装**: `src/rtk.ts`（rtk ファイル非複製・自作。**pytest は rtk 0.42.0 と厳密一致**／grep／git status・log／簡易フィルタ）。`send` が last-cmd を記録し `read rtk:true` が直前コマンド別に適用。
+- **MCP 化（2026-06-01）→ 完了。Node/TS の npm パッケージ `aiterm-mcp` へ移行し、2026-06-02 に npm 公開（`aiterm-mcp@0.1.0`・provenance 付き、リポジトリ `kitepon-rgb/aiterm-mcp`）**: 実装は `src/index.ts`（`@modelcontextprotocol/sdk`/stdio で 6 ツール公開）/ `src/core.ts`（ロジック・stdout 非汚染）/ `src/rtk.ts`（reducer）。`npx -y aiterm-mcp` で起動、ユーザースコープ global 登録（絶対パス・venv なし）。ローカル/ネスト(192.168.1.2)/永続/削減を実機検証。回帰テスト `test/`（`node:test` 77 件、CI で Node 18/20/22）。旧 Python 実装は `prototype/python/`（移植元・検証基準）。
+- **`send rtk:true`（委譲）＋ `read rtk:true`（自前 reducer）→ 実装**: `src/rtk.ts`（rtk ファイル非複製・自作。**pytest は rtk 0.42.0 と一致**、ただし `FAILED` 要約行の理由は可読性優先で全文保持＝意図的に rtk と相違／grep／git status・log／簡易フィルタ）。`send` が last-cmd を記録し `read rtk:true` が直前コマンド別に適用。
 - 残課題: 状態追跡(A)・ネスト層の完了判定（ssh 中は前面コマンドが ssh でシェル復帰判定が効かない＝`--until` で代替）、`ls`/`git diff` の自前版（再実行型ゆえローカルは委譲がカバー）、フィルタ拡充、自動テスト整備。
