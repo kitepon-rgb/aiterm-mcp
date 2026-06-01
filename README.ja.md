@@ -13,6 +13,21 @@
 
 `pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list` の 6 ツールだけ。バックエンドは tmux なので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
 
+## インストール
+
+npm に公開済み。clone もビルドも不要:
+
+```bash
+# Claude Code — 推奨（インストール不要、npx が毎回取得して起動）
+claude mcp add --scope user --transport stdio aiterm -- npx -y aiterm-mcp
+
+# またはグローバル導入してコマンド名で登録
+npm i -g aiterm-mcp
+claude mcp add --scope user --transport stdio aiterm -- aiterm-mcp
+```
+
+**Node ≥ 18** と **tmux** が必要。他の MCP クライアントは stdio で `npx -y aiterm-mcp` を起動するだけ（詳細は下の「インストール / 登録」）。
+
 ## なぜ
 
 AI にコマンドを 1 個ずつ投げて結果を受け取る往復は、SSH では毎回「接続→認証→切断」を繰り返し遅く、トークンも食う。aiterm は **1 個の PTY を永続的に握り**、その中で `ssh host` や `docker exec -it x bash` と打って入る（ネスト）。セッション種別をツールで区別しない。

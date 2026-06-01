@@ -13,6 +13,21 @@
 
 Just six tools — `pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list`. The backend is **tmux**, so sessions survive even if the MCP server or the AI client restarts.
 
+## Install
+
+It's on npm — no clone, no build:
+
+```bash
+# Claude Code — recommended (no install; npx fetches it each run)
+claude mcp add --scope user --transport stdio aiterm -- npx -y aiterm-mcp
+
+# or install globally, then register the command name
+npm i -g aiterm-mcp
+claude mcp add --scope user --transport stdio aiterm -- aiterm-mcp
+```
+
+Needs **Node ≥ 18** and **tmux**. Other MCP clients: just run `npx -y aiterm-mcp` over stdio. More detail in [Install / register](#install--register) below.
+
 ## Why
 
 Sending an AI one command at a time and reading back the result means, over SSH, repeating connect → authenticate → disconnect every round — slow, and it burns tokens. aiterm **holds one PTY persistently** and you type `ssh host` or `docker exec -it x bash` *inside it* (nesting). Session kind is never a tool-level distinction.
