@@ -1,0 +1,7 @@
+# ローカル専用ツール設定（個人パス・マシン固有・プロジェクト成果物ではない）
+.claude/
+.spotter/
+.vscode/
+
+# Windows/WSL アーティファクト
+*:Zone.Identifier
