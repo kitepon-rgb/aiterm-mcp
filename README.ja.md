@@ -1,6 +1,10 @@
+<p align="center">
+  <img src=".github/og.svg" alt="aiterm-mcp — AI が握るローカル永続端末を stdio MCP サーバとして公開する" width="100%">
+</p>
+
 # aiterm-mcp
 
-[![CI](https://github.com/kitepon-rgb/ai-terminal/actions/workflows/ci.yml/badge.svg)](https://github.com/kitepon-rgb/ai-terminal/actions/workflows/ci.yml)
+[![CI](https://github.com/kitepon-rgb/aiterm-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/kitepon-rgb/aiterm-mcp/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/aiterm-mcp.svg)](https://www.npmjs.com/package/aiterm-mcp)
 
 > *(English: [README.md](README.md))*
@@ -19,6 +23,28 @@ pty_send(id, "ssh 192.168.1.2")    → その端末の中で SSH に入る
 pty_send(id, "uname -a")           → リモートで実行
 pty_read(id, { wait: true })       → 削減済みの出力を読む
 ```
+
+## 仕組み
+
+```mermaid
+flowchart LR
+    AI["AI / MCP client"] -->|"pty_send"| S["aiterm-mcp<br/>stdio MCP · 6 tools"]
+    S -->|"pty_read<br/>token-reduced"| AI
+    S -->|"tmux send-keys<br/>capture-pane"| P["one local PTY<br/>tmux · persistent"]
+    P -->|"ssh · docker · repl"| R["nested<br/>remote · container · REPL"]
+```
+
+プリミティブは「PTY を 1 個握る」ことだけ。SSH・コンテナ・REPL は、その中へ `pty_send` で打ち込む“ただのテキスト”に過ぎない。PTY は tmux 上にあるので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
+
+## 既存手段との比較
+
+| | **aiterm-mcp** | 1 コマンド毎の往復 | 一般的な terminal / tmux MCP |
+| --- | --- | --- | --- |
+| 永続セッション | ✅ tmux・再起動を跨ぐ | ❌ 毎回新シェル | ⚠️ まちまち |
+| SSH / コンテナ | `pty_send` 1 回でネスト | 毎コマンド接続し直し | ⚠️ ツールが分かれがち |
+| トークン削減読取 | ✅ コマンド別 reducer | ❌ 生出力 | ⚠️ ほぼ無し |
+| 完了検出 | 4 層: 終了 / `until` / 静止 / timeout | 無し（毎回ブロック） | ⚠️ プロンプト一致・脆い |
+| 人が同時操作 | ✅ 共有 tmux ソケット | ❌ | ⚠️ まちまち |
 
 ## 要件
 

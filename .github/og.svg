@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace">
+  <rect width="1280" height="640" fill="#0b0e14"/>
+  <rect x="0" y="0" width="1280" height="6" fill="#3fb950"/>
+
+  <text x="80" y="138" fill="#e6edf3" font-size="88" font-weight="700">aiterm<tspan fill="#3fb950">-mcp</tspan></text>
+  <text x="84" y="190" fill="#8b949e" font-size="29">AI holds one persistent terminal as a stdio MCP server.</text>
+
+  <g transform="translate(80,248)">
+    <rect width="1120" height="316" rx="14" fill="#0d1117" stroke="#30363d" stroke-width="1.5"/>
+    <circle cx="30" cy="30" r="7" fill="#ff5f56"/>
+    <circle cx="54" cy="30" r="7" fill="#ffbd2e"/>
+    <circle cx="78" cy="30" r="7" fill="#27c93f"/>
+    <text x="1088" y="37" fill="#6e7681" font-size="20" text-anchor="end">6 tools · npx -y aiterm-mcp</text>
+
+    <g font-size="28">
+      <text x="32" y="108" fill="#c9d1d9">$ <tspan fill="#58a6ff">pty_open</tspan>()</text>
+      <text x="32" y="156" fill="#c9d1d9">$ <tspan fill="#58a6ff">pty_send</tspan>(id, <tspan fill="#a5d6ff">"ssh 192.168.1.2"</tspan>)</text>
+      <text x="32" y="204" fill="#c9d1d9">$ <tspan fill="#58a6ff">pty_read</tspan>(id, { wait: true })</text>
+    </g>
+    <text x="32" y="262" fill="#3fb950" font-size="25">✓ 451 lines elided · is_complete=True via quiescent</text>
+    <text x="32" y="298" fill="#6e7681" font-size="21">SSH · containers · REPLs are just text you send in — tmux keeps it alive.</text>
+  </g>
+</svg>

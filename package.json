@@ -16,12 +16,12 @@
   "author": "kitepon",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kitepon-rgb/ai-terminal.git"
+    "url": "git+https://github.com/kitepon-rgb/aiterm-mcp.git"
   },
   "bugs": {
-    "url": "https://github.com/kitepon-rgb/ai-terminal/issues"
+    "url": "https://github.com/kitepon-rgb/aiterm-mcp/issues"
   },
-  "homepage": "https://github.com/kitepon-rgb/ai-terminal#readme",
+  "homepage": "https://github.com/kitepon-rgb/aiterm-mcp#readme",
   "type": "module",
   "bin": {
     "aiterm-mcp": "dist/index.js"

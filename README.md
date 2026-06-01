@@ -1,6 +1,10 @@
+<p align="center">
+  <img src=".github/og.svg" alt="aiterm-mcp — AI holds one persistent terminal as a stdio MCP server (tmux-backed)" width="100%">
+</p>
+
 # aiterm-mcp
 
-[![CI](https://github.com/kitepon-rgb/ai-terminal/actions/workflows/ci.yml/badge.svg)](https://github.com/kitepon-rgb/ai-terminal/actions/workflows/ci.yml)
+[![CI](https://github.com/kitepon-rgb/aiterm-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/kitepon-rgb/aiterm-mcp/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/aiterm-mcp.svg)](https://www.npmjs.com/package/aiterm-mcp)
 
 > *(日本語: [README.ja.md](README.ja.md))*
@@ -19,6 +23,28 @@ pty_send(id, "ssh 192.168.1.2")    → enter SSH inside that terminal
 pty_send(id, "uname -a")           → run it on the remote
 pty_read(id, { wait: true })       → read the reduced output
 ```
+
+## How it works
+
+```mermaid
+flowchart LR
+    AI["AI / MCP client"] -->|"pty_send"| S["aiterm-mcp<br/>stdio MCP · 6 tools"]
+    S -->|"pty_read<br/>token-reduced"| AI
+    S -->|"tmux send-keys<br/>capture-pane"| P["one local PTY<br/>tmux · persistent"]
+    P -->|"ssh · docker · repl"| R["nested<br/>remote · container · REPL"]
+```
+
+One PTY is the only primitive. Everything else — SSH, containers, REPLs — is just text you `pty_send` into it. Because the PTY lives in tmux, sessions outlive the MCP server and the AI client.
+
+## vs. the alternatives
+
+| | **aiterm-mcp** | one-shot shell tool (per command) | generic terminal / tmux MCPs |
+| --- | --- | --- | --- |
+| Persistent session | ✅ tmux, survives restarts | ❌ new shell every call | ⚠️ varies |
+| SSH / containers | nest with one `pty_send` | reconnect every command | ⚠️ often separate tools |
+| Token-reduced reads | ✅ per-command reducers | ❌ raw output | ⚠️ rarely |
+| Completion detection | 4-layer: exit / `until` / quiescence / timeout | n/a (blocks per call) | ⚠️ prompt-match, fragile |
+| Human can co-drive | ✅ shared tmux socket (`attach`) | ❌ | ⚠️ varies |
 
 ## Requirements
 
