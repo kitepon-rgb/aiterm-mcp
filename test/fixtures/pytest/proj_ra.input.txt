@@ -1,0 +1,23 @@
+..FFFxXs                                                                 [100%]
+=================================== FAILURES ===================================
+_______________________________ test_fail_simple _______________________________
+proj/test_mix.py:7: in test_fail_simple
+    assert False
+E   assert False
+____________________________ test_fail_dash_reason _____________________________
+proj/test_mix.py:10: in test_fail_dash_reason
+    raise AssertionError("foo - bar - baz")
+E   AssertionError: foo - bar - baz
+_______________________________ test_fail_value ________________________________
+proj/test_mix.py:13: in test_fail_value
+    raise ValueError("invalid value")
+E   ValueError: invalid value
+=================================== XPASSES ====================================
+=========================== short test summary info ============================
+SKIPPED [1] proj/test_mix.py:23: not ready
+XFAIL proj/test_mix.py::test_xfail_known - known bug - tracked
+XPASS proj/test_mix.py::test_xpass_unexpected - should fail but passes
+FAILED proj/test_mix.py::test_fail_simple - assert False
+FAILED proj/test_mix.py::test_fail_dash_reason - AssertionError: foo - bar - baz
+FAILED proj/test_mix.py::test_fail_value - ValueError: invalid value
+3 failed, 2 passed, 1 skipped, 1 xfailed, 1 xpassed in 0.01s

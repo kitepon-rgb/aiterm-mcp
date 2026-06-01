@@ -1,0 +1,93 @@
+[
+  {
+    "name": "grep_multi",
+    "cmd": "grep -rn foo src/",
+    "input": "src/b.py:5:foo = 1\nsrc/a.py:10:def foo():\nsrc/a.py:20:    return foo   \nsrc/a.py:30:foo()",
+    "expected": "4 matches in 2 files:\n\nsrc/a.py:10:def foo():\nsrc/a.py:20:return foo\nsrc/a.py:30:foo()\nsrc/b.py:5:foo = 1",
+    "reducer": "grep"
+  },
+  {
+    "name": "grep_nomatch",
+    "cmd": "grep -rn foo .",
+    "input": "Binary file a.bin matches\njust some prose without colons",
+    "expected": null,
+    "reducer": null
+  },
+  {
+    "name": "grep_longpath",
+    "cmd": "grep -rn x .",
+    "input": "a/very/deep/nested/directory/structure/that/exceeds/fifty/chars/file.py:1:match here",
+    "expected": "1 matches in 1 files:\n\na/.../chars/file.py:1:match here",
+    "reducer": "grep"
+  },
+  {
+    "name": "grep_truncline",
+    "cmd": "grep -n y f",
+    "input": "f:1:zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+    "expected": "1 matches in 1 files:\n\nf:1:zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz...",
+    "reducer": "grep"
+  },
+  {
+    "name": "gitstatus_porcelain",
+    "cmd": "git status -sb",
+    "input": "## main...origin/main [ahead 1]\n M src/core.ts\n?? newfile.txt",
+    "expected": "* main...origin/main [ahead 1]\n M src/core.ts\n?? newfile.txt",
+    "reducer": "git-status"
+  },
+  {
+    "name": "gitstatus_human_clean",
+    "cmd": "git status",
+    "input": "On branch main\nYour branch is up to date with 'origin/main'.\n\nnothing to commit, working tree clean",
+    "expected": "On branch main\nYour branch is up to date with 'origin/main'.\nnothing to commit, working tree clean",
+    "reducer": "git-status"
+  },
+  {
+    "name": "gitstatus_human_dirty",
+    "cmd": "git status",
+    "input": "On branch main\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n  (use \"git restore <file>...\" to discard changes in working directory)\n\tmodified:   src/core.ts\n\nno changes added to commit (use \"git add\" and/or \"git commit -a\")",
+    "expected": "On branch main\nChanges not staged for commit:\n\tmodified:   src/core.ts",
+    "reducer": "git-status"
+  },
+  {
+    "name": "gitlog_multi",
+    "cmd": "git log",
+    "input": "commit 1111111111111111111111111111111111111111\nAuthor: Alice <alice@example.com>\nDate:   Mon Jun 1 10:00:00 2026 +0900\n\n    Add feature X\n\n    body line 1\n    body line 2\n    body line 3\n    body line 4\n    Signed-off-by: Alice <alice@example.com>\n\ncommit 2222222222222222222222222222222222222222\nAuthor: Bob <bob@example.com>\nDate:   Sun May 31 09:00:00 2026 +0900\n\n    Fix bug Y\n",
+    "expected": "111111111 Add feature X  <alice@example.com>\n  body line 1\n  body line 2\n  body line 3\n  [+1 lines omitted]\n222222222 Fix bug Y  <bob@example.com>",
+    "reducer": "git-log"
+  },
+  {
+    "name": "df",
+    "cmd": "df -h",
+    "input": "Filesystem      Size  Used Avail Use% Mounted on\n/dev/sda1       100G   40G   60G  40% /\n\ntmpfs           8.0G     0  8.0G   0% /dev/shm",
+    "expected": "Filesystem      Size  Used Avail Use% Mounted on\n/dev/sda1       100G   40G   60G  40% /\ntmpfs           8.0G     0  8.0G   0% /dev/shm",
+    "reducer": "df"
+  },
+  {
+    "name": "free",
+    "cmd": "free -h",
+    "input": "               total        used        free      shared\nMem:            15Gi       4.0Gi       9.0Gi       100Mi\n\nSwap:          2.0Gi          0B       2.0Gi",
+    "expected": "total        used        free      shared\nMem:            15Gi       4.0Gi       9.0Gi       100Mi\nSwap:          2.0Gi          0B       2.0Gi",
+    "reducer": "free"
+  },
+  {
+    "name": "make_noop",
+    "cmd": "make",
+    "input": "make: Nothing to be done for 'all'.",
+    "expected": "make: Nothing to be done for 'all'.",
+    "reducer": "make"
+  },
+  {
+    "name": "make_build",
+    "cmd": "make",
+    "input": "make[1]: Entering directory '/home/x'\ngcc -c main.c\nmake[1]: Leaving directory '/home/x'\n",
+    "expected": "gcc -c main.c",
+    "reducer": "make"
+  },
+  {
+    "name": "systemctl",
+    "cmd": "systemctl status nginx",
+    "input": "● nginx.service - A high performance web server\n     Loaded: loaded (/lib/systemd/system/nginx.service; enabled)\n     Active: active (running) since Mon 2026-06-01 10:00:00\n\n   Main PID: 1234 (nginx)",
+    "expected": "● nginx.service - A high performance web server\n     Loaded: loaded (/lib/systemd/system/nginx.service; enabled)\n     Active: active (running) since Mon 2026-06-01 10:00:00\n   Main PID: 1234 (nginx)",
+    "reducer": "systemctl"
+  }
+]

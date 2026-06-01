@@ -5,3 +5,14 @@
 
 # Windows/WSL アーティファクト
 *:Zone.Identifier
+
+# RTK（参照用に clone した他者コード。公開リポジトリに同梱しない）
+rtk/
+
+# Node（npm パッケージのビルド成果物・依存）
+node_modules/
+dist/
+
+# Python prototype（prototype/python/ の参照実装。成果物は Node 版）
+.venv/
+__pycache__/

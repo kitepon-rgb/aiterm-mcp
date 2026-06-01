@@ -1,0 +1,3 @@
+# aiterm MCP サーバの依存。CLI 単体（src/aiterm.py）は標準ライブラリ + tmux のみで動き、これは不要。
+# 導入: python3 -m venv .venv && .venv/bin/python3 -m pip install -r requirements.txt
+mcp>=1.27

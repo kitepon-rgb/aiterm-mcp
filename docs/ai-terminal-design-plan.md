@@ -180,3 +180,19 @@ Host home
 - D. 安全性ガード（部分実行・破壊的コマンドの扱い）
 - E. PTY1個プリミティブ＋中で何でも起動 という階層モデルの是非の最終確認
 - F. 実証: Pythonの `pty` で「PTY1個を握り、中でbash、さらに別プロセスをネスト起動」が透過的に効くことの実機確認
+
+---
+
+## 11. 実装状況（MVP・2026-06-01）
+
+`src/aiterm.py`（Python・外部依存は tmux のみ）として MVP を実装・E2E 検証済み。CLI 先行（後で MCP 化）。設計根拠は調査資産（`rag/` の 74 資料 + `rag/briefs/`）。
+
+- §9 の追認: ツールは `open`/`send`/`read`/`close` + `key`（send_control 相当）。tmux バックエンド・quiescence・「SSH/docker は send で格下げ」を実装に反映。
+- **F（実証）→ 解決**: tmux `send-keys` + `pipe-pane` ログで、bash → 中で Python REPL を握り `2**100` を継続対話、を**呼び出しプロセスをまたいで**実証。ssh/docker も同一機構（`send "ssh ..."`）。
+- **B**: quiescence は固定 ms でなく「出力静止(≈2ポーリング) ∧ `pane_current_command` がシェルに復帰」で判定。`--until`(sentinel/prompt) と timeout を併用（4層）。長時間コマンドは pane が子プロセスのままなら誤完了しない。
+- **C**: `read` は pipe-pane ログ→ 制御除去 / `\r`畳み / 反復圧縮 / head+tail 折りたたみ＋復元ヒント + メタ併記（RTK 由来）。TUI 向けに `--screen`(capture-pane) も用意。
+- **D**: `send` 前に破壊的コマンドゲート（`--force` で越える）＋ペイロードの ESC・ブラケットペースト終端除去。`read` は制御文字を無害化して返す。
+- **A（状態追跡）**: 層スタックの自動追跡は未実装（送った ssh/docker を呼び出し側で記録する方針。今後）。
+- **MCP 化（2026-06-01）→ 完了。さらに OSS/NPM 公開前提で Node/TS の npm パッケージ `aiterm-mcp` へ移行**: 実装は `src/index.ts`（`@modelcontextprotocol/sdk`/stdio で 6 ツール公開）/ `src/core.ts`（ロジック・stdout 非汚染）/ `src/rtk.ts`（reducer）。`npx -y aiterm-mcp` で起動、ユーザースコープ global 登録（絶対パス・venv なし）。ローカル/ネスト(192.168.1.2)/永続/削減を実機検証。旧 Python 実装は `prototype/python/`（移植元・検証基準）。
+- **`send rtk:true`（委譲）＋ `read rtk:true`（自前 reducer）→ 実装**: `src/rtk.ts`（rtk ファイル非複製・自作。**pytest は rtk 0.42.0 と厳密一致**／grep／git status・log／簡易フィルタ）。`send` が last-cmd を記録し `read rtk:true` が直前コマンド別に適用。
+- 残課題: 状態追跡(A)・ネスト層の完了判定（ssh 中は前面コマンドが ssh でシェル復帰判定が効かない＝`--until` で代替）、`ls`/`git diff` の自前版（再実行型ゆえローカルは委譲がカバー）、フィルタ拡充、自動テスト整備。

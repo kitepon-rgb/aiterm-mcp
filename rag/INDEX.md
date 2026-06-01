@@ -1,0 +1,246 @@
+# RAG コーパス 総目次 (INDEX)
+
+AIターミナル直接操作プロジェクトの調査一次資料。`rag/sources/` 配下は MarkItDown で
+忠実 Markdown 化した版（front-matter にメタdata）。
+**設計/実装の前にまずここを読み、該当資料を再利用する（再フェッチしない）。**
+
+- 総数: **74** 件 / 更新: 2026-06-01
+- 取り込み: `python3 rag/ingest.py <sources.json>` → `python3 rag/build_index.py`
+- 統合分析: [briefs/](briefs/)
+
+## 既存実装 / 流用調査 (prior-art) — 26件
+
+- [Aider In-chat commands (/run, /test)](sources/prior-art/aider-in-chat-commands.md) — aiderのチャット内コマンド一覧。/runで任意シェルコマンドを実行し出力をLLMへ戻す、/testは非ゼロ終了時のみ出力を取り込む挙動を説明。
+  - 出典: <https://aider.chat/docs/usage/commands.html> (docs, 12868 chars)
+  - 効きどころ: コマンド実行結果をモデルへ還流する境界設計の参照。終了コード基準で取り込み量を変える運用は完了検出の一案。
+- [DesktopCommanderMCP (wonderwhy-er) README](sources/prior-art/desktop-commander-wonderwhy-er.md) — 端末制御+ファイル編集を備えた著名MCPサーバ。start_process/interact_with_process/read_process_output(offset/length)でプロセスと対話。
+  - 出典: <https://raw.githubusercontent.com/wonderwhy-er/DesktopCommanderMCP/main/README.md> (github_readme, 50153 chars)
+  - 効きどころ: 『入力受付/完了の準備ができたかをスマート検出』というreadiness検出と、offset/lengthページングでcontext溢れを防ぐread設計が直接参考。SSH/DB/devサーバを再起動せず対話継続する永続セッション運用は我々のネスト送信の上位ユースケース。
+- [gotty README (terminal as a web application)](sources/prior-art/gotty-readme.md) — TTY出力をwebsocketでクライアントへ中継、入力を逆送するgottyのREADME。既定は読取専用、-wで書込み許可(危険性を明記)。
+  - 出典: <https://raw.githubusercontent.com/yudai/gotty/master/README.md> (github_readme, 10397 chars)
+  - 効きどころ: PTY中継の薄い層+「既定読取専用/明示で書込み許可」という安全既定の先行例。書込み権限の境界設計の参考。
+- [Harbor Framework: Terminus-2 reference agent](sources/prior-art/harbor-terminus-2-agent-doc.md) — Terminus-2リファレンスエージェントの公式ドキュメント。tmuxセッション1個でキー送信・出力スクロール・メニュー操作を行い、Docker環境とは別プロセスで動く構成を説明。
+  - 出典: <https://www.harborframework.com/docs/agents/terminus-2> (docs, 20947 chars)
+  - 効きどころ: local→ssh→docker のネスト送信モデルに近い「別プロセスからtmux経由で対象環境を駆動」する設計の実例。
+- [interactive-shell-mcp (lightos / Roberto Salgado) README](sources/prior-art/interactive-shell-mcp-lightos.md) — node-pty+@xterm/headlessで永続PTYセッションを張るMCPサーバ。streaming/snapshot/screenの3読み出しモードと2Dテキストグリッド描画を提供。
+  - 出典: <https://raw.githubusercontent.com/lightos/interactive-shell-mcp/main/README.md> (github_readme, 9651 chars)
+  - 効きどころ: 完了検出がwaitForIdle(指定ミリ秒の出力静止を待つ=純粋なquiescence)で我々の方式と直結。htop等向けsnapshot、人間が見る画面を再現するscreenモード、search_screen/get_screen_regionはread層のANSI処理・画面読み取りAPI設計の具体例。
+- [iterm-mcp (ferrislucas) README](sources/prior-art/iterm-mcp-ferrislucas.md) — iTerm2の現セッションでコマンドを実行する3ツール(write_to_terminal/read_terminal_output/send_control_character)の最小MCPサーバ。
+  - 出典: <https://raw.githubusercontent.com/ferrislucas/iterm-mcp/main/README.md> (github_readme, 2936 chars)
+  - 効きどころ: write_to_terminalが生成行数だけ返し、モデルが必要な行だけread_terminal_outputで取得するpull型read設計が、我々のread層トークン節約の原型。3ツール構成は最小ツール思想の手本。バックエンドがAppleScript/iTermでtmux/PTYと対比できる。
+- [Show HN: iterm-mcp — AI Terminal/REPL Control (discussion)](sources/prior-art/iterm-mcp-hn-design-rationale.md) — iterm-mcp作者と読者による設計議論スレッド。完了検出・PTY/tmux代替案・pull型読み出しを巡る一次討論。
+  - 出典: <https://news.ycombinator.com/item?id=42880449> (article, 18170 chars)
+  - 効きどころ: 完了検出を『関連プロセスがリソース低使用に落ち着く=settling』で判定する根拠と限界、シェルプロンプト改変を避けた理由(REPL互換)を作者自身が語る。Unixパイプ/tmux派の反論も収録され、我々のquiescence方式とバックエンド選定の論拠・反証として直接効く。
+- [mcp-interactive-terminal (amol21p) README](sources/prior-art/mcp-interactive-terminal-amol21p.md) — AIエージェントに本物の対話的端末セッション(REPL/SSH/DB/Docker/ネスト)を与えるMCPサーバ。node-pty+@xterm/headlessが主、失敗時はpipeフォールバック。
+  - 出典: <https://raw.githubusercontent.com/amol21p/mcp-interactive-terminal/main/README.md> (github_readme, 13839 chars)
+  - 効きどころ: 我々の設計とほぼ同型。完了検出が4層(プロセス終了・プロンプト再出現・300ms出力静止=quiescence・timeoutフォールバックでis_complete:false)で、quiescence境界の具体設計の最有力参照。create/send/read/list/close/send_control + 危険コマンド二段確認のツール構成も最小ツール群の手本。
+- [mcp-server-commands (g0t4) README](sources/prior-art/mcp-server-commands-g0t4.md) — 単一ツールrun_processでコマンドを実行するMCPサーバ。command_line(シェル経由)とargv(シェル解釈なし)を排他で選択、stdin対応。
+  - 出典: <https://raw.githubusercontent.com/g0t4/mcp-server-commands/master/README.md> (github_readme, 5587 chars)
+  - 効きどころ: 単発・非永続モデルの代表。command_line vs argv(シェル注入面の分離)とapprove-once承認フローは、我々がsendで生文字列を流す際の安全設計とインジェクション面の対比になる。完了=プロセス終了の素朴境界の基準点。
+- [mcp-ssh-interactive (qnxqnxqnx) README](sources/prior-art/mcp-ssh-interactive-qnxqnxqnx.md) — tmuxで永続SSHセッションを張り、人間のように対話操作(プロンプト/Ctrl+C/履歴)を行わせるMCPサーバ。
+  - 出典: <https://raw.githubusercontent.com/qnxqnxqnx/mcp-ssh-interactive/main/README.md> (github_readme, 11712 chars)
+  - 効きどころ: SSHを専用ツール化せず『端末へ送る1コマンド』に近い発想で、tmuxバックエンド+execute_command(即時復帰)/get_terminal_output(非同期ポーリング)の境界設計が我々のsend/read分離と完了検出に直結。state.json/ログpipeの永続化方式も参考。
+- [MCP vs CLI: Benchmarking Tools for Coding Agents (Mario Zechner)](sources/prior-art/mcp-vs-cli-benchmark-terminalcp.md) — 自作の永続端末ツールterminalcpをMCP版とCLI版で実測比較し、両者100%成功・差はわずかと示すエッセイ。
+  - 出典: <https://mariozechner.at/posts/2025-08-15-mcp-vs-cli/> (article, 41643 chars)
+  - 効きどころ: 『1個の永続端末を薄く握る』設計の実証的裏付け。完了検出やトークン効率はプロトコルより道具設計の質で決まる、まずCLIを作り必要ならMCPを被せる、という指針が我々のpty_open/send/read/close層の正当化と評価軸になる。terminalcp自体も追加の先行実装。
+- [Open Interpreter README](sources/prior-art/open-interpreter-readme.md) — LLMにexec()を与えてPython/JS/Shellをローカル実行させ、出力を逐次ストリームする自然言語インタフェースのREADME。実行前確認・-yバイパスあり。
+  - 出典: <https://raw.githubusercontent.com/openinterpreter/open-interpreter/main/README.md> (github_readme, 14309 chars)
+  - 効きどころ: AIにシェルを渡す際の実行確認・出力ストリーミングUXの先行例。安全境界(確認/バイパス)の比較対象になる。
+- [pi-interactive-shell (nicobailon) README](sources/prior-art/pi-interactive-shell-nicobailon.md) — tmux不使用でzigpty+xterm-headlessの完全PTYエミュレーションを行うPiエージェント拡張。可観測オーバーレイで人間が即介入可能。
+  - 出典: <https://raw.githubusercontent.com/nicobailon/pi-interactive-shell/main/README.md> (github_readme, 25263 chars)
+  - 効きどころ: autoExitOnQuiet(出力静止しきい値でfire-and-forget終了)はquiescence完了検出の実装例。出力20行/5KB既定・増分ページング・完了時は末尾5行だけ通知というトークン効率設計、Ctrl+Gで主導権を返す人間takeoverが我々のread層とUX設計に効く。
+- [ripple (yotsuda) Shared Console MCP README](sources/prior-art/ripple-yotsuda-shared-console.md) — AIと人間が同一端末を共有するMCPサーバ。WindowsはConPTY+named pipe、POSIXはforkpty。OSC 633シェル統合マーカーで完了を検出。
+  - 出典: <https://raw.githubusercontent.com/yotsuda/ripple/master/README.md> (github_readme, 15835 chars)
+  - 効きどころ: quiescenceではなくOSC 633(VS Code方式)マーカー注入でコマンド境界・cwd変化・exit codeを正確取得する対抗アプローチの一次資料。我々の静止ベース検出の限界(exit code取れない/誤判定)を相対化し、PROMPT埋め込みの代替設計を示す。
+- [SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering](sources/prior-art/swe-agent-aci-paper.md) — エージェント専用のコンピュータ操作インタフェース(ACI)設計が性能を大きく左右することを示した論文。端末・コマンド実行・編集の見せ方が鍵。
+  - 出典: <https://arxiv.org/pdf/2405.15793> (pdf_paper, 495954 chars)
+  - 効きどころ: pty_open/send/read/close という薄い操作面の「見せ方」設計を根拠づける中核研究。観測整形と境界設計の指針になる。
+- [Terminal-Bench: Benchmarking Agents on Hard, Realistic Tasks in Command Line Interfaces](sources/prior-art/terminal-bench-paper.md) — ターミナル上のエージェント性能を測る89タスクのベンチマーク論文(2026年1月)。環境・人手解と検証テストで自律タスク遂行を評価。
+  - 出典: <https://arxiv.org/pdf/2601.11868> (pdf_paper, 267161 chars)
+  - 効きどころ: 対話端末を握るエージェントの失敗様式・難所(完了判定・状態追跡の失敗を含む)を体系的に示す一次資料。設計の評価軸の参考になる。
+- [terminal-controller-mcp (GongRzhe) implementation](sources/prior-art/terminal-controller-mcp-gongrzhe.md) — タイムアウト付き単発コマンド実行+ディレクトリ操作+行単位ファイル編集のMCPサーバ実装本体(Python)。
+  - 出典: <https://raw.githubusercontent.com/GongRzhe/terminal-controller-mcp/main/terminal_controller.py> (github_readme, 22657 chars)
+  - 効きどころ: 我々の現状(非対話の単発実行)とほぼ同じ出発点。30秒timeout・危険コマンドのブラックリスト(rm -rf /等)・command_historyという素朴な安全/完了設計を一次ソースで確認でき、対話PTY化で何が増えるかの差分基準になる。
+- [terminal-mcp (ianks) native Unix PTY MCP README](sources/prior-art/terminal-mcp-ianks-rust-pty.md) — Rust製の真のUnix PTY制御MCPサーバ。tokio非同期I/Oでスマートバッファリング(新規出力のみ・重複なし)、複数セッション永続。
+  - 出典: <https://raw.githubusercontent.com/ianks/terminal-mcp/main/README.md> (github_readme, 1894 chars)
+  - 効きどころ: 『抽象化なし、ただのシェル』哲学で真PTYを直接握る最小実装の手本。execute_command(同期)/execute_command_async+read_streaming_output(ポーリング)/send_control_characterの分離は我々のpty_open/send/read/closeの正準形。スマートバッファリングはread差分配信の参考。
+- [Terminal-Bench: Terminus, a single-tool tmux agent harness](sources/prior-art/terminus-tmux-agent-harness.md) — Terminal-Bench公式記事。LLMに1個のtmuxセッションだけを渡し、キーストローク送信→バッファ読取→思考のループで動かす最小エージェント(Terminus)の設計解説。
+  - 出典: <https://www.tbench.ai/news/terminus> (article, 4695 chars)
+  - 効きどころ: 我々の設計(1個の永続PTY+send/read、tmuxバックエンド)とほぼ同型の先行実装。mono-tool設計とバッファ読取の妥当性を裏付ける一次資料。
+- [tmux-mcp (jonrad) README](sources/prior-art/tmux-mcp-jonrad.md) — 任意のtmuxコマンド実行・ペイン読み取り・キーストローク送信を行うPoC級のtmux MCPサーバ(uvx配布)。
+  - 出典: <https://raw.githubusercontent.com/jonrad/tmux-mcp/main/README.md> (github_readme, 602 chars)
+  - 効きどころ: 『端末へsendする1コマンド』に最も近い割り切り(任意tmuxコマンドを薄く通すだけ)の実装例。最小ラッパーがどこまで使えるか、PoC段階の制約(完了検出未実装)を我々の薄い層の下限ケースとして比較できる。
+- [tmux-mcp (nickgnd) README](sources/prior-art/tmux-mcp-nickgnd.md) — tmuxの読み取り・制御・観測をMCP化したサーバ。capture-paneでペイン内容取得、execute-command+get-command-resultでコマンド結果を追跡。
+  - 出典: <https://raw.githubusercontent.com/nickgnd/tmux-mcp/main/README.md> (github_readme, 2265 chars)
+  - 効きどころ: tmuxバックエンドでcapture-paneを使う正準的な実装パターンの一次資料。execute-command→get-command-resultのcommandId経由の結果取得とresource(tmux://command/{id}/result)露出は、我々のtmuxバックエンド+完了境界検出の設計直参照。
+- [tmuxp README (declarative tmux session manager)](sources/prior-art/tmuxp-readme.md) — libtmux上に構築された宣言的tmuxセッション管理ツールのREADME。YAML/JSONで構成、freezeで現状をconfig化、preロードフック等。
+  - 出典: <https://raw.githubusercontent.com/tmux-python/tmuxp/master/README.md> (github_readme, 7794 chars)
+  - 効きどころ: 永続セッションの定義・起動・再現の運用パターン。1個のPTYを安定生成/復元する周辺設計の参考。
+- [ttyd README (share terminal over web)](sources/prior-art/ttyd-readme.md) — PTYを生成しwebsocketで双方向中継、xterm.jsで描画して端末をWeb共有するttydのREADME。-Wで書込み許可。
+  - 出典: <https://raw.githubusercontent.com/tsl0922/ttyd/main/README.md> (github_readme, 5491 chars)
+  - 効きどころ: PTYとI/O中継層を薄く実装する設計の代表例。バイト列の双方向ブリッジ(send/read)の最小構成の参照。
+- [Warp: Full Terminal Use (agent on a live PTY)](sources/prior-art/warp-full-terminal-use.md) — Warpエージェントが対話PTYに接続し、ライブの端末バッファを読み、コマンド書込み・プロンプト応答・対話アプリ操作を行い、人へ操作権を返す仕組みのドキュメント。
+  - 出典: <https://docs.warp.dev/agent-platform/capabilities/full-terminal-use/> (docs, 37863 chars)
+  - 効きどころ: 1個の対話PTYを握りバッファを読む/キーを流す/プロンプトに応答する、まさに我々の構想と同一の製品実装。状態追跡と制御受渡しの設計が直接効く。
+- [Wave AI (context-aware terminal assistant)](sources/prior-art/wave-terminal-ai.md) — 端末出力・スクロールバック・ファイルを文脈に取り込む端末アシスタントWave AIのドキュメント。Terminalツール文脈やCLI連携を説明。
+  - 出典: <https://docs.waveterm.dev/waveai> (docs, 1823 chars)
+  - 効きどころ: 端末バッファ/スクロールバックをモデル文脈に渡す際の取り込み単位・文脈トグルの先行例。read層の粒度設計の参考。
+- [wcgw (rusiaaman) Shell & Coding Agent MCP README](sources/prior-art/wcgw-rusiaaman-screen-backend.md) — GNU Screenを多重化バックエンドに使うシェル/コーディングエージェントMCP。BashCommandにsend_text/send_specials/send_asciiでキーストローク注入。
+  - 出典: <https://raw.githubusercontent.com/rusiaaman/wcgw/main/README.md> (github_readme, 14491 chars)
+  - 効きどころ: 完了検出が二段(短timeoutで即抜け+出力ストリーム継続を見て待ち時間調整)で、純粋quiescenceとexit-codeの中間設計の実例。screen -xで人間が同一端末にアタッチ、背景コマンド多重化は我々のバックエンド選定(tmux代替案)とsend設計の比較対象。
+
+## 完了境界の検出 (completion-detection) — 15件
+
+- [agent-stuff tmux skill (send-keys + capture-pane completion polling)](sources/completion-detection/agent-stuff-tmux-skill.md) — エージェントがtmux send-keys/capture-paneで対話プログラムを操る実践手順。完了テキストをポーリングで待つ方式。
+  - 出典: <https://raw.githubusercontent.com/mitsuhiko/agent-stuff/main/skills/tmux/SKILL.md> (github_readme, 5549 chars)
+  - 効きどころ: tmuxバックエンドでsend-keys後にcapture-pane差分+完了文字列(sentinel)で境界を取る具体パターン。実装の即戦力レシピ。
+- [Terminal-Shell integration - a proposed specification (Per Bothner)](sources/completion-detection/bothner-shell-integration-proposal.md) — OSC 133系セマンティックプロンプトの設計思想と要件を整理した提案記事。FinalTerm/iTerm2/DomTermの実装差を横断。
+  - 出典: <https://per.bothner.com/blog/2019/shell-integration-proposal/> (article, 10489 chars)
+  - 効きどころ: 完了境界(プロンプト開始/コマンド開始/出力開始/終了+exit code)をなぜ・どう区切るかの原典的論拠。我々の境界検出設計の出発点になる。
+- [OSC 133 - Shell Integration (Contour Terminal)](sources/completion-detection/contour-osc-133-spec.md) — OSC 133のA/B/C/Dを書式(OSC 133;Cmd[;Params]ST)とパラメータ付きで明示した仕様ページ。
+  - 出典: <https://contour-terminal.org/vt-extensions/osc-133-shell-integration/> (spec, 6171 chars)
+  - 効きどころ: パラメータ(click_events, cmdline_url, exit code)まで含むパース仕様。read層でOSC 133を解釈する際の実装基準。
+- [expect(1) man page (Don Libes)](sources/completion-detection/expect-man-page.md) — Don LibesによるExpect公式man。expect/spawn/sendとglob/-re/-exパターン、timeoutやprompt照合の挙動。
+  - 出典: <https://www.tcl-lang.org/man/expect5.31/expect.1.html> (man, 76740 chars)
+  - 効きどころ: prompt正規表現待ち受けの原典。pexpectが模した照合セマンティクスとtimeout設計の権威ソース。
+- [Proprietary Escape Codes - iTerm2 Documentation](sources/completion-detection/iterm2-proprietary-escape-codes.md) — iTerm2公式のエスケープコード仕様。FTCS_PROMPT(A)/COMMAND_START(B)/COMMAND_EXECUTED(C)/COMMAND_FINISHED(D)とexit code報告を定義。
+  - 出典: <https://iterm2.com/documentation-escape-codes.html> (docs, 23177 chars)
+  - 効きどころ: OSC 133のA/B/C/Dの正準的定義と各マーカーの意味を権威ソースで確定。完了=Dの受信で判定する設計の根拠。
+- [iTerm2 Shell Integration (FinalTerm/OSC 133)](sources/completion-detection/iterm2-shell-integration.md) — iTerm2のshell integrationとFinalTerm由来のOSCシーケンス解説
+  - 出典: <https://iterm2.com/documentation-shell-integration.html> (docs, 2905 chars)
+  - 効きどころ: OSC133によるプロンプト/コマンド境界マークは完了境界検出の有力候補
+- [kitty Shell Integration (docs/shell-integration.rst)](sources/completion-detection/kitty-shell-integration.md) — kittyのOSC 133実装とA(redraw/click_events)・C(cmdline/cmdline_url)拡張、ssh kittenによるリモート自動統合。
+  - 出典: <https://raw.githubusercontent.com/kovidgoyal/kitty/master/docs/shell-integration.rst> (github_readme, 17409 chars)
+  - 効きどころ: OSC 133;Cにコマンド文字列を載せる拡張と、ssh越しに統合を運ぶ仕組み。ネストでマーカーを到達させる実例として最重要級。
+- [expect: Scripts for Controlling Interactive Processes (Don Libes, NIST)](sources/completion-detection/libes-expect-paper.md) — Expectの設計論文(NIST)。対話プロセスをPTY越しにprompt照合で自動運転する考え方とtimeout戦略。
+  - 出典: <https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=821307> (pdf_paper, 58538 chars)
+  - 効きどころ: PTYを1本握りkeystroke送出/画面照合で完了を待つという我々の方式の理論的祖。設計判断の引用元。
+- [Terminal Shell Integration (Roo Code) — markers + fallback](sources/completion-detection/roo-code-shell-integration-fallback.md) — AIエージェントがVS Codeシェル統合マーカーで完了/exit codeを検出し、統合が無い時はbackground実行へフォールバックする設計。
+  - 出典: <https://roocodeinc.github.io/Roo-Code/features/shell-integration> (docs, 34111 chars)
+  - 効きどころ: マーカー方式が効かない時(=ネスト/SSH想定)にtimeout/別経路へ落とす実運用フォールバック設計。検出失敗時の退避策の参考。
+- [OSC 133 (shell integration / semantic prompt) support · tmux/tmux #3064](sources/completion-detection/tmux-osc-133-passthrough-issue.md) — tmuxへのOSC 133対応議論。tmuxが未知のエスケープを端末へ素通ししない事と、DCSラップ/allow-passthroughの必要性。
+  - 出典: <https://github.com/tmux/tmux/issues/3064> (article, 9465 chars)
+  - 効きどころ: tmuxバックエンド採用時、OSC 133マーカーがtmux層で消える/要passthrough設定という壊れ方を直接示す。ネスト検証の核心。
+- [tui-use — agents drive PTY/TUI via screen-stability waits](sources/completion-detection/tui-use-readme.md) — AIエージェント向けPTY駆動ツール。sleep/pollせず画面安定(既定100msデバウンス)で待ち、wait --textで意味的合図も待つ。
+  - 出典: <https://raw.githubusercontent.com/onesuper/tui-use/main/README.md> (github_readme, 9081 chars)
+  - 効きどころ: 我々と同型(1本PTY+画面読み)。quiescence(画面差分静止)とsentinel(--text)の併用という完了検出設計の直接の先行実装。
+- [Terminal Shell Integration (VS Code)](sources/completion-detection/vscode-osc-633-shell-integration.md) — VS Code独自のOSC 633;A/B/C/D/E/P。E(commandline+nonce)で実行コマンド確定、Pでcwd等プロパティ。nonceでspoof防止。
+  - 出典: <https://code.visualstudio.com/docs/terminal/shell-integration> (docs, 47943 chars)
+  - 効きどころ: 完了+exit code(D)に加え、実行コマンド文字列を確定(E)する手法。markerにnonceを付けて偽装混入を弾く設計の直接的先行例。
+- [VS Code Shell Integration source (sub-shell / ssh limitations)](sources/completion-detection/vscode-shell-integration-nesting-limits.md) — VS Codeシェル統合のraw原稿。自動注入がsub-shell/素のssh/複雑な構成で効かず手動インストールが要る旨を明記。
+  - 出典: <https://raw.githubusercontent.com/microsoft/vscode-docs/main/docs/terminal/shell-integration.md> (github_readme, 22862 chars)
+  - 効きどころ: local→ssh→docker ネストで自動マーカー注入が壊れる具体条件を権威ソースで提示。ネスト時にどの層へ手動で仕込むかの判断材料。
+- [WezTerm Shell Integration (docs/shell-integration.md)](sources/completion-detection/wezterm-shell-integration.md) — WezTermのOSC 7/OSC 133セマンティックゾーン/OSC 1337ユーザ変数の解説。bash/zsh/pwsh/cmd向け統合スクリプト同梱。
+  - 出典: <https://raw.githubusercontent.com/wezterm/wezterm/main/docs/shell-integration.md> (github_readme, 7702 chars)
+  - 効きどころ: プロンプト/入力/出力ゾーンの実装例とユーザ変数併用。完了検出を出力ゾーン終端として扱う設計の参考。
+- [Shell integration in the Windows Terminal (Microsoft Learn)](sources/completion-detection/windows-terminal-shell-integration.md) — Windows TerminalのOSC 133マーク対応と、bash(PS0/PS1/PS2)・PowerShell・CMDでマーカーを注入する具体的プロンプト設定。
+  - 出典: <https://learn.microsoft.com/en-us/windows/terminal/tutorials/shell-integration> (docs, 17019 chars)
+  - 効きどころ: WSL2上の対象環境そのもの。bashのPS0=133;C/PS1=133;A..B注入の実コードがあり、自前でマーカーを仕込む方式の雛形になる。
+
+## バックエンド (backends) — 13件
+
+- [Detach — GNU Screen User's Manual](sources/backends/gnu-screen-detach.md) — GNU screenのdetach仕様。C-a dで端末から切離しバックグラウンド化、接続喪失時のautodetach、-rでの再接続を解説。
+  - 出典: <https://www.gnu.org/software/screen/manual/html_node/Detach.html> (docs, 1578 chars)
+  - 効きどころ: tmuxの代替バックエンド候補。接続が切れてもセッションとプロセスが生存する挙動(autodetach)を公式に確認でき、バックエンド比較の根拠になる。
+- [libtmux README (Python tmux API)](sources/backends/libtmux-readme.md) — tmuxの型付きPython API。Server/Session/Window/Paneオブジェクトでライブ状態を走査し send_keys や capture-pane(-p)で制御、.cmd()で生コマンドも可能。
+  - 出典: <https://raw.githubusercontent.com/tmux-python/libtmux/master/README.md> (github_readme, 10039 chars)
+  - 効きどころ: tmuxバックエンドをPythonから操作する高位ラッパ候補。send/read/target解決をオブジェクトで扱え、薄い層の実装を短縮できる一次資料。
+- [node-pty README (Microsoft)](sources/backends/node-pty-readme.md) — Node.jsのforkpty(3)バインディング。pty.spawnで擬似端末付き子プロセスを生成し onData/write/resize で双方向制御(VS Code/Hyperで実績)。
+  - 出典: <https://raw.githubusercontent.com/microsoft/node-pty/main/README.md> (github_readme, 8099 chars)
+  - 効きどころ: tmuxを使わず直接1本のPTYを握る最小実装の候補。pty_open/send/read/close ツールの土台となる低レベルAPIの一次資料。
+- [Core pexpect components — API reference](sources/backends/pexpect-api-reference.md) — pexpectのAPIリファレンス。spawn、expect/expect_exact、read_nonblocking、timeout、EOF/TIMEOUT例外を網羅。
+  - 出典: <https://pexpect.readthedocs.io/en/stable/api/pexpect.html> (docs, 44619 chars)
+  - 効きどころ: 出力パターン待ち(expect)とノンブロッキング読取・タイムアウトの仕様。quiescenceベース完了境界検出の代替/補完手法の一次資料。
+- [Pexpect Overview](sources/backends/pexpect-overview.md) — pexpect概要。ssh等の対話アプリをspawn/expect/sendlineで自動化し、before/afterで状態保持、interactで人へ制御移譲できる。
+  - 出典: <https://pexpect.readthedocs.io/en/stable/overview.html> (docs, 14000 chars)
+  - 効きどころ: ssh→docker のネスト対話を1本のPTYへ送る発想の先行例。before/afterの状態管理とプロンプト待ちが完了検出設計の参考になる。
+- [ptyprocess README](sources/backends/ptyprocess-readme.md) — Pythonで擬似端末内に子プロセスを起動するライブラリ。PtyProcess.spawnでread/write、パスワードプロンプトやcurses系UIの自動化に必要なPTYを提供。
+  - 出典: <https://raw.githubusercontent.com/pexpect/ptyprocess/master/README.rst> (github_readme, 578 chars)
+  - 効きどころ: Python実装でPTYを直接握る低レベル選択肢(pexpectの基盤)。tmux非依存の send/read を最小コストで実現する土台。
+- [pty — Pseudo-terminal utilities (Python stdlib)](sources/backends/python-stdlib-pty.md) — Python標準ライブラリptyの公式doc。openpty/fork/spawnと master_read・stdin_read コールバック(各既定1024バイト読取)を解説。
+  - 出典: <https://docs.python.org/3/library/pty.html> (docs, 7674 chars)
+  - 効きどころ: 依存ゼロでPTYを握る最小経路。spawnのread/writeコールバック構造は pty_open/send/read/close の参照実装になる。
+- [Scripting tmux — The Tao of tmux](sources/backends/tao-of-tmux-scripting.md) — tmuxのスクリプト制御解説。targets(-t)、formats(-F #{...})、send-keys、capture-pane を使った機械的操作を体系化。
+  - 出典: <https://tao-of-tmux.readthedocs.io/en/latest/manuscript/10-scripting.html> (docs, 21766 chars)
+  - 効きどころ: send/read を tmux コマンドへ写像する具体パターン(target解決、format での状態取得)が分かる。薄い層の実装レシピとして直接効く。
+- [tmux-continuum README](sources/backends/tmux-continuum-readme.md) — tmux環境を15分間隔で自動保存し、tmuxサーバ起動時に自動復元するプラグイン(resurrect依存)。復元はサーバ起動時のみ。
+  - 出典: <https://raw.githubusercontent.com/tmux-plugins/tmux-continuum/master/README.md> (github_readme, 3524 chars)
+  - 効きどころ: エージェントが何もしなくてもバックグラウンドでスナップショットが取られ、サーバ再起動で自動復帰する経路の根拠。無人運用の永続性設計に直結。
+- [Control Mode — tmux/tmux Wiki](sources/backends/tmux-control-mode-wiki.md) — tmux制御モード(-CC)のプロトコル仕様。%begin/%end/%errorのガード行、%output等の非同期通知、コマンド送受信の行ベース仕様。
+  - 出典: <https://github.com/tmux/tmux/wiki/Control-Mode> (docs, 20509 chars)
+  - 効きどころ: 端末エミュレーションせず1本のソケット越しにコマンド送出と出力読取を構造化できる。完了境界検出を %begin/%end ガードで決定論化する設計の直接の根拠。
+- [Getting Started — tmux/tmux Wiki](sources/backends/tmux-getting-started-wiki.md) — tmuxのクライアント/サーバモデル入門。状態を1個のサーバプロセスに集約し、session/window/paneの階層とattach/detachで永続化する仕組み。
+  - 出典: <https://github.com/tmux/tmux/wiki/Getting-Started> (docs, 66222 chars)
+  - 効きどころ: エージェントのプロセスが毎回終了してもdetachedでセッションが生き残る前提(サーバ常駐)を公式に裏付ける。バックエンド選定の基礎モデル。
+- [tmux-resurrect — persist & restore tmux sessions](sources/backends/tmux-resurrect-readme.md) — tmuxセッション(ペイン構成・実行プログラム)を保存し再起動後に復元するプラグイン
+  - 出典: <https://raw.githubusercontent.com/tmux-plugins/tmux-resurrect/master/README.md> (github_readme, 4685 chars)
+  - 効きどころ: エージェントのプロセスが落ちても永続セッションを再構築できるか の参考
+- [tmux-resurrect: Restoring programs (docs)](sources/backends/tmux-resurrect-restoring-programs.md) — @resurrect-processes 設定で paneの実行中プロセスをどう復元するかの仕様(チルダ/矢印/アスタリスク構文、デフォルト許可リスト)。
+  - 出典: <https://raw.githubusercontent.com/tmux-plugins/tmux-resurrect/master/docs/restoring_programs.md> (docs, 8068 chars)
+  - 効きどころ: detached後に「中で動いていたプロセス」を復元できる/できない範囲を精密に規定。完了検出や再接続後の状態回復の設計判断に効く。
+
+## ANSI / 画面整形 (ansi-handling) — 11件
+
+- [Standard ECMA-48 (5th ed.) - Control Functions for Coded Character Sets](sources/ansi-handling/ecma-48-control-functions.md) — C0/C1制御集合・制御シーケンス・CSI構造を定義する国際標準(ISO 6429相当)の一次PDF。ANSIエスケープの根本規格。
+  - 出典: <https://ecma-international.org/wp-content/uploads/ECMA-48_5th_edition_june_1991.pdf> (pdf_paper, 241233 chars)
+  - 効きどころ: 端末シーケンス全体の文法上の親規格。パーサ状態機械や除去ロジックが準拠すべき定義を最上流で押さえ、独自実装の正しさを裏付ける。
+- [libtmux - Pane Interaction (capture_pane / send_keys)](sources/ansi-handling/libtmux-pane-interaction-capture.md) — tmuxをPythonオブジェクトで操作するlibtmuxの公式ドキュメント。capture_pane(escape_sequences=, join_wrapped=)とsend_keysの実用例。
+  - 出典: <https://libtmux.git-pull.com/topics/pane_interaction.html> (docs, 17886 chars)
+  - 効きどころ: keystroke送出(send_keys)と画面読取(capture_pane)をtmux越しに行う実装パターンの直接参照。我々のsend/readをtmuxへ実装する際の写経元。
+- [pyte Tutorial - Screen と Stream で端末を再現する](sources/ansi-handling/pyte-screen-stream-tutorial.md) — Stream.feed()でバイトを流しScreen.displayで描画済みテキスト行を読む、という仮想端末の最小APIフローを示す公式チュートリアル。
+  - 出典: <https://pyte.readthedocs.io/en/latest/tutorial.html> (docs, 3997 chars)
+  - 効きどころ: 我々のpty_read実装の具体形そのもの。バイト供給→画面状態→確定テキスト抽出のインターフェース設計を直接写せる。
+- [pyte - Simple VTXXX-compatible in-memory terminal emulator (README)](sources/ansi-handling/pyte-vtxxx-terminal-emulator.md) — 生バイト列を解釈してメモリ上の仮想端末スクリーンに描画するPythonライブラリの公式README。htop等のTUIをスクリーンスクレイプする用途を明記。
+  - 出典: <https://raw.githubusercontent.com/selectel/pyte/master/README.rst> (github_readme, 1375 chars)
+  - 効きどころ: 生バイト垂れ流しではなく仮想画面レンダリングで「最終的に見える画面」だけを取る側の代表実装。pty_readの出力をどう確定画面に畳むかの設計根拠。
+- [RTK — コマンド出力を60-90%削減するCLIプロキシ (rtk-ai/rtk)](sources/ansi-handling/rtk-token-reducer-cli.md) — コマンド出力を60-90%削減するCLIプロキシ。4戦略(Smart Filtering/Grouping/Truncation/Deduplication)+100超のコマンド別reducer。
+  - 出典: <https://raw.githubusercontent.com/rtk-ai/rtk/develop/README.md> (github_readme, 21661 chars)
+  - 効きどころ: 本プロジェクトの出力削減レイヤの移植元。8段TOMLパイプライン(strip_ansi/replace/match_output/strip-keep/truncate/head-tail/max_lines/on_empty)とCAP定数(ERRORS20/WARN10/LIST20/INV50)、切詰時の復元ヒントが設計の手本。
+- [vt100 (Rust) Screen 構造体 - contents_diff / contents_formatted](sources/ansi-handling/rust-vt100-screen-contents-diff.md) — 端末バイト列をメモリ画面に解析するRustクレートのScreen API。前回画面と現在画面の差分バイト列を返すcontents_diff()を定義。
+  - 出典: <https://docs.rs/vt100/latest/vt100/struct.Screen.html> (docs, 33530 chars)
+  - 効きどころ: 全画面TUI(vim/top)の差分取得=トークン節約の中核根拠。前回状態を保持して差分だけLLMに渡す設計の一次資料。
+- [strip-ansi - 文字列からANSIエスケープコードを除去 (README)](sources/ansi-handling/strip-ansi-remove-escape-codes.md) — ANSI制御コードを正規表現で剥がしプレーンテキスト化する定番npmパッケージ。Node組込stripVTControlCharactersの元実装でもある旨を記載。
+  - 出典: <https://raw.githubusercontent.com/chalk/strip-ansi/main/readme.md> (github_readme, 1222 chars)
+  - 効きどころ: 仮想画面を組まずバイト列から色/装飾だけ落とす最軽量手法の代表。仮想画面レンダリングとのトレードオフ(安さ vs カーソル移動の取りこぼし)の片側。
+- [Building Effective AI Coding Agents for the Terminal: Scaffolding, Harness, Context Engineering](sources/ansi-handling/terminal-coding-agent-context-engineering.md) — 端末ネイティブAIコーディングエージェントのハーネス/コンテキスト管理を論じる論文。context肥大化と推論劣化を防ぐ効率的な文脈管理を主張。
+  - 出典: <https://arxiv.org/pdf/2603.05344> (pdf_paper, 271275 chars)
+  - 効きどころ: 端末出力をそのままLLMに流すとcontextが膨張する問題の学術的裏付け。生バイトvs差分/確定画面のトークン節約判断を上位設計目標に接続する。
+- [tmux(1) man page - capture-pane (-e/-p/-C/-N/-J/-S/-E)](sources/ansi-handling/tmux-capture-pane-man.md) — tmuxの公式man。capture-paneの-e(エスケープ付き)/-p(stdout)/-J(折返し結合)/-S -E(行範囲)等の正確な仕様。
+  - 出典: <https://man7.org/linux/man-pages/man1/tmux.1.html> (man, 234635 chars)
+  - 効きどころ: 我々のtmuxバックエンドで画面を読む唯一の窓口の正典。-e有無で生シーケンスかプレーンか、-Sでscrollback範囲をどう取るかの一次仕様。
+- [A parser for DEC's ANSI-compatible video terminals (Paul Williams)](sources/ansi-handling/williams-dec-ansi-parser-state-machine.md) — VTエミュレータ向けのエスケープ/制御シーケンス解析を13状態の状態機械で完全網羅したParに有名な仕様。任意の悪意入力でも実機同等挙動を保証。
+  - 出典: <https://vt100.net/emu/dec_ansi_parser> (spec, 36097 chars)
+  - 効きどころ: 生バイトを正しく画面に畳むには何の状態管理が要るかの決定版。strip-ansiの正規表現が取りこぼすエッジ(分割CSI/DCS)を理解し仮想画面を選ぶ根拠。
+- [XTerm Control Sequences (ctlseqs) - Thomas Dickey](sources/ansi-handling/xterm-control-sequences-ctlseqs.md) — xtermが解釈する制御シーケンス(CSI/SGR/OSC/DCS等)を網羅した事実上の標準リファレンス。VT100〜VT525互換とxterm拡張を収録。
+  - 出典: <https://invisible-island.net/xterm/ctlseqs/ctlseqs.html> (spec, 166667 chars)
+  - 効きどころ: capture-pane -eで現れる生シーケンスの意味を引く辞書。どのシーケンスを保持/除去/解釈すべきかの判断材料で、トークン節約の取捨選択の典拠。
+
+## 安全性 (safety) — 9件
+
+- [CERT VU#763073: iTerm2 with tmux Integration Remote Command Execution](sources/safety/cert-vu763073-iterm2-tmux-rce.md) — CERT/CC公式注記。iTerm2のtmux control mode統合が悪性端末出力(SSH先/curl/tail -f 等)で任意コマンド実行を許す(CVSS 9.3)。修正は3.3.6以降。
+  - 出典: <https://www.kb.cert.org/vuls/id/763073> (spec, 8836 chars)
+  - 効きどころ: tmuxバックエンドを採用する本設計に直撃する一次CVE資料。control modeのメッセージ解析が攻撃者制御の出力で汚染されうるため、tmux制御チャネルと端末出力の境界を厳格に扱う必要性を示す。
+- [Don't Trust This Title: Abusing Terminal Emulators with ANSI Escape Characters](sources/safety/cyberark-dont-trust-this-title.md) — CyberArkの脅威研究。ウィンドウタイトル変更DoS、Kubernetes自由記述欄でのANSIによる表示偽装、そして貼り付けデータ先頭に ESC[201~ を仕込んでブラケットペースト保護を早期終了させるバイパスを実証。複数CVEを列挙。
+  - 出典: <https://www.cyberark.com/resources/threat-research-blog/dont-trust-this-title-abusing-terminal-emulators-with-ansi-escape-characters> (article, 78493 chars)
+  - 効きどころ: ブラケットペースト保護を逆手に取るバイパス手法を一次資料で確認でき、PTYへ流すペイロードから ESC[201~ 等を除去すべき具体的根拠になる。表示偽装は「画面を読む」層の信頼性にも直結。
+- [Destructive Command Guard (dcg)](sources/safety/destructive-command-guard-readme.md) — AIエージェントが実行する前に rm -rf / git reset --hard / DROP TABLE 等の破壊的コマンドを遮断するフック。安全パターン先評価のホワイトリスト先行設計、サブミリ秒判定。
+  - 出典: <https://raw.githubusercontent.com/Dicklesworthstone/destructive_command_guard/main/README.md> (github_readme, 105528 chars)
+  - 効きどころ: PTYへkeystrokeを流す前段の破壊的コマンド確認パターンの実装例。ホワイトリスト先行・カテゴリ別ゲートの具体設計を、我々のsend前ガードに転用できる。
+- [Terminal Escape Injection](sources/safety/infosecmatter-terminal-escape-injection.md) — カーソル上移動(例 ESC[2A)で表示上のコマンドを上書きし、無害に見せかけて別コマンドを実行させる視覚的欺瞞の解説。shell/Python/PowerShell等の実例付き。
+  - 出典: <https://www.infosecmatter.com/terminal-escape-injection/> (article, 36659 chars)
+  - 効きどころ: 「画面を読んで完了を判断」する我々の層が、カーソル移動で改変された表示に騙されうることを示す。quiescence判定や画面解釈で生のエスケープを信用しない設計を裏付ける。
+- [ANSI Terminal Security (Terminally Owned – 60 Years of Escaping)](sources/safety/leadbeater-ansi-terminal-security.md) — David Leadbeater(DEF CON 31)による研究者本人の総覧記事。DECRQSSなどのエコーバック、OSC処理、文字セット変更を悪用した10+件のターミナルエミュレータCVEと、ESC(27)のエスケープ等の対策指針をまとめる。
+  - 出典: <https://dgl.cx/2023/09/ansi-terminal-security> (article, 53114 chars)
+  - 効きどころ: 端末出力に含まれる悪性エスケープが「読み返し→コマンド注入」へ至る経路を一次解説。我々の read 層が画面内容をそのまま信用してはならず、ESC含む制御文字を無害化すべき根拠を与える。
+- [How Attackers Weaponize ANSI Escape Sequences](sources/safety/packetlabs-weaponizing-ansi.md) — ANSIエスケープ悪用の分類整理:ログ汚染(CWE-150)、文字大量出力によるDoS、OSC8偽ハイパーリンク、OSC52クリップボード/マウス追跡、不正ファイル転送、RCEまで。責任所在の曖昧さも論じる。
+  - 出典: <https://www.packetlabs.net/posts/weaponizing-ansi-escape-sequences/> (article, 22078 chars)
+  - 効きどころ: keystroke直送と画面読みで遭遇しうる攻撃面の体系的カタログ。どの制御カテゴリ(OSC52/OSC8/反復出力)を無害化すべきか、防御の優先順位付けに使える。
+- [SwiftTerm Code Injection via Window Title Readback (CVE-2022-23465)](sources/safety/swiftterm-cve-2022-23465-title-injection.md) — ウィンドウタイトルを悪性エスケープで書き換え、それをコマンドラインへ読み戻させて任意コマンド実行に至るSwiftTermの脆弱性勧告。CVSS 7.1、修正コミット明記。
+  - 出典: <https://github.com/migueldeicaza/SwiftTerm/security/advisories/GHSA-jq43-q8mx-r7mq> (spec, 10753 chars)
+  - 効きどころ: 「端末状態を読み戻す」機能が攻撃面になる典型CVE。我々が画面/端末状態を読んで再投入する設計で、タイトル等のクエリ応答を信用しない・無害化する根拠となる一次勧告。
+- [Terminal DiLLMa: LLM-powered Apps Can Hijack Your Terminal Via Prompt Injection](sources/safety/terminal-dillma-llm-ansi-hijack.md) — LLMが生成したテキストをstdoutへそのまま出すCLIで、ANSIエスケープによる画面操作・OSC52クリップボード書き込み・ハイパーリンク/DNSによるデータ漏洩が起きることを実証。制御文字のデフォルトエンコードを推奨。
+  - 出典: <https://embracethered.com/blog/posts/2024/terminal-dillmas-prompt-injection-ansi-sequences/> (article, 13221 chars)
+  - 効きどころ: AIエージェントがLLM/外部由来テキストを1個のPTYへsendし、その画面を読む本設計そのものの脅威モデル。送信前および読み取り後の制御文字エンコードを必須要件とする最重要根拠。
+- [XTerm – Bracketed Paste Mode](sources/safety/xterm-bracketed-paste-spec.md) — xterm公式によるブラケットペーストモードの仕様・歴史・採用状況。ESC[?2004h で有効化し、貼り付けたテキストを ESC[200~ … ESC[201~ で囲む。allowPasteControls による制御文字フィルタにも言及。
+  - 出典: <https://invisible-island.net/xterm/xterm-paste64.html> (spec, 16092 chars)
+  - 効きどころ: PTYへ「貼り付け相当」のテキストを送る際、ブラケットペーストの開始/終了マーカーと、その保護が制御文字混入には無力である(=送る前に我々がサニタイズ責任を持つ)という設計上の前提を一次仕様で確定できる。

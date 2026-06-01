@@ -1,0 +1,22 @@
+Pytest: 2 passed, 3 failed, 1 skipped, 1 xfailed, 1 xpassed
+═══════════════════════════════════════
+
+Expected-failure outcomes:
+  XFAIL proj/test_mix.py::test_xfail_known - known bug - tracked
+  XPASS proj/test_mix.py::test_xpass_unexpected - should fail but passes
+
+Failures:
+1. [FAIL] test_fail_simple
+     proj/test_mix.py:7: in test_fail_simple
+     assert False
+     E   assert False
+
+2. [FAIL] test_fail_dash_reason
+     proj/test_mix.py:10: in test_fail_dash_reason
+     raise AssertionError("foo - bar - baz")
+     E   AssertionError: foo - bar - baz
+
+3. [FAIL] test_fail_value
+     proj/test_mix.py:13: in test_fail_value
+     raise ValueError("invalid value")
+     E   ValueError: invalid value

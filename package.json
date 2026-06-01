@@ -1,0 +1,51 @@
+{
+  "name": "aiterm-mcp",
+  "version": "0.1.0",
+  "description": "AI-driven persistent terminal as a local stdio MCP server (tmux-backed). Holds one local PTY; SSH and containers are just commands you send into it. Token-reducing reads.",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "terminal",
+    "tmux",
+    "pty",
+    "claude",
+    "ai-agent",
+    "ssh"
+  ],
+  "license": "MIT",
+  "author": "kitepon",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kitepon-rgb/ai-terminal.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kitepon-rgb/ai-terminal/issues"
+  },
+  "homepage": "https://github.com/kitepon-rgb/ai-terminal#readme",
+  "type": "module",
+  "bin": {
+    "aiterm-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "start": "node dist/index.js",
+    "test": "npm run build && node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "typescript": "^6.0.3"
+  }
+}
