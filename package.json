@@ -1,6 +1,6 @@
 {
   "name": "aiterm-mcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "AI-driven persistent terminal as a local stdio MCP server (tmux-backed). Holds one local PTY; SSH and containers are just commands you send into it. Token-reducing reads.",
   "keywords": [
     "mcp",

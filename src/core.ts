@@ -109,6 +109,52 @@ function ensureWinBridge(): void {
   winBridgeOk = true;
 }
 
+// tmux が見つからないときの説明。macOS は tmux を同梱せず、Homebrew の bin は GUI 起動時の PATH に
+// 入らないため、原因と対処（導入・自動探索・AITERM_TMUX 上書き）を正直に提示する。
+function tmuxMissingMessage(): string {
+  const head = "tmux が見つかりません（PATH 上に存在しません）。aiterm は実行時に tmux を必要とします。";
+  const hint =
+    process.platform === "darwin"
+      ? "macOS では `brew install tmux` で導入してください。GUI から起動された場合、Homebrew の bin " +
+        "（Apple Silicon: /opt/homebrew/bin、Intel: /usr/local/bin）が PATH に含まれないことがあります" +
+        "（その場合 aiterm が自動で探索します）。"
+      : "（例: Debian/Ubuntu は `sudo apt install tmux`）。";
+  const override = "別の場所にある tmux を使うには AITERM_TMUX=/path/to/tmux を指定してください。";
+  return `${head}${hint}${override}`;
+}
+
+// POSIX(Linux/WSL2/macOS) 用の tmux バイナリ解決。Windows の ensureWinBridge() に対応する事前確認。
+// 解決順: AITERM_TMUX（明示指定）→ PATH 上の tmux → Homebrew 既定パス。一度だけ実行しキャッシュする。
+// 見つからなければ tmuxMissingMessage で投げる（黙ってフォールバックせず、原因が見えるようにする）。
+let tmuxBin: string | null = null;
+function resolveTmux(): string {
+  if (tmuxBin) return tmuxBin;
+  const override = process.env.AITERM_TMUX;
+  if (override) {
+    const r = spawnSync(override, ["-V"], { encoding: "utf8", timeout: 5000 });
+    if (!r.error && r.status === 0) return (tmuxBin = override);
+    throw new AitermError(
+      `AITERM_TMUX に指定された tmux を起動できません: ${override}（\`${override} -V\` が通りません）`,
+      2,
+    );
+  }
+  // CLI/開発時は PATH 上の tmux をそのまま使う（最優先）。
+  const onPath = spawnSync("tmux", ["-V"], { encoding: "utf8", timeout: 5000 });
+  if (!onPath.error && onPath.status === 0) return (tmuxBin = "tmux");
+  // GUI 起動などで PATH に Homebrew の bin が無い場合、既定の場所を探す。
+  // 使う場合は黙らず stderr へ告知する（stdout は JSON-RPC 専用＝index.ts の制約）。
+  for (const cand of ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux"]) {
+    try {
+      fs.accessSync(cand, fs.constants.X_OK);
+      console.error(`aiterm: tmux が PATH 上に無いため ${cand} を使用します`);
+      return (tmuxBin = cand);
+    } catch {
+      /* 次の候補へ */
+    }
+  }
+  throw new AitermError(tmuxMissingMessage(), 2);
+}
+
 function tmux(...args: string[]): { code: number; stdout: string; stderr: string } {
   // maxBuffer は既定 1MiB。capture-pane（大きなスクロールバック）や多セッションの list-sessions で
   // 頭打ちになり stdout が切れる/空になる。Python の subprocess.run は無制限だったので 64MiB へ広げる。
@@ -118,12 +164,19 @@ function tmux(...args: string[]): { code: number; stdout: string; stderr: string
     ensureWinBridge();
     r = spawnSync("wsl.exe", ["-e", "tmux", "-S", SOCK, ...args], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   } else {
-    r = spawnSync("tmux", ["-S", SOCK, ...args], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    // resolveTmux() は tmux を解決できなければ明確な AitermError を投げる（POSIX 版の事前確認）。
+    r = spawnSync(resolveTmux(), ["-S", SOCK, ...args], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   }
   // ENOBUFS（出力が 64MiB 超）を「code=1 の失敗」へ握り潰すと部分/空 stdout を正常扱いしてしまう。区別して投げる。
   // EXPECTED-FAILURE: 外部システム境界（tmux 出力過大）
   if (r.error && (r.error as NodeJS.ErrnoException).code === "ENOBUFS") {
     throw new AitermError(`tmux 出力が 64MiB を超えました（${args[0]}）。範囲を絞って読んでください。`, 2);
+  }
+  // 解決済み tmux が実行時に消えた（アンインストール等）場合の ENOENT を、空 stderr の code=1 へ握り潰さない。
+  // 通常は resolveTmux() が事前に弾くため発火しないが、mid-run 消滅に対する正直な防御。
+  if (!isWin && r.error && (r.error as NodeJS.ErrnoException).code === "ENOENT") {
+    tmuxBin = null; // 次回 resolveTmux で再解決を許す
+    throw new AitermError(tmuxMissingMessage(), 2);
   }
   return { code: r.status ?? 1, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
@@ -358,7 +411,14 @@ export function openSession(name?: string | null, shell = "bash"): [string, stri
   const nm = name || autoName();
   assertSessionName(nm);
   if (sessionExists(nm)) throw new AitermError(`session '${nm}' は既に存在します（list で確認）`, 2);
-  const r = tmux("new-session", "-d", "-s", nm, "-f", "/dev/null", shell);
+  // macOS の /bin/bash は 3.2 で、起動時に zsh 移行バナーを出して最初の read を汚す。darwin かつ bash の
+  // ときだけ -e で環境変数を渡して抑止する。-e は tmux>=3.2 が必要だが macOS の Homebrew tmux は常に該当。
+  // （古い tmux<3.2 が残る Linux/WSL で -e を渡すと new-session が落ちるため、darwin 限定にする。）
+  const banner =
+    process.platform === "darwin" && path.basename(shell) === "bash"
+      ? ["-e", "BASH_SILENCE_DEPRECATION_WARNING=1"]
+      : [];
+  const r = tmux("new-session", "-d", "-s", nm, ...banner, "-f", "/dev/null", shell);
   if (r.code !== 0) throw new AitermError("tmux new-session 失敗: " + r.stderr.trim(), 2);
   fs.closeSync(fs.openSync(logpath(nm), "a")); // touch
   // pipe-pane の引数は tmux 内部の /bin/sh -c で再解釈される（argv ではない）。パスは単一引用符で包み、
