@@ -4,9 +4,15 @@ import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import * as os from "node:os";
 import * as core from "../dist/core.js";
 
-const SOCKDIR = path.join(process.env.TMPDIR ?? "/tmp", "claude-tmux-sockets");
+// core.ts と同じ解決順にする（Windows は TMPDIR→TEMP→os.tmpdir()）。
+// ズレると捏造ログの置き場と core の読み先が食い違い、Windows でテストが落ちる。
+const SOCKDIR = path.join(
+  process.env.TMPDIR ?? (process.platform === "win32" ? process.env.TEMP ?? os.tmpdir() : "/tmp"),
+  "claude-tmux-sockets",
+);
 const lp = (n) => path.join(SOCKDIR, n + ".log");
 const op = (n) => path.join(SOCKDIR, n + ".offset");
 const cp = (n) => path.join(SOCKDIR, n + ".lastcmd");
@@ -91,6 +97,15 @@ test("readOutput rtk reducer: 直前コマンド別に縮約（git status 例）
   const out = await core.readOutput(n, { full: true, rtk: true });
   assert.ok(out.startsWith("* main...origin/main"), `git-status 縮約: ${JSON.stringify(out.slice(0, 40))}`);
   assert.ok(out.includes("rtk:git-status 適用"), "rtk reducer 名をメタに記す");
+});
+
+test("readOutput 増分: offset がログ長超過なら先頭から読み直す（WSL 再起動でログ再作成）", async () => {
+  const n = "ro_overrun";
+  fab(n, TEN, 9999); // 旧 offset がログ長(20B)を超過
+  const out = await core.readOutput(n, {});
+  const body = out.split("\n").filter((l) => /^\d$/.test(l)).join("\n");
+  assert.equal(body, "0\n1\n2\n3\n4\n5\n6\n7\n8\n9"); // クランプで先頭から全文
+  assert.equal(fs.readFileSync(op(n), "utf8"), String(Buffer.byteLength(TEN))); // 読後は真の末尾へ
 });
 
 test("readOutput: 存在しないセッション(ログ無し)はエラー", async () => {

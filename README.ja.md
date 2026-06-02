@@ -28,7 +28,7 @@ npm i -g aiterm-mcp
 claude mcp add --scope user --transport stdio aiterm -- aiterm-mcp
 ```
 
-**Node ≥ 18** と **tmux** が必要。他の MCP クライアントは stdio で `npx -y aiterm-mcp` を起動するだけ（詳細は下の「インストール / 登録」）。
+**Node ≥ 18** と **tmux** が必要（Windows ネイティブでは WSL とその中の tmux。下の「要件」参照）。他の MCP クライアントは stdio で `npx -y aiterm-mcp` を起動するだけ（詳細は下の「インストール / 登録」）。
 
 ## なぜ
 
@@ -67,6 +67,8 @@ flowchart LR
 
 - **Node.js >= 18**
 - **tmux**（実行時の前提。`tmux -V` で確認。未導入なら `apt install tmux` / `brew install tmux`）
+  - **macOS / Linux / WSL2** は tmux を直接使う。
+  - **Windows ネイティブ**には tmux が無いため、aiterm は裏で **WSL の中の tmux** を透過的に使う。[WSL](https://learn.microsoft.com/ja-jp/windows/wsl/) を導入・初期化し、**WSL のディストリ内に tmux を入れる**こと（`sudo apt install tmux`）。`wsl tmux -V` で確認できる。セッション・ソケット・人の `attach` はすべて WSL 側にあり、AI は Windows 側のコマンドから操作するだけ。（Windows のツールは SSH と同じく入れ子で握る: `pty_send "powershell.exe …"` で PowerShell に入る。）
 - 任意: [`rtk`](https://github.com/rtk-ai/rtk) バイナリ（`pty_send` の `rtk: true` 委譲で使う。無くても動く）
 
 ## インストール / 登録
@@ -123,7 +125,7 @@ claude mcp add --scope user --transport stdio aiterm -- aiterm-mcp
 
 ## 人が覗く
 
-セッションは共有 tmux ソケット上にある。`pty_open` の戻り値に表示される `tmux -S … attach -t <id>` で人間が同じ端末に入って介入できる（抜けるのは `Ctrl-b d`）。
+セッションは共有 tmux ソケット上にある。`pty_open` の戻り値に表示される `tmux -S … attach -t <id>` で人間が同じ端末に入って介入できる（抜けるのは `Ctrl-b d`）。Windows ネイティブではセッションが WSL 内にあるため、表示は WSL 形（`wsl tmux -S … attach -t <id>`）になる。
 
 ## 開発
 

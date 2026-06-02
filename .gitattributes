@@ -1,0 +1,16 @@
+# このリポジトリは POSIX (Linux/WSL2/macOS) 上の tmux を対象とし、
+# 出力削減 reducer は LF 区切りのテキストを生成する。golden フィクスチャは
+# 実機 rtk (Linux) と byte 一致させる前提なので、改行は常に LF に固定する。
+# これがないと Windows で clone したとき autocrlf=true が CRLF へ変換し、
+# test/fixtures/pytest/*.expected.txt とのバイト一致比較が壊れる。
+* text=auto eol=lf
+
+# golden とテキスト資産は明示的に LF（バイナリ誤判定の保険）
+*.txt   text eol=lf
+*.json  text eol=lf
+*.mjs   text eol=lf
+*.ts    text eol=lf
+*.js    text eol=lf
+*.md    text eol=lf
+*.yml   text eol=lf
+*.svg   text eol=lf

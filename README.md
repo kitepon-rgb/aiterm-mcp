@@ -28,7 +28,7 @@ npm i -g aiterm-mcp
 claude mcp add --scope user --transport stdio aiterm -- aiterm-mcp
 ```
 
-Needs **Node ≥ 18** and **tmux**. Other MCP clients: just run `npx -y aiterm-mcp` over stdio. More detail in [Install / register](#install--register) below.
+Needs **Node ≥ 18** and **tmux** (on native Windows: WSL with tmux inside it — see [Requirements](#requirements)). Other MCP clients: just run `npx -y aiterm-mcp` over stdio. More detail in [Install / register](#install--register) below.
 
 ## Why
 
@@ -67,6 +67,8 @@ One PTY is the only primitive. Everything else — SSH, containers, REPLs — is
 
 - **Node.js >= 18**
 - **tmux** (runtime prerequisite; check with `tmux -V`. Install with `apt install tmux` / `brew install tmux`)
+  - **macOS / Linux / WSL2** run tmux directly.
+  - **Native Windows** has no tmux, so aiterm transparently runs tmux **inside WSL**. It needs [WSL](https://learn.microsoft.com/windows/wsl/) installed and initialized, with **tmux installed inside your WSL distro** (`sudo apt install tmux`); verify with `wsl tmux -V`. Sessions, the socket, and human `attach` all live on the WSL side — the AI just drives them from the Windows-side command. (You reach Windows tools the same way you reach SSH: `pty_send "powershell.exe …"` nests into PowerShell.)
 - Optional: the [`rtk`](https://github.com/rtk-ai/rtk) binary (used by `pty_send`'s `rtk: true` delegation; works fine without it)
 
 ## Install / register
@@ -123,7 +125,7 @@ Before sending, `pty_send` blocks destructive commands (`rm -rf /`, `mkfs`, `dd 
 
 ## A human can watch
 
-Sessions live on a shared tmux socket. The `tmux -S … attach -t <id>` line printed by `pty_open` lets a human attach to the same terminal and intervene (`Ctrl-b d` to detach).
+Sessions live on a shared tmux socket. The `tmux -S … attach -t <id>` line printed by `pty_open` lets a human attach to the same terminal and intervene (`Ctrl-b d` to detach). On native Windows the printed line is the WSL form — `wsl tmux -S … attach -t <id>` — since the session lives inside WSL.
 
 ## Development
 

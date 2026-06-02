@@ -13,7 +13,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import * as core from "./core.js";
 
-const server = new McpServer({ name: "aiterm", version: "0.1.0" });
+const server = new McpServer({ name: "aiterm", version: "0.2.0" });
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 

@@ -170,7 +170,7 @@ Host home
 3. ツールは pty_open / pty_send / pty_read / pty_close の4個を起点とする。
 4. バックエンド第一候補は tmux。
 5. 完了境界は quiescence 検出を第一候補とする。
-6. 適用対象は Claude Code (WSL2) 側。
+6. 適用対象は POSIX（Linux / WSL2 / macOS）を第一とし、**Windows ネイティブも全 tmux 呼び出しを WSL 経由へ橋渡しして対応**する（Windows にネイティブ tmux が無く、`/mnt` の 9p 上では AF_UNIX ソケットが使えないため、ソケットは WSL ネイティブ fs に置き、ログは `/mnt` 経由で Windows と共有する）。詳細は §11。
 
 ## 10. 未決事項（次の議論）
 
@@ -195,4 +195,5 @@ Host home
 - **A（状態追跡）**: 層スタックの自動追跡は未実装（送った ssh/docker を呼び出し側で記録する方針。今後）。
 - **MCP 化（2026-06-01）→ 完了。Node/TS の npm パッケージ `aiterm-mcp` へ移行し、2026-06-02 に npm 公開（`aiterm-mcp@0.1.0`・provenance 付き、リポジトリ `kitepon-rgb/aiterm-mcp`）**: 実装は `src/index.ts`（`@modelcontextprotocol/sdk`/stdio で 6 ツール公開）/ `src/core.ts`（ロジック・stdout 非汚染）/ `src/rtk.ts`（reducer）。`npx -y aiterm-mcp` で起動、ユーザースコープ global 登録（絶対パス・venv なし）。ローカル/ネスト(192.168.1.2)/永続/削減を実機検証。回帰テスト `test/`（`node:test` 77 件、CI で Node 18/20/22）。旧 Python 実装は `prototype/python/`（移植元・検証基準）。
 - **`send rtk:true`（委譲）＋ `read rtk:true`（自前 reducer）→ 実装**: `src/rtk.ts`（rtk ファイル非複製・自作。**pytest は rtk 0.42.0 と一致**、ただし `FAILED` 要約行の理由は可読性優先で全文保持＝意図的に rtk と相違／grep／git status・log／簡易フィルタ）。`send` が last-cmd を記録し `read rtk:true` が直前コマンド別に適用。
-- 残課題: 状態追跡(A)・ネスト層の完了判定（ssh 中は前面コマンドが ssh でシェル復帰判定が効かない＝`--until` で代替）、`ls`/`git diff` の自前版（再実行型ゆえローカルは委譲がカバー）、フィルタ拡充、自動テスト整備。
+- **クロスプラットフォーム（2026-06-02）→ Windows ネイティブ対応を追加（WSL2/macOS は維持）**: `src/core.ts` を OS 判定（`isWin`）で分岐。Windows は全 tmux 呼び出しを `wsl.exe -e tmux …` へ橋渡しする（`-e`＝ログインシェル非経由で `$`/`$?`/backtick/クオートが無損失。これが無いと wsl interop が `$` を展開して送信テキストを壊す）。ソケットは WSL ネイティブ fs（`/tmp/aiterm-<sha1(SOCKDIR)[:12]>.sock`。9p 上では AF_UNIX 非対応のため）、ログ／offset／lastcmd は Windows 一時領域に置き、pipe-pane が `/mnt/c` 経由で書いて Node が直接読む（9p の書込遅延 ≈150ms は完了判定前の `settleWinLog` で吸収）。POSIX 経路は完全に不変（WSL2・Windows ともに回帰テスト 91/91・skip 0、敵対的レビューで POSIX byte 一致を確認）。あわせてセッション名を全入口で `^[A-Za-z0-9_-]{1,64}$` に検証し、パストラバーサルと pipe-pane（tmux 内部 /bin/sh）へのインジェクションを遮断（pipe-pane のパスは単一引用符＋`'\''` エスケープ）。Windows からは `npm i -g`＋素の `aiterm-mcp` 登録で動作し、PowerShell は `pty_send "powershell.exe"` で入れ子に握れる（実機検証済み）。
+- 残課題: 状態追跡(A)・ネスト層の完了判定（ssh 中は前面コマンドが ssh でシェル復帰判定が効かない＝`--until` で代替）、`ls`/`git diff` の自前版（再実行型ゆえローカルは委譲がカバー）、フィルタ拡充、Windows 専用分岐（`wsl.exe` 橋渡し・preflight・settle）は POSIX CI では実行されないため手動 Windows 検証に依存（CI に windows-latest を足すのは将来課題）。

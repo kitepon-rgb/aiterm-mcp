@@ -8,7 +8,12 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-const hasTmux = spawnSync("tmux", ["-V"]).status === 0;
+// Windows ネイティブには tmux が無く、core は WSL 経由で叩く。検出も同じ経路に合わせる。
+const hasTmux =
+  (process.platform === "win32"
+    ? spawnSync("wsl.exe", ["-e", "tmux", "-V"])
+    : spawnSync("tmux", ["-V"])
+  ).status === 0;
 process.env.TMPDIR = fs.mkdtempSync(path.join(os.tmpdir(), "aiterm-test-"));
 const core = await import("../dist/core.js");
 const SOCKDIR = path.join(process.env.TMPDIR, "claude-tmux-sockets");
@@ -122,5 +127,42 @@ test("read wait: 短命コマンドは quiescent で完了", { skip }, async () 
     assert.match(out, /is_complete=True via (quiescent|until)/);
   } finally {
     core.closeSession(q);
+  }
+});
+
+// ---------------------------------------------------------------- session 名検証（トラバーサル/インジェクション遮断）
+// 検証は tmux 呼び出し前に throw するので OS 非依存・skip 不要。
+const BAD_NAMES = [
+  ["../evil", "パストラバーサル"],
+  ["a'b", "シングルクオート"],
+  ["a;rm", "セミコロン"],
+  ["a$x", "ドル展開"],
+  ["a b", "空白"],
+  ["a/b", "スラッシュ"],
+  ["a".repeat(65), "65文字超"],
+];
+for (const [bad, label] of BAD_NAMES) {
+  test(`session 名検証: ${label} を拒否(code2・未作成)`, () => {
+    assert.throws(() => core.openSession(bad), (e) => e.code === 2);
+    assert.ok(!fs.existsSync(path.join(SOCKDIR, bad + ".log")), "拒否時に .log を作らない");
+  });
+}
+test("session 名検証: send/sendKey/close も不正名を拒否(code2)", () => {
+  assert.throws(() => core.send("a;b", "x"), (e) => e.code === 2);
+  assert.throws(() => core.sendKey("a;b", "C-c"), (e) => e.code === 2);
+  assert.throws(() => core.closeSession("a;b"), (e) => e.code === 2);
+});
+test("session 名検証: readOutput(async) も不正名を拒否(code2)", async () => {
+  await assert.rejects(() => core.readOutput("a;b", {}), (e) => e.code === 2);
+});
+test("session 名検証: closeSession のトラバーサルは SOCKDIR 外を消さない", () => {
+  fs.mkdirSync(SOCKDIR, { recursive: true });
+  const victim = path.join(SOCKDIR, "..", "aiterm_traversal_victim.log");
+  fs.writeFileSync(victim, "keep");
+  try {
+    assert.throws(() => core.closeSession("../aiterm_traversal_victim"), (e) => e.code === 2);
+    assert.ok(fs.existsSync(victim), "外部ファイルは削除されない");
+  } finally {
+    try { fs.unlinkSync(victim); } catch {}
   }
 });

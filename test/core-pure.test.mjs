@@ -57,3 +57,12 @@ test("reduceOutput: メタは raw 行数/トークン概算を併記", () => {
   const [, meta] = core.reduceOutput("a\nb\nc", "x");
   assert.match(meta, /^\[aiterm x: 3 行 \/ ~\d+ tok \(raw 3 行 \/ ~\d+ tok\)\]$/);
 });
+
+// ---------------------------------------------------------------- toWslPath（Windows 橋渡しのパス変換）
+test("toWslPath: ドライブパスを /mnt 形へ（ドライブ文字は小文字化）", () => {
+  assert.equal(core.toWslPath("C:\\Users\\x\\f.log"), "/mnt/c/Users/x/f.log");
+  assert.equal(core.toWslPath("D:/a/b"), "/mnt/d/a/b"); // forward-slash 入力も通す
+});
+test("toWslPath: UNC（ドライブ直下でない）は code=2 で弾く", () => {
+  assert.throws(() => core.toWslPath("\\\\server\\share\\x"), (e) => e.code === 2);
+});
