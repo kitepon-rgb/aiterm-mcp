@@ -8,12 +8,39 @@
 [![npm](https://img.shields.io/npm/v/aiterm-mcp.svg)](https://www.npmjs.com/package/aiterm-mcp)
 [![node](https://img.shields.io/node/v/aiterm-mcp)](https://nodejs.org)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![npm downloads](https://img.shields.io/npm/dm/aiterm-mcp.svg)](https://www.npmjs.com/package/aiterm-mcp)
+[![install size](https://packagephobia.com/badge?p=aiterm-mcp)](https://packagephobia.com/result?p=aiterm-mcp)
 
 > *(English: [README.md](README.md))*
 
 > AI が握る**ローカル永続端末**を stdio MCP サーバとして公開する。1 個のローカル端末を握り、SSH もコンテナも「その端末に打つ 1 コマンド」に格下げする。読み取りはトークン削減つき。
 
 `pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list` の 6 ツールだけ。バックエンドは tmux なので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
+
+## クイックスタート（約60秒）
+
+Claude Code なら 1 コマンドで登録 — clone もビルドも不要、`npx` が毎回取得して起動する:
+
+```bash
+claude mcp add --scope user --transport stdio aiterm -- npx -y aiterm-mcp
+```
+
+Claude Code を再起動して、接続を確認:
+
+```bash
+/mcp        # aiterm が connected・6 ツール公開、と出る
+```
+
+最初のセッション — 4 回の呼び出しで、1 個の永続端末:
+
+```text
+pty_open()                          → { session_id: "t1", attach: "tmux -S … attach -t t1" }
+pty_send("t1", "echo hello")        → PTY にコマンドを送る
+pty_read("t1", { wait: true })      → "hello"   （トークン削減・完了検出つき）
+pty_close("t1")                     → 端末を解放
+```
+
+これだけ。`t1` の端末は本物で永続 — `ssh`・`docker exec`・REPL は、そこへ `pty_send` で打ち込む“ただのテキスト”（[なぜ](#なぜ)）。インストールも不要にしたいなら、どの MCP クライアントからでも stdio で `npx -y aiterm-mcp` を起動するだけ。
 
 ## インストール
 
@@ -40,6 +67,43 @@ pty_send(id, "ssh 192.168.1.2")    → その端末の中で SSH に入る
 pty_send(id, "uname -a")           → リモートで実行
 pty_read(id, { wait: true })       → 削減済みの出力を読む
 ```
+
+## デモ
+
+<!-- demo gif: drop docs/demo.gif here (asciinema cast or animated GIF of the flow below) -->
+
+決め手の流れ: PTY を 1 個開き、その**中で** SSH にネストし、リモートでコマンドを実行し、**すでにトークン削減された**出力を読む — コマンドごとの接続し直しは無い。
+
+```text
+# 1 — ローカル端末を 1 個握る（tmux 上・再起動を跨ぐ）
+→ pty_open()
+← { session_id: "t1", attach: "tmux -S /…/claude.sock attach -t t1" }
+
+# 2 — その同じ端末の中で SSH にネスト（別ツールではない）
+→ pty_send("t1", "ssh 192.168.1.2")
+← sent
+→ pty_read("t1", { until: "\\$ $" })          # リモートのプロンプト = 「シェルに戻った」
+← user@remote:~$
+
+# 3 — 同じ PTY のまま、リモートでコマンド実行（接続し直し無し）
+→ pty_send("t1", "uname -a")
+→ pty_read("t1", { until: "\\$ $" })
+← Linux remote 6.1.0 #1 SMP x86_64 GNU/Linux
+
+# 4 — ノイズの多いコマンドを、コマンド別 reducer で読む
+→ pty_send("t1", "git status")
+→ pty_read("t1", { until: "\\$ $", rtk: true }) # 自前実装・rtk バイナリ不要
+← ## main…origin/main [ahead 1]
+   M src/core.ts
+   ?? notes.txt
+   [reduced: 制御文字除去 · 重複圧縮 · git-status reducer]
+```
+
+この流れが「デモのための嘘」にならない理由:
+
+- ステップ 2/3 が **`until`**（リモートのプロンプト）を使うのは、**ネスト中は quiescence が原理的に効かない**ため（[完了検出](#完了検出4-層) / [既知の制約](#既知の制約バグではなく仕様)）。ローカルシェルなら `{ wait: true }` だけで足りるが、ネスト中は `until`（または `mark: true`）が要る。
+- 角括弧の `[reduced: …]` 行は `pty_read` が付けるメタ/復元ヒントの例示で、実際の文言は出力に応じて変わる。reducer は **自前実装**の `pty_read({ rtk: true })` 経路で、外部 `rtk` バイナリは不要。
+- `t1` のソケットに人が `attach` すれば、同じ SSH セッションをライブで覗ける（[人が覗く](#人が覗く)）。
 
 ## 仕組み
 
@@ -137,6 +201,19 @@ npm link           # ローカルで `aiterm-mcp` を PATH に
 ```
 
 ロジックは `src/core.ts`（tmux 制御・削減・完了検出・安全）と `src/rtk.ts`（コマンド別 reducer）、公開は `src/index.ts`。設計の出発点と reducer の移植元（pytest reducer は本家 rtk 0.42.0 と出力が byte 一致するよう移植・回帰テストで固定）は `prototype/python/` を参照。
+
+## 試す
+
+1 コマンド、clone もビルドも不要:
+
+```bash
+claude mcp add --scope user --transport stdio aiterm -- npx -y aiterm-mcp
+```
+
+aiterm がトークンの往復を 1 回でも省けたなら、**[リポジトリに star](https://github.com/kitepon-rgb/aiterm-mcp)** を — 他の人に見つけてもらう一番安い方法です。
+
+- **npm:** https://www.npmjs.com/package/aiterm-mcp
+- **Issue / バグ報告:** https://github.com/kitepon-rgb/aiterm-mcp/issues
 
 ## ライセンス
 
