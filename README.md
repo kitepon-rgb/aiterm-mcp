@@ -8,12 +8,39 @@
 [![npm](https://img.shields.io/npm/v/aiterm-mcp.svg)](https://www.npmjs.com/package/aiterm-mcp)
 [![node](https://img.shields.io/node/v/aiterm-mcp)](https://nodejs.org)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![npm downloads](https://img.shields.io/npm/dm/aiterm-mcp.svg)](https://www.npmjs.com/package/aiterm-mcp)
+[![install size](https://packagephobia.com/badge?p=aiterm-mcp)](https://packagephobia.com/result?p=aiterm-mcp)
 
 > *(日本語: [README.ja.md](README.ja.md))*
 
 > Give an AI a **persistent local terminal** as a stdio MCP server. It holds **one** local PTY; SSH and containers are demoted to "a command you send into that terminal." Reads are token-reduced.
 
 Just six tools — `pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list`. The backend is **tmux**, so sessions survive even if the MCP server or the AI client restarts.
+
+## Quickstart (≈60 seconds)
+
+One command registers it in Claude Code — no clone, no build, `npx` fetches it each run:
+
+```bash
+claude mcp add --scope user --transport stdio aiterm -- npx -y aiterm-mcp
+```
+
+Restart Claude Code, then verify the connection:
+
+```bash
+/mcp        # aiterm should show as connected, exposing 6 tools
+```
+
+Your first session — four calls, one persistent terminal:
+
+```text
+pty_open()                          → { session_id: "t1", attach: "tmux -S … attach -t t1" }
+pty_send("t1", "echo hello")        → command sent into the PTY
+pty_read("t1", { wait: true })      → "hello"   (token-reduced, completion detected)
+pty_close("t1")                     → terminal released
+```
+
+That's it. The terminal in `t1` is real and persistent — `ssh`, `docker exec`, a REPL are just text you `pty_send` into it (see [Why](#why)). Prefer no install? Any MCP client can launch `npx -y aiterm-mcp` over stdio directly.
 
 ## Install
 
@@ -40,6 +67,43 @@ pty_send(id, "ssh 192.168.1.2")    → enter SSH inside that terminal
 pty_send(id, "uname -a")           → run it on the remote
 pty_read(id, { wait: true })       → read the reduced output
 ```
+
+## Demo
+
+<!-- demo gif: drop docs/demo.gif here (asciinema cast or animated GIF of the flow below) -->
+
+The killer flow: open one PTY, nest into SSH *inside it*, run a command on the remote, and read back output that's already been token-reduced — no reconnect per command.
+
+```text
+# 1 — grab one local terminal (lives in tmux; survives restarts)
+→ pty_open()
+← { session_id: "t1", attach: "tmux -S /…/claude.sock attach -t t1" }
+
+# 2 — nest SSH *inside* that same terminal (not a separate tool)
+→ pty_send("t1", "ssh 192.168.1.2")
+← sent
+→ pty_read("t1", { until: "\\$ $" })          # remote prompt = "shell is back"
+← user@remote:~$
+
+# 3 — run a command on the remote, over the SAME PTY (no reconnect)
+→ pty_send("t1", "uname -a")
+→ pty_read("t1", { until: "\\$ $" })
+← Linux remote 6.1.0 #1 SMP x86_64 GNU/Linux
+
+# 4 — a noisy command, read with the per-command reducer
+→ pty_send("t1", "git status")
+→ pty_read("t1", { until: "\\$ $", rtk: true }) # self-contained, no rtk binary needed
+← ## main…origin/main [ahead 1]
+   M src/core.ts
+   ?? notes.txt
+   [reduced: control chars stripped · repeats collapsed · git-status reducer]
+```
+
+Notes that make this accurate, not a demo lie:
+
+- Step 2/3 use **`until`** with the remote prompt because **while nested, quiescence cannot fire by design** — see [Completion detection](#completion-detection-4-layers) and [Known constraints](#known-constraints-by-design-not-bugs). `{ wait: true }` alone works at the local shell; nested needs `until` (or `mark: true`).
+- The bracketed `[reduced: …]` line is illustrative of the meta/restore hint `pty_read` appends; the exact text comes from your output. The reducer is the **self-contained** `pty_read({ rtk: true })` path — no external `rtk` binary required.
+- A human can `attach` to the `t1` socket and watch the same SSH session live (see [A human can watch](#a-human-can-watch)).
 
 ## How it works
 
@@ -137,6 +201,19 @@ npm link           # put `aiterm-mcp` on PATH locally
 ```
 
 Logic lives in `src/core.ts` (tmux control, reduction, completion detection, safety) and `src/rtk.ts` (per-command reducers); `src/index.ts` is the MCP surface. The design origin and the reducer's porting source (the pytest reducer is ported to be byte-exact with upstream rtk 0.42.0, locked by regression tests) are in `prototype/python/`.
+
+## Try it
+
+One command, no clone, no build:
+
+```bash
+claude mcp add --scope user --transport stdio aiterm -- npx -y aiterm-mcp
+```
+
+If aiterm saved you a round-trip of tokens, **[star the repo](https://github.com/kitepon-rgb/aiterm-mcp)** — it's the cheapest way to help others find it.
+
+- **npm:** https://www.npmjs.com/package/aiterm-mcp
+- **Issues / bug reports:** https://github.com/kitepon-rgb/aiterm-mcp/issues
 
 ## License
 
