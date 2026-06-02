@@ -179,7 +179,7 @@ Before sending, `pty_send` blocks destructive commands (`rm -rf /`, `mkfs`, `dd 
 
 ## Known constraints (by design, not bugs)
 
-- **While nested (ssh / docker / REPL), quiescence cannot fire by design**, because the foreground command is no longer in the shell set (bash/sh/zsh/fish/dash). Use `until` (a regex for the prompt etc.) or `mark: true` (an exit-code sentinel) for completion.
+- **While nested (ssh / docker / REPL), quiescence cannot fire by design**, because the foreground command is no longer in the shell set (bash/sh/zsh/fish/dash). When nested with no `until`, `pty_read({ wait: true })` returns early as `is_complete=False via nested` (rather than burning the full `timeout`, since no signal can confirm completion there) with a note to pass `until` (a regex for the prompt) or `mark: true` (an exit-code sentinel) for a confirmed completion.
 - **`is_complete=False` is not a failure.** It means "completion was not observed within `timeout`." For long commands, raise `timeout` or use `until`/`mark`.
 - **The destructive gate is a tripwire, not a sandbox.** It blocks common destructive forms only. It does **not** catch relative-path `rm`, things that become dangerous after `$VAR` expansion, or commands run on the far side of an SSH session.
 - **`pty_send({ rtk: true })` is single-line only and needs the external `rtk` binary** (passthrough without it). The `pty_read({ rtk: true })` reducer, by contrast, is self-contained and rtk-independent.

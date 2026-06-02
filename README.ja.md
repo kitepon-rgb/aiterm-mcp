@@ -179,7 +179,7 @@ claude mcp add --scope user --transport stdio aiterm -- aiterm-mcp
 
 ## 既知の制約（バグではなく仕様）
 
-- **ネスト中（ssh / docker / REPL）は quiescence が原理的に効かない。** 前面コマンドがシェル集合（bash/sh/zsh/fish/dash）の外になるため。完了検出は `until`（プロンプト等の正規表現）か `mark: true`（終了コード付き sentinel）を使う。
+- **ネスト中（ssh / docker / REPL）は quiescence が原理的に効かない。** 前面コマンドがシェル集合（bash/sh/zsh/fish/dash）の外になるため。ネスト中で `until` 未指定のときは、待っても完了を確定できる信号が無いので、`pty_read({ wait: true })` はフル `timeout` を空費せず出力静止時点で `is_complete=False via nested` と早期に返し、`until`（プロンプト等の正規表現）か `mark: true`（終了コード付き sentinel）の指定を促す。
 - **`is_complete=False` は失敗ではない。** 「timeout 内に完了を観測できなかった」という意味。長時間コマンドでは `timeout` を伸ばすか `until`/`mark` を使う。
 - **破壊ゲートはサンドボックスではなく tripwire。** よくある破壊形だけを弾く。相対パスの `rm`、`$VAR` 展開後に危険化するもの、ssh 先で実行されるコマンドは捕捉しない。
 - **`pty_send({ rtk: true })` は単行コマンドのみ＋外部 `rtk` バイナリが必要**（無ければ素通し）。一方 `pty_read({ rtk: true })` の reducer は自前実装で rtk 非依存。

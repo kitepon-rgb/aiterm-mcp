@@ -130,6 +130,25 @@ test("read wait: 短命コマンドは quiescent で完了", { skip }, async () 
   }
 });
 
+// ---------------------------------------------------------------- ネスト早期リターン（nested）
+// 前面が非シェル(ssh/docker/REPL 相当)＋until 無しは quiescence が原理的に発火できない。
+// 出力静止時点で nested として is_complete=False を早期に返し、フル timeout を空費しない。
+test("read wait: ネスト中(前面が非シェル)＋until無しは nested で早期 False", { skip }, async () => {
+  const nst = "selftest_nested";
+  core.openSession(nst);
+  try {
+    core.send(nst, "cat"); // 前面コマンドが cat（SHELLS 集合外）＝ネスト相当
+    await new Promise((r) => setTimeout(r, 800)); // cat が前面に出るまで待つ
+    const t0 = performance.now();
+    const out = await core.readOutput(nst, { wait: true, timeout: 5 });
+    const dt = performance.now() - t0;
+    assert.match(out, /is_complete=False via nested/, `nested 判定であること: ${out}`);
+    assert.ok(dt < 4000, `フル timeout(5s)前に早期返却すること: ${Math.round(dt)}ms`);
+  } finally {
+    core.closeSession(nst); // kill-session で cat も終了
+  }
+});
+
 // ---------------------------------------------------------------- session 名検証（トラバーサル/インジェクション遮断）
 // 検証は tmux 呼び出し前に throw するので OS 非依存・skip 不要。
 const BAD_NAMES = [

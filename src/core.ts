@@ -352,7 +352,7 @@ async function settleWinLog(name: string): Promise<void> {
   }
 }
 
-/** 完了境界の4層: dead / until 一致 / (出力静止 ∧ シェルに戻った) / timeout。 */
+/** 完了境界: dead / until 一致 / (出力静止 ∧ シェル復帰)=quiescent / (ネスト中＋until無しで出力静止)=nested(未確定・早期返却) / timeout。 */
 async function waitCompletion(name: string, untilRe: string | null, timeout: number): Promise<[boolean, string]> {
   // 締切は単調時計で測る。Date.now() は NTP 補正やサスペンドで巻き戻り、長時間待ちで誤判定する（Python は time.monotonic）。
   const deadline = performance.now() + timeout * 1000;
@@ -379,9 +379,20 @@ async function waitCompletion(name: string, untilRe: string | null, timeout: num
     }
     if (size === lastSize) {
       stable++;
-      if (stable >= STABLE_POLLS && SHELLS.has(paneCurrentCommand(name))) {
-        if (isWin) await settleWinLog(name);
-        return [true, "quiescent"];
+      if (stable >= STABLE_POLLS) {
+        const fg = paneCurrentCommand(name);
+        if (SHELLS.has(fg)) {
+          if (isWin) await settleWinLog(name);
+          return [true, "quiescent"]; // 出力静止 ∧ シェル復帰 ＝ 確証つき完了
+        }
+        // ネスト中（前面が ssh/docker/REPL 等でシェル集合外）は quiescence の「シェル復帰」条件を
+        // 原理的に満たせない。until 未指定ならこれ以上待っても確証は増えない（until/dead/quiescent の
+        // いずれも発火し得ない）ので、出力が静止した時点で「未確定」のまま早期返却し until/mark を促す。
+        // fg==="" は前面コマンド取得失敗＝ネスト断定不可なので早期返却せず従来どおり timeout まで待つ。
+        if (!until && fg !== "") {
+          if (isWin) await settleWinLog(name);
+          return [false, "nested"];
+        }
       }
     } else {
       stable = 0;
@@ -390,6 +401,18 @@ async function waitCompletion(name: string, untilRe: string | null, timeout: num
     if (performance.now() >= deadline) return [false, "timeout"];
     await sleep(POLL * 1000);
   }
+}
+
+// 完了ステータス → is_complete 表記。確証のある層のみ True（until/dead/quiescent）。
+// timeout と nested（ネスト中・出力静止だが確証なし）は False。nested は until/mark を促す注記を添える。
+function completionSuffix(status: string): string {
+  const complete = status === "until" || status === "dead" || status === "quiescent";
+  let s = ` [is_complete=${complete ? "True" : "False"} via ${status}]`;
+  if (status === "nested")
+    s +=
+      " ネスト中（前面が ssh/docker/REPL 等）は出力静止だけでは完了を確定できません。" +
+      "until（リモートのプロンプト等の正規表現）か mark:true で完了を指定してください。";
+  return s;
 }
 
 function rtkRewrite(text: string): string {
@@ -538,10 +561,7 @@ export async function readOutput(name: string, o: ReadOpts = {}): Promise<string
       const [reduced, rname] = rtk.reduce(cmd, framed);
       if (reduced !== null) {
         const meta = `[aiterm ${name}: rtk:${rname} 適用 / ~${estimateTokens(reduced)} tok (raw ~${estimateTokens(text)} tok)]`;
-        if (status) {
-          const complete = status !== "timeout";
-          return reduced + "\n" + meta + ` [is_complete=${complete ? "True" : "False"} via ${status}]`;
-        }
+        if (status) return reduced + "\n" + meta + completionSuffix(status);
         return reduced + "\n" + meta;
       }
     }
@@ -549,10 +569,7 @@ export async function readOutput(name: string, o: ReadOpts = {}): Promise<string
   }
 
   const [body, meta] = reduceOutput(text, name, !o.range);
-  if (status) {
-    const complete = status !== "timeout";
-    return body + "\n" + meta + ` [is_complete=${complete ? "True" : "False"} via ${status}]`;
-  }
+  if (status) return body + "\n" + meta + completionSuffix(status);
   return body + "\n" + meta;
 }
 
