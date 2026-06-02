@@ -1,0 +1,31 @@
+name: Feature request
+description: Suggest an improvement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        aiterm is deliberately small: **one PTY, six tools**. SSH, containers, and REPLs are reached by nesting (`pty_send "ssh host"`), not by adding tools. Proposals that widen the tool surface are unlikely to land — but reduction quality, completion detection, safety, and platform support are all fair game.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What are you trying to do that's awkward today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Fit
+      options:
+        - label: This keeps the one-PTY / six-tool model (it doesn't add a tool for a session kind that `pty_send` could reach by nesting).

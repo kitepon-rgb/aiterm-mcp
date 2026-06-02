@@ -1,0 +1,64 @@
+name: Bug report
+description: Something isn't working as documented
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: please skim the README's **Known constraints (by design, not bugs)** — quiescence not firing while nested, `is_complete=False` on long commands, and the safety gate being a tripwire are all intended behavior.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you observed vs. what you expected.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: The exact tool calls (pty_open / pty_send / pty_read …) and the reduced output you got back.
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux
+        - WSL2
+        - Windows (native, via WSL bridge)
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: aiterm-mcp version, `node -v`, and `tmux -V` (or `wsl tmux -V` on native Windows).
+      placeholder: aiterm-mcp 0.3.0 · node v20.x · tmux 3.x
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: MCP client & launch
+      description: Which client, and was it launched from a terminal or a GUI? (Matters on macOS for PATH discovery.)
+      placeholder: Claude Code CLI (terminal)
+  - type: textarea
+    id: stderr
+    attributes:
+      label: Diagnostics (stderr)
+      description: Any aiterm stderr lines. (stdout is JSON-RPC only — don't paste that.)
+      render: shell
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Pre-flight
+      options:
+        - label: tmux is installed and `tmux -V` works (or `wsl tmux -V` on native Windows).
+          required: true
+        - label: This isn't one of the documented "Known constraints".
+          required: true
