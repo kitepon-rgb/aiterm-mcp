@@ -59,12 +59,14 @@ Needs **Node ≥ 18** and **tmux** (on native Windows: WSL with tmux inside it �
 
 ## Why
 
-Sending an AI one command at a time and reading back the result means, over SSH, repeating connect → authenticate → disconnect every round — slow, and it burns tokens. aiterm **holds one PTY persistently** and you type `ssh host` or `docker exec -it x bash` *inside it* (nesting). Session kind is never a tool-level distinction.
+Send an AI **one command at a time** and, over SSH, every command becomes its own `connect → authenticate → disconnect`. That stings three ways: you **re-authenticate every time** (passphrase, one-time code, all of it), **short-lived sessions pile up**, and once connections come too fast your own defenses lock you out — `fail2ban` bans you, `MaxStartups`/`MaxSessions` reject you, the account gets locked. The security meant to stop attackers ends up stopping you. (Yes — this bit me on my own box.)
+
+aiterm **holds one PTY persistently** and you `ssh host` (or `docker exec -it x bash`) *inside it*, **once**. Every command after that rides the same already-authenticated session: **authenticate once, one session, nothing for the defenses to trip on.** Session kind is never a tool-level distinction.
 
 ```
 pty_open()                         → grab one local terminal
-pty_send(id, "ssh 192.168.1.2")    → enter SSH inside that terminal
-pty_send(id, "uname -a")           → run it on the remote
+pty_send(id, "ssh 192.168.1.2")    → authenticate once, inside that terminal
+pty_send(id, "uname -a")           → every later command rides the SAME session
 pty_read(id, { wait: true })       → read the reduced output
 ```
 
