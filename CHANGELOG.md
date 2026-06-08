@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-06-08
+
+### Changed
+- Discoverability metadata & docs (no code or behavior change from 0.4.0):
+  added `mcpName` and an Official MCP Registry `server.json` manifest (npm /
+  stdio), a Glama `glama.json` claim file, and expanded npm keywords
+  (`mcp-server`, `claude-code`, `cursor`, `devtools`).
+- README (EN + JA) reworked for first-time visitors: leads with the
+  SSH-persistence pitch, replaces the placeholder demo mock with **real captured
+  `pty_read` output** (token-reduction and completion detection shown on genuine
+  bytes), names comparison competitors, de-duplicates the install steps, and
+  moves the constraints list below the fold.
+
 ## [0.4.0] - 2026-06-02
 
 ### Added

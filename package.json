@@ -1,16 +1,21 @@
 {
   "name": "aiterm-mcp",
-  "version": "0.4.0",
+  "version": "0.4.1",
+  "mcpName": "io.github.kitepon-rgb/aiterm-mcp",
   "description": "AI-driven persistent terminal as a local stdio MCP server (tmux-backed). Holds one local PTY; SSH and containers are just commands you send into it. Token-reducing reads.",
   "keywords": [
     "mcp",
+    "mcp-server",
     "model-context-protocol",
     "terminal",
     "tmux",
     "pty",
+    "ssh",
     "claude",
+    "claude-code",
+    "cursor",
     "ai-agent",
-    "ssh"
+    "devtools"
   ],
   "license": "MIT",
   "author": "kitepon",
