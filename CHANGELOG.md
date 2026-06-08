@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `.github/workflows/registry.yml`: publishes `server.json` to the Official MCP
+  Registry via GitHub OIDC (on release, or manual dispatch). aiterm-mcp is now
+  listed in the Official MCP Registry (which auto-propagates to PulseMCP and the
+  GitHub MCP Registry) and on mcp.so.
+- `.github/avatar.svg` + `.github/avatar.png`: square avatar mark (terminal
+  `>_` prompt) for directory listings and social cards.
+
+### Changed
+- CI: bump `actions/checkout` and `actions/setup-node` to v5 (the Node 20 action
+  runtime is being removed from GitHub Actions).
+
 ## [0.4.1] - 2026-06-08
 
 ### Changed
@@ -117,7 +129,8 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.2.0...v0.3.0

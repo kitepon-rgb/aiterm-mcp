@@ -11,6 +11,28 @@ output) is already committed — these steps activate it.
 
 ---
 
+## Status (live)
+
+Done and verified:
+
+- ✅ **npm 0.4.1 republished** — new keywords + `mcpName` active.
+- ✅ **Official MCP Registry** — `io.github.kitepon-rgb/aiterm-mcp@0.4.1` listed; auto-registers on each release via `.github/workflows/registry.yml` (OIDC).
+- ✅ **mcp.so** — submitted/listed (with the square `.github/avatar.png`).
+- ✅ **GitHub topic** `mcp-server` added; **v0.3.1 Release** backfilled; **v0.4.1** is the latest Release.
+- 🔄 **awesome-mcp-servers** — PR [#7620](https://github.com/punkpeye/awesome-mcp-servers/pull/7620) open (awaiting maintainer merge).
+- ✅ **Announced** on r/mcp.
+
+Remaining — optional or passive:
+
+- ⏳ **Glama / PulseMCP** — auto-ingest from the Official Registry; no action needed.
+- ⬜ **Show HN / X / dev.to** — optional extra reach (drafts below).
+- ⬜ **Smithery** — optional (interactive CLI login).
+- ⬜ **Animated demo GIF** — needs a real SSH target + a client-UI recording; the README currently shows real captured text instead.
+
+The lettered steps below are kept as a re-run reference and for the announcement drafts.
+
+---
+
 ## Already done in-repo (this session)
 
 - `package.json`: added `mcpName: io.github.kitepon-rgb/aiterm-mcp`, expanded
