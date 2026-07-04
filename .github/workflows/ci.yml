@@ -46,7 +46,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # npm provenance
+      id-token: write # npm provenance + Trusted Publishing (OIDC)
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -54,8 +54,10 @@ jobs:
           node-version: 22
           registry-url: "https://registry.npmjs.org"
           cache: npm
+      # npm Trusted Publishing (OIDC) は npm >= 11.5.1 が必要（Node 22 同梱は 10.x）
+      - run: npm install -g npm@latest
       - run: npm ci
       - run: npm run build
+      # 認証は npmjs.com 側の Trusted Publisher 設定（GitHub Actions OIDC）。
+      # トークンを一切持たない＝失効による publish 失敗（2026-07-04 の E404 実被弾）が構造的に消える。
       - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
