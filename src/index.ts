@@ -184,7 +184,11 @@ function registerAgentTool(
       description: desc,
       inputSchema: {
         prompt: z.string().nullish().describe("起動時に渡す初手プロンプト（任意）。省略で素のTUI起動"),
-        reasoning_effort: z.string().nullish().describe(agentEffortDesc(grokLike)),
+        // grok/composer の effort は有限集合＝schema で拒否（session を作る前に弾く）。
+        // codex は CLI 側の値集合が版で変わるため縛らない（core 側も同方針）。
+        reasoning_effort: (grokLike ? z.enum(["low", "medium", "high", "xhigh", "max"]) : z.string())
+          .nullish()
+          .describe(agentEffortDesc(grokLike)),
         cwd: z.string().nullish().describe("作業ディレクトリ（対象リポのルート等・任意）"),
         session_name: z.string().nullish().describe("セッション名（省略で自動採番）"),
       },
@@ -208,7 +212,7 @@ function registerAgentTool(
 registerAgentTool(
   "codex_agent",
   "codex",
-  "【Codex (OpenAI・gpt-5.5)】の対話エージェント TUI を永続端末に起動する。実装・レビュー・調査を対話で回す。" +
+  "【Codex (OpenAI・モデルは Codex CLI の既定)】の対話エージェント TUI を永続端末に起動する。実装・レビュー・調査を対話で回す。" +
     "起動後は pty_read で画面を読み pty_send で操作する。reasoning_effort を引数で指定可。",
   false,
 );

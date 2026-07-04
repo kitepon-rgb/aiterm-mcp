@@ -11,7 +11,7 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import * as rtk from "./rtk.js";
 
 // Windows ネイティブには tmux が無い。その場合だけ全 tmux 呼び出しを WSL 経由へ橋渡しする
@@ -325,6 +325,12 @@ function autoName(): string {
   return `t${i}`;
 }
 
+// 衝突リトライ用の乱数名。線形 t{i} は高並行だと全員が同じ「最小の空き番号」を見て衝突し続ける
+// （TOCTOU）ため、2回目以降は 1600万通りの nonce 名に切り替えてリトライ上限内で実質確実に確保する。
+function nonceName(): string {
+  return `t-${randomBytes(3).toString("hex")}`;
+}
+
 function captureScreen(name: string, lines: number): string {
   const args = ["capture-pane", "-p", "-J", "-t", name];
   if (lines) args.push("-S", `-${lines}`);
@@ -439,12 +445,13 @@ export function openSession(name?: string | null, shell = "bash"): [string, stri
       ? ["-e", "BASH_SILENCE_DEPRECATION_WARNING=1"]
       : [];
   // 並行性対策: 複数エージェントが同時に名前なし open すると autoName が同じ t{i} を返し得る（TOCTOU）。
-  // 自動採番は衝突しても静かに次名でリトライする。明示名は既存ならエラー（呼び手責任＝意図的共有と区別）。
+  // 自動採番は初回のみ読みやすい t{i}、衝突したら乱数 nonce 名でリトライする（線形リトライは高並行で
+  // 全員が同じ空き番号に殺到してスケールしない）。明示名は既存ならエラー（呼び手責任＝意図的共有と区別）。
   const explicit = !!name;
   let nm = name || autoName();
   assertSessionName(nm);
   for (let attempt = 0; ; attempt++) {
-    if (attempt >= 20) throw new AitermError("openSession: 自動採番のリトライ上限（名前空間が過密）", 2);
+    if (attempt >= 20) throw new AitermError("openSession: 自動採番のリトライ上限（tmux new-session が重複以外で失敗し続けている可能性）", 2);
     if (sessionExists(nm)) {
       if (explicit) throw new AitermError(`session '${nm}' は既に存在します（list で確認）`, 2);
     } else {
@@ -454,7 +461,7 @@ export function openSession(name?: string | null, shell = "bash"): [string, stri
       const dup = /duplicate|already exists/i.test(r.stderr);
       if (explicit || !dup) throw new AitermError("tmux new-session 失敗: " + r.stderr.trim(), 2);
     }
-    nm = autoName();
+    nm = nonceName();
     assertSessionName(nm);
   }
   fs.closeSync(fs.openSync(logpath(nm), "a")); // touch
@@ -463,7 +470,12 @@ export function openSession(name?: string | null, shell = "bash"): [string, stri
   // 一時パスに ' を持ち込み redirect を壊すのを防ぐ。空白対策も兼ねる）。Windows は WSL から見える /mnt/c 形へ。
   const pipeTarget = isWin ? toWslPath(logpath(nm)) : logpath(nm);
   const quoted = `'${pipeTarget.replace(/'/g, "'\\''")}'`;
-  tmux("pipe-pane", "-t", nm, "-o", `cat >> ${quoted}`);
+  const pr = tmux("pipe-pane", "-t", nm, "-o", `cat >> ${quoted}`);
+  if (pr.code !== 0) {
+    // 配管に失敗した session は pty_read が永遠に空を返す＝成功を装わない。作った session を片付けて明示エラー。
+    tmux("kill-session", "-t", nm);
+    throw new AitermError("tmux pipe-pane 失敗（出力ログを配管できないため session を破棄）: " + pr.stderr.trim(), 2);
+  }
   writeOffset(nm, 0);
   return [nm, attachHint(nm)];
 }
@@ -671,6 +683,9 @@ function agentLabel(kind: AgentKind): string {
       : "Codex";
 }
 
+// grok CLI の --effort が受ける値集合（codex は CLI 側の値集合が版で変わるため縛らない）。
+const GROK_EFFORTS = new Set(["low", "medium", "high", "xhigh", "max"]);
+
 export function openAgent(
   kind: AgentKind,
   opts: {
@@ -680,16 +695,48 @@ export function openAgent(
     prompt?: string | null;
   } = {},
 ): [string, string] {
-  const bin = resolveAgentBin(kind);
   const label = agentLabel(kind);
+  // 前提検証は session を作る前に全部済ませる（失敗の残骸 session を作らない）。
+  // effort → bin → cwd の順: effort 検証は CLI 不在の端末でも同じ結果になる（テスト可能性）。
+  const effort = opts.reasoning_effort ?? null;
+  if (effort && kind !== "codex" && !GROK_EFFORTS.has(effort)) {
+    throw new AitermError(
+      `reasoning_effort '${effort}' は不正です（${label} は low/medium/high/xhigh/max）`,
+      2,
+    );
+  }
+  const bin = resolveAgentBin(kind);
   if (!bin) {
     const where = kind === "codex" ? "~/.local/bin/codex" : "~/.grok/bin/grok";
     throw new AitermError(`${label} の CLI が見つかりません（${where} か PATH が必要）`, 2);
   }
+  if (opts.cwd) {
+    // cd 失敗はシェル内で静かに死に、エージェント未起動のまま「起動した」と偽の成功を返してしまう。
+    // session を作る前に実在を検証して明示エラーにする。
+    let st: fs.Stats | null = null;
+    try {
+      st = fs.statSync(opts.cwd);
+    } catch {
+      st = null;
+    }
+    if (!st || !st.isDirectory()) {
+      throw new AitermError(`cwd '${opts.cwd}' がディレクトリとして存在しません`, 2);
+    }
+  }
   const [sid, hint] = openSession(opts.session_name ?? null, "bash");
-  const cmd = buildAgentCmd(kind, bin, opts.reasoning_effort ?? null, opts.prompt ?? null);
+  const cmd = buildAgentCmd(kind, bin, effort, opts.prompt ?? null);
   const full = opts.cwd ? `cd ${shq(opts.cwd)} && ${cmd}` : cmd;
-  send(sid, full, { enter: true, mark: false, force: false, rtk: false, raw: true });
+  try {
+    send(sid, full, { enter: true, mark: false, force: false, rtk: false, raw: true });
+  } catch (e) {
+    // 起動コマンドを投入できなかった session は空のまま残る＝残骸を作らない。片付けてから元エラーを伝える。
+    try {
+      closeSession(sid);
+    } catch {
+      /* 片付け失敗より元エラーの伝達を優先 */
+    }
+    throw e;
+  }
   return [
     sid,
     `${label} を session ${sid} で起動した。\n${hint}\n` +

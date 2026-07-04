@@ -5,6 +5,34 @@ All notable changes to **aiterm-mcp** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1]
+
+Codex 独立レビュー（gpt-5.5 high・実 CLI 検証つき）の指摘5件＋追加発見2件の修正。
+
+### Fixed
+- **`openAgent` が失敗時に session を残さない**: 前提検証（effort → CLI bin → cwd）を session
+  作成前に完了させ、起動コマンド投入（send）が失敗した場合は作成済み session を片付けてから
+  エラーを伝える。特に cwd 不存在は従来 `cd` がシェル内で静かに失敗し「起動した」と偽の成功を
+  返していた——事前検証で明示エラーに。
+- **`reasoning_effort` の検証**: grok/composer は有限集合（low/medium/high/xhigh/max）を
+  スキーマ（z.enum）と core の両方で拒否（session 作成前）。codex は CLI 側の値集合が版で
+  変わるため縛らない。
+- **`pipe-pane` の失敗を検知**: 従来は戻り値を無視して成功を装い、以後の `pty_read` が永遠に
+  空を返した。失敗時は作成した session を破棄して明示エラー。
+- **自動採番の高並行スケール**: 線形 t{i} リトライは全員が同じ「最小の空き番号」に殺到して
+  上限20回でも枯渇し得た。衝突時は乱数 nonce 名（`t-xxxxxx`・1600万空間）へ切替え。
+  実測: 20プロセス同時 open で 20/20 成功・全一意。
+- **smoke テストの期待値置き去り**: v0.7.0 で agent ツール3個を追加した際にツール一覧の期待値を
+  更新し忘れテストが赤のままだった（6→9 ツールに更新）。
+
+### Changed
+- `codex_agent` の説明を実態に合わせた: 「gpt-5.5」固定の断定を外し「モデルは Codex CLI の既定」
+  に（実装は `-m` を渡していないため。モデル固定が要るなら将来 model 引数を追加する）。
+
+### Added
+- `test/core-agent.test.mjs`: openAgent の前提検証・残骸ゼロ保証の characterization テスト4本
+  （CODEX_BIN 偽装で CLI 未導入環境でも走る・隔離ソケット）。
+
 ## [0.7.0]
 
 ### Added

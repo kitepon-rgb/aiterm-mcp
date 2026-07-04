@@ -1,5 +1,5 @@
 // smoke: 実際に `node dist/index.js` を起動し、initialize + tools/list を stdin にパイプ。
-// 検証: stdout は改行区切り JSON-RPC のみ（診断混入なし）／6 ツールが公開されている。
+// 検証: stdout は改行区切り JSON-RPC のみ（診断混入なし）／9 ツールが公開されている。
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ENTRY = path.join(HERE, "..", "dist", "index.js");
 
-test("smoke: stdout は JSON-RPC のみ / 6 ツール公開", async () => {
+test("smoke: stdout は JSON-RPC のみ / 9 ツール公開", async () => {
   const child = spawn(process.execPath, [ENTRY], { stdio: ["pipe", "pipe", "pipe"] });
   let out = "";
   child.stdout.setEncoding("utf8");
@@ -42,5 +42,15 @@ test("smoke: stdout は JSON-RPC のみ / 6 ツール公開", async () => {
   }
   assert.ok(toolsResp, "tools/list 応答が無い");
   const names = (toolsResp.result?.tools ?? []).map((t) => t.name).sort();
-  assert.deepEqual(names, ["pty_close", "pty_key", "pty_list", "pty_open", "pty_read", "pty_send"]);
+  assert.deepEqual(names, [
+    "codex_agent",
+    "composer_agent",
+    "grok_agent",
+    "pty_close",
+    "pty_key",
+    "pty_list",
+    "pty_open",
+    "pty_read",
+    "pty_send",
+  ]);
 });
