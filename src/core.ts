@@ -5,7 +5,7 @@
  * トークン削減して受け取る。SSH/docker は専用機能にせず send(id, "ssh host") で中に入る（ネスト）。
  * セッションは tmux サーバ常駐ゆえ、本プロセスが毎回終了しても次回 read で再接続できる。
  *
- * 設計: docs/ai-terminal-design-plan.md / docs/mcp-server-plan.md。出力削減は rag/ の RTK を移植。
+ * 設計: docs/01_design-plan.md / docs/02_mcp-plan.md。出力削減は rag/ の RTK を移植。
  */
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";

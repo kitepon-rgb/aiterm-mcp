@@ -10,7 +10,7 @@
 WSL2 側の Claude Code から `pty_open`/`pty_send`/`pty_read`/`pty_key`/`pty_close`/`pty_list`
 として使えるようにするための計画。各項目は末尾 §12 のチェックリストに `[ ]` で対応する。
 
-- 設計の source of truth は [ai-terminal-design-plan.md](ai-terminal-design-plan.md)（特に §9 決定 / §10 未決 / §11 実装状況）。
+- 設計の source of truth は [01_design-plan.md](01_design-plan.md)（特に §9 決定 / §10 未決 / §11 実装状況）。
 - 設計判断の根拠は調査資産 [rag/INDEX.md](../rag/INDEX.md) と [rag/briefs/](../rag/briefs/)。
 - **この文書は「叩き台」。実装はユーザー確認（GO）後に着手する。** §6（RTK 取り込み方針）は
   ユーザー判断により **reducer の Python 全面移植を主軸 ＋ 委譲(`send --rtk`)を併設**で確定（2026-06-01）。
@@ -37,7 +37,7 @@ WSL2 側の Claude Code から `pty_open`/`pty_send`/`pty_read`/`pty_key`/`pty_c
 `src/aiterm.py`（414 行・標準ライブラリ + tmux のみ）に以下が**実装済み**。MCP 化はこの上に薄く被せる。
 
 - ツール群: `open`/`send`/`read`/`key`/`list`/`close`/`kill-all`/`attach-cmd`。
-- 永続: 専用 socket 上の tmux セッション。呼び出しプロセスをまたいで生存（[§11](ai-terminal-design-plan.md#L186) で実証）。
+- 永続: 専用 socket 上の tmux セッション。呼び出しプロセスをまたいで生存（[§11](01_design-plan.md#L186) で実証）。
 - 完了検出 4 層: dead / `--until`(sentinel) / quiescence(出力静止 ∧ `pane_current_command` がシェル復帰) / timeout。
 - 出力削減（RTK の **汎用 4 戦略**を移植済み）: 制御除去・`\r` 畳み・連続重複圧縮・head+tail 折りたたみ＋復元ヒント＋メタ併記。
 - 安全: send 前の破壊コマンドゲート（`--force` で越える）＋ ESC/ブラケットペースト終端のサニタイズ、read 後の制御文字無害化。
@@ -273,14 +273,14 @@ WSL2 の Claude Code（MCP クライアント）から、登録した `aiterm` �
 
 ### H. 仕上げ
 
-- [ ] [ai-terminal-design-plan.md](ai-terminal-design-plan.md) §11 / §9・§10 を実装結果に同期
+- [ ] [01_design-plan.md](01_design-plan.md) §11 / §9・§10 を実装結果に同期
 - [ ] [CLAUDE.md](../CLAUDE.md) の現状記述（MVP→MCP）を更新
 
 ---
 
 ## 付録: 主な根拠
 
-- 設計: [ai-terminal-design-plan.md](ai-terminal-design-plan.md) §3–§11
+- 設計: [01_design-plan.md](01_design-plan.md) §3–§11
 - 先行事例 / 収束点: [rag/briefs/prior-art.md](../rag/briefs/prior-art.md)
 - 完了検出 / 安全 / ANSI: [rag/briefs/technical-building-blocks.md](../rag/briefs/technical-building-blocks.md)
 - RTK 取り込み: `rtk/src/core/toml_filter.rs`（8 段エンジン・RUST_HANDLED_COMMANDS）、`rtk/src/discover/{registry,rules}.rs`（コマンド分類）、`rtk/hooks/claude/rtk-rewrite.sh`（委譲グルー）、[rag/sources/ansi-handling/rtk-token-reducer-cli.md](../rag/sources/ansi-handling/rtk-token-reducer-cli.md)
