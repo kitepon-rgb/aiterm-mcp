@@ -16,7 +16,7 @@
 >
 > *MCP = Model Context Protocol — the open standard that lets tools like Claude Code plug capabilities into an AI.*
 
-Just six tools — `pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list`. The backend is **tmux**, so sessions survive even if the MCP server or the AI client restarts.
+Six PTY tools — `pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list` — plus three interactive **agent launchers** (`codex_agent` / `grok_agent` / `composer_agent`) that start a coding-agent TUI inside that same persistent terminal. The backend is **tmux**, so sessions survive even if the MCP server or the AI client restarts.
 
 **Status:** actively maintained · runs on Linux · WSL2 · macOS · native Windows · MIT · see the [CHANGELOG](CHANGELOG.md).
 
@@ -83,7 +83,7 @@ claude mcp add --scope user --transport stdio aiterm -- npx -y aiterm-mcp
 Restart Claude Code, then verify the connection:
 
 ```bash
-/mcp        # aiterm should show as connected, exposing 6 tools
+/mcp        # aiterm should show as connected, exposing 9 tools
 ```
 
 Your first session — four calls, one persistent terminal:
@@ -111,7 +111,7 @@ This registers it in `~/.claude.json`; you'll get an approval prompt the first t
 
 ```mermaid
 flowchart LR
-    AI["AI / MCP client"] -->|"pty_send"| S["aiterm-mcp<br/>stdio MCP · 6 tools"]
+    AI["AI / MCP client"] -->|"pty_send"| S["aiterm-mcp<br/>stdio MCP · 9 tools"]
     S -->|"pty_read<br/>token-reduced"| AI
     S -->|"tmux send-keys<br/>capture-pane"| P["one local PTY<br/>tmux · persistent"]
     P -->|"ssh · docker · repl"| R["nested<br/>remote · container · REPL"]
@@ -147,6 +147,18 @@ One PTY is the only primitive. Everything else — SSH, containers, REPLs — is
 | `pty_key` | Send a control key | `session_id`, `key` (`C-c`/`Enter`/`Up`…) |
 | `pty_close` | Close a session | `session_id` |
 | `pty_list` | List sessions | (none) |
+
+### Interactive agent launchers
+
+Each launcher starts a specific vendor's interactive coding-agent TUI inside a fresh persistent PTY and returns its `session_id` — from there you drive it with plain `pty_read` / `pty_send`, exactly like any other session. One tool per model, so the tool name itself tells you which model you get.
+
+| Tool | Launches | Key args |
+| --- | --- | --- |
+| `codex_agent` | Codex CLI (OpenAI; the CLI's default model) | `prompt?`, `reasoning_effort?`, `cwd?`, `session_name?` |
+| `grok_agent` | Grok Build, model `grok-build` (xAI) | `prompt?`, `reasoning_effort?` (`low`/`medium`/`high`/`xhigh`/`max`), `cwd?`, `session_name?` |
+| `composer_agent` | Grok Build, model `grok-composer-2.5-fast` (xAI) | same as `grok_agent` |
+
+The vendor CLI must be installed and authenticated (`codex` for `codex_agent`; `grok` for both Grok tools). aiterm resolves the binary via `CODEX_BIN` / `GROK_BIN`, then `~/.local/bin/codex` / `~/.grok/bin/grok`, then `PATH`. All prerequisites are validated **before** a session is created — an invalid `reasoning_effort`, a missing CLI, or a nonexistent `cwd` fails with an explicit error and leaves no session behind.
 
 ### Completion detection (4 layers)
 

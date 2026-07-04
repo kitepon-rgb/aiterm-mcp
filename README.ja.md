@@ -16,7 +16,7 @@
 >
 > *MCP = Model Context Protocol — Claude Code のようなツールが AI に機能を差し込むためのオープン標準。*
 
-`pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list` の 6 ツールだけ。バックエンドは tmux なので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
+`pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list` の PTY 6 ツールに加え、同じ永続端末の中にコーディングエージェントの TUI を起動する**対話エージェント起動 3 ツール**（`codex_agent` / `grok_agent` / `composer_agent`）。バックエンドは tmux なので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
 
 **状態:** 開発継続中 · 動作対象は Linux · WSL2 · macOS · Windows ネイティブ · MIT · [変更履歴](CHANGELOG.md)。
 
@@ -83,7 +83,7 @@ claude mcp add --scope user --transport stdio aiterm -- npx -y aiterm-mcp
 Claude Code を再起動して、接続を確認:
 
 ```bash
-/mcp        # aiterm が connected・6 ツール公開、と出る
+/mcp        # aiterm が connected・9 ツール公開、と出る
 ```
 
 最初のセッション — 4 回の呼び出しで、1 個の永続端末:
@@ -111,7 +111,7 @@ claude mcp add --scope user --transport stdio aiterm -- aiterm-mcp
 
 ```mermaid
 flowchart LR
-    AI["AI / MCP client"] -->|"pty_send"| S["aiterm-mcp<br/>stdio MCP · 6 tools"]
+    AI["AI / MCP client"] -->|"pty_send"| S["aiterm-mcp<br/>stdio MCP · 9 tools"]
     S -->|"pty_read<br/>token-reduced"| AI
     S -->|"tmux send-keys<br/>capture-pane"| P["one local PTY<br/>tmux · persistent"]
     P -->|"ssh · docker · repl"| R["nested<br/>remote · container · REPL"]
@@ -147,6 +147,18 @@ flowchart LR
 | `pty_key` | 制御キーを送る | `session_id`, `key`（`C-c`/`Enter`/`Up`…） |
 | `pty_close` | セッションを閉じる | `session_id` |
 | `pty_list` | セッション一覧 | （なし） |
+
+### 対話エージェント起動ツール
+
+各ツールは特定ベンダーの対話型コーディングエージェント TUI を新しい永続 PTY の中に起動し、`session_id` を返す。以後は他のセッションと同様に `pty_read` / `pty_send` で操作する。モデルごとに 1 ツール＝ツール名を見ればどのモデルか分かる。
+
+| ツール | 起動するもの | 主な引数 |
+| --- | --- | --- |
+| `codex_agent` | Codex CLI（OpenAI・モデルは CLI の既定） | `prompt?`, `reasoning_effort?`, `cwd?`, `session_name?` |
+| `grok_agent` | Grok Build の `grok-build` モデル（xAI） | `prompt?`, `reasoning_effort?`（`low`/`medium`/`high`/`xhigh`/`max`）, `cwd?`, `session_name?` |
+| `composer_agent` | Grok Build の `grok-composer-2.5-fast` モデル（xAI） | `grok_agent` と同じ |
+
+各ベンダーの CLI が導入・認証済みであること（`codex_agent` は `codex`、Grok 系 2 つは `grok`）。バイナリは `CODEX_BIN` / `GROK_BIN` → `~/.local/bin/codex` / `~/.grok/bin/grok` → `PATH` の順で解決する。前提はすべて**セッション作成前に検証**する——不正な `reasoning_effort`・CLI 不在・実在しない `cwd` は明示エラーになり、セッションの残骸を残さない。
 
 ### 完了検出（4 層）
 
