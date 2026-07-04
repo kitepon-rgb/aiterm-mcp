@@ -600,3 +600,51 @@ export function killAll(): string {
   tmux("kill-server");
   return "killed all sessions on this socket";
 }
+
+// ── 外部AI委譲（Claude レート非依存）─────────────────────────────────────────
+// 実装の物量や独立レビューを外部枠(Codex)へ委譲し、統括(Claude)のレート窓を温存する。
+// codex 未導入環境では明示 no-op（公開レジストリの他利用者を壊さない）。
+function resolveCodex(): string | null {
+  const home = process.env.HOME ?? os.homedir();
+  const cand = path.join(home, ".local", "bin", "codex");
+  if (fs.existsSync(cand)) return cand;
+  const w = spawnSync(isWin ? "where" : "which", ["codex"], { encoding: "utf8", timeout: 5000 });
+  if (w.status === 0 && (w.stdout ?? "").trim()) return w.stdout.trim().split(/\r?\n/)[0];
+  return null;
+}
+
+export function delegate(opts: {
+  prompt: string;
+  mode?: "exec" | "review";
+  cwd?: string;
+  timeout_sec?: number;
+}): string {
+  const mode = opts.mode ?? "exec";
+  const cwd = opts.cwd ?? process.cwd();
+  const timeoutMs = (opts.timeout_sec ?? 600) * 1000;
+  const bin = process.env.CODEX_BIN ?? resolveCodex();
+  if (!bin) {
+    return "delegate: codex CLI が見つかりません（~/.local/bin/codex か PATH が必要）。外部委譲は無効＝統括が自分で実装/レビューせよ。";
+  }
+  const sandbox = mode === "review" ? "read-only" : "workspace-write";
+  const prompt =
+    mode === "review"
+      ? "以下を read-only でレビューし、指摘を重要度順・該当箇所つきで返せ。ファイルは一切変更するな（変更は統括が裁定後に行う）: " +
+        opts.prompt
+      : opts.prompt;
+  const r = spawnSync(bin, ["exec", "--sandbox", sandbox, "--skip-git-repo-check", prompt], {
+    cwd,
+    encoding: "utf8",
+    timeout: timeoutMs,
+    maxBuffer: 32 * 1024 * 1024,
+  });
+  if (r.error) {
+    const isTimeout = (r.error as NodeJS.ErrnoException).code === "ETIMEDOUT";
+    return (
+      "delegate: " +
+      (isTimeout ? `タイムアウト(${opts.timeout_sec ?? 600}s)で委譲を打ち切り` : r.error.message)
+    );
+  }
+  const body = ((r.stdout ?? "") + (r.stderr ? "\n[stderr]\n" + r.stderr : "")).trim();
+  return `delegate(${mode}, exit=${r.status ?? "?"})\n${body}`;
+}

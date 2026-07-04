@@ -166,6 +166,33 @@ server.registerTool(
   },
 );
 
+server.registerTool(
+  "delegate",
+  {
+    description:
+      "実装の物量や独立レビューを、Claude レート非依存の外部AI(Codex)へ委譲する。統括(Claude)のレート窓を温存する道具。" +
+      "mode=exec は codex に実装させる(workspace-write)、mode=review は read-only レビューさせて指摘を返す。" +
+      "使いどころ: (1)仕様が固まった実装の物量が出たら mode=exec で委譲 (2)自分の設計/成果/計画を独立検証したい時は mode=review で叩かせ、指摘を敵対的に裁定してから採る。" +
+      "委譲物は必ず統括が自分で検証してから採用する。codex 未導入環境では明示 no-op を返す。",
+    inputSchema: {
+      prompt: z.string().describe("委譲する仕様(file:line 付き推奨) または レビュー対象の指定"),
+      mode: z
+        .enum(["exec", "review"])
+        .default("exec")
+        .describe("exec=実装させる(workspace-write) / review=read-only レビューさせ指摘を返す"),
+      cwd: z.string().nullish().describe("作業ディレクトリ(既定=現在のcwd)。対象リポのルートを渡す"),
+      timeout_sec: z.number().default(600).describe("タイムアウト秒(既定600。委譲は数分かかる)"),
+    },
+  },
+  async ({ prompt, mode, cwd, timeout_sec }) => {
+    try {
+      return ok(core.delegate({ prompt, mode, cwd: cwd ?? undefined, timeout_sec }));
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
 async function main(): Promise<void> {
   const transport = new StdioServerTransport();
   await server.connect(transport);
