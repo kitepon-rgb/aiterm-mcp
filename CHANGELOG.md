@@ -5,6 +5,18 @@ All notable changes to **aiterm-mcp** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0]
+
+### Added
+- `delegate` tool に `backend`（codex|grok）パラメータ: MODELS.md の第一選択（Codex＝OpenAI枠／Grok
+  Build＝xAI枠）に構造を合わせた。**codex は稼働**、**grok は要 `grok login`＋非対話呼び出しの実測が
+  未完のため明示的に「未確定」を返す**（動くフリを避ける。login＋実測後に有効化）。
+
+### Changed
+- `delegate` の出力を整形: codex の生 stdout（思考過程・セッションメタ込みで巨大）でなく、
+  `codex exec --output-last-message` でエージェントの**最終メッセージだけ**を回収して返す
+  （review 出力が 60k字→数十字に。空/失敗時のみ生出力へ明示フォールバック）。
+
 ## [0.5.0]
 
 ### Added

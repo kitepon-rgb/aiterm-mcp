@@ -604,25 +604,46 @@ export function killAll(): string {
 // ── 外部AI委譲（Claude レート非依存）─────────────────────────────────────────
 // 実装の物量や独立レビューを外部枠(Codex)へ委譲し、統括(Claude)のレート窓を温存する。
 // codex 未導入環境では明示 no-op（公開レジストリの他利用者を壊さない）。
-function resolveCodex(): string | null {
+function resolveBin(homeRel: string[], name: string): string | null {
   const home = process.env.HOME ?? os.homedir();
-  const cand = path.join(home, ".local", "bin", "codex");
+  const cand = path.join(home, ...homeRel);
   if (fs.existsSync(cand)) return cand;
-  const w = spawnSync(isWin ? "where" : "which", ["codex"], { encoding: "utf8", timeout: 5000 });
+  const w = spawnSync(isWin ? "where" : "which", [name], { encoding: "utf8", timeout: 5000 });
   if (w.status === 0 && (w.stdout ?? "").trim()) return w.stdout.trim().split(/\r?\n/)[0];
   return null;
+}
+function resolveCodex(): string | null {
+  return process.env.CODEX_BIN ?? resolveBin([".local", "bin", "codex"], "codex");
+}
+function resolveGrok(): string | null {
+  return process.env.GROK_BIN ?? resolveBin([".grok", "bin", "grok"], "grok");
 }
 
 export function delegate(opts: {
   prompt: string;
   mode?: "exec" | "review";
+  backend?: "codex" | "grok";
   cwd?: string;
   timeout_sec?: number;
 }): string {
   const mode = opts.mode ?? "exec";
+  const backend = opts.backend ?? "codex";
   const cwd = opts.cwd ?? process.cwd();
   const timeoutMs = (opts.timeout_sec ?? 600) * 1000;
-  const bin = process.env.CODEX_BIN ?? resolveCodex();
+
+  // Grok Build backend: MODELS.md の第一選択の一角だが、この端末は未認証(grok login=H)＋
+  // 非対話ワンショット形が未確定（grok agent stdio/headless はサーバモード・top-level は対話）。
+  // 動くフリを避けて明示的に未確定を返す。login＋実測後にベルが有効化する。
+  if (backend === "grok") {
+    const gbin = resolveGrok();
+    if (!gbin) return "delegate(grok): grok CLI が見つかりません（~/.grok/bin/grok）。";
+    return (
+      "delegate(grok): 未確定。grok は要 `grok login`（H・端末オーナーのみ可）＋非対話ワンショット呼び出しの実測が未完。" +
+      "login 後にベルが実測して有効化する。現状は backend=codex を使え。"
+    );
+  }
+
+  const bin = resolveCodex();
   if (!bin) {
     return "delegate: codex CLI が見つかりません（~/.local/bin/codex か PATH が必要）。外部委譲は無効＝統括が自分で実装/レビューせよ。";
   }
@@ -632,19 +653,44 @@ export function delegate(opts: {
       ? "以下を read-only でレビューし、指摘を重要度順・該当箇所つきで返せ。ファイルは一切変更するな（変更は統括が裁定後に行う）: " +
         opts.prompt
       : opts.prompt;
-  const r = spawnSync(bin, ["exec", "--sandbox", sandbox, "--skip-git-repo-check", prompt], {
-    cwd,
-    encoding: "utf8",
-    timeout: timeoutMs,
-    maxBuffer: 32 * 1024 * 1024,
-  });
+  // codex の生 stdout は思考過程・セッションメタ込みで巨大化する。--output-last-message で
+  // エージェントの「最終メッセージだけ」を回収し、統括が消費しやすい形で返す。
+  const lastMsg = path.join(os.tmpdir(), `aiterm-delegate-${process.pid}-${Date.now()}.txt`);
+  const r = spawnSync(
+    bin,
+    ["exec", "--sandbox", sandbox, "--skip-git-repo-check", "-o", lastMsg, prompt],
+    { cwd, encoding: "utf8", timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024 },
+  );
   if (r.error) {
+    try {
+      fs.unlinkSync(lastMsg);
+    } catch {
+      /* noop */
+    }
     const isTimeout = (r.error as NodeJS.ErrnoException).code === "ETIMEDOUT";
     return (
       "delegate: " +
       (isTimeout ? `タイムアウト(${opts.timeout_sec ?? 600}s)で委譲を打ち切り` : r.error.message)
     );
   }
-  const body = ((r.stdout ?? "") + (r.stderr ? "\n[stderr]\n" + r.stderr : "")).trim();
+  // 最終メッセージを優先。空/読めない時だけ stdout 全体にフォールバック（明示ログつき）。
+  let final = "";
+  try {
+    final = fs.readFileSync(lastMsg, "utf8").trim();
+  } catch {
+    /* noop */
+  }
+  try {
+    fs.unlinkSync(lastMsg);
+  } catch {
+    /* noop */
+  }
+  let body: string;
+  if (final) {
+    body = final;
+  } else {
+    const raw = ((r.stdout ?? "") + (r.stderr ? "\n[stderr]\n" + r.stderr : "")).trim();
+    body = "[最終メッセージ取得不可＝生出力にフォールバック]\n" + raw;
+  }
   return `delegate(${mode}, exit=${r.status ?? "?"})\n${body}`;
 }

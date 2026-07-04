@@ -180,13 +180,17 @@ server.registerTool(
         .enum(["exec", "review"])
         .default("exec")
         .describe("exec=実装させる(workspace-write) / review=read-only レビューさせ指摘を返す"),
+      backend: z
+        .enum(["codex", "grok"])
+        .default("codex")
+        .describe("codex=OpenAI枠(既定・稼働) / grok=xAI枠(要 grok login＋実測。現状は未確定を返す)"),
       cwd: z.string().nullish().describe("作業ディレクトリ(既定=現在のcwd)。対象リポのルートを渡す"),
       timeout_sec: z.number().default(600).describe("タイムアウト秒(既定600。委譲は数分かかる)"),
     },
   },
-  async ({ prompt, mode, cwd, timeout_sec }) => {
+  async ({ prompt, mode, backend, cwd, timeout_sec }) => {
     try {
-      return ok(core.delegate({ prompt, mode, cwd: cwd ?? undefined, timeout_sec }));
+      return ok(core.delegate({ prompt, mode, backend, cwd: cwd ?? undefined, timeout_sec }));
     } catch (e) {
       return fail(e);
     }
