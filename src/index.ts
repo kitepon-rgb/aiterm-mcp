@@ -166,35 +166,65 @@ server.registerTool(
   },
 );
 
-server.registerTool(
-  "delegate",
-  {
-    description:
-      "実装の物量や独立レビューを、Claude レート非依存の外部AI(Codex)へ委譲する。統括(Claude)のレート窓を温存する道具。" +
-      "mode=exec は codex に実装させる(workspace-write)、mode=review は read-only レビューさせて指摘を返す。" +
-      "使いどころ: (1)仕様が固まった実装の物量が出たら mode=exec で委譲 (2)自分の設計/成果/計画を独立検証したい時は mode=review で叩かせ、指摘を敵対的に裁定してから採る。" +
-      "委譲物は必ず統括が自分で検証してから採用する。codex 未導入環境では明示 no-op を返す。",
-    inputSchema: {
-      prompt: z.string().describe("委譲する仕様(file:line 付き推奨) または レビュー対象の指定"),
-      mode: z
-        .enum(["exec", "review"])
-        .default("exec")
-        .describe("exec=実装させる(workspace-write) / review=read-only レビューさせ指摘を返す"),
-      backend: z
-        .enum(["codex", "grok"])
-        .default("codex")
-        .describe("codex=OpenAI枠(既定・稼働) / grok=xAI枠(要 grok login＋実測。現状は未確定を返す)"),
-      cwd: z.string().nullish().describe("作業ディレクトリ(既定=現在のcwd)。対象リポのルートを渡す"),
-      timeout_sec: z.number().default(600).describe("タイムアウト秒(既定600。委譲は数分かかる)"),
+// 対話型エージェント起動ツール（モデルごとに1つ＝ツール名/説明でどのモデルか一目で分かる）。
+// いずれも永続端末に TUI を起動し session_id を返す。以後 pty_read/pty_send で対話操作する。
+const agentEffortDesc = (grokLike: boolean) =>
+  "reasoning effort（思考レベル）。" +
+  (grokLike ? "low/medium/high/xhigh/max" : "low/medium/high 等") +
+  "。省略時は CLI 既定。";
+function registerAgentTool(
+  toolName: string,
+  kind: "codex" | "grok" | "composer",
+  desc: string,
+  grokLike: boolean,
+): void {
+  server.registerTool(
+    toolName,
+    {
+      description: desc,
+      inputSchema: {
+        prompt: z.string().nullish().describe("起動時に渡す初手プロンプト（任意）。省略で素のTUI起動"),
+        reasoning_effort: z.string().nullish().describe(agentEffortDesc(grokLike)),
+        cwd: z.string().nullish().describe("作業ディレクトリ（対象リポのルート等・任意）"),
+        session_name: z.string().nullish().describe("セッション名（省略で自動採番）"),
+      },
     },
-  },
-  async ({ prompt, mode, backend, cwd, timeout_sec }) => {
-    try {
-      return ok(core.delegate({ prompt, mode, backend, cwd: cwd ?? undefined, timeout_sec }));
-    } catch (e) {
-      return fail(e);
-    }
-  },
+    async ({ prompt, reasoning_effort, cwd, session_name }) => {
+      try {
+        const [sid, hint] = core.openAgent(kind, {
+          prompt: prompt ?? undefined,
+          reasoning_effort: reasoning_effort ?? undefined,
+          cwd: cwd ?? undefined,
+          session_name: session_name ?? undefined,
+        });
+        return ok(`session_id: ${sid}\n${hint}`);
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+}
+
+registerAgentTool(
+  "codex_agent",
+  "codex",
+  "【Codex (OpenAI・gpt-5.5)】の対話エージェント TUI を永続端末に起動する。実装・レビュー・調査を対話で回す。" +
+    "起動後は pty_read で画面を読み pty_send で操作する。reasoning_effort を引数で指定可。",
+  false,
+);
+registerAgentTool(
+  "grok_agent",
+  "grok",
+  "【Grok Build の Grok モデル (grok-build)】の対話エージェント TUI を永続端末に起動する。" +
+    "起動後は pty_read/pty_send で対話操作。reasoning_effort を引数で指定可。",
+  true,
+);
+registerAgentTool(
+  "composer_agent",
+  "composer",
+  "【Grok Build の Composer モデル (grok-composer-2.5-fast)】の対話エージェント TUI を永続端末に起動する。" +
+    "起動後は pty_read/pty_send で対話操作。reasoning_effort を引数で指定可。",
+  true,
 );
 
 async function main(): Promise<void> {

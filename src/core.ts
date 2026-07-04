@@ -431,9 +431,6 @@ function rtkRewrite(text: string): string {
 
 export function openSession(name?: string | null, shell = "bash"): [string, string] {
   fs.mkdirSync(SOCKDIR, { recursive: true });
-  const nm = name || autoName();
-  assertSessionName(nm);
-  if (sessionExists(nm)) throw new AitermError(`session '${nm}' は既に存在します（list で確認）`, 2);
   // macOS の /bin/bash は 3.2 で、起動時に zsh 移行バナーを出して最初の read を汚す。darwin かつ bash の
   // ときだけ -e で環境変数を渡して抑止する。-e は tmux>=3.2 が必要だが macOS の Homebrew tmux は常に該当。
   // （古い tmux<3.2 が残る Linux/WSL で -e を渡すと new-session が落ちるため、darwin 限定にする。）
@@ -441,8 +438,25 @@ export function openSession(name?: string | null, shell = "bash"): [string, stri
     process.platform === "darwin" && path.basename(shell) === "bash"
       ? ["-e", "BASH_SILENCE_DEPRECATION_WARNING=1"]
       : [];
-  const r = tmux("new-session", "-d", "-s", nm, ...banner, "-f", "/dev/null", shell);
-  if (r.code !== 0) throw new AitermError("tmux new-session 失敗: " + r.stderr.trim(), 2);
+  // 並行性対策: 複数エージェントが同時に名前なし open すると autoName が同じ t{i} を返し得る（TOCTOU）。
+  // 自動採番は衝突しても静かに次名でリトライする。明示名は既存ならエラー（呼び手責任＝意図的共有と区別）。
+  const explicit = !!name;
+  let nm = name || autoName();
+  assertSessionName(nm);
+  for (let attempt = 0; ; attempt++) {
+    if (attempt >= 20) throw new AitermError("openSession: 自動採番のリトライ上限（名前空間が過密）", 2);
+    if (sessionExists(nm)) {
+      if (explicit) throw new AitermError(`session '${nm}' は既に存在します（list で確認）`, 2);
+    } else {
+      const r = tmux("new-session", "-d", "-s", nm, ...banner, "-f", "/dev/null", shell);
+      if (r.code === 0) break;
+      // 自動採番かつ「重複名」由来の失敗（他エージェントが同名を先に取った）なら次名でリトライ。
+      const dup = /duplicate|already exists/i.test(r.stderr);
+      if (explicit || !dup) throw new AitermError("tmux new-session 失敗: " + r.stderr.trim(), 2);
+    }
+    nm = autoName();
+    assertSessionName(nm);
+  }
   fs.closeSync(fs.openSync(logpath(nm), "a")); // touch
   // pipe-pane の引数は tmux 内部の /bin/sh -c で再解釈される（argv ではない）。パスは単一引用符で包み、
   // パス自身の ' は '\'' イディオムでエスケープする（名前は検証済みだが、Windows ユーザー名 O'Brien 等が
@@ -601,96 +615,84 @@ export function killAll(): string {
   return "killed all sessions on this socket";
 }
 
-// ── 外部AI委譲（Claude レート非依存）─────────────────────────────────────────
-// 実装の物量や独立レビューを外部枠(Codex)へ委譲し、統括(Claude)のレート窓を温存する。
-// codex 未導入環境では明示 no-op（公開レジストリの他利用者を壊さない）。
-function resolveBin(homeRel: string[], name: string): string | null {
+// ── 対話型エージェント起動（Codex / Grok Build(Grok) / Grok Build(Composer)）──────
+// aiterm の永続端末に、指定モデルの対話エージェント TUI を起動する。以後は pty_read で画面を
+// 読み、pty_send で操作する＝aiterm の対話パラダイムそのもの。モデルはツールごとに固定し、
+// reasoning effort は引数で渡す。CLI 未導入環境は明示エラー（動くフリをしない）。
+type AgentKind = "codex" | "grok" | "composer";
+
+function resolveAgentBin(kind: AgentKind): string | null {
   const home = process.env.HOME ?? os.homedir();
-  const cand = path.join(home, ...homeRel);
+  const [envVar, rel, name] =
+    kind === "codex"
+      ? ["CODEX_BIN", [".local", "bin", "codex"], "codex"]
+      : ["GROK_BIN", [".grok", "bin", "grok"], "grok"];
+  const fromEnv = process.env[envVar as string];
+  if (fromEnv) return fromEnv;
+  const cand = path.join(home, ...(rel as string[]));
   if (fs.existsSync(cand)) return cand;
-  const w = spawnSync(isWin ? "where" : "which", [name], { encoding: "utf8", timeout: 5000 });
+  const w = spawnSync(isWin ? "where" : "which", [name as string], {
+    encoding: "utf8",
+    timeout: 5000,
+  });
   if (w.status === 0 && (w.stdout ?? "").trim()) return w.stdout.trim().split(/\r?\n/)[0];
   return null;
 }
-function resolveCodex(): string | null {
-  return process.env.CODEX_BIN ?? resolveBin([".local", "bin", "codex"], "codex");
+
+// 単一引用符で安全に包む（' は '\'' で脱出）。send は raw:true で送るため自前で quote する。
+function shq(s: string): string {
+  return `'${s.replace(/'/g, "'\\''")}'`;
 }
-function resolveGrok(): string | null {
-  return process.env.GROK_BIN ?? resolveBin([".grok", "bin", "grok"], "grok");
-}
 
-export function delegate(opts: {
-  prompt: string;
-  mode?: "exec" | "review";
-  backend?: "codex" | "grok";
-  cwd?: string;
-  timeout_sec?: number;
-}): string {
-  const mode = opts.mode ?? "exec";
-  const backend = opts.backend ?? "codex";
-  const cwd = opts.cwd ?? process.cwd();
-  const timeoutMs = (opts.timeout_sec ?? 600) * 1000;
-
-  // Grok Build backend: MODELS.md の第一選択の一角だが、この端末は未認証(grok login=H)＋
-  // 非対話ワンショット形が未確定（grok agent stdio/headless はサーバモード・top-level は対話）。
-  // 動くフリを避けて明示的に未確定を返す。login＋実測後にベルが有効化する。
-  if (backend === "grok") {
-    const gbin = resolveGrok();
-    if (!gbin) return "delegate(grok): grok CLI が見つかりません（~/.grok/bin/grok）。";
-    return (
-      "delegate(grok): 未確定。grok は要 `grok login`（H・端末オーナーのみ可）＋非対話ワンショット呼び出しの実測が未完。" +
-      "login 後にベルが実測して有効化する。現状は backend=codex を使え。"
-    );
-  }
-
-  const bin = resolveCodex();
-  if (!bin) {
-    return "delegate: codex CLI が見つかりません（~/.local/bin/codex か PATH が必要）。外部委譲は無効＝統括が自分で実装/レビューせよ。";
-  }
-  const sandbox = mode === "review" ? "read-only" : "workspace-write";
-  const prompt =
-    mode === "review"
-      ? "以下を read-only でレビューし、指摘を重要度順・該当箇所つきで返せ。ファイルは一切変更するな（変更は統括が裁定後に行う）: " +
-        opts.prompt
-      : opts.prompt;
-  // codex の生 stdout は思考過程・セッションメタ込みで巨大化する。--output-last-message で
-  // エージェントの「最終メッセージだけ」を回収し、統括が消費しやすい形で返す。
-  const lastMsg = path.join(os.tmpdir(), `aiterm-delegate-${process.pid}-${Date.now()}.txt`);
-  const r = spawnSync(
-    bin,
-    ["exec", "--sandbox", sandbox, "--skip-git-repo-check", "-o", lastMsg, prompt],
-    { cwd, encoding: "utf8", timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024 },
-  );
-  if (r.error) {
-    try {
-      fs.unlinkSync(lastMsg);
-    } catch {
-      /* noop */
-    }
-    const isTimeout = (r.error as NodeJS.ErrnoException).code === "ETIMEDOUT";
-    return (
-      "delegate: " +
-      (isTimeout ? `タイムアウト(${opts.timeout_sec ?? 600}s)で委譲を打ち切り` : r.error.message)
-    );
-  }
-  // 最終メッセージを優先。空/読めない時だけ stdout 全体にフォールバック（明示ログつき）。
-  let final = "";
-  try {
-    final = fs.readFileSync(lastMsg, "utf8").trim();
-  } catch {
-    /* noop */
-  }
-  try {
-    fs.unlinkSync(lastMsg);
-  } catch {
-    /* noop */
-  }
-  let body: string;
-  if (final) {
-    body = final;
+function buildAgentCmd(
+  kind: AgentKind,
+  bin: string,
+  effort: string | null,
+  prompt: string | null,
+): string {
+  const parts: string[] = [shq(bin)];
+  if (kind === "codex") {
+    // codex は config override で reasoning effort（例: low/medium/high）を渡す。
+    if (effort) parts.push("-c", `model_reasoning_effort=${shq(effort)}`);
   } else {
-    const raw = ((r.stdout ?? "") + (r.stderr ? "\n[stderr]\n" + r.stderr : "")).trim();
-    body = "[最終メッセージ取得不可＝生出力にフォールバック]\n" + raw;
+    // grok / composer は同じ grok CLI をモデル違いで起動。effort は low/medium/high/xhigh/max。
+    parts.push("--model", kind === "composer" ? "grok-composer-2.5-fast" : "grok-build");
+    if (effort) parts.push("--effort", shq(effort));
   }
-  return `delegate(${mode}, exit=${r.status ?? "?"})\n${body}`;
+  if (prompt) parts.push(shq(prompt)); // 初手プロンプト（任意）
+  return parts.join(" ");
+}
+
+function agentLabel(kind: AgentKind): string {
+  return kind === "composer"
+    ? "Grok Build(Composer)"
+    : kind === "grok"
+      ? "Grok Build(Grok)"
+      : "Codex";
+}
+
+export function openAgent(
+  kind: AgentKind,
+  opts: {
+    session_name?: string | null;
+    reasoning_effort?: string | null;
+    cwd?: string | null;
+    prompt?: string | null;
+  } = {},
+): [string, string] {
+  const bin = resolveAgentBin(kind);
+  const label = agentLabel(kind);
+  if (!bin) {
+    const where = kind === "codex" ? "~/.local/bin/codex" : "~/.grok/bin/grok";
+    throw new AitermError(`${label} の CLI が見つかりません（${where} か PATH が必要）`, 2);
+  }
+  const [sid, hint] = openSession(opts.session_name ?? null, "bash");
+  const cmd = buildAgentCmd(kind, bin, opts.reasoning_effort ?? null, opts.prompt ?? null);
+  const full = opts.cwd ? `cd ${shq(opts.cwd)} && ${cmd}` : cmd;
+  send(sid, full, { enter: true, mark: false, force: false, rtk: false, raw: true });
+  return [
+    sid,
+    `${label} を session ${sid} で起動した。\n${hint}\n` +
+      `pty_read(${sid}) で TUI を読み、pty_send(${sid}, "...") で操作する（対話）。`,
+  ];
 }

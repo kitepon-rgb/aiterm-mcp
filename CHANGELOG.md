@@ -5,6 +5,24 @@ All notable changes to **aiterm-mcp** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0]
+
+### Added
+- **対話型エージェント起動ツール**（モデルごとに1つ＝ツール名/説明でどのモデルか一目瞭然）:
+  - `codex_agent` — Codex (OpenAI・gpt-5.5) の対話 TUI を永続端末に起動
+  - `grok_agent` — Grok Build の Grok モデル (grok-build) の対話 TUI を起動
+  - `composer_agent` — Grok Build の Composer モデル (grok-composer-2.5-fast) の対話 TUI を起動
+  いずれも session_id を返し、以後は `pty_read`/`pty_send` で対話操作する（＝aiterm の対話パラダイム）。
+  `reasoning_effort`（思考レベル）・`cwd`・`prompt`（初手）・`session_name` を引数で受ける。
+
+### Changed
+- `openSession` の自動採番を並行安全化: 複数エージェントが同時に名前なし open した際の TOCTOU
+  競合を、衝突時に静かに次名でリトライして解消（明示名は従来どおり既存でエラー＝意図的共有と区別）。
+
+### Removed
+- `delegate` tool（v0.5.0-0.6.0）を撤去。非対話ワンショットは aiterm（対話型端末）の責務でなく、
+  非対話 codex 委譲は codex-sidecar（codex_work/review/generate 等）が担う。aiterm は対話に専念。
+
 ## [0.6.0]
 
 ### Added
