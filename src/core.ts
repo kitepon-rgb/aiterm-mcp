@@ -52,6 +52,7 @@ const MAX_LINES_BEFORE_ELIDE = 60;
 const HEAD_LINES = 30;
 const TAIL_LINES = 20;
 const DEDUP_MIN_RUN = 3; // 同一行がこれ以上連続したら 1 行＋件数に畳む
+const MAX_FULL_BYTES = 8 * 1024 * 1024; // full/range 読取で一度にメモリへ載せる上限（B7）
 
 // 安全: send 前に弾く破壊的コマンド（外部システム境界の防御）
 const DESTRUCTIVE: RegExp[] = [
@@ -408,7 +409,6 @@ async function waitCompletion(
   // 一致する数字アンカー MARK_DONE_RE を使うため、until のようにエコー部分一致で早期誤完了しない（B1）。
   const markActive = fs.existsSync(markpath(name));
   for (;;) {
-    const alive = sessionExists(name);
     let size = 0;
     try {
       size = fs.statSync(logpath(name)).size;
@@ -416,11 +416,25 @@ async function waitCompletion(
       size = 0;
     }
     if ((until || markActive) && size > start) {
+      // 増分 [start, size] だけを fd で読む（毎 poll で全ファイルを読む O(n^2) を避ける・B6）。
       let neu = "";
+      let fd: number | undefined;
       try {
-        neu = stripControl(fs.readFileSync(logpath(name)).subarray(start).toString("utf8"));
+        fd = fs.openSync(logpath(name), "r");
+        const len = size - start;
+        const buf = Buffer.alloc(len);
+        const n = fs.readSync(fd, buf, 0, len, start);
+        neu = stripControl(buf.subarray(0, Math.max(0, n)).toString("utf8"));
       } catch {
         neu = ""; // close 等でログが消えた: 次周回の !alive/statSync で決着させる
+      } finally {
+        if (fd !== undefined) {
+          try {
+            fs.closeSync(fd);
+          } catch {
+            /* noop */
+          }
+        }
       }
       // mark を until より先に判定（sentinel は確証つき完了。until はユーザ指定でエコー誤爆余地あり）。
       if (markActive && MARK_DONE_RE.test(neu)) {
@@ -434,7 +448,10 @@ async function waitCompletion(
       }
       if (until && until(neu)) return [true, "until"];
     }
-    if (!alive) {
+    // 出力が伸びている間は生存確認(tmux has-session の spawn)を省く＝伸長は生存の証（B6）。
+    // 静止時のみ has-session を叩いて dead を判定する。dead 検出は最大 1 poll 遅れるだけ。
+    const growing = lastSize !== null && size > lastSize;
+    if (!growing && !sessionExists(name)) {
       if (isWin) await settleWinLog(name);
       return [true, "dead"];
     }
@@ -675,16 +692,43 @@ export async function readOutput(name: string, o: ReadOpts = {}): Promise<string
     status = st;
   }
 
-  let data: Buffer;
+  // ログ全体を毎回メモリに載せず、必要な範囲だけ fd で読む（B7）。size は statSync で取る。
+  let size = 0;
   try {
-    data = fs.readFileSync(logpath(name));
+    size = fs.statSync(logpath(name)).size;
   } catch {
-    data = Buffer.alloc(0);
+    size = 0;
   }
+  const readRange = (from: number, to: number): Buffer => {
+    const len = Math.max(0, to - from);
+    if (len === 0) return Buffer.alloc(0);
+    let fd: number | undefined;
+    try {
+      fd = fs.openSync(logpath(name), "r");
+      const buf = Buffer.alloc(len);
+      const n = fs.readSync(fd, buf, 0, len, from);
+      return n === len ? buf : buf.subarray(0, Math.max(0, n));
+    } catch {
+      return Buffer.alloc(0);
+    } finally {
+      if (fd !== undefined) {
+        try {
+          fs.closeSync(fd);
+        } catch {
+          /* noop */
+        }
+      }
+    }
+  };
+
   let text: string;
-  let nextOffset = data.length; // 既定/full は offset を末尾へ
+  let nextOffset = size; // 既定/full は offset を末尾へ
   if (o.full || o.range) {
-    text = data.toString("utf8");
+    // full/range は全体が対象だが、巨大ログは末尾 MAX_FULL_BYTES に制限してメモリを守る（B7）。
+    let from = 0;
+    if (size > MAX_FULL_BYTES) from = size - MAX_FULL_BYTES;
+    text = readRange(from, size).toString("utf8");
+    if (from > 0) text = `[… 先頭 ${from} バイトを省略（ログがサイズ上限を超過。close で破棄されます）…]\n` + text;
     if (o.range) {
       const [lo, hi] = o.range;
       text = text.split("\n").slice(lo, hi ?? undefined).join("\n");
@@ -692,13 +736,13 @@ export async function readOutput(name: string, o: ReadOpts = {}): Promise<string
   } else {
     let off = readOffset(name);
     // WSL 再起動等でログが作り直されると、Windows 側に残った旧 offset が新ログ長を超え、
-    // subarray が空を返して「何も読めない」状態になる。末尾越えは先頭から読み直す（POSIX では no-op）。
-    if (off > data.length) off = 0;
-    // 両端を UTF-8 文字境界に丸める（B3）。off は前回この分岐が safeEnd を書くので先頭は割れず、
-    // 末尾の不完全マルチバイト列は次回へ持ち越す。純 ASCII では safeEnd===data.length で従来と一致。
-    const safeEnd = Math.max(off, utf8SafeEnd(data, data.length));
-    text = data.subarray(off, safeEnd).toString("utf8");
-    nextOffset = safeEnd;
+    // 空を返して「何も読めない」状態になる。末尾越えは先頭から読み直す（POSIX では no-op）。
+    if (off > size) off = 0;
+    const buf = readRange(off, size); // 増分のみをメモリに載せる
+    // 末尾の不完全マルチバイト列は次回へ持ち越す（B3）。off は前回この分岐が safeEnd を書くので先頭は割れない。
+    const safeLen = utf8SafeEnd(buf, buf.length);
+    text = buf.subarray(0, safeLen).toString("utf8");
+    nextOffset = off + safeLen;
     if (o.lines) text = text.split("\n").slice(-o.lines).join("\n");
   }
 
