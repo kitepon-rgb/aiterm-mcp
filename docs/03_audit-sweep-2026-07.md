@@ -12,11 +12,12 @@
 | 1 | 中核 High（C1 pytest 緑偽装／B1 until echo／A4 破壊ゲート誤爆） | ✅ 完了 | `3eddb52` C1 / `4fe6208` A4 / `eabdc30` B1 |
 | 2 | 安全ガード＆完了検出（B2／B8 mark POSIX／B4 until リテラル既定化／B13 until 分） | ✅ 完了 | `55c8d96` B2 / `bbbd7eb` B8+B4 |
 | 3 | エージェント起動の正しさ（A1 Windows toWslPath／A3／A5／A6＋grok/composer テスト＋実 CLI 裏取り） | ✅ 完了 | `a17aff5`（実 CLI で flags/model-ID/実起動 裏取り済み） |
-| 4 | reducer 正しさ（C2/C3 stripShellFrame／C4-C7 classify/git/filters／C13） | ⬜ 未 | — |
-| 5 | 堅牢性/非効率（B3 UTF-8／B5+B9 stale log／B6 poll／B7 ログ回転／B10-B14／C12） | ⬜ 未 | — |
-| 6 | テスト/CI/docs（C8 フレイキー／C9 Windows CI／C10-C11 publish 順序／C-doc） | ⬜ 未 | — |
+| 4 | reducer 正しさ（C2/C3 stripShellFrame／C4-C6 classify/git/filters／C13。C7 は parity コストの Nit ゆえ見送り） | ✅ 完了 | `914a9dd` |
+| 5 | 堅牢性/非効率（B3 UTF-8／B5+B9 stale log／B6 poll／B7 ログメモリ／B10 DCS/APC／B11 footgun／B12/B14／C12） | ✅ 完了 | `7f8735f` B5+B9 / `d0418e9` B3+B10 / `0818647` B6+B7 / `e1e18f8` B11+C12 |
+| 6 | テスト/CI/docs（C8 フレイキー／C9 Windows CI／C10-C11 publish 順序／C-doc） | ✅ 完了 | `f4940dd` C8-C11 / `74c2c5f` C-doc |
 
-**現在のテスト数**: 121 pass / 0 fail（開始時 97）。
+**最終テスト数**: **128 pass / 0 fail**（開始時 97）。**全ウェーブ完了。** 確定バグ 7/7 修正＋磨き込み多数。
+棄却: A2（相対 cwd 基準ズレ・refuter が誤モデルと立証）／C7（make strip の Python parity コスト Nit）。
 
 ### ⚠️ インシデント記録（2026-07-05・復旧済み）
 B2 の赤テスト先張り時、**修正をビルドする前に**新破壊ケースをルート cwd の実 tmux へ enter=true で送り、
