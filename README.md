@@ -35,6 +35,10 @@ pty_read(id, { wait: true })       → read the reduced output
 
 ## Demo
 
+<p align="center">
+  <img src=".github/demo.gif" alt="aiterm-mcp demo: pty_open, a token-reduced grep read, then a nested Python REPL — all in one persistent session" width="100%">
+</p>
+
 Real captured output from a live session — the token reduction and completion detection are genuine, not mocked. The bracketed meta line is exactly what `pty_read` appends.
 
 A noisy `git log`, read back token-reduced (458 → 273 tokens):
@@ -70,7 +74,7 @@ Nesting is just text you send in — here a Python REPL *inside* the same PTY:
 ← 499999500000                                     [is_complete=True via until]
 ```
 
-`ssh host` and `docker exec -it … bash` nest exactly the same way (see [Why](#why)) — an animated GIF of the full SSH flow is on the way; everything above is real output, not a script. While nested, pass `until` (the inner prompt) or `mark: true`, because quiescence cannot fire there by design — see [Completion detection](#completion-detection-4-layers) and [Known constraints](#known-constraints-by-design-not-bugs). A human can `attach` to the same tmux socket and watch any of this live (see [A human can watch](#a-human-can-watch)).
+`ssh host` and `docker exec -it … bash` nest exactly the same way (see [Why](#why)) — everything above, and in the demo GIF, is real captured output, not a script. While nested, pass `until` (the inner prompt) or `mark: true`, because quiescence cannot fire there by design — see [Completion detection](#completion-detection-4-layers) and [Known constraints](#known-constraints-by-design-not-bugs). A human can `attach` to the same tmux socket and watch any of this live (see [A human can watch](#a-human-can-watch)).
 
 ## Quickstart (≈60 seconds)
 
