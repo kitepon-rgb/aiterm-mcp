@@ -24,4 +24,20 @@ jobs:
       - name: Authenticate to the Official MCP Registry (GitHub OIDC)
         run: ./mcp-publisher login github-oidc
       - name: Publish server.json
-        run: ./mcp-publisher publish
+        run: |
+          # 同一 version の再 publish はレジストリが HTTP 400
+          # "invalid version: cannot publish duplicate version" を返す。これは
+          # 既にそのバージョンが登録済みのときに本ワークフローが再発火した場合
+          # （例: tag フローで publish 済みの版に対し release 再実行が走る）に起き、
+          # レジストリ側は既に最新＝無害。この特定ケースのみ握って成功扱いにし、
+          # それ以外の失敗はすべて表面化させる（黙ったフォールバックを避ける）。
+          set +e
+          out=$(./mcp-publisher publish 2>&1); rc=$?
+          echo "$out"
+          if [ $rc -ne 0 ]; then
+            if echo "$out" | grep -q "duplicate version"; then
+              echo "::notice::server.json のこのバージョンは既にレジストリ登録済み — 重複を成功として扱う（idempotent）。"
+              exit 0
+            fi
+            exit $rc
+          fi
