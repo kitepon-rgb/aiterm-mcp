@@ -29,7 +29,9 @@ function truncate(s: string, n: number): string {
   return cp.slice(0, n - 3).join("") + "...";
 }
 
-const PROMPT_TAIL = /[$#%>]\s*$/;
+// プロンプト行の判定（C3）: 行全体が「プロンプト前置文字(語/@ : ~ / \ [] . -)＋プロンプト記号($#%>)＋末尾空白」
+// の形のときだけプロンプトとみなす。末尾記号だけを見ると `</div>` `>>>` `echo x >` 等の本文行を誤除去する。
+const PROMPT_TAIL = /^[\w@.:~\/\\\[\]-]*[$#%>]\s*$/;
 
 /** 観測ログ片からエコー行と前後のプロンプト行を落とし、コマンド出力本体だけ残す（発見的）。 */
 export function stripShellFrame(text: string, command: string): string {
@@ -37,7 +39,14 @@ export function stripShellFrame(text: string, command: string): string {
   const cmd = command.trim();
   let start = 0;
   if (cmd) {
-    for (let i = 0; i < lines.length; i++) if (lines[i].includes(cmd)) start = i + 1;
+    // 最初の一致（＝コマンドエコー行）だけを落とす。最後の一致まで進めると、出力本体に cmd 文字列が
+    // 再出現（cat したファイル内・commit メッセージ内 等）した場合に本体を丸ごと捨ててしまう（C2）。
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].includes(cmd)) {
+        start = i + 1;
+        break;
+      }
+    }
   }
   let end = lines.length;
   while (end > start) {
@@ -299,7 +308,8 @@ export function reduceGitLog(output: string): string | null {
       else if (t.startsWith("Date:") || t.startsWith("Merge:")) continue;
       else if (t && !subject && (ln.startsWith("    ") || ln.startsWith("\t"))) subject = t;
       else if (t && (ln.startsWith("    ") || ln.startsWith("\t"))) {
-        if (!t.startsWith("Signed-off-by:") && !t.startsWith("Co-authored-by:")) body.push(t);
+        // trailer は大小文字が実装依存（本リポ規約は Co-Authored-By:）。大小無視で除外する（C5）。
+        if (!/^(signed-off-by|co-authored-by):/i.test(t)) body.push(t);
       }
     }
     const am = /<([^>]+)>/.exec(author);
@@ -352,11 +362,23 @@ function applyFilter(rule: FilterRule, output: string): string {
 
 // ---------------------------------------------------------------- ルーティング
 
-function basenameCmd(command: string): [string, string] {
+const WRAPPERS = new Set(["sudo", "env", "command", "exec"]);
+const RUNNERS = new Set(["uv", "poetry", "pdm", "rye", "hatch", "pipenv"]);
+
+// [verb, sub, stripped]。stripped は前置(ラッパー/環境代入/フラグ/ランナー run)を除いた実コマンド。
+// 誤分類は classify で null→generic に落ちるだけなので、読み飛ばしは積極的で安全（C4）。
+function basenameCmd(command: string): [string, string, string] {
   const toks = command.trim().split(/\s+/).filter(Boolean);
   let i = 0;
-  while (i < toks.length && (toks[i].includes("=") || ["sudo", "env", "command", "exec"].includes(toks[i]))) i++;
-  if (i >= toks.length) return ["", ""];
+  // 前置ラッパー(sudo/env/…)・環境代入(FOO=1)・そのフラグ(-E/-i 等)を読み飛ばす
+  while (i < toks.length && (toks[i].includes("=") || WRAPPERS.has(toks[i]) || toks[i].startsWith("-"))) i++;
+  // ランナー( uv/poetry run <cmd> )は run と共に読み飛ばして実コマンドへ
+  if (i + 1 < toks.length && RUNNERS.has(toks[i]) && toks[i + 1] === "run") {
+    i += 2;
+    while (i < toks.length && (toks[i].includes("=") || toks[i].startsWith("-"))) i++;
+  }
+  const stripped = toks.slice(i).join(" ");
+  if (i >= toks.length) return ["", "", ""];
   const verb = toks[i].split("/").pop()!;
   let sub = "";
   for (const t of toks.slice(i + 1)) {
@@ -365,11 +387,11 @@ function basenameCmd(command: string): [string, string] {
       break;
     }
   }
-  return [verb, sub];
+  return [verb, sub, stripped];
 }
 
 export function classify(command: string): string | null {
-  const [verb, sub] = basenameCmd(command);
+  const [verb, sub, stripped] = basenameCmd(command);
   if (verb === "git") {
     if (sub === "status") return "git-status";
     if (sub === "log") return "git-log";
@@ -377,8 +399,10 @@ export function classify(command: string): string | null {
   }
   if (verb === "grep" || verb === "rg") return "grep";
   if (verb === "pytest" || verb === "py.test") return "pytest";
-  if (verb === "python" && command.includes("pytest")) return "pytest";
-  for (const rule of FILTERS) if (rule.match.test(command.trim())) return rule.name;
+  // python3 / python3.11 等のバージョン付きも許容（C4: `python3 -m pytest` を拾う）
+  if (/^python[0-9.]*$/.test(verb) && command.includes("pytest")) return "pytest";
+  // FILTERS は basename 経由の stripped で判定（C6: `sudo df` `sudo make` も分類できる）
+  for (const rule of FILTERS) if (rule.match.test(stripped)) return rule.name;
   return null;
 }
 
@@ -389,7 +413,11 @@ const REDUCERS: Record<string, (o: string) => string | null> = {
   pytest: (o) => reducePytest(o),
 };
 
-/** コマンドに応じた reducer を観測出力へ適用。返り値 [reducedText|null, reducerName|null]。 */
+/**
+ * コマンドに応じた reducer を観測出力へ適用。返り値 [reducedText|null, reducerName|null]。
+ * 前提(C13): `output` は制御文字除去済み（ANSI/CR 等）であること。色付き/生 PTY 出力を直接渡すと
+ * 誤パースし得る。呼び手 core.readOutput は `stripShellFrame(stripControl(text), cmd)` で前処理してから渡す。
+ */
 export function reduce(command: string, output: string): [string | null, string | null] {
   const name = classify(command);
   if (name === null) return [null, null];

@@ -126,10 +126,18 @@ test("classify: 接頭辞/別名/非該当", () => {
   assert.equal(rtk.classify("free -h"), "free");
   assert.equal(rtk.classify("make all"), "make");
   assert.equal(rtk.classify("systemctl status nginx"), "systemctl");
+  // C4: バージョン付き python / ランナー / 前置フラグを拾う
+  assert.equal(rtk.classify("python3 -m pytest"), "pytest");
+  assert.equal(rtk.classify("python3.11 -m pytest tests/"), "pytest");
+  assert.equal(rtk.classify("uv run pytest"), "pytest");
+  assert.equal(rtk.classify("poetry run pytest tests/"), "pytest");
+  assert.equal(rtk.classify("sudo -E pytest"), "pytest"); // 前置フラグ -E を読み飛ばす
+  // C6: FILTERS も basename 経由で前置ラッパーを吸収
+  assert.equal(rtk.classify("sudo df -h"), "df");
+  assert.equal(rtk.classify("sudo make all"), "make");
   // 非該当は null（→ generic フォールバック）
   assert.equal(rtk.classify("ls -la"), null);
   assert.equal(rtk.classify("echo hi"), null);
-  assert.equal(rtk.classify("python3 -m pytest"), null); // 既知の限界: python3 は拾わない(python のみ)
   assert.equal(rtk.classify(""), null);
 });
 
@@ -163,4 +171,13 @@ test("stripShellFrame: echo 行と前後プロンプトを落とし本体だけ�
 });
 test("stripShellFrame: コマンド空なら末尾プロンプト除去のみ", () => {
   assert.equal(rtk.stripShellFrame("line1\nline2\n$ ", ""), "line1\nline2");
+});
+test("stripShellFrame: 出力本体に cmd 文字列が再出現しても本体を捨てない（C2）", () => {
+  // 最後の一致まで start を進めると "TODO..." 以前が丸ごと消える。最初の一致（エコー）だけ落とす。
+  const text = "$ cat notes.txt\nTODO: run cat notes.txt later\ndone\nuser@host:~$ ";
+  assert.equal(rtk.stripShellFrame(text, "cat notes.txt"), "TODO: run cat notes.txt later\ndone");
+});
+test("stripShellFrame: 末尾記号で終わる本文行(</div> >>>)を誤除去しない（C3）", () => {
+  assert.equal(rtk.stripShellFrame("$ curl x\n<html>\n</div>", "curl x"), "<html>\n</div>");
+  assert.equal(rtk.stripShellFrame("$ run repl\nresult\n>>>", "run repl"), "result\n>>>");
 });
