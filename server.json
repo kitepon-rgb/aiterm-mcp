@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.kitepon-rgb/aiterm-mcp",
-  "description": "AI drives one persistent tmux-backed terminal over MCP, and launches interactive Codex/Grok/Composer agent TUIs in it; SSH and containers nest inside it.",
+  "description": "AI drives one persistent tmux-backed terminal over MCP; ssh, containers & agent TUIs nest in it.",
   "repository": {
     "url": "https://github.com/kitepon-rgb/aiterm-mcp",
     "source": "github"
