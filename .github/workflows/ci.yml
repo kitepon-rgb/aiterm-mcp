@@ -40,10 +40,11 @@ jobs:
       - run: npm ci
       - run: npm test
 
-  # ネイティブ Windows の Node/TS 純粋層（toWslPath・パス解決・smoke・session 名検証・reducer）を検証する。
-  # WSL/tmux が無い runner では tmux 依存テストは hasTmux=false で自動 skip される。WSL ブリッジ統合経路
-  # （ensureWinBridge・pipe-pane の /mnt/c 書込・settleWinLog）は手動 Windows 検証ゲートに残す（docs/03 参照）。
-  # continue-on-error: 実 Windows で緑を確認できるまでは情報提供（非ブロッキング）。緑安定後に needs へ昇格する（C9）。
+  # ネイティブ Windows は WSL/tmux 無しの GitHub runner では tmux 呼び出し（ensureWinBridge）が throw する。
+  # よって tmux に触れない純粋層のみを検証する（C9・plan の明示フォールバック）: core-pure（toWslPath・
+  # utf8SafeEnd・stripControl・reduceOutput）／rtk（reducer 全般）／smoke（サーバ起動・stdout 衛生・9 ツール）。
+  # WSL ブリッジ統合経路（ensureWinBridge・pipe-pane の /mnt/c 書込・settleWinLog・PTY 完了検出）は手動
+  # Windows 検証ゲートに残す（docs/03_audit-sweep-2026-07.md）。continue-on-error: 緑安定後に needs へ昇格。
   test-windows:
     runs-on: windows-latest
     continue-on-error: true
@@ -57,7 +58,9 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
-      - run: npm test
+      - run: npm run build
+      - name: Test tmux-independent layer (pure functions / reducers / server smoke)
+        run: node --test test/core-pure.test.mjs test/rtk.test.mjs test/smoke.test.mjs
 
   publish:
     needs: [test, test-macos]
