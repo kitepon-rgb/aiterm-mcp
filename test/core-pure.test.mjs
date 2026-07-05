@@ -3,10 +3,24 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as core from "../dist/core.js";
 
+// ---------------------------------------------------------------- utf8SafeEnd（B3: マルチバイト境界）
+test("utf8SafeEnd: 不完全な UTF-8 末尾を文字境界まで戻す", () => {
+  const s = Buffer.from("あい", "utf8"); // 6 バイト（3+3）
+  assert.equal(core.utf8SafeEnd(s, 6), 6); // 完全
+  assert.equal(core.utf8SafeEnd(s, 4), 3); // 「い」の途中(4)→「あ」の後(3)へ戻す
+  assert.equal(core.utf8SafeEnd(s, 5), 3); // 同上
+  assert.equal(core.utf8SafeEnd(s, 3), 3); // 「あ」の後は境界
+  assert.equal(core.utf8SafeEnd(Buffer.from("abc"), 3), 3); // ASCII は常に境界
+  assert.equal(core.utf8SafeEnd(Buffer.from("a😀", "utf8"), 3), 1); // 4バイト絵文字の途中→「a」の後へ
+  assert.equal(core.utf8SafeEnd(Buffer.alloc(0), 0), 0);
+});
+
 // ---------------------------------------------------------------- stripControl
 test("stripControl: ANSI/OSC/制御文字を除去、tab と改行は残す", () => {
   assert.equal(core.stripControl("\x1b[31mred\x1b[0m"), "red");
   assert.equal(core.stripControl("\x1b]0;title\x07body"), "body"); // OSC + BEL 終端
+  assert.equal(core.stripControl("\x1bPq;data\x1b\\body"), "body"); // DCS + ST 終端（ペイロードごと除去・B10）
+  assert.equal(core.stripControl("\x1b_APCpayload\x07body"), "body"); // APC + BEL 終端（B10）
   assert.equal(core.stripControl("a\x00b\x07c"), "abc"); // NUL/BEL 除去
   assert.equal(core.stripControl("col1\tcol2"), "col1\tcol2"); // tab 保持
 });

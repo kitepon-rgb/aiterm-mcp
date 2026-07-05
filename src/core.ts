@@ -71,7 +71,9 @@ const DESTRUCTIVE: RegExp[] = [
 ];
 
 // CSI/OSC/ESC エスケープ・制御文字
-const ANSI_RE = /\x1b\[[0-9;?]*[ -\/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-_]/g;
+// CSI / OSC(BEL or ST 終端) / DCS・PM・APC・SOS(ESC P/^/_/X … BEL or ST 終端。ペイロード本文ごと除去=B10) / 残る2文字エスケープ
+const ANSI_RE =
+  /\x1b\[[0-9;?]*[ -\/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[P^_X][\s\S]*?(?:\x07|\x1b\\)|\x1b[@-_]/g;
 const CTRL_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g; // \t(09) \n(0a) は残す
 const PASTE_MARKERS_RE = /\x1b\[20[01]~/g;
 
@@ -633,6 +635,28 @@ export interface ReadOpts {
   rtk?: boolean;
 }
 
+// end 以下で最大の UTF-8 文字境界を返す（B3）。末尾が不完全なマルチバイト列なら、その開始位置まで
+// 戻す。pipe-pane が多バイト文字の途中でフラッシュした瞬間の増分読みで先頭/末尾が U+FFFD 化するのを防ぐ。
+export function utf8SafeEnd(buf: Buffer, end: number): number {
+  if (end <= 0) return 0;
+  const isCont = (b: number) => (b & 0xc0) === 0x80; // 継続バイト 10xxxxxx
+  let i = end - 1;
+  let steps = 0;
+  while (i >= 0 && isCont(buf[i]) && steps < 3) {
+    i--;
+    steps++;
+  }
+  if (i < 0) return end; // 継続バイトのみの異常列: そのまま
+  const lead = buf[i];
+  let need: number;
+  if (lead < 0x80) need = 1;
+  else if ((lead & 0xe0) === 0xc0) need = 2;
+  else if ((lead & 0xf0) === 0xe0) need = 3;
+  else if ((lead & 0xf8) === 0xf0) need = 4;
+  else return end; // 不正な先行バイト: そのまま（stripControl 等に委ねる）
+  return end - i >= need ? end : i; // 末尾文字が完結していれば end、不完全なら開始位置まで戻す
+}
+
 export async function readOutput(name: string, o: ReadOpts = {}): Promise<string> {
   assertSessionName(name);
   const timeout = o.timeout ?? DEFAULT_TIMEOUT;
@@ -658,6 +682,7 @@ export async function readOutput(name: string, o: ReadOpts = {}): Promise<string
     data = Buffer.alloc(0);
   }
   let text: string;
+  let nextOffset = data.length; // 既定/full は offset を末尾へ
   if (o.full || o.range) {
     text = data.toString("utf8");
     if (o.range) {
@@ -669,11 +694,15 @@ export async function readOutput(name: string, o: ReadOpts = {}): Promise<string
     // WSL 再起動等でログが作り直されると、Windows 側に残った旧 offset が新ログ長を超え、
     // subarray が空を返して「何も読めない」状態になる。末尾越えは先頭から読み直す（POSIX では no-op）。
     if (off > data.length) off = 0;
-    text = data.subarray(off).toString("utf8");
+    // 両端を UTF-8 文字境界に丸める（B3）。off は前回この分岐が safeEnd を書くので先頭は割れず、
+    // 末尾の不完全マルチバイト列は次回へ持ち越す。純 ASCII では safeEnd===data.length で従来と一致。
+    const safeEnd = Math.max(off, utf8SafeEnd(data, data.length));
+    text = data.subarray(off, safeEnd).toString("utf8");
+    nextOffset = safeEnd;
     if (o.lines) text = text.split("\n").slice(-o.lines).join("\n");
   }
 
-  if (!o.range) writeOffset(name, data.length); // 既定/full は offset を末尾へ
+  if (!o.range) writeOffset(name, nextOffset);
 
   if (o.raw) return text.endsWith("\n") ? text : text + "\n";
 
