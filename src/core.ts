@@ -727,7 +727,10 @@ export function openAgent(
   const cmd = buildAgentCmd(kind, bin, effort, opts.prompt ?? null);
   const full = opts.cwd ? `cd ${shq(opts.cwd)} && ${cmd}` : cmd;
   try {
-    send(sid, full, { enter: true, mark: false, force: false, rtk: false, raw: true });
+    // force:true で送る。起動骨格は `bin '...'` の固定形で、prompt/cwd/effort は shq でクオート済みの
+    // 引数＝シェルは決して破壊コマンドとして実行しない。破壊ゲート（生シェルコマンド想定）を prompt に
+    // 掛けるのは純誤検知で、`codex 'rm -rf / を説明して'` 等の正当な起動を塞いでしまう（A4）。
+    send(sid, full, { enter: true, mark: false, force: true, rtk: false, raw: true });
   } catch (e) {
     // 起動コマンドを投入できなかった session は空のまま残る＝残骸を作らない。片付けてから元エラーを伝える。
     try {

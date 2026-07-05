@@ -51,12 +51,25 @@ test("openAgent: 実在しない cwd は session を作る前に拒否", () => {
   );
 });
 
-test("openAgent: send が破壊ゲートで落ちたら session を残さない", { skip }, () => {
+test("openAgent: 破壊語を含む prompt は誤検知で拒否しない（引用符付き引数ゆえ安全・A4）", { skip }, () => {
   const before = core.listSessions();
-  // prompt に破壊パターンを含めると send(force:false) が code 3 で throw する（未送信・未実行）。
+  // prompt の破壊語は CLI に渡る shq クオート済み引数でありシェルは実行しない。起動できること。
+  // （修正前は send(force:false) が code 3 で誤爆し、正当な起動を塞いでいた。）
+  const [sid] = core.openAgent("codex", { prompt: "explain what rm -rf / does" });
+  try {
+    assert.notEqual(core.listSessions(), before, "破壊語 prompt で起動できず session が作られない");
+  } finally {
+    core.closeSession(sid);
+  }
+  assert.equal(core.listSessions(), before, "close 後は元の一覧へ戻る");
+});
+
+test("openAgent: 前段検証で落ちたら session を残さない（残骸ゼロ）", { skip }, () => {
+  const before = core.listSessions();
+  // cwd 不在は session 作成前に code 2 で throw する。残骸を残さないこと。
   assert.throws(
-    () => core.openAgent("codex", { prompt: "rm -rf /" }),
-    (e) => e.code === 3,
+    () => core.openAgent("codex", { cwd: "/no/such/dir-aiterm-agent-test-2" }),
+    (e) => e.code === 2,
   );
   assert.equal(core.listSessions(), before, "失敗した openAgent が session を残した");
 });
