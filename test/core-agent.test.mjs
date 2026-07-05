@@ -17,7 +17,11 @@ const hasTmux =
 // prefix は短く保つ（macOS の UNIX ソケットパスは 104 バイト上限。長い prefix だと
 // claude.sock への接続が "File name too long" で落ちる——実測）。
 process.env.TMPDIR = fs.mkdtempSync(path.join(os.tmpdir(), "aiterm-agt-"));
-process.env.CODEX_BIN = "/bin/echo"; // 実 CLI を起動せず openAgent の配管だけ検証する
+// 実 CLI を起動せず openAgent の配管だけ検証する偽 bin。resolveAgentBin は存在検証する（A3）ため、
+// 実在するパスにする必要がある。POSIX は /bin/echo（起動コマンドを echo で可視化できる）、native
+// Windows には /bin/echo が無いので node 自身（必ず存在）を使う——echo 出力を読む grok/composer/codex
+// 組立テストは { skip }（tmux 必須）で native Windows では走らないため、可視化不要な bin で足りる。
+process.env.CODEX_BIN = process.platform === "win32" ? process.execPath : "/bin/echo";
 const core = await import("../dist/core.js");
 const skip = hasTmux ? undefined : "tmux 未インストール";
 
