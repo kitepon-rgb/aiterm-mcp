@@ -19,8 +19,18 @@ const core = await import("../dist/core.js");
 const SOCKDIR = path.join(process.env.TMPDIR, "claude-tmux-sockets");
 const skip = hasTmux ? undefined : "tmux 未インストール";
 const SESS = "selftest";
+// 安全策（多層防御）: 破壊ゲートテストは万一ゲートをすり抜けても実害が出ないよう、session を
+// 使い捨てサンドボックスへ cd してから走らせる。過去のインシデント（未ビルドの新ゲートケースを
+// enter:true で送り、プロジェクトルート cwd で rm が実行され tracked ファイルが消えた）の再発防止。
+// 併せて BLOCKED 送信は enter:false（Enter を送らない＝すり抜けても未実行）にしている。
+const SANDBOX = hasTmux ? fs.mkdtempSync(path.join(process.env.TMPDIR, "sandbox-")) : "";
 
-before(() => { if (hasTmux) core.openSession(SESS); });
+before(() => {
+  if (hasTmux) {
+    core.openSession(SESS);
+    core.send(SESS, `cd ${SANDBOX}`, { force: true }); // 以後この session の cwd はサンドボックス
+  }
+});
 after(() => { if (hasTmux) { try { core.killAll(); } catch {} } });
 
 // ---------------------------------------------------------------- 破壊ゲート（10 正規表現を網羅・遮断＝未送信）
@@ -31,6 +41,13 @@ const BLOCKED = [
   ["rm -rf /*", "rm /*"],
   ["rm -Rf  .", "rm 末尾ドット"],
   ["rm -fr *", "rm 末尾アスタリスク"],
+  // B2: 従来すり抜けていた危険形（相対 glob・引用符付き root/home・親/カレント dir）。
+  ["rm -rf ./*", "rm 相対glob ./*"],
+  ['rm -rf "/"', "rm 引用符root(dq)"],
+  ["rm -rf '/'", "rm 引用符root(sq)"],
+  ["rm -rf ./", "rm カレント全体 ./"],
+  ["rm -rf ..", "rm 親dir .."],
+  ['rm -rf "~"', "rm 引用符home"],
   ["mkfs.ext4 /dev/sda1", "mkfs"],
   ["dd if=/dev/zero of=/dev/sda bs=1M", "dd of=/dev/"],
   ["echo boom > /dev/sda", "> /dev/sd*"],
@@ -44,15 +61,27 @@ const BLOCKED = [
 ];
 for (const [cmd, label] of BLOCKED) {
   test(`破壊ゲート: ${label} を遮断(code3・未送信)`, { skip }, () => {
-    assert.throws(() => core.send(SESS, cmd), (e) => e.code === 3);
+    // enter:false＝万一ゲートがすり抜けても Enter を送らないので未実行（多層防御）。
+    // ゲートの throw は send-keys より前なので enter の有無に関わらず発火する。
+    assert.throws(() => core.send(SESS, cmd, { enter: false }), (e) => e.code === 3);
   });
 }
 
-test("破壊ゲート: 相対パスの rm は遮断しない（仕様）", { skip }, () => {
-  const r = core.send(SESS, "rm -rf ./build", { enter: false });
-  assert.match(r, /sent \d+ chars/);
-  core.sendKey(SESS, "C-u"); // 打鍵を消す（未実行）
-});
+// B2: widen が正当な削除まで巻き込まない（過剰ブロック回避）ことを固定する。
+const ALLOWED_RM = [
+  ["rm -rf ./build", "相対サブdir"],
+  ["rm -rf node_modules", "名前付きdir"],
+  ["rm -rf ./src/old", "相対深いサブdir"],
+  ["rm -rf dist/", "末尾スラッシュのサブdir"],
+  ["rm -f foo.txt", "単一ファイル"],
+];
+for (const [cmd, label] of ALLOWED_RM) {
+  test(`破壊ゲート: 正当な rm は遮断しない（${label}）`, { skip }, () => {
+    const r = core.send(SESS, cmd, { enter: false });
+    assert.match(r, /sent \d+ chars/);
+    core.sendKey(SESS, "C-u"); // 打鍵を消す（未実行）
+  });
+}
 test("破壊ゲート: force=true で越える（使い捨てパス・未実行）", { skip }, () => {
   const r = core.send(SESS, "rm -rf /tmp/aiterm_selftest_force", { force: true, enter: false });
   assert.match(r, /sent \d+ chars/);
