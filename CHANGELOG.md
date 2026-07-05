@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-07-05
+
 ### Fixed (全域監査スイープ 2026-07-05 — 詳細は docs/03_audit-sweep-2026-07.md)
 - **pytest 収集エラーの誤変換**: `read rtk:true` で pytest の収集エラー（import 失敗等）が
   `Pytest: No tests collected` や `Pytest: 1 passed` に潰れ、赤を無害/緑と誤読していた問題を修正（C1）。
@@ -220,7 +222,8 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.5.0...v0.6.0
