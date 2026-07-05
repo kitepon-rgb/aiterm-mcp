@@ -2,22 +2,25 @@
   <rect width="1280" height="640" fill="#0b0e14"/>
   <rect x="0" y="0" width="1280" height="6" fill="#3fb950"/>
 
-  <text x="80" y="138" fill="#e6edf3" font-size="88" font-weight="700">aiterm<tspan fill="#3fb950">-mcp</tspan></text>
-  <text x="84" y="190" fill="#8b949e" font-size="29">AI holds one persistent terminal as a stdio MCP server.</text>
+  <text x="80" y="128" fill="#e6edf3" font-size="84" font-weight="700">aiterm<tspan fill="#3fb950">-mcp</tspan></text>
+  <text x="84" y="180" fill="#8b949e" font-size="26">One persistent terminal your AI drives — and launches other AIs into it.</text>
 
-  <g transform="translate(80,248)">
-    <rect width="1120" height="316" rx="14" fill="#0d1117" stroke="#30363d" stroke-width="1.5"/>
+  <g transform="translate(80,236)">
+    <rect width="1120" height="332" rx="14" fill="#0d1117" stroke="#30363d" stroke-width="1.5"/>
     <circle cx="30" cy="30" r="7" fill="#ff5f56"/>
     <circle cx="54" cy="30" r="7" fill="#ffbd2e"/>
     <circle cx="78" cy="30" r="7" fill="#27c93f"/>
     <text x="1088" y="37" fill="#6e7681" font-size="20" text-anchor="end">9 tools · npx -y aiterm-mcp</text>
 
-    <g font-size="28">
-      <text x="32" y="108" fill="#c9d1d9">$ <tspan fill="#58a6ff">pty_open</tspan>()</text>
-      <text x="32" y="156" fill="#c9d1d9">$ <tspan fill="#58a6ff">pty_send</tspan>(id, <tspan fill="#a5d6ff">"ssh 192.168.1.2"</tspan>)</text>
-      <text x="32" y="204" fill="#c9d1d9">$ <tspan fill="#58a6ff">pty_read</tspan>(id, { wait: true })</text>
+    <g font-size="26">
+      <text x="32" y="100" fill="#c9d1d9">$ <tspan fill="#58a6ff">codex_agent</tspan>({ session_name: <tspan fill="#a5d6ff">"codex1"</tspan>,</text>
+      <text x="32" y="140" fill="#c9d1d9">                prompt: <tspan fill="#a5d6ff">"port these tests"</tspan> })</text>
+      <text x="32" y="184" fill="#6e7681">    → Codex now live in a persistent terminal</text>
+      <text x="32" y="228" fill="#c9d1d9">$ <tspan fill="#58a6ff">pty_read</tspan>(<tspan fill="#a5d6ff">"codex1"</tspan>, { screen: true })</text>
+      <text x="32" y="268" fill="#c9d1d9">$ <tspan fill="#58a6ff">pty_send</tspan>(<tspan fill="#a5d6ff">"codex1"</tspan>, <tspan fill="#a5d6ff">"fix the imports"</tspan>)</text>
     </g>
-    <text x="32" y="262" fill="#3fb950" font-size="25">✓ 451 lines elided · is_complete=True via quiescent</text>
-    <text x="32" y="298" fill="#6e7681" font-size="21">SSH · containers · REPLs are just text you send in — tmux keeps it alive.</text>
+    <text x="32" y="312" fill="#3fb950" font-size="23">✓ driving Codex's TUI in a persistent terminal · no human at a tmux</text>
   </g>
+
+  <text x="84" y="610" fill="#6e7681" font-size="21">ssh · docker · REPLs nest the same way — headless, over MCP · Codex · Grok · Composer</text>
 </svg>
