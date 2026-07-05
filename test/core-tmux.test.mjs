@@ -257,6 +257,32 @@ test("read wait: 不正な until 正規表現は明示エラー(code2)（B13）"
   }
 });
 
+// ---------------------------------------------------------------- stale-log 復活防止 / killAll 掃除（B5/B9/B14）
+test("openSession: 事前に残った同名 .log を truncate し旧出力を復活させない（B5）", { skip }, async () => {
+  const nm = "selftest_stale";
+  fs.mkdirSync(SOCKDIR, { recursive: true });
+  fs.writeFileSync(path.join(SOCKDIR, nm + ".log"), "STALE_OLD_DATA_XYZ\n"); // 外部kill で残った旧ログ相当
+  core.openSession(nm); // 既存 .log は truncate されるべき（"a" なら旧データが残る）
+  try {
+    core.send(nm, "echo FRESH_OK");
+    const out = await core.readOutput(nm, { wait: true, timeout: 5 });
+    assert.ok(!out.includes("STALE_OLD_DATA_XYZ"), `旧ログが復活した: ${out}`);
+    assert.ok(out.includes("FRESH_OK"), `新出力が読めない: ${out}`);
+  } finally {
+    core.closeSession(nm);
+  }
+});
+test("killAll: SOCKDIR の残骸ファイル(.log 等)も掃除する（B9）", { skip }, () => {
+  core.openSession("selftest_ka1");
+  core.send("selftest_ka1", "echo x");
+  assert.ok(fs.existsSync(path.join(SOCKDIR, "selftest_ka1.log")), "前提: log が作られている");
+  core.killAll();
+  assert.ok(!fs.existsSync(path.join(SOCKDIR, "selftest_ka1.log")), "killAll が .log を残した（B9）");
+  // killAll は SESS も消すため後続テストのために復元する（順序非依存にする）。
+  core.openSession(SESS);
+  core.send(SESS, `cd ${SANDBOX}`, { force: true });
+});
+
 // ---------------------------------------------------------------- session 名検証（トラバーサル/インジェクション遮断）
 // 検証は tmux 呼び出し前に throw するので OS 非依存・skip 不要。
 const BAD_NAMES = [

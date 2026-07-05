@@ -519,7 +519,17 @@ export function openSession(name?: string | null, shell = "bash"): [string, stri
     nm = nonceName();
     assertSessionName(nm);
   }
-  fs.closeSync(fs.openSync(logpath(nm), "a")); // touch
+  // 新規セッションの .log は必ず truncate する。"a"（追記）だと外部 kill / killAll / クラッシュで
+  // 同名 session だけ消えて .log が残った場合、offset=0 と相まって旧出力を新規として返す（B5）。
+  // break は new-session 成功後にのみ到達＝作りたての空 session ゆえ切り詰めは安全。lastcmd/mark 残骸も掃除。
+  fs.writeFileSync(logpath(nm), "");
+  for (const p of [lastcmdpath(nm), markpath(nm)]) {
+    try {
+      fs.unlinkSync(p);
+    } catch {
+      /* noop */
+    }
+  }
   // pipe-pane の引数は tmux 内部の /bin/sh -c で再解釈される（argv ではない）。パスは単一引用符で包み、
   // パス自身の ' は '\'' イディオムでエスケープする（名前は検証済みだが、Windows ユーザー名 O'Brien 等が
   // 一時パスに ' を持ち込み redirect を壊すのを防ぐ。空白対策も兼ねる）。Windows は WSL から見える /mnt/c 形へ。
@@ -529,6 +539,11 @@ export function openSession(name?: string | null, shell = "bash"): [string, stri
   if (pr.code !== 0) {
     // 配管に失敗した session は pty_read が永遠に空を返す＝成功を装わない。作った session を片付けて明示エラー。
     tmux("kill-session", "-t", nm);
+    try {
+      fs.unlinkSync(logpath(nm)); // B14: 直前に作った空 .log も残さない
+    } catch {
+      /* noop */
+    }
     throw new AitermError("tmux pipe-pane 失敗（出力ログを配管できないため session を破棄）: " + pr.stderr.trim(), 2);
   }
   writeOffset(nm, 0);
@@ -707,6 +722,20 @@ export function closeSession(name: string): string {
 
 export function killAll(): string {
   tmux("kill-server");
+  // B9: SOCKDIR 内の .log/.offset/.lastcmd/.mark 残骸も掃除する（残すと B5 の stale-log 復活の温床）。
+  try {
+    for (const f of fs.readdirSync(SOCKDIR)) {
+      if (/\.(log|offset|lastcmd|mark)$/.test(f)) {
+        try {
+          fs.unlinkSync(path.join(SOCKDIR, f));
+        } catch {
+          /* noop */
+        }
+      }
+    }
+  } catch {
+    /* SOCKDIR 不在等は無視 */
+  }
   return "killed all sessions on this socket";
 }
 
