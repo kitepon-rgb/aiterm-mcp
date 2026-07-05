@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (全域監査スイープ 2026-07-05 — 詳細は docs/03_audit-sweep-2026-07.md)
+- **pytest 収集エラーの誤変換**: `read rtk:true` で pytest の収集エラー（import 失敗等）が
+  `Pytest: No tests collected` や `Pytest: 1 passed` に潰れ、赤を無害/緑と誤読していた問題を修正（C1）。
+- **mark 完了検出のエコー誤爆**: `pty_send(mark:true)` の sentinel がコマンドエコーに部分一致し、
+  長時間コマンドで早期に「完了」と偽っていた問題を修正。数字アンカー sentinel で自動検出（B1）。
+- **エージェント起動の破壊ゲート誤爆**: `codex_agent`/`grok_agent`/`composer_agent` の初手 prompt に
+  `rm -rf /`・`git reset --hard` 等の語を含めると起動が拒否されていた誤検知を解消（A4）。
+- **破壊ゲートのすり抜け**: `rm -rf ./*`・`rm -rf "/"`・`rm -rf ..`・`rm -rf ./` を遮断対象に追加（B2）。
+- **セッションログの復活**: 外部 kill 後に残った同名ログを新規出力として返す問題を truncate で修正（B5）。
+- **UTF-8 境界分断 / DCS・APC 残存**: 増分読みの文字境界丸めと制御シーケンス除去を強化（B3/B10）。
+- エージェント起動の Windows 対応（bin/cwd の WSL パス変換）・env bin 実在検証・cwd の空/`~` 検証（A1/A3/A6）。
+- reducer の分類/除去精度（stripShellFrame の過剰除去、`python3 -m pytest`・`uv/poetry run` 等の分類）（C2-C6）。
+
+### Changed
+- **`pty_read` の `until` を既定でリテラル部分一致に**（従来は正規表現直解釈）。`$ ` や `[..]` 等が
+  メタ化して永遠に待つ事故を防ぐ。正規表現が必要なときは `until_regex: true` でオプトイン（B4）。
+- `pty_send(mark:true)` は `pty_read(wait:true)` が until 無しでも完了を自動検出するように（B1）。
+- `pty_read` の `screen+wait`（完了後に画面取得）・`full+lines`（末尾 N 行）を機能化（従来は黙殺）（B11）。
+- 読み取り・完了検出のメモリ/tmux spawn を削減（fd 範囲読み・伸長中の生存確認省略）（B6/B7）。
+
+### CI / Infra
+- ネイティブ Windows CI（windows-latest, Node 20/22, 非ブロッキング）を追加。純粋層を検証（C9）。
+- registry publish が npm publish の完了を待つ／再 publish は idempotent にスキップ（C10/C11）。
+- テストのタイミング依存（固定 sleep・smoke の timeout 挙動）を解消しフレイキーを除去（C8）。
+
 ### Added
 - `.github/workflows/registry.yml`: publishes `server.json` to the Official MCP
   Registry via GitHub OIDC (on release, or manual dispatch). aiterm-mcp is now
@@ -15,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.github/avatar.svg` + `.github/avatar.png`: square avatar mark (terminal
   `>_` prompt) for directory listings and social cards.
 
-### Changed
+### Changed (metadata)
 - CI: bump `actions/checkout` and `actions/setup-node` to v5 (the Node 20 action
   runtime is being removed from GitHub Actions).
 
@@ -196,7 +221,10 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   provenance.
 
 [Unreleased]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.7.1...HEAD
-[0.7.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.4.1...v0.7.1
+[0.7.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.7.0...v0.7.1
+[0.7.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.3.0...v0.3.1

@@ -18,7 +18,7 @@ Done and verified:
 - ✅ **npm 0.4.1 republished** — new keywords + `mcpName` active.
 - ✅ **Official MCP Registry** — `io.github.kitepon-rgb/aiterm-mcp@0.4.1` listed; auto-registers on each release via `.github/workflows/registry.yml` (OIDC).
 - ✅ **mcp.so** — submitted/listed (with the square `.github/avatar.png`).
-- ✅ **GitHub topic** `mcp-server` added; **v0.3.1 Release** backfilled; **v0.4.1** is the latest Release.
+- ✅ **GitHub topic** `mcp-server` added; **v0.3.1 Release** backfilled. （以降 v0.5.0〜**v0.7.1** までリリース継続。この節は 0.4.1 時点の発見性作業の記録＝現行の最新版・ツール数は CLAUDE.md / README を参照。）
 - 🔄 **awesome-mcp-servers** — PR [#7620](https://github.com/punkpeye/awesome-mcp-servers/pull/7620) open (awaiting maintainer merge).
 - ✅ **Announced** on r/mcp.
 

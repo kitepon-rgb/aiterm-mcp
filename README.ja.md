@@ -113,7 +113,7 @@ pty_send("codex1", "also fix the imports it broke")   → 作業の途中で操�
 ← 499999500000                                     [is_complete=True via until]
 ```
 
-上の採取で私が触ったのは 2 本の `⋮` 行（長い head/tail を README 用に省略）と長すぎる grep 行 1 本の truncate だけ——`〈…〉` マーカー・トークン数・各 `is_complete` はツールが出した通り。（`until` は末尾スペース無しの `">>>"` を使う——採取されるプロンプトは末尾が削られるので `">>> "` だと外れて `timeout` に落ちる。）ネスト中は `until`（内側プロンプト）か `mark: true` を渡すこと——そこでは quiescence が原理的に効かないため（[完了検出](#完了検出4-層) / [既知の制約](#既知の制約バグではなく仕様)）。同じ tmux ソケットに人が `attach` すれば、これらをライブで覗ける（[人が覗く](#人が覗く)）。
+上の採取で私が触ったのは 2 本の `⋮` 行（長い head/tail を README 用に省略）と長すぎる grep 行 1 本の truncate だけ——`〈…〉` マーカー・トークン数・各 `is_complete` はツールが出した通り。（`until` は末尾スペース無しの `">>>"` を使う——採取されるプロンプトは末尾が削られるので `">>> "` だと外れて `timeout` に落ちる。）ネスト中は `until`（内側プロンプト）か `mark: true` を渡すこと——そこでは quiescence が原理的に効かないため（[完了検出](#完了検出5-層) / [既知の制約](#既知の制約バグではなく仕様)）。同じ tmux ソケットに人が `attach` すれば、これらをライブで覗ける（[人が覗く](#人が覗く)）。
 
 ## クイックスタート（約60秒）
 
@@ -185,7 +185,7 @@ aiterm は 2 つの系譜の交点にいる——端末を操作する MCP サ�
 | ヘッドレス（人が tmux に居ない） | ✅ MCP 駆動・プログラム的 | ✅ | ⚠️ まちまち | ❌ 人が tmux に居る前提 |
 | MCP ネイティブ（任意の MCP クライアント） | ✅ `claude mcp add` 1 行 | ✅ | ✅（MCP なので） | ❌ tmux 設定 + CLI + Agent Skills |
 | トークン削減読取 | ✅ コマンド別 reducer | ❌ 生出力 | ⚠️ ほぼ無し | ❌ 生 tmux |
-| 完了検出 | 4 層: 終了 / `until` / 静止 / timeout | 無し（毎回ブロック） | ⚠️ プロンプト一致・脆い | ❌ エージェントがペインを読む |
+| 完了検出 | 5 層: 終了 / `mark` / `until` / 静止 / timeout | 無し（毎回ブロック） | ⚠️ プロンプト一致・脆い | ❌ エージェントがペインを読む |
 | 破壊コマンド遮断 | ✅ tripwire（`force` で越える） | ❌ | ⚠️ まちまち | ❌ |
 | 人が同時操作 | ✅ 共有 tmux ソケット（`attach`） | ❌ | ⚠️ まちまち | ✅（設計の芯） |
 
@@ -199,7 +199,7 @@ aiterm は同じ核心の洞察——端末を出会いの場にする——を�
 2. **MCP ネイティブ＝採用させるワークフローではない。** aiterm は stdio MCP サーバ: `claude mcp add` 1 行で、stdio を話す任意の MCP クライアントに構造化ツールとして刺さる（実機確認は Claude Code。Cursor / Cline / Claude Desktop も同じプロトコルなので同様に動くはず）。tmux 設定の採用も・ペイン操作の習得も・skills の導入も求めない——クライアントは既にツール呼び出しの仕方を知っている。
 3. **エージェント起動が 1 ツールコール＝オーケストレーションの primitive。** `codex_agent()` が Codex を永続端末に起こし、すぐ操作できるセッションを返す。ペインを手で並べたり貼り付けたりしない——起動も・操舵も・読取も、指揮するモデルが自分で打てるツールコールだ。
 
-その上に、生の tmux ブリッジには無い製品化レイヤが乗る: **トークン削減読取**・**4 層の完了検出**・**破壊コマンドの tripwire**。これらは人が tmux に居るモデルを否定しない——人がどこに立つかについての、別の・補完的な賭けだ。
+その上に、生の tmux ブリッジには無い製品化レイヤが乗る: **トークン削減読取**・**5 層の完了検出**・**破壊コマンドの tripwire**。これらは人が tmux に居るモデルを否定しない——人がどこに立つかについての、別の・補完的な賭けだ。
 
 ## ツール
 
@@ -207,7 +207,7 @@ aiterm は同じ核心の洞察——端末を出会いの場にする——を�
 | --- | --- | --- |
 | `pty_open` | 端末を 1 個握り `session_id` を返す | `name?`, `shell="bash"` |
 | `pty_send` | テキスト(コマンド)を送る | `session_id`, `text`, `enter=true`, `mark`, `force`, `rtk`, `raw` |
-| `pty_read` | 出力を削減して読む（既定は増分） | `session_id`, `wait`, `until`, `timeout`, `screen`, `full`, `lines`, `line_range`, `raw`, `rtk` |
+| `pty_read` | 出力を削減して読む（既定は増分） | `session_id`, `wait`, `until`, `until_regex`, `timeout`, `screen`, `full`, `lines`, `line_range`, `raw`, `rtk` |
 | `pty_key` | 制御キーを送る | `session_id`, `key`（`C-c`/`Enter`/`Up`…） |
 | `pty_close` | セッションを閉じる | `session_id` |
 | `pty_list` | セッション一覧 | （なし） |
@@ -224,9 +224,9 @@ aiterm は同じ核心の洞察——端末を出会いの場にする——を�
 
 各ベンダーの CLI が導入・認証済みであること（`codex_agent` は `codex`、Grok 系 2 つは `grok`）。バイナリは `CODEX_BIN` / `GROK_BIN` → `~/.local/bin/codex` / `~/.grok/bin/grok` → `PATH` の順で解決する。前提はセッション作成前に検証し（grok/composer は範囲外の `reasoning_effort` を弾く。CLI 不在・実在しない `cwd` は 3 つとも失敗）、起動に失敗してもセッションの残骸は残さない。詳細は [その端末の中に他のコーディングエージェントを起動する](#2-その端末の中に他のコーディングエージェントを起動する--オーケストレーションの旗艦)。`cwd` は絶対パスで渡す——`~` は展開されない。
 
-### 完了検出（4 層）
+### 完了検出（5 層）
 
-`pty_read({ wait: true })` は、プロセス終了 / `until` 正規表現一致 / 出力静止 ∧ シェル復帰（quiescence）/ timeout の 4 層で「コマンドが終わったか」を判定する。ネスト中（SSH・コンテナ・REPL・起動したエージェントの TUI の中）はシェル復帰判定が効かないので、`until` で内側プロンプトを指定すると綺麗に判定できる——全画面のエージェント TUI なら、出力が落ち着いた時点で `{ screen: true }` を読む。
+`pty_read({ wait: true })` は、プロセス終了 / `mark:true` sentinel の自動検出（後述）/ `until` 一致（**既定はリテラル部分一致**、`until_regex: true` で正規表現）/ 出力静止 ∧ シェル復帰（quiescence）/ timeout の 5 層で「コマンドが終わったか」を判定する。ネスト中（SSH・コンテナ・REPL・起動したエージェントの TUI の中）はシェル復帰判定が効かないので、`until` で内側プロンプトを指定するか、`mark: true` で送れば `pty_read({ wait: true })` が sentinel を自動検出する（until 不要・ネストでも効く）——全画面のエージェント TUI なら、出力が落ち着いた時点で `{ screen: true }` を読む。
 
 ### トークン削減
 
@@ -253,7 +253,7 @@ aiterm は同じ核心の洞察——端末を出会いの場にする——を�
 
 ## 既知の制約（バグではなく仕様）
 
-- **ネスト中（ssh / docker / REPL / 起動したエージェント TUI）は quiescence が原理的に効かない。** 前面コマンドがシェル集合（bash/sh/zsh/fish/dash）の外になるため。ネスト中で `until` 未指定のときは、待っても完了を確定できる信号が無いので、`pty_read({ wait: true })` はフル `timeout` を空費せず出力静止時点で `is_complete=False via nested` と早期に返し、`until`（プロンプト等の正規表現）か `mark: true`（終了コード付き sentinel）の指定を促す。全画面のエージェント TUI なら、出力が落ち着いた時点で `{ screen: true }` を読む。
+- **ネスト中（ssh / docker / REPL / 起動したエージェント TUI）は quiescence が原理的に効かない。** 前面コマンドがシェル集合（bash/sh/zsh/fish/dash）の外になるため。ネスト中で `until` も `mark` も無いときは、待っても完了を確定できる信号が無いので、`pty_read({ wait: true })` はフル `timeout` を空費せず出力静止時点で `is_complete=False via nested` と早期に返し、`until`（既定リテラル部分一致・`until_regex: true` で正規表現）か `mark: true`（終了コード付き sentinel・自動検出）の指定を促す。全画面のエージェント TUI なら、出力が落ち着いた時点で `{ screen: true }` を読む。
 - **`is_complete=False` は失敗ではない。** 「timeout 内に完了を観測できなかった」という意味。長時間コマンドでは `timeout` を伸ばすか `until`/`mark` を使う。
 - **破壊ゲートはサンドボックスではなく tripwire。** よくある破壊形だけを弾く。相対パスの `rm`、`$VAR` 展開後に危険化するもの、ssh 先で実行されるコマンドは捕捉しない——起動したコーディングエージェントが自分のセッション内で何をするかも取り締まらない。
 - **エージェント起動ツールはベンダー TUI を起動するだけで、包んだり代理したりしない。** aiterm は前提を検証して CLI を永続 PTY で起動する——モデル・認証・挙動はベンダー CLI のもの。`claude` の起動ツールは無く、エージェント間のプロトコルも無い。「会話」とは、あなたの MCP クライアントが TUI を操作すること（入力を送り、出力を読む）だ。

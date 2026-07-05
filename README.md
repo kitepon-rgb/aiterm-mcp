@@ -113,7 +113,7 @@ Nesting is just text you send in — here a Python REPL *inside* the same PTY (a
 ← 499999500000                                      [is_complete=True via until]
 ```
 
-The only edits to the captures above are the two `⋮` lines (a long head/tail run abbreviated for the README) and one over-long grep line truncated to fit — the `⟨…⟩` marker, the token counts, and every `is_complete` verdict are exactly what the tool printed. (Use `until: ">>>"` without a trailing space — the captured prompt is trimmed, so `">>> "` would miss and fall through to `timeout`.) While nested, pass `until` (the inner prompt) or `mark: true`, because quiescence cannot fire there by design — see [Completion detection](#completion-detection-4-layers) and [Known constraints](#known-constraints-by-design-not-bugs). A human can `attach` to the same tmux socket and watch any of this live (see [A human can watch](#a-human-can-watch)).
+The only edits to the captures above are the two `⋮` lines (a long head/tail run abbreviated for the README) and one over-long grep line truncated to fit — the `⟨…⟩` marker, the token counts, and every `is_complete` verdict are exactly what the tool printed. (Use `until: ">>>"` without a trailing space — the captured prompt is trimmed, so `">>> "` would miss and fall through to `timeout`.) While nested, pass `until` (the inner prompt) or `mark: true`, because quiescence cannot fire there by design — see [Completion detection](#completion-detection-5-layers) and [Known constraints](#known-constraints-by-design-not-bugs). A human can `attach` to the same tmux socket and watch any of this live (see [A human can watch](#a-human-can-watch)).
 
 ## Quickstart (≈60 seconds)
 
@@ -185,7 +185,7 @@ aiterm sits at the intersection of two families: terminal-driving MCP servers, a
 | Headless (no human at a tmux) | ✅ MCP-driven, programmatic | ✅ | ⚠️ varies | ❌ built around a human in the tmux |
 | MCP-native (any MCP client) | ✅ one `claude mcp add` | ✅ | ✅ (they are MCPs) | ❌ tmux config + CLI + Agent Skills |
 | Token-reduced reads | ✅ per-command reducers | ❌ raw output | ⚠️ rarely | ❌ raw tmux |
-| Completion detection | 4-layer: exit / `until` / quiescence / timeout | n/a (blocks per call) | ⚠️ prompt-match, fragile | ❌ agent reads the pane |
+| Completion detection | 5-layer: exit / `mark` / `until` / quiescence / timeout | n/a (blocks per call) | ⚠️ prompt-match, fragile | ❌ agent reads the pane |
 | Destructive-command gate | ✅ tripwire (override with `force`) | ❌ | ⚠️ varies | ❌ |
 | Human can co-drive | ✅ shared tmux socket (`attach`) | ❌ | ⚠️ varies | ✅ (its core model) |
 
@@ -199,7 +199,7 @@ aiterm takes the same core insight — the terminal as the meeting point — and
 2. **MCP-native, not a workflow you adopt.** aiterm is a stdio MCP server: one `claude mcp add` line and it works as structured tools in any MCP client that speaks stdio (tested in Claude Code; Cursor, Cline, and Claude Desktop speak the same protocol and should work the same way). It doesn't ask you to adopt a tmux config, learn pane navigation, or install skills into your setup — the client already knows how to call tools.
 3. **Launching an agent is one tool call — an orchestration primitive.** `codex_agent()` spawns Codex in a persistent terminal and returns a session you drive immediately. You don't arrange panes or paste between them by hand; the launch, the steering, and the reads are all tool calls the orchestrating model can make on its own.
 
-On top of that sits a productized layer a raw tmux bridge doesn't have: **token-reduced reads**, **4-layer completion detection**, and a **destructive-command tripwire**. None of this makes the human-in-the-tmux model wrong — it's a different, complementary bet on where the human is standing.
+On top of that sits a productized layer a raw tmux bridge doesn't have: **token-reduced reads**, **5-layer completion detection**, and a **destructive-command tripwire**. None of this makes the human-in-the-tmux model wrong — it's a different, complementary bet on where the human is standing.
 
 ## Tools
 
@@ -207,7 +207,7 @@ On top of that sits a productized layer a raw tmux bridge doesn't have: **token-
 | --- | --- | --- |
 | `pty_open` | Grab one terminal, return a `session_id` | `name?`, `shell="bash"` |
 | `pty_send` | Send text (a command) | `session_id`, `text`, `enter=true`, `mark`, `force`, `rtk`, `raw` |
-| `pty_read` | Read output, token-reduced (incremental by default) | `session_id`, `wait`, `until`, `timeout`, `screen`, `full`, `lines`, `line_range`, `raw`, `rtk` |
+| `pty_read` | Read output, token-reduced (incremental by default) | `session_id`, `wait`, `until`, `until_regex`, `timeout`, `screen`, `full`, `lines`, `line_range`, `raw`, `rtk` |
 | `pty_key` | Send a control key | `session_id`, `key` (`C-c`/`Enter`/`Up`…) |
 | `pty_close` | Close a session | `session_id` |
 | `pty_list` | List sessions | (none) |
@@ -224,9 +224,9 @@ Each launcher starts a specific vendor's interactive coding-agent TUI inside a f
 
 The vendor CLI must be installed and authenticated (`codex` for `codex_agent`; `grok` for both Grok tools). aiterm resolves the binary via `CODEX_BIN` / `GROK_BIN`, then `~/.local/bin/codex` / `~/.grok/bin/grok`, then `PATH`. Prerequisites are validated before a session is created (grok/composer reject an out-of-range `reasoning_effort`; a missing CLI or a nonexistent `cwd` fails for all three), and a failed launch leaves no session behind. Full details under [Launch other coding agents into that terminal](#2-launch-other-coding-agents-into-that-terminal--the-orchestration-flagship). Pass an absolute path for `cwd` — `~` is not expanded.
 
-### Completion detection (4 layers)
+### Completion detection (5 layers)
 
-`pty_read({ wait: true })` decides "is the command done?" via four layers: process exit / `until` regex match / output is quiescent ∧ the shell is back (quiescence) / timeout. While nested (inside SSH, a container, a REPL, or a launched agent's TUI), the "shell is back" check cannot fire, so pass `until` with the inner prompt for a clean decision — or, for a full-screen agent TUI, read `{ screen: true }` once its output settles.
+`pty_read({ wait: true })` decides "is the command done?" via five layers: process exit / a `mark:true` sentinel (auto-detected — see below) / an `until` match (a literal substring by default; pass `until_regex: true` for a regex) / output is quiescent ∧ the shell is back (quiescence) / timeout. While nested (inside SSH, a container, a REPL, or a launched agent's TUI), the "shell is back" check cannot fire, so pass `until` with the inner prompt — or send with `mark: true` and `pty_read({ wait: true })` auto-detects the completion sentinel (no `until` needed, works nested too) — or, for a full-screen agent TUI, read `{ screen: true }` once its output settles.
 
 ### Token reduction
 
@@ -253,7 +253,7 @@ Sessions live on a shared tmux socket. The `tmux -S … attach -t <id>` line pri
 
 ## Known constraints (by design, not bugs)
 
-- **While nested (ssh / docker / REPL / a launched agent TUI), quiescence cannot fire by design**, because the foreground command is no longer in the shell set (bash/sh/zsh/fish/dash). When nested with no `until`, `pty_read({ wait: true })` returns early as `is_complete=False via nested` (rather than burning the full `timeout`, since no signal can confirm completion there) with a note to pass `until` (a regex for the prompt) or `mark: true` (an exit-code sentinel) for a confirmed completion. For a full-screen agent TUI, read `{ screen: true }` once its output settles.
+- **While nested (ssh / docker / REPL / a launched agent TUI), quiescence cannot fire by design**, because the foreground command is no longer in the shell set (bash/sh/zsh/fish/dash). When nested with no `until` and no `mark`, `pty_read({ wait: true })` returns early as `is_complete=False via nested` (rather than burning the full `timeout`, since no signal can confirm completion there) with a note to pass `until` (a literal substring by default; `until_regex: true` for a regex) or `mark: true` (an exit-code sentinel, auto-detected) for a confirmed completion. For a full-screen agent TUI, read `{ screen: true }` once its output settles.
 - **`is_complete=False` is not a failure.** It means "completion was not observed within `timeout`." For long commands, raise `timeout` or use `until`/`mark`.
 - **The destructive gate is a tripwire, not a sandbox.** It blocks common destructive forms only. It does **not** catch relative-path `rm`, things that become dangerous after `$VAR` expansion, or commands run on the far side of an SSH session — and it does not police what a launched coding agent does inside its own session.
 - **The agent launchers spawn a vendor TUI; they don't wrap or proxy it.** aiterm validates prerequisites and starts the CLI in a persistent PTY — the model, auth, and behavior are the vendor CLI's. There is no `claude` launcher and no protocol between agents; "conversation" is your MCP client driving the TUI (send input, read output).
