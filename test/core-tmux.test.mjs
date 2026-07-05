@@ -36,6 +36,18 @@ before(() => {
 });
 after(() => { if (hasTmux) { try { core.killAll(); } catch {} } });
 
+// 前面コマンドが cmd になるまでポーリングする（固定 sleep は負荷の高い runner で不安定＝C8）。
+// listSessions の各行は "name\tcurrent_command\t...\t..."。
+async function waitForForeground(name, cmd, timeoutMs = 3000) {
+  const t0 = performance.now();
+  while (performance.now() - t0 < timeoutMs) {
+    const line = core.listSessions().split("\n").find((l) => l.startsWith(name + "\t"));
+    if (line && line.split("\t")[1] === cmd) return true;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return false;
+}
+
 // ---------------------------------------------------------------- 破壊ゲート（10 正規表現を網羅・遮断＝未送信）
 const BLOCKED = [
   ["rm -rf /", "rm /"],
@@ -172,7 +184,7 @@ test("send mark: 非 POSIX 前面シェル(csh)では mark を拒否", { skip: s
   core.openSession(b8);
   try {
     core.send(b8, "csh"); // 前面を csh へ（非 POSIX）
-    await new Promise((r) => setTimeout(r, 800)); // csh が前面に出るまで
+    assert.ok(await waitForForeground(b8, "csh"), "csh が前面に出ない（C8）");
     assert.throws(
       () => core.send(b8, "echo hi", { mark: true }),
       (e) => e.code === 2 && /POSIX/.test(e.message),
@@ -204,7 +216,7 @@ test("read wait: ネスト中(前面が非シェル)＋until無しは nested で
   core.openSession(nst);
   try {
     core.send(nst, "cat"); // 前面コマンドが cat（SHELLS 集合外）＝ネスト相当
-    await new Promise((r) => setTimeout(r, 800)); // cat が前面に出るまで待つ
+    assert.ok(await waitForForeground(nst, "cat"), "cat が前面に出ない（C8: 固定 sleep でなくポーリング）");
     const t0 = performance.now();
     const out = await core.readOutput(nst, { wait: true, timeout: 5 });
     const dt = performance.now() - t0;

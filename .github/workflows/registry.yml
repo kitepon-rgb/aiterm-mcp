@@ -23,6 +23,23 @@ jobs:
           curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
       - name: Authenticate to the Official MCP Registry (GitHub OIDC)
         run: ./mcp-publisher login github-oidc
+      # C10: Release 発行は tag も生むため、tag 起点の ci.yml(npm publish) と本 workflow(release 起点)が
+      # 並走し得る。mcp-publisher は server.json が参照する npm version の存在を要求するため、npm publish
+      # 完了前に走ると「duplicate でない」失敗で赤くなる。npm に該当 version が現れるまで待ってから登録する。
+      - name: Wait for the npm package version to be published
+        run: |
+          ver=$(node -p "require('./package.json').version")
+          echo "Waiting for aiterm-mcp@$ver on npm (max 10 min)..."
+          for i in $(seq 1 30); do
+            if npm view "aiterm-mcp@$ver" version >/dev/null 2>&1; then
+              echo "aiterm-mcp@$ver is available."
+              exit 0
+            fi
+            echo "  not yet (attempt $i/30) — sleeping 20s"
+            sleep 20
+          done
+          echo "::error::aiterm-mcp@$ver が npm に現れませんでした（10分）。npm publish の完了を確認してください。"
+          exit 1
       - name: Publish server.json
         run: |
           # 同一 version の再 publish はレジストリが HTTP 400

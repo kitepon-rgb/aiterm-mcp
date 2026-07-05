@@ -23,12 +23,19 @@ test("smoke: stdout は JSON-RPC のみ / 9 ツール公開", async () => {
   ];
   child.stdin.write(msgs.map((m) => JSON.stringify(m)).join("\n") + "\n");
 
+  // id:2(tools/list)応答が来たら即 resolve、来なければ reject する（C8: 従来は timeout でも resolve し、
+  // 低速 CI で応答前に空出力のままアサート失敗＝紛らわしい偽陰性だった）。猶予も 5s→15s に延長。
+  let errOut = "";
+  child.stderr.on("data", (d) => (errOut += d));
   await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { try { child.kill(); } catch {} resolve(); }, 5000);
+    const timer = setTimeout(() => {
+      try { child.kill(); } catch {}
+      reject(new Error(`smoke: 15s 以内に tools/list 応答が来ない。stdout=${JSON.stringify(out)} stderr=${JSON.stringify(errOut)}`));
+    }, 15000);
     child.stdout.on("data", () => {
       if (out.includes('"id":2')) { clearTimeout(timer); try { child.kill(); } catch {} resolve(); }
     });
-    child.on("error", reject);
+    child.on("error", (e) => { clearTimeout(timer); reject(e); });
   });
 
   const lines = out.split("\n").filter((l) => l.trim());
