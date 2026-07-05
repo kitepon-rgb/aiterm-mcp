@@ -34,6 +34,52 @@ test("reducePytest: 全パスは 'Pytest: N passed' のみ", () => {
   assert.equal(rtk.reducePytest("... [100%]\n=== 5 passed in 0.10s ==="), "Pytest: 5 passed");
 });
 
+// 収集エラー（import 失敗等）を無害/緑に偽装しないこと（rtk 0.42.0 とは意図的に相違＝失敗マスキング禁止）。
+// C1 修正前は "No tests collected" / "Pytest: 1 passed" に潰れ、AI が赤を無害/緑と誤読していた。
+const COLLECT_ERROR_ONLY = [
+  "============================= test session starts ==============================",
+  "collected 0 items / 1 error",
+  "",
+  "==================================== ERRORS ====================================",
+  "_______________ ERROR collecting test_broken.py ________________________________",
+  "ImportError while importing test module '/proj/test_broken.py'.",
+  "test_broken.py:3: in <module>",
+  "    import nonexistent_module",
+  "E   ModuleNotFoundError: No module named 'nonexistent_module'",
+  "=========================== short test summary info ============================",
+  "ERROR test_broken.py",
+  "!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!!",
+  "=============================== 1 error in 0.12s ===============================",
+].join("\n");
+
+const PASS_PLUS_ERROR = [
+  "============================= test session starts ==============================",
+  "collected 2 items / 1 error",
+  "",
+  "test_ok.py .                                                             [ 50%]",
+  "",
+  "==================================== ERRORS ====================================",
+  "_______________ ERROR collecting test_broken.py ________________________________",
+  "E   ModuleNotFoundError: No module named 'nonexistent_module'",
+  "=========================== short test summary info ============================",
+  "ERROR test_broken.py",
+  "============================== 1 passed, 1 error in 0.34s ======================",
+].join("\n");
+
+test("reducePytest: 収集エラーのみを 'No tests collected' に潰さず error を表面化", () => {
+  const got = rtk.reducePytest(COLLECT_ERROR_ONLY);
+  assert.doesNotMatch(got, /No tests collected/, "収集エラーが無害誤読される");
+  assert.match(got, /1 error/, "error 件数が表示されない");
+  assert.match(got, /ERROR test_broken\.py/, "どのモジュールが error か表示されない");
+});
+
+test("reducePytest: passed と error 併存で緑偽装しない（'1 passed' に潰さない）", () => {
+  const got = rtk.reducePytest(PASS_PLUS_ERROR);
+  assert.match(got, /1 passed/, "passed 件数は保持");
+  assert.match(got, /1 error/, "error が握り潰され緑偽装される");
+  assert.match(got, /ERROR test_broken\.py/, "error モジュールが表示されない");
+});
+
 // ---------------------------------------------------------------- grep/git/filters（期待値を凍結）
 const reducers = JSON.parse(fs.readFileSync(path.join(FIX, "reducers.json"), "utf8"));
 for (const e of reducers) {

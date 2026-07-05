@@ -78,7 +78,12 @@ export function reducePytest(output: string): string {
       flush();
       continue;
     }
-    if (t.startsWith("===") && (t.includes("passed") || t.includes("failed") || t.includes("skipped"))) {
+    if (
+      t.startsWith("===") &&
+      (t.includes("passed") || t.includes("failed") || t.includes("skipped") || t.includes("error"))
+    ) {
+      // 収集エラーのみ（`=== 1 error in Xs ===`）も要約行として拾う。拾わないと全ゼロ扱いで
+      // "No tests collected"（無害誤読）に潰れる。"ERRORS" セクション見出しは大文字ゆえ非該当。
       summaryLine = t;
       continue;
     }
@@ -87,7 +92,7 @@ export function reducePytest(output: string): string {
       !t.startsWith("===") &&
       !t.startsWith("FAILED") &&
       !t.startsWith("ERROR") &&
-      (t.includes(" passed") || t.includes(" failed") || t.includes(" skipped")) &&
+      (t.includes(" passed") || t.includes(" failed") || t.includes(" skipped") || t.includes(" error")) &&
       t.includes(" in ")
     ) {
       summaryLine = t;
@@ -111,12 +116,14 @@ export function reducePytest(output: string): string {
   }
   flush();
 
-  const [p, f, s, xf, xp] = parsePytestCounts(summaryLine);
-  if (p === 0 && f === 0 && s === 0 && xf === 0 && xp === 0) return "Pytest: No tests collected";
-  const extras = s > 0 || xf > 0 || xp > 0 || xfailLines.length > 0;
+  const [p, f, s, xf, xp, e] = parsePytestCounts(summaryLine);
+  if (p === 0 && f === 0 && s === 0 && xf === 0 && xp === 0 && e === 0) return "Pytest: No tests collected";
+  // error(収集/内部エラー)は失敗の一種＝緑扱いにしない。extras に含め、"N passed" 早期 return を止める。
+  const extras = s > 0 || xf > 0 || xp > 0 || e > 0 || xfailLines.length > 0;
   if (f === 0 && p > 0 && !extras) return `Pytest: ${p} passed`;
 
   let head = `Pytest: ${p} passed, ${f} failed`;
+  if (e > 0) head += `, ${e} error${e === 1 ? "" : "s"}`;
   if (s > 0) head += `, ${s} skipped`;
   if (xf > 0) head += `, ${xf} xfailed`;
   if (xp > 0) head += `, ${xp} xpassed`;
@@ -171,12 +178,13 @@ export function reducePytest(output: string): string {
   return out.join("\n").trim();
 }
 
-function parsePytestCounts(summary: string): [number, number, number, number, number] {
+function parsePytestCounts(summary: string): [number, number, number, number, number, number] {
   let p = 0,
     f = 0,
     s = 0,
     xf = 0,
-    xp = 0;
+    xp = 0,
+    e = 0;
   for (const part of summary.split(",")) {
     const words = part.split(/\s+/).filter(Boolean);
     for (let i = 0; i < words.length; i++) {
@@ -184,14 +192,16 @@ function parsePytestCounts(summary: string): [number, number, number, number, nu
       const n = parseInt(words[i - 1], 10);
       if (Number.isNaN(n)) continue;
       const w = words[i];
+      // "error"/"errors" は passed/failed/skipped/xfailed/xpassed のいずれの部分文字列でもないので順不同で安全。
       if (w.includes("xpassed")) xp = n;
       else if (w.includes("xfailed")) xf = n;
       else if (w.includes("passed")) p = n;
       else if (w.includes("failed")) f = n;
       else if (w.includes("skipped")) s = n;
+      else if (w.includes("error")) e = n;
     }
   }
-  return [p, f, s, xf, xp];
+  return [p, f, s, xf, xp, e];
 }
 
 // ---------------------------------------------------------------- grep
