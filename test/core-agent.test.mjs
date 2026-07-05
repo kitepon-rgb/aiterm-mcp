@@ -73,3 +73,65 @@ test("openAgent: 前段検証で落ちたら session を残さない（残骸ゼ
   );
   assert.equal(core.listSessions(), before, "失敗した openAgent が session を残した");
 });
+
+// A-test: grok/composer 経路の組立コマンドを実検証（従来は codex 経路のみで未カバー）。
+// 偽 bin を /bin/echo にすると起動コマンドがそのまま echo で出力され、組立内容を観測できる。
+test("openAgent codex: -c model_reasoning_effort=<effort> を組み立てる", { skip }, async () => {
+  const [sid] = core.openAgent("codex", { reasoning_effort: "high" }); // CODEX_BIN=/bin/echo
+  try {
+    const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
+    assert.match(out, /-c model_reasoning_effort=high/, `codex 組立: ${out}`);
+  } finally {
+    core.closeSession(sid);
+  }
+});
+test("openAgent grok: --model grok-build と --effort を組み立てる", { skip }, async () => {
+  const saved = process.env.GROK_BIN;
+  process.env.GROK_BIN = "/bin/echo"; // grok 経路を echo で可視化
+  try {
+    const [sid] = core.openAgent("grok", { reasoning_effort: "high" });
+    const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
+    assert.match(out, /--model grok-build/, `grok model: ${out}`);
+    assert.match(out, /--effort high/, `grok effort: ${out}`);
+    core.closeSession(sid);
+  } finally {
+    if (saved === undefined) delete process.env.GROK_BIN;
+    else process.env.GROK_BIN = saved;
+  }
+});
+test("openAgent composer: --model grok-composer-2.5-fast を組み立てる（コピペ swap 検出）", { skip }, async () => {
+  const saved = process.env.GROK_BIN;
+  process.env.GROK_BIN = "/bin/echo";
+  try {
+    const [sid] = core.openAgent("composer", { reasoning_effort: "low" });
+    const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
+    assert.match(out, /--model grok-composer-2\.5-fast/, `composer model: ${out}`);
+    assert.match(out, /--effort low/, `composer effort: ${out}`);
+    core.closeSession(sid);
+  } finally {
+    if (saved === undefined) delete process.env.GROK_BIN;
+    else process.env.GROK_BIN = saved;
+  }
+});
+
+// A3: env 指定 bin の実在検証（存在しないパスを黙って返して偽成功にしない）。tmux 不要（session 前に throw）。
+test("openAgent: 存在しない CODEX_BIN は明示エラー（偽成功にしない・A3）", () => {
+  const saved = process.env.CODEX_BIN;
+  process.env.CODEX_BIN = "/no/such/codex-bin-aiterm-xyz";
+  try {
+    assert.throws(
+      () => core.openAgent("codex", {}),
+      (e) => e.code === 2 && /CODEX_BIN/.test(e.message),
+    );
+  } finally {
+    process.env.CODEX_BIN = saved;
+  }
+});
+
+// A6: cwd の空文字・~ 未展開を明示エラーに。tmux 不要（bin 解決後・session 前に throw）。
+test("openAgent: 空文字 cwd は明示エラー（A6）", () => {
+  assert.throws(() => core.openAgent("codex", { cwd: "" }), (e) => e.code === 2 && /空/.test(e.message));
+});
+test("openAgent: ~ 始まりの cwd は展開されない旨の明示エラー（A6）", () => {
+  assert.throws(() => core.openAgent("codex", { cwd: "~/repo" }), (e) => e.code === 2 && /~/.test(e.message));
+});

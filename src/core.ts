@@ -723,7 +723,13 @@ function resolveAgentBin(kind: AgentKind): string | null {
       ? ["CODEX_BIN", [".local", "bin", "codex"], "codex"]
       : ["GROK_BIN", [".grok", "bin", "grok"], "grok"];
   const fromEnv = process.env[envVar as string];
-  if (fromEnv) return fromEnv;
+  if (fromEnv) {
+    // 明示指定 env は実在を検証する。存在しないパスを黙って返すと、session を作って
+    // `'/typo' ...` を送信し bash が command not found を出すだけで openAgent は「起動した」と
+    // 偽成功を返す（既定パス/PATH 経路は検証するのに env だけ無検証だった非対称の解消・A3）。
+    if (fs.existsSync(fromEnv)) return fromEnv;
+    throw new AitermError(`${envVar} に指定された ${name} が存在しません: ${fromEnv}`, 2);
+  }
   const cand = path.join(home, ...(rel as string[]));
   if (fs.existsSync(cand)) return cand;
   const w = spawnSync(isWin ? "where" : "which", [name as string], {
@@ -793,9 +799,16 @@ export function openAgent(
     const where = kind === "codex" ? "~/.local/bin/codex" : "~/.grok/bin/grok";
     throw new AitermError(`${label} の CLI が見つかりません（${where} か PATH が必要）`, 2);
   }
-  if (opts.cwd) {
-    // cd 失敗はシェル内で静かに死に、エージェント未起動のまま「起動した」と偽の成功を返してしまう。
-    // session を作る前に実在を検証して明示エラーにする。
+  // cwd 検証（session を作る前に。cd 失敗はシェル内で静かに死に「起動した」と偽成功を返すため）。
+  let cwd: string | null = null;
+  if (opts.cwd != null) {
+    if (!opts.cwd.trim()) {
+      throw new AitermError("cwd が空文字です（省略するか有効なディレクトリを指定してください）", 2); // A6
+    }
+    if (opts.cwd.startsWith("~")) {
+      // statSync は ~ を展開しない。「存在しません」でなく展開されない旨を正直に伝える（A6）。
+      throw new AitermError(`cwd の ~ は展開されません。絶対パスで指定してください: ${opts.cwd}`, 2);
+    }
     let st: fs.Stats | null = null;
     try {
       st = fs.statSync(opts.cwd);
@@ -805,10 +818,19 @@ export function openAgent(
     if (!st || !st.isDirectory()) {
       throw new AitermError(`cwd '${opts.cwd}' がディレクトリとして存在しません`, 2);
     }
+    cwd = opts.cwd;
   }
+  // Windows は起動コマンドが WSL 内 bash で走る（tmux ブリッジ）。bin/cwd を /mnt/c/... 形へ変換して
+  // 渡す（ログの toWslPath と対称・A1）。前提: Windows 側に CLI を導入（resolveAgentBin が Windows
+  // パスで解決）。toWslPath は session を作る前に呼ぶ＝変換失敗（非ドライブパス）で残骸 session を残さない。
+  // 未検証リスク: npm グローバル導入の codex.cmd/.bat シムや WSL interop 上の対話 TUI 描画は実 Windows
+  // でしか確認できない（CI 非対象。docs/03_audit-sweep-2026-07.md 参照）。
+  const binForCmd = isWin ? toWslPath(bin) : bin;
+  const cwdForCmd = cwd && isWin ? toWslPath(cwd) : cwd;
+
   const [sid, hint] = openSession(opts.session_name ?? null, "bash");
-  const cmd = buildAgentCmd(kind, bin, effort, opts.prompt ?? null);
-  const full = opts.cwd ? `cd ${shq(opts.cwd)} && ${cmd}` : cmd;
+  const cmd = buildAgentCmd(kind, binForCmd, effort, opts.prompt ?? null);
+  const full = cwdForCmd ? `cd ${shq(cwdForCmd)} && ${cmd}` : cmd;
   try {
     // force:true で送る。起動骨格は `bin '...'` の固定形で、prompt/cwd/effort は shq でクオート済みの
     // 引数＝シェルは決して破壊コマンドとして実行しない。破壊ゲート（生シェルコマンド想定）を prompt に
@@ -826,6 +848,8 @@ export function openAgent(
   return [
     sid,
     `${label} を session ${sid} で起動した。\n${hint}\n` +
-      `pty_read(${sid}) で TUI を読み、pty_send(${sid}, "...") で操作する（対話）。`,
+      `TUI の描画には数秒かかる。少し置いてから pty_read(${sid}, screen:true) で画面を読み、` +
+      `pty_send(${sid}, "...") で入力・pty_key(${sid}, "Enter"/"Up"/"C-c" 等) で操作する（対話）。` +
+      `起動直後に増分 pty_read すると空/半描画になり得るので screen:true を使う。`,
   ];
 }
