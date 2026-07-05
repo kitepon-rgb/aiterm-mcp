@@ -38,6 +38,11 @@ const POLL = 0.25;
 const STABLE_POLLS = 2; // 連続でログサイズ不変ならば静止とみなす回数
 const SHELLS = new Set(["bash", "sh", "zsh", "fish", "dash"]);
 
+// mark:true が付ける完了 sentinel の検出正規表現。printf の実出力は rc=<数字>、コマンド行の
+// エコーは rc=%d(リテラル)。数字アンカーでエコーに免疫化し、部分一致による早期誤完了を防ぐ（B1）。
+// send の printf 書式（`rc=%d`）と対で保守すること。
+const MARK_DONE_RE = /<<<AITERM_DONE rc=[0-9]+>>>/;
+
 // 出力削減（RTK の CAP 思想を移植）
 const MAX_LINES_BEFORE_ELIDE = 60;
 const HEAD_LINES = 30;
@@ -206,6 +211,10 @@ function offsetpath(name: string): string {
 function lastcmdpath(name: string): string {
   return path.join(SOCKDIR, name + ".lastcmd");
 }
+// mark:true 送信中フラグ。存在すれば waitCompletion が sentinel 完了検出（MARK_DONE_RE）を有効化する。
+function markpath(name: string): string {
+  return path.join(SOCKDIR, name + ".mark");
+}
 
 function readOffset(name: string): number {
   try {
@@ -358,7 +367,7 @@ async function settleWinLog(name: string): Promise<void> {
   }
 }
 
-/** 完了境界: dead / until 一致 / (出力静止 ∧ シェル復帰)=quiescent / (ネスト中＋until無しで出力静止)=nested(未確定・早期返却) / timeout。 */
+/** 完了境界: dead / mark sentinel 一致 / until 一致 / (出力静止 ∧ シェル復帰)=quiescent / (ネスト中＋until/mark無しで出力静止)=nested(未確定・早期返却) / timeout。 */
 async function waitCompletion(name: string, untilRe: string | null, timeout: number): Promise<[boolean, string]> {
   // 締切は単調時計で測る。Date.now() は NTP 補正やサスペンドで巻き戻り、長時間待ちで誤判定する（Python は time.monotonic）。
   const deadline = performance.now() + timeout * 1000;
@@ -366,6 +375,9 @@ async function waitCompletion(name: string, untilRe: string | null, timeout: num
   let lastSize: number | null = null;
   let stable = 0;
   const until = untilRe ? new RegExp(untilRe) : null;
+  // mark:true 送信中なら sentinel 完了検出を有効化する。エコー（rc=%d）でなく実出力（rc=<数字>）だけに
+  // 一致する数字アンカー MARK_DONE_RE を使うため、until のようにエコー部分一致で早期誤完了しない（B1）。
+  const markActive = fs.existsSync(markpath(name));
   for (;;) {
     const alive = sessionExists(name);
     let size = 0;
@@ -374,10 +386,24 @@ async function waitCompletion(name: string, untilRe: string | null, timeout: num
     } catch {
       size = 0;
     }
-    if (until && size > start) {
-      const buf = fs.readFileSync(logpath(name));
-      const neu = buf.subarray(start).toString("utf8");
-      if (until.test(stripControl(neu))) return [true, "until"];
+    if ((until || markActive) && size > start) {
+      let neu = "";
+      try {
+        neu = stripControl(fs.readFileSync(logpath(name)).subarray(start).toString("utf8"));
+      } catch {
+        neu = ""; // close 等でログが消えた: 次周回の !alive/statSync で決着させる
+      }
+      // mark を until より先に判定（sentinel は確証つき完了。until はユーザ指定でエコー誤爆余地あり）。
+      if (markActive && MARK_DONE_RE.test(neu)) {
+        try {
+          fs.unlinkSync(markpath(name)); // 同一 sentinel での再発火を防ぐ
+        } catch {
+          /* noop */
+        }
+        if (isWin) await settleWinLog(name);
+        return [true, "mark"];
+      }
+      if (until && until.test(neu)) return [true, "until"];
     }
     if (!alive) {
       if (isWin) await settleWinLog(name);
@@ -392,10 +418,11 @@ async function waitCompletion(name: string, untilRe: string | null, timeout: num
           return [true, "quiescent"]; // 出力静止 ∧ シェル復帰 ＝ 確証つき完了
         }
         // ネスト中（前面が ssh/docker/REPL 等でシェル集合外）は quiescence の「シェル復帰」条件を
-        // 原理的に満たせない。until 未指定ならこれ以上待っても確証は増えない（until/dead/quiescent の
-        // いずれも発火し得ない）ので、出力が静止した時点で「未確定」のまま早期返却し until/mark を促す。
+        // 原理的に満たせない。until も mark も無ければこれ以上待っても確証は増えない（until/dead/
+        // quiescent/mark のいずれも発火し得ない）ので、出力静止時点で「未確定」のまま早期返却する。
+        // markActive のときは sentinel を待つべく早期返却せず、非シェル前面（sleep 等）でも待ち続ける。
         // fg==="" は前面コマンド取得失敗＝ネスト断定不可なので早期返却せず従来どおり timeout まで待つ。
-        if (!until && fg !== "") {
+        if (!until && !markActive && fg !== "") {
           if (isWin) await settleWinLog(name);
           return [false, "nested"];
         }
@@ -409,10 +436,11 @@ async function waitCompletion(name: string, untilRe: string | null, timeout: num
   }
 }
 
-// 完了ステータス → is_complete 表記。確証のある層のみ True（until/dead/quiescent）。
+// 完了ステータス → is_complete 表記。確証のある層のみ True（mark/until/dead/quiescent）。
 // timeout と nested（ネスト中・出力静止だが確証なし）は False。nested は until/mark を促す注記を添える。
 function completionSuffix(status: string): string {
-  const complete = status === "until" || status === "dead" || status === "quiescent";
+  const complete =
+    status === "mark" || status === "until" || status === "dead" || status === "quiescent";
   let s = ` [is_complete=${complete ? "True" : "False"} via ${status}]`;
   if (status === "nested")
     s +=
@@ -508,7 +536,22 @@ export function send(name: string, text: string, o: SendOpts = {}): string {
   }
   writeLastcmd(name, text); // read rtk の reducer 分類用（書換/mark 前の素のコマンド）
   if (o.rtk) text = rtkRewrite(text);
-  if (o.mark) text = text + `; printf '\\n<<<AITERM_DONE rc=%d>>>\\n' "$?"`;
+  if (o.mark) {
+    // 実出力は rc=<数字>、この行のエコーは rc=%d(リテラル)。MARK_DONE_RE は数字アンカーで後者に免疫。
+    text = text + `; printf '\\n<<<AITERM_DONE rc=%d>>>\\n' "$?"`;
+    try {
+      fs.writeFileSync(markpath(name), "1"); // waitCompletion に sentinel 完了検出を有効化させる
+    } catch {
+      /* noop（フラグ書けなくても until/quiescence 経路は生きる） */
+    }
+  } else {
+    // 非 mark 送信は、未消化の古い mark 完了待ちを無効化する（前コマンドの sentinel を待ち続けない）。
+    try {
+      fs.unlinkSync(markpath(name));
+    } catch {
+      /* noop */
+    }
+  }
   tmux("send-keys", "-t", name, "-l", "--", text);
   if (enter) tmux("send-keys", "-t", name, "Enter");
   // コードポイント数で数える（JS の .length は UTF-16 単位で絵文字等がズレる。Python は len()=コードポイント）。
@@ -612,7 +655,7 @@ export function listSessions(): string {
 export function closeSession(name: string): string {
   assertSessionName(name);
   tmux("kill-session", "-t", name);
-  for (const p of [logpath(name), offsetpath(name), lastcmdpath(name)]) {
+  for (const p of [logpath(name), offsetpath(name), lastcmdpath(name), markpath(name)]) {
     try {
       fs.unlinkSync(p);
     } catch {

@@ -101,18 +101,34 @@ test("closeSession: 非存在でも冪等", { skip }, () => {
   assert.equal(core.closeSession("no_such_close_xyz"), "closed no_such_close_xyz");
 });
 
-// ---------------------------------------------------------------- mark + 完了検出（until）
-test("send mark + read until: sentinel と出力・is_complete=True", { skip }, async () => {
+// ---------------------------------------------------------------- mark + 完了検出（sentinel 自動検出）
+test("send mark + read wait: sentinel を自動検出し is_complete=True via mark", { skip }, async () => {
   const rt = "selftest_rt";
   core.openSession(rt);
   try {
     core.send(rt, "echo HELLO_AITERM", { mark: true });
-    const out = await core.readOutput(rt, { wait: true, until: "<<<AITERM_DONE", timeout: 5 });
+    // until を渡さなくても mark 完了検出（数字アンカー sentinel）で確定する。
+    const out = await core.readOutput(rt, { wait: true, timeout: 5 });
     assert.ok(out.includes("HELLO_AITERM"), `出力に HELLO: ${out}`);
-    assert.ok(out.includes("<<<AITERM_DONE"), "sentinel が出る");
-    assert.match(out, /is_complete=True via until/);
+    assert.match(out, /is_complete=True via mark/);
   } finally {
     core.closeSession(rt);
+  }
+});
+
+// B1 回帰: mark はコマンド行のエコー(rc=%d)でなく実出力(rc=<数字>)の sentinel で完了する。
+// 遅延コマンドでエコー早期誤完了が起きれば DELAYED_DONE を含まず nested/timeout になる＝失敗する。
+// この2条件（実出力を含む∧via mark）で「数字アンカーによるエコー免疫」と「mark時のnested抑止」を固定。
+test("send mark + read wait: 遅延コマンドでエコー早期完了しない（B1）", { skip }, async () => {
+  const rb = "selftest_b1";
+  core.openSession(rb);
+  try {
+    core.send(rb, "sleep 0.6; echo DELAYED_DONE", { mark: true });
+    const out = await core.readOutput(rb, { wait: true, timeout: 6 });
+    assert.match(out, /is_complete=True via mark/, `mark 完了であること: ${out}`);
+    assert.ok(out.includes("DELAYED_DONE"), `実出力を待ってから完了（エコー早期完了でない）: ${out}`);
+  } finally {
+    core.closeSession(rb);
   }
 });
 

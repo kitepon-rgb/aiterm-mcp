@@ -62,7 +62,13 @@ server.registerTool(
       session_id: z.string(),
       text: z.string().describe("送る文字列（コマンド）"),
       enter: z.boolean().default(true).describe("末尾で Enter を送る"),
-      mark: z.boolean().default(false).describe("完了 sentinel(終了コード付き)で包む"),
+      mark: z
+        .boolean()
+        .default(false)
+        .describe(
+          "完了 sentinel(終了コード付き)で包む。pty_read(wait:true) が until 無しでも自動検出して" +
+            "完了確定する（ネスト中や非シェル前面でも効く確実な完了検出。手で until を組む必要なし）",
+        ),
       force: z.boolean().default(false).describe("破壊的コマンドゲートを越える"),
       rtk: z.boolean().default(false).describe("既知コマンドを rtk 形へ委譲して送る（rtk 不在なら素通し）"),
       raw: z.boolean().default(false).describe("送信前サニタイズを無効化"),
@@ -85,7 +91,10 @@ server.registerTool(
       "削減: 制御文字除去 / 反復圧縮 / head+tail 折りたたみ＋復元ヒント＋メタ併記。",
     inputSchema: {
       session_id: z.string(),
-      wait: z.boolean().default(false).describe("完了まで待つ（4層: dead/until/出力静止∧シェル復帰/timeout）"),
+      wait: z
+        .boolean()
+        .default(false)
+        .describe("完了まで待つ（dead / mark sentinel 自動検出 / until / 出力静止∧シェル復帰 / timeout）"),
       until: z.string().nullish().describe("この正規表現が出たら完了とみなす"),
       timeout: z.number().default(10).describe("wait の最大待ち秒数"),
       screen: z.boolean().default(false).describe("描画済みスクリーン(TUI 向け)"),
