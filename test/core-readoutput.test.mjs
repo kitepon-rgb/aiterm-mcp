@@ -108,6 +108,15 @@ test("readOutput 増分: offset がログ長超過なら先頭から読み直す
   assert.equal(fs.readFileSync(op(n), "utf8"), String(Buffer.byteLength(TEN))); // 読後は真の末尾へ
 });
 
+test("readOutput full+lines: full でも末尾 N 行に絞る（従来は黙殺・B11）", async () => {
+  const n = "ro_full_lines";
+  const LINES = ["AAA0", "BBB1", "CCC2", "DDD3", "EEE4", "FFF5", "GGG6", "HHH7", "III8", "JJJ9"].join("\n");
+  fab(n, LINES, 0);
+  const out = await core.readOutput(n, { full: true, lines: 3 });
+  assert.ok(out.includes("HHH7") && out.includes("III8") && out.includes("JJJ9"), `末尾3行: ${out}`);
+  assert.ok(!out.includes("AAA0"), `full+lines が末尾に絞れていない（先頭を含む）: ${out}`);
+});
+
 test("readOutput: 存在しないセッション(ログ無し)はエラー", async () => {
   await assert.rejects(() => core.readOutput("no_such_session_xyz", {}), /無い/);
 });

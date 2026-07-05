@@ -679,17 +679,19 @@ export async function readOutput(name: string, o: ReadOpts = {}): Promise<string
   const timeout = o.timeout ?? DEFAULT_TIMEOUT;
   if (!sessionExists(name) && !fs.existsSync(logpath(name))) throw new AitermError(`session '${name}' が無い`, 2);
 
-  if (o.screen) {
-    const rawTxt = captureScreen(name, o.lines || 0);
-    if (o.raw) return rawTxt;
-    const [body, meta] = reduceOutput(rawTxt, name, true);
-    return body + "\n" + meta;
-  }
-
+  // wait は screen より先に処理する。従来 screen は wait ブロックの手前で return し、screen+wait で
+  // 完了検出が黙殺されていた（B11）。先に待ってから最終スクリーンを撮る＝TUI の描画完了後に読める。
   let status: string | null = null;
   if (o.wait) {
     const [, st] = await waitCompletion(name, o.until ?? null, o.untilRegex ?? false, timeout);
     status = st;
+  }
+
+  if (o.screen) {
+    const rawTxt = captureScreen(name, o.lines || 0);
+    if (o.raw) return rawTxt;
+    const [body, meta] = reduceOutput(rawTxt, name, true);
+    return body + "\n" + meta + (status ? completionSuffix(status) : "");
   }
 
   // ログ全体を毎回メモリに載せず、必要な範囲だけ fd で読む（B7）。size は statSync で取る。
@@ -732,6 +734,9 @@ export async function readOutput(name: string, o: ReadOpts = {}): Promise<string
     if (o.range) {
       const [lo, hi] = o.range;
       text = text.split("\n").slice(lo, hi ?? undefined).join("\n");
+    } else if (o.lines) {
+      // full + lines は末尾 N 行にする（従来は full 経路で lines を黙殺していた footgun・B11）。
+      text = text.split("\n").slice(-o.lines).join("\n");
     }
   } else {
     let off = readOffset(name);

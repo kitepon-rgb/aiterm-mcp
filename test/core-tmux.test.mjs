@@ -282,6 +282,19 @@ test("killAll: SOCKDIR の残骸ファイル(.log 等)も掃除する（B9）", 
   core.openSession(SESS);
   core.send(SESS, `cd ${SANDBOX}`, { force: true });
 });
+test("read screen+wait: wait を尊重し完了後の画面＋is_complete を返す（B11）", { skip }, async () => {
+  const sw = "selftest_sw";
+  core.openSession(sw);
+  try {
+    core.send(sw, "echo SCREENWAIT_OK");
+    // 従来 screen は wait ブロックの手前で return し完了検出が黙殺されていた。今は待ってから撮る。
+    const out = await core.readOutput(sw, { screen: true, wait: true, timeout: 5 });
+    assert.ok(out.includes("SCREENWAIT_OK"), `画面に出力: ${out}`);
+    assert.match(out, /is_complete=True/, `screen+wait で完了検出が付く: ${out}`);
+  } finally {
+    core.closeSession(sw);
+  }
+});
 
 // ---------------------------------------------------------------- session 名検証（トラバーサル/インジェクション遮断）
 // 検証は tmux 呼び出し前に throw するので OS 非依存・skip 不要。

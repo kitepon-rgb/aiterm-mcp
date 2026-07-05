@@ -119,9 +119,11 @@ server.registerTool(
         const idx = line_range.indexOf(":");
         const lo = idx < 0 ? line_range : line_range.slice(0, idx);
         const hi = idx < 0 ? "" : line_range.slice(idx + 1);
-        // 不正/空の上端は「末尾まで」(null) に倒す。"5:abc" を空に潰さず "5:" と同じく 5 行目以降にする。
+        // 不正/空/負の上端は「末尾まで」(null) に倒す。"5:abc" を空に潰さず "5:" と同じく 5 行目以降に。
+        // 下端は負値を 0 にクランプする（"-3:5" が負 slice にならないように・C12）。
+        const loN = Math.max(0, parseInt(lo, 10) || 0);
         const hiN = hi ? parseInt(hi, 10) : NaN;
-        range = [parseInt(lo, 10) || 0, Number.isNaN(hiN) ? null : hiN];
+        range = [loN, Number.isNaN(hiN) || hiN < 0 ? null : hiN];
       }
       const out = await core.readOutput(session_id, {
         wait,
