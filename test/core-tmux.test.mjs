@@ -18,6 +18,9 @@ process.env.TMPDIR = fs.mkdtempSync(path.join(os.tmpdir(), "aiterm-test-"));
 const core = await import("../dist/core.js");
 const SOCKDIR = path.join(process.env.TMPDIR, "claude-tmux-sockets");
 const skip = hasTmux ? undefined : "tmux 未インストール";
+// B8: 非 POSIX 対話シェル(csh/tcsh/fish)前面での mark 拒否を実テストする。csh は macOS 標準。
+const hasCsh = spawnSync(process.platform === "win32" ? "where" : "which", ["csh"]).status === 0;
+const skipB8 = hasTmux && hasCsh ? undefined : "tmux か csh 未インストール";
 const SESS = "selftest";
 // 安全策（多層防御）: 破壊ゲートテストは万一ゲートをすり抜けても実害が出ないよう、session を
 // 使い捨てサンドボックスへ cd してから走らせる。過去のインシデント（未ビルドの新ゲートケースを
@@ -161,6 +164,24 @@ test("send mark + read wait: 遅延コマンドでエコー早期完了しない
   }
 });
 
+// B8: mark の sentinel は POSIX シェル構文（"$?"）。前面が非 POSIX 対話シェル(csh/tcsh/fish)なら
+// 黙って壊れた完了検出を作らず、明示エラー(code2)で拒否する。ssh/docker→リモート bash は前面が
+// "ssh"/"docker" で本集合に含まれず許可される（＝mark の主要用途を壊さない）。
+test("send mark: 非 POSIX 前面シェル(csh)では mark を拒否", { skip: skipB8 }, async () => {
+  const b8 = "selftest_b8";
+  core.openSession(b8);
+  try {
+    core.send(b8, "csh"); // 前面を csh へ（非 POSIX）
+    await new Promise((r) => setTimeout(r, 800)); // csh が前面に出るまで
+    assert.throws(
+      () => core.send(b8, "echo hi", { mark: true }),
+      (e) => e.code === 2 && /POSIX/.test(e.message),
+    );
+  } finally {
+    core.closeSession(b8); // kill-session で csh も終了
+  }
+});
+
 // ---------------------------------------------------------------- quiescent 完了検出
 test("read wait: 短命コマンドは quiescent で完了", { skip }, async () => {
   const q = "selftest_q";
@@ -191,6 +212,48 @@ test("read wait: ネスト中(前面が非シェル)＋until無しは nested で
     assert.ok(dt < 4000, `フル timeout(5s)前に早期返却すること: ${Math.round(dt)}ms`);
   } finally {
     core.closeSession(nst); // kill-session で cat も終了
+  }
+});
+
+// ---------------------------------------------------------------- until リテラル既定 / 正規表現オプトイン（B4/B13）
+// 既定はリテラル部分一致。正規表現 "1+1" は文字列 "1+1" に非一致だが、リテラルなら一致して完了する。
+test("read wait: until は既定でリテラル部分一致（メタ化しない）（B4）", { skip }, async () => {
+  const b4 = "selftest_b4";
+  core.openSession(b4);
+  try {
+    core.send(b4, "echo AA1+1BB"); // 出力に "1+1" を含む（正規表現 1+1 は非一致・リテラルは一致）
+    const out = await core.readOutput(b4, { wait: true, until: "1+1", timeout: 5 });
+    assert.match(out, /is_complete=True via until/, `until リテラル一致で完了: ${out}`);
+  } finally {
+    core.closeSession(b4);
+  }
+});
+test("read wait: until_regex:true で正規表現一致（B4）", { skip }, async () => {
+  const b4r = "selftest_b4r";
+  core.openSession(b4r);
+  try {
+    core.send(b4r, "echo RESULT_42_END");
+    const out = await core.readOutput(b4r, {
+      wait: true,
+      until: "RESULT_[0-9]+_END",
+      untilRegex: true,
+      timeout: 5,
+    });
+    assert.match(out, /is_complete=True via until/, `正規表現一致で完了: ${out}`);
+  } finally {
+    core.closeSession(b4r);
+  }
+});
+test("read wait: 不正な until 正規表現は明示エラー(code2)（B13）", { skip }, async () => {
+  const b13 = "selftest_b13";
+  core.openSession(b13);
+  try {
+    await assert.rejects(
+      () => core.readOutput(b13, { wait: true, until: "[unclosed", untilRegex: true, timeout: 2 }),
+      (e) => e.code === 2 && /until 正規表現/.test(e.message),
+    );
+  } finally {
+    core.closeSession(b13);
   }
 });
 

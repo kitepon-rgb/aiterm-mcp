@@ -95,7 +95,14 @@ server.registerTool(
         .boolean()
         .default(false)
         .describe("完了まで待つ（dead / mark sentinel 自動検出 / until / 出力静止∧シェル復帰 / timeout）"),
-      until: z.string().nullish().describe("この正規表現が出たら完了とみなす"),
+      until: z
+        .string()
+        .nullish()
+        .describe("この文字列が出たら完了とみなす（既定はリテラル部分一致。`$ ` や `[..]` もそのまま探せる）"),
+      until_regex: z
+        .boolean()
+        .default(false)
+        .describe("until を正規表現として扱う（既定 false＝リテラル部分一致。メタ文字を使いたい時のみ true）"),
       timeout: z.number().default(10).describe("wait の最大待ち秒数"),
       screen: z.boolean().default(false).describe("描画済みスクリーン(TUI 向け)"),
       full: z.boolean().default(false).describe("増分でなく全文"),
@@ -105,7 +112,7 @@ server.registerTool(
       rtk: z.boolean().default(false).describe("直前コマンド別の自前 reducer(git/grep/pytest 等)で縮約"),
     },
   },
-  async ({ session_id, wait, until, timeout, screen, full, lines, line_range, raw, rtk }) => {
+  async ({ session_id, wait, until, until_regex, timeout, screen, full, lines, line_range, raw, rtk }) => {
     try {
       let range: [number, number | null] | null = null;
       if (line_range) {
@@ -119,6 +126,7 @@ server.registerTool(
       const out = await core.readOutput(session_id, {
         wait,
         until: until ?? null,
+        untilRegex: until_regex,
         timeout,
         screen,
         full,

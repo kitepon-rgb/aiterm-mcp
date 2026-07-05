@@ -37,6 +37,10 @@ export const DEFAULT_TIMEOUT = 10.0;
 const POLL = 0.25;
 const STABLE_POLLS = 2; // 連続でログサイズ不変ならば静止とみなす回数
 const SHELLS = new Set(["bash", "sh", "zsh", "fish", "dash"]);
+// mark の sentinel は POSIX シェル構文（; と "$?"）に依存する。これらの非 POSIX 対話シェルが
+// 前面のときは "$?" が正しく展開されず sentinel が壊れるので mark を拒否する（B8）。ssh/docker で
+// リモート POSIX シェルに入っている場合は前面が "ssh"/"docker" 等で本集合に含まれず＝許可される。
+const NON_POSIX_MARK_SHELLS = new Set(["fish", "csh", "tcsh"]);
 
 // mark:true が付ける完了 sentinel の検出正規表現。printf の実出力は rc=<数字>、コマンド行の
 // エコーは rc=%d(リテラル)。数字アンカーでエコーに免疫化し、部分一致による早期誤完了を防ぐ（B1）。
@@ -371,13 +375,33 @@ async function settleWinLog(name: string): Promise<void> {
 }
 
 /** 完了境界: dead / mark sentinel 一致 / until 一致 / (出力静止 ∧ シェル復帰)=quiescent / (ネスト中＋until/mark無しで出力静止)=nested(未確定・早期返却) / timeout。 */
-async function waitCompletion(name: string, untilRe: string | null, timeout: number): Promise<[boolean, string]> {
+async function waitCompletion(
+  name: string,
+  untilStr: string | null,
+  untilRegex: boolean,
+  timeout: number,
+): Promise<[boolean, string]> {
   // 締切は単調時計で測る。Date.now() は NTP 補正やサスペンドで巻き戻り、長時間待ちで誤判定する（Python は time.monotonic）。
   const deadline = performance.now() + timeout * 1000;
   const start = readOffset(name);
   let lastSize: number | null = null;
   let stable = 0;
-  const until = untilRe ? new RegExp(untilRe) : null;
+  // until は既定でリテラル部分一致（`$ ` や `[sudo]` 等がメタ化して永遠に待つ footgun を避ける・B4）。
+  // untilRegex:true のときだけ正規表現として解釈し、不正パターンは明示エラーにする（B13 の until 部分）。
+  let until: ((s: string) => boolean) | null = null;
+  if (untilStr) {
+    if (untilRegex) {
+      let re: RegExp;
+      try {
+        re = new RegExp(untilStr);
+      } catch (e) {
+        throw new AitermError(`until 正規表現が不正です: ${JSON.stringify(untilStr)}（${(e as Error).message}）`, 2);
+      }
+      until = (s) => re.test(s);
+    } else {
+      until = (s) => s.includes(untilStr);
+    }
+  }
   // mark:true 送信中なら sentinel 完了検出を有効化する。エコー（rc=%d）でなく実出力（rc=<数字>）だけに
   // 一致する数字アンカー MARK_DONE_RE を使うため、until のようにエコー部分一致で早期誤完了しない（B1）。
   const markActive = fs.existsSync(markpath(name));
@@ -406,7 +430,7 @@ async function waitCompletion(name: string, untilRe: string | null, timeout: num
         if (isWin) await settleWinLog(name);
         return [true, "mark"];
       }
-      if (until && until.test(neu)) return [true, "until"];
+      if (until && until(neu)) return [true, "until"];
     }
     if (!alive) {
       if (isWin) await settleWinLog(name);
@@ -537,6 +561,18 @@ export function send(name: string, text: string, o: SendOpts = {}): string {
       }
     }
   }
+  if (o.mark) {
+    // mark の sentinel は POSIX シェル構文。前面が fish/csh/tcsh 等の非 POSIX 対話シェルだと "$?" が
+    // 壊れて sentinel が成立しない。黙って壊れた完了検出を作らず、明示エラーで until を促す（B8）。
+    const fg = paneCurrentCommand(name);
+    if (NON_POSIX_MARK_SHELLS.has(fg)) {
+      throw new AitermError(
+        `mark は POSIX シェル(bash/sh/zsh/dash)前提です。前面が ${fg} のため sentinel の "$?" が` +
+          `正しく展開されません。until で完了パターンを指定してください。`,
+        2,
+      );
+    }
+  }
   writeLastcmd(name, text); // read rtk の reducer 分類用（書換/mark 前の素のコマンド）
   if (o.rtk) text = rtkRewrite(text);
   if (o.mark) {
@@ -572,6 +608,7 @@ export function sendKey(name: string, key: string): string {
 export interface ReadOpts {
   wait?: boolean;
   until?: string | null;
+  untilRegex?: boolean; // until を正規表現として扱う（既定 false＝リテラル部分一致）。B4。
   timeout?: number;
   screen?: boolean;
   full?: boolean;
@@ -595,7 +632,7 @@ export async function readOutput(name: string, o: ReadOpts = {}): Promise<string
 
   let status: string | null = null;
   if (o.wait) {
-    const [, st] = await waitCompletion(name, o.until ?? null, timeout);
+    const [, st] = await waitCompletion(name, o.until ?? null, o.untilRegex ?? false, timeout);
     status = st;
   }
 
