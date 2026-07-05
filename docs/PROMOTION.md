@@ -162,8 +162,9 @@ on the SSH-persistence wedge, not "another tmux MCP".
 > token-reduced (per-command reducers for git/grep/pytest), and there's a
 > 4-layer completion detector so the AI knows when a command is actually done.
 >
-> Six tools, no clone/build (`npx -y aiterm-mcp`), works on Linux/WSL2/macOS and
-> native Windows (via a WSL tmux bridge). MIT.
+> Nine tools (6 PTY primitives + 3 interactive agent launchers), no clone/build
+> (`npx -y aiterm-mcp`), works on Linux/WSL2/macOS and native Windows (via a WSL
+> tmux bridge). MIT.
 >
 > Repo: https://github.com/kitepon-rgb/aiterm-mcp
 > Would love feedback on the completion-detection approach (quiescence vs prompt
@@ -186,7 +187,7 @@ on the SSH-persistence wedge, not "another tmux MCP".
    every command after rides the same authenticated session. SSH, docker, REPLs
    are just text you send in, not separate tools.
 3. Reads come back token-reduced (git/grep/pytest reducers), with a 4-layer
-   "is the command done?" detector. `npx -y aiterm-mcp`, 6 tools, MIT,
+   "is the command done?" detector. `npx -y aiterm-mcp`, 9 tools, MIT,
    Linux/WSL2/macOS/Windows. [demo gif]
 4. Repo + one-line Claude Code install 👇 https://github.com/kitepon-rgb/aiterm-mcp
 

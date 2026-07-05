@@ -5,6 +5,20 @@ All notable changes to **aiterm-mcp** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `.github/workflows/registry.yml`: publishes `server.json` to the Official MCP
+  Registry via GitHub OIDC (on release, or manual dispatch). aiterm-mcp is now
+  listed in the Official MCP Registry (which auto-propagates to PulseMCP and the
+  GitHub MCP Registry) and on mcp.so.
+- `.github/avatar.svg` + `.github/avatar.png`: square avatar mark (terminal
+  `>_` prompt) for directory listings and social cards.
+
+### Changed
+- CI: bump `actions/checkout` and `actions/setup-node` to v5 (the Node 20 action
+  runtime is being removed from GitHub Actions).
+
 ## [0.7.1]
 
 Codex 独立レビュー（gpt-5.5 high・実 CLI 検証つき）の指摘5件＋追加発見2件の修正。
@@ -37,7 +51,7 @@ Codex 独立レビュー（gpt-5.5 high・実 CLI 検証つき）の指摘5件�
 
 ### Added
 - **対話型エージェント起動ツール**（モデルごとに1つ＝ツール名/説明でどのモデルか一目瞭然）:
-  - `codex_agent` — Codex (OpenAI・gpt-5.5) の対話 TUI を永続端末に起動
+  - `codex_agent` — Codex (OpenAI・モデルは Codex CLI の既定) の対話 TUI を永続端末に起動
   - `grok_agent` — Grok Build の Grok モデル (grok-build) の対話 TUI を起動
   - `composer_agent` — Grok Build の Composer モデル (grok-composer-2.5-fast) の対話 TUI を起動
   いずれも session_id を返し、以後は `pty_read`/`pty_send` で対話操作する（＝aiterm の対話パラダイム）。
@@ -70,20 +84,6 @@ Codex 独立レビュー（gpt-5.5 high・実 CLI 検証つき）の指摘5件�
   `mode=exec`（codex に実装させる・workspace-write）／`mode=review`（read-only レビューさせ指摘を返す）。
   統括(Claude)のレート窓を温存する。`prompt`/`mode`/`cwd`/`timeout_sec` を取り、codex 未導入環境では
   明示 no-op を返す（公開レジストリの他利用者を壊さない）。ロジックは `core.delegate`。
-
-## [Unreleased]
-
-### Added
-- `.github/workflows/registry.yml`: publishes `server.json` to the Official MCP
-  Registry via GitHub OIDC (on release, or manual dispatch). aiterm-mcp is now
-  listed in the Official MCP Registry (which auto-propagates to PulseMCP and the
-  GitHub MCP Registry) and on mcp.so.
-- `.github/avatar.svg` + `.github/avatar.png`: square avatar mark (terminal
-  `>_` prompt) for directory listings and social cards.
-
-### Changed
-- CI: bump `actions/checkout` and `actions/setup-node` to v5 (the Node 20 action
-  runtime is being removed from GitHub Actions).
 
 ## [0.4.1] - 2026-06-08
 
@@ -195,7 +195,8 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.4.1...v0.7.1
 [0.4.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.3.0...v0.3.1

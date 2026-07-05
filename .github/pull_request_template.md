@@ -17,9 +17,9 @@
 
 ## Checklist
 
-- [ ] Scoped change — no unrelated edits; the six-tool surface is unchanged (or the change is justified above)
+- [ ] Scoped change — no unrelated edits; the tool surface is unchanged (or the change is justified above)
 - [ ] No new stdout output (stdout is JSON-RPC only; diagnostics go to stderr)
-- [ ] Docs updated where relevant (README, `CHANGELOG.md`, and `docs/ai-terminal-design-plan.md` for design behavior)
+- [ ] Docs updated where relevant (README, `CHANGELOG.md`, and `docs/01_design-plan.md` for design behavior)
 - [ ] No new runtime dependency (or justified)
 
 <!-- CI runs ubuntu + macos on Node 18/20/22. Publishing is automated on v* tags — contributors don't publish. The native-Windows WSL bridge isn't in CI; note if you verified it manually. -->

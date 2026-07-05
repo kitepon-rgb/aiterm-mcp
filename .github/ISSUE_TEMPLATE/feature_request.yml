@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        aiterm is deliberately small: **one PTY, six tools**. SSH, containers, and REPLs are reached by nesting (`pty_send "ssh host"`), not by adding tools. Proposals that widen the tool surface are unlikely to land — but reduction quality, completion detection, safety, and platform support are all fair game.
+        aiterm keeps the PTY surface thin: **one PTY** for terminal work (currently 9 tools total — 6 PTY primitives + 3 agent launchers). SSH, containers, and REPLs are reached by nesting (`pty_send "ssh host"`), not by adding tools. Reduction quality, completion detection, safety, and platform support are all fair game.
   - type: textarea
     id: problem
     attributes:
@@ -28,4 +28,4 @@ body:
     attributes:
       label: Fit
       options:
-        - label: This keeps the one-PTY / six-tool model (it doesn't add a tool for a session kind that `pty_send` could reach by nesting).
+        - label: This keeps the one-PTY model (it doesn't add a tool for a session kind that `pty_send` could reach by nesting).

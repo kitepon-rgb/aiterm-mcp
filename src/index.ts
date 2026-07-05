@@ -12,8 +12,15 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import * as core from "./core.js";
+import { createRequire } from "node:module";
 
-const server = new McpServer({ name: "aiterm", version: "0.4.0" });
+// package.json の version を実行時に読み、MCP initialize で配るサーバ版と一致させる。
+// createRequire を使うのは、import 属性 `with { type: "json" }` が Node 18.20+ 限定で
+// engines "node >=18"（18.0〜18.19）を SyntaxError で壊し、旧 `assert` 構文は逆に Node 22 で
+// 除去済み＝どちらの静的構文も 18〜22 全域を満たせないため（実行時 require が唯一全域で動く）。
+const pkg = createRequire(import.meta.url)("../package.json") as { version: string };
+
+const server = new McpServer({ name: "aiterm", version: pkg.version });
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 
