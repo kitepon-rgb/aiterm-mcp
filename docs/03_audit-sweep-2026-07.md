@@ -10,13 +10,20 @@
 |---|---|---|---|
 | 0 | 安全網（ベースライン green＋赤テスト先張り） | ✅ 完了 | baseline 97→ |
 | 1 | 中核 High（C1 pytest 緑偽装／B1 until echo／A4 破壊ゲート誤爆） | ✅ 完了 | `3eddb52` C1 / `4fe6208` A4 / `eabdc30` B1 |
-| 2 | 安全ガード＆完了検出（B2 ゲート widen／B8 mark POSIX／B4 until リテラル既定化） | ⏳ 着手中 | — |
+| 2 | 安全ガード＆完了検出（B2 ✅ ゲート widen／B8 mark POSIX／B4 until リテラル既定化） | ⏳ 着手中 | `55c8d96` B2 |
 | 3 | エージェント起動の正しさ（A1 Windows toWslPath／A3／A5／A6＋grok/composer テスト＋実 CLI 裏取り） | ⬜ 未 | — |
 | 4 | reducer 正しさ（C2/C3 stripShellFrame／C4-C7 classify/git/filters／C13） | ⬜ 未 | — |
 | 5 | 堅牢性/非効率（B3 UTF-8／B5+B9 stale log／B6 poll／B7 ログ回転／B10-B14／C12） | ⬜ 未 | — |
 | 6 | テスト/CI/docs（C8 フレイキー／C9 Windows CI／C10-C11 publish 順序／C-doc） | ⬜ 未 | — |
 
-**現在のテスト数**: 101 pass / 0 fail（開始時 97）。
+**現在のテスト数**: 111 pass / 0 fail（開始時 97）。
+
+### ⚠️ インシデント記録（2026-07-05・復旧済み）
+B2 の赤テスト先張り時、**修正をビルドする前に**新破壊ケースをルート cwd の実 tmux へ enter=true で送り、
+旧 regex がすり抜けて `rm -rf ./*` が発火＝ルート直下 tracked ファイル（CLAUDE.md/README/docs/ 等）を削除。
+`rm -rf ..` は cwd を消せず失敗＝他プロジェクト無傷、`.git` 無傷。git restore＋npm ci で完全復旧（111 pass）。
+再発防止: 破壊ゲートテストを **サンドボックス cd ＋ enter:false** に多層防御化（`55c8d96`）。
+caveat 記録（private）: `cwd-tmux-enter-true-rm-tracked`。
 
 ## Context（なぜやるか）
 
@@ -37,7 +44,7 @@ v0.7.0/0.7.1 で対話エージェント起動3ツール（`codex_agent`/`grok_a
 | A4 | High | 初手 prompt が破壊ゲート誤爆（force 逃げ道なし） | ✅ `4fe6208` |
 | A1 | Med | Windows で bin/cwd 未 toWslPath＝起動破綻／偽成功 | ⬜ Wave 3 |
 | B5 | Med | セッション再利用で古いログ復活（truncate せず） | ⬜ Wave 5 |
-| B2 | Med | 破壊ゲートすり抜け（`rm -rf ./*`・引用符付き・`..`・`./`） | ⏳ Wave 2 |
+| B2 | Med | 破壊ゲートすり抜け（`rm -rf ./*`・引用符付き・`..`・`./`） | ✅ `55c8d96`（＋テスト多層防御化） |
 | B3 | Low | UTF-8 が offset バイト境界で分断→1文字化け | ⬜ Wave 5 |
 
 **棄却（実装しない）**: A2（相対 cwd 基準ズレ）＝tmux は client cwd を使い検証基準＝実行基準。誤モデルゆえ棄却。
