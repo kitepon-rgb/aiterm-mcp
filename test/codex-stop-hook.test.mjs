@@ -29,6 +29,7 @@ function spawnCodexHook(tmp, env, payload = {}) {
     env: {
       ...process.env,
       TMPDIR: tmp,
+      XDG_RUNTIME_DIR: tmp,
       ...env,
     },
   });
@@ -41,6 +42,7 @@ function spawnGrokHook(tmp, env, payload = {}) {
     env: {
       ...process.env,
       TMPDIR: tmp,
+      XDG_RUNTIME_DIR: tmp,
       ...env,
     },
   });
