@@ -37,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Harden hook event files and Grok auth lock handling against symlink/hard-link
   attacks, loose state directories, malformed or oversized JSONL, and cleanup
   that could otherwise follow symlink targets.
+- Treat a configured but missing `XDG_RUNTIME_DIR` as unusable and fall back to
+  the normal temp dir for agent state, matching CI and non-login Linux shells.
 - Improve screen settling after hook completion so an old stable screen is not
   returned before the agent's rendered output catches up.
 
@@ -45,7 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   design docs, ADR, and RAG. `agent_done` is supported on Linux, WSL2, and
   macOS; native Windows keeps the core PTY tools and agent launchers but not
   `agent_done` yet.
-- Expanded regression coverage to **166 tests**, including hook wrappers,
+- Expanded regression coverage to **167 tests**, including hook wrappers,
   managed homes, event parsing, race/security cases, MCP schema, and screen
   settle / TUI-ready behavior.
 - Verified real MCP `tools/call` smoke for Codex, Grok, and Composer

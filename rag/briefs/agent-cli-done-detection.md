@@ -3,7 +3,7 @@
 作成日: 2026-07-06  
 更新日: 2026-07-07  
 対象: `codex_agent` / `grok_agent` / `composer_agent` の永続PTY TUI done 検知  
-結論の強さ: Codex exec JSONL・Codex Stop hook・Grok headless streaming JSON・Grok headless Stop hook・Codex/Grok/Composer TUI Stop hook は実測済み。Codex/Grok/Composer は managed home route で `pty_send(wait:"agent_done")` の実 smoke まで成功。Grok/Composer は fake `HOME` + per-launch managed `GROK_HOME` + OAuth `auth.json`/`auth.json.lock` 共有で通過し、Grok TUI・Composer TUI・通常 headless `grok -p` の並行 smoke でも login 再要求なし。同一 cwd の Codex/Grok/Composer 並列 agent_done smoke と普通PTYの Python REPL smoke も通過。さらに MCP stdio server を実起動した JSON-RPC `tools/call` 経由で、3 vendor 同時 agent_done と普通PTY Python REPL が通過。リリース前 smoke で起動直後送信による入力落ちを再現し、未 bind の初回 send には vendor TUI ready gate を追加した。ready gate 実装後は、明示的な read ready 待ちなしの起動直後即送信 smoke も通過。CI は 166 pass。Grok ACP は vendor docs 確認のみ。
+結論の強さ: Codex exec JSONL・Codex Stop hook・Grok headless streaming JSON・Grok headless Stop hook・Codex/Grok/Composer TUI Stop hook は実測済み。Codex/Grok/Composer は managed home route で `pty_send(wait:"agent_done")` の実 smoke まで成功。Grok/Composer は fake `HOME` + per-launch managed `GROK_HOME` + OAuth `auth.json`/`auth.json.lock` 共有で通過し、Grok TUI・Composer TUI・通常 headless `grok -p` の並行 smoke でも login 再要求なし。同一 cwd の Codex/Grok/Composer 並列 agent_done smoke と普通PTYの Python REPL smoke も通過。さらに MCP stdio server を実起動した JSON-RPC `tools/call` 経由で、3 vendor 同時 agent_done と普通PTY Python REPL が通過。リリース前 smoke で起動直後送信による入力落ちを再現し、未 bind の初回 send には vendor TUI ready gate を追加した。ready gate 実装後は、明示的な read ready 待ちなしの起動直後即送信 smoke も通過。CI は 167 pass。Grok ACP は vendor docs 確認のみ。
 
 ## done の定義
 

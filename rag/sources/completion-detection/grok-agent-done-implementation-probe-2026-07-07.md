@@ -7,7 +7,7 @@ topic: completion-detection
 tags: ["grok", "composer", "agent_done", "oauth", "hook", "tui", "aiterm"]
 summary: "aiterm-mcp に Grok/Composer 用 managed GROK_HOME + fake HOME + Stop hook wrapper を実装し、追加敵対的検証で GROK_HOME 全体共有案を棄却、OAuth auth.json/auth.json.lock だけを通常 Grok home と共有する実装に修正した。TUI ready gate 実装後、明示的な read ready 待ちなしの MCP tools/call 起動直後即送信 smoke も通過した。"
 relevance: "Grok/Composer の TUI hook route 実装状況、OAuth credential/lock 共有の採用理由、実 TUI smoke、TUI ready gate、agent_done 負系/race/security/schema 回帰を固定する。"
-evidence_level: "unit_test_green_166; real_tui_smoke_green; parallel_smoke_green; immediate_mcp_tools_call_smoke_green; negative_race_security_schema_tests_green"
+evidence_level: "unit_test_green_167; real_tui_smoke_green; parallel_smoke_green; immediate_mcp_tools_call_smoke_green; negative_race_security_schema_tests_green"
 chars: 6035
 ---
 
@@ -44,7 +44,7 @@ auth: token expired, silent refresh failed - re-authentication required
 
 ## 通った検証
 
-- `npm test`: 166 pass
+- `npm test`: 167 pass
 - `grok-stop-hook`: Stop payload を `vendor:"grok"` / `vendor:"composer"` の `agent_done` event へ正規化。
 - `openAgent grok/composer agent_done`: managed `GROK_HOME`、fake `HOME`、`HOME/.grok` symlink、OAuth `auth.json` + `auth.json.lock` symlink、Stop hook JSON、`--no-auto-update` / `--no-alt-screen` / `--verbatim` 組み立てを fake bin で確認。
 - OAuth auth 不在時は session / agent state 残骸ゼロで `grok login` 必要エラーを返すことを確認。

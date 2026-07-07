@@ -138,6 +138,31 @@ test("agent stop hooks: aiterm env が全く無ければ state に触らず no-o
   }
 });
 
+test("agent stop hooks: 存在しない XDG_RUNTIME_DIR は TMPDIR へ戻す", { skip }, () => {
+  const { tmp, agents } = makeHookState("aiterm-hook-bad-xdg-");
+  const session = "badxdg";
+  const launchId = "99999999999999999999999999999999";
+  const r = spawnCodexHook(
+    tmp,
+    {
+      XDG_RUNTIME_DIR: path.join(tmp, "missing-runtime-dir"),
+      AITERM_AGENT_KIND: "codex",
+      AITERM_SESSION_ID: session,
+      AITERM_AGENT_LAUNCH_ID: launchId,
+    },
+    { session_id: "codex-session", turn_id: "turn-1", hook_event_name: "Stop" },
+  );
+  try {
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stderr, "");
+    assert.deepEqual(JSON.parse(r.stdout), { continue: false });
+    const eventFile = path.join(agents, `${session}.${launchId}.events.jsonl`);
+    assert.equal(fs.existsSync(eventFile), true);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test("codex-stop-hook: event file symlink と env の任意 path を拒否する", { skip }, () => {
   const { tmp, agents } = makeHookState("aiterm-hook-symlink-");
   const session = "hooklink";

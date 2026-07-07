@@ -233,9 +233,21 @@ function currentUid(): number {
   return process.getuid();
 }
 
+function runtimeStateBase(): string {
+  const xdg = process.env.XDG_RUNTIME_DIR;
+  if (xdg) {
+    try {
+      if (fs.statSync(xdg).isDirectory()) return xdg;
+    } catch {
+      /* XDG_RUNTIME_DIR が壊れている CI/非 login 環境では os.tmpdir() に戻す */
+    }
+  }
+  return os.tmpdir();
+}
+
 function stateRoot(): string {
   const uid = currentUid();
-  const base = process.env.XDG_RUNTIME_DIR || os.tmpdir();
+  const base = runtimeStateBase();
   return path.join(base, `aiterm-mcp-${uid}`);
 }
 
@@ -304,7 +316,7 @@ function agentManagedGrokUserHomePath(name: string, launchId: string): string {
 
 function existingAgentsDir(): string | null {
   if (typeof process.getuid !== "function") return null;
-  const root = path.join(process.env.XDG_RUNTIME_DIR || os.tmpdir(), `aiterm-mcp-${process.getuid()}`);
+  const root = path.join(runtimeStateBase(), `aiterm-mcp-${process.getuid()}`);
   const dir = path.join(root, "agents");
   try {
     const rst = fs.lstatSync(root);

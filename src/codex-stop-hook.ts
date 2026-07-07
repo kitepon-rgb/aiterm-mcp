@@ -32,8 +32,20 @@ function uid(): number {
   return process.getuid();
 }
 
+function runtimeStateBase(): string {
+  const xdg = process.env.XDG_RUNTIME_DIR;
+  if (xdg) {
+    try {
+      if (fs.statSync(xdg).isDirectory()) return xdg;
+    } catch {
+      /* XDG_RUNTIME_DIR が壊れている CI/非 login 環境では os.tmpdir() に戻す */
+    }
+  }
+  return os.tmpdir();
+}
+
 function secureAgentsDir(): string {
-  const root = path.join(process.env.XDG_RUNTIME_DIR || os.tmpdir(), `aiterm-mcp-${uid()}`);
+  const root = path.join(runtimeStateBase(), `aiterm-mcp-${uid()}`);
   const agents = path.join(root, "agents");
   const rst = fs.lstatSync(root);
   if (!rst.isDirectory() || rst.isSymbolicLink() || rst.uid !== uid() || (rst.mode & 0o077) !== 0) {
