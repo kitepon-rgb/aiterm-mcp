@@ -17,6 +17,9 @@ pass-through from the user's normal Codex home into aiterm's managed
 - [x] Update README / design / RAG notes so the documented isolation boundary
   matches the implementation.
 - [x] Run local verification.
+- [x] Sync `server.json` to the released npm version before registry publish.
+- [x] Add a regression check that package and registry metadata versions stay
+  in lockstep.
 
 Verification:
 
