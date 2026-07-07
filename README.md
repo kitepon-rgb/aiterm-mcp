@@ -22,7 +22,7 @@
 
 Nine tools: six **PTY tools** — `pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list` — to open, drive, and read one persistent terminal, plus three **agent launchers** — `codex_agent` / `grok_agent` / `composer_agent` — that each start another coding agent's TUI inside a fresh one. The backend is **tmux**, so sessions survive even if the MCP server or the AI client restarts.
 
-**Status:** actively maintained · the newcomer here, betting on a different shape (see [vs. the alternatives](#vs-the-alternatives)) · runs on Linux · WSL2 · macOS · native Windows · MIT · see the [CHANGELOG](CHANGELOG.md).
+**Status:** actively maintained · the newcomer here, betting on a different shape (see [vs. the alternatives](#vs-the-alternatives)) · runs on Linux · WSL2 · macOS · native Windows for the core PTY tools (`agent_done` is POSIX/WSL/macOS only for now) · MIT · see the [CHANGELOG](CHANGELOG.md).
 
 ## Why now
 
@@ -45,25 +45,26 @@ pty_read(id, { wait: true })       → read the token-reduced output, completion
 
 ### 2. Launch other coding agents into that terminal — the orchestration flagship
 
-The same primitive hosts another agent's TUI. Three launchers each start one vendor's interactive coding-agent TUI inside a fresh persistent terminal and return a `session_id`. From there you drive it with the same `pty_read` / `pty_send` you'd use on any shell: read its output token-reduced, send it the next step. (The TUIs are full-screen apps, so `pty_read({ screen: true })` gives you the rendered view.) This one needs the vendor's own CLI installed and authenticated — see [Requirements](#requirements).
+The same primitive hosts another agent's TUI. Three launchers each start one vendor's interactive coding-agent TUI inside a fresh persistent terminal and return a `session_id`. From there you drive it with the same `pty_read` / `pty_send` you'd use on any shell: read its output token-reduced, send it the next step. (The TUIs are full-screen apps, so `pty_read({ screen: true })` gives you the rendered view.) Agent launchers can also opt into hook-backed turn completion with `agent_done: true`, letting `pty_send({ wait: "agent_done" })` return after the agent turn ends. Codex/Grok/Composer all have passing live smokes when their vendor CLI is authenticated. This needs the vendor's own CLI installed and authenticated — see [Requirements](#requirements).
 
 ```text
-codex_agent({ session_name: "codex1", cwd: "/repo",
+codex_agent({ session_name: "codex1", cwd: "/repo", agent_done: true,
               prompt: "port test/legacy.py to vitest" })
                                     → { session_id: "codex1", … }   # Codex now live in a persistent terminal
 pty_read("codex1", { screen: true })   → read what it's doing (token-reduced)
-pty_send("codex1", "also fix the imports it broke")   → steer it, mid-task — you are driving its TUI
+pty_send("codex1", "also fix the imports it broke", { wait: "agent_done" })
+                                    → steer it, then return once Codex reaches its next turn boundary
 ```
 
 One call per model, so the tool name itself tells you which model you get:
 
 | Tool | Launches | Key args |
 | --- | --- | --- |
-| `codex_agent` | Codex CLI (OpenAI; the CLI's default model) | `prompt?`, `reasoning_effort?`, `cwd?`, `session_name?` |
-| `grok_agent` | Grok Build, model `grok-build` (xAI) | `prompt?`, `reasoning_effort?` (`low`/`medium`/`high`/`xhigh`/`max`), `cwd?`, `session_name?` |
+| `codex_agent` | Codex CLI (OpenAI; the CLI's default model) | `prompt?`, `reasoning_effort?`, `cwd?`, `session_name?`, `agent_done?` |
+| `grok_agent` | Grok Build, model `grok-build` (xAI) | `prompt?`, `reasoning_effort?` (`low`/`medium`/`high`/`xhigh`/`max`), `cwd?`, `session_name?`, `agent_done?` |
 | `composer_agent` | Grok Build, model `grok-composer-2.5-fast` (xAI) | same as `grok_agent` |
 
-The vendor CLI must be installed and authenticated (`codex` for `codex_agent`; `grok` for both Grok tools). aiterm resolves the binary via `CODEX_BIN` / `GROK_BIN`, then `~/.local/bin/codex` / `~/.grok/bin/grok`, then `PATH`. Prerequisites are checked **before** a session exists: for `grok_agent` / `composer_agent` an out-of-range `reasoning_effort` is rejected up front (the value set is fixed — `low`/`medium`/`high`/`xhigh`/`max`); a missing CLI binary or a nonexistent `cwd` fails for all three. A rejected launch — bad `reasoning_effort`, an unresolvable binary, or a nonexistent `cwd` — leaves **zero leftover session** behind, and if the launch keystroke itself can't be delivered aiterm tears the session down. (aiterm does *not* then verify the vendor CLI actually started or authenticated — `openAgent` returns once the launch command is sent; read the session to confirm the agent came up.) (`codex_agent` forwards `reasoning_effort` to the Codex CLI as a config override — `-c model_reasoning_effort=…` — rather than validating it, since Codex's accepted values vary by version.) Pass an absolute path for `cwd` — `~` is not expanded.
+The vendor CLI must be installed and authenticated (`codex` for `codex_agent`; `grok` for both Grok tools). aiterm resolves the binary via `CODEX_BIN` / `GROK_BIN`, then `~/.local/bin/codex` / `~/.grok/bin/grok`, then `PATH`. Prerequisites are checked **before** a session exists: for `grok_agent` / `composer_agent` an out-of-range `reasoning_effort` is rejected up front (the value set is fixed — `low`/`medium`/`high`/`xhigh`/`max`); a missing CLI binary or a nonexistent `cwd` fails for all three. A rejected launch — bad `reasoning_effort`, an unresolvable binary, or a nonexistent `cwd` — leaves **zero leftover session** behind, and if the launch keystroke itself can't be delivered aiterm tears the session down. (aiterm does *not* then verify the vendor CLI actually started or authenticated — `openAgent` returns once the launch command is sent; read the session to confirm the agent came up.) (`codex_agent` forwards `reasoning_effort` to the Codex CLI as a config override — `-c model_reasoning_effort=…` — rather than validating it, since Codex's accepted values vary by version.) Pass an absolute path for `cwd` — `~` is not expanded. `agent_done` uses launch-local managed vendor homes and does not edit your normal hook files; Grok/Composer additionally isolate `GROK_HOME` and `HOME` to suppress compat hook/plugin contamination, while OAuth uses the normal Grok home's `auth.json` and `auth.json.lock` as a pair so refresh locking does not split across sessions. Before the first unbound `pty_send({ wait: "agent_done" })`, aiterm waits for the vendor TUI's input prompt and fails before sending if the prompt is not ready, avoiding dropped startup input. `agent_done` currently requires POSIX filesystem semantics (`getuid`, secure temp files, hard-link checks), so it is supported on Linux, WSL2, and macOS; native Windows can still use the core PTY tools and agent launchers without `agent_done`.
 
 There is deliberately **no Claude launcher**, and no protocol between the agents: aiterm's job is to let your Claude (or any MCP client) reach for *other* agents and drive their terminals. Because a launched agent is just another persistent session, everything else in this README applies to it: token-reduced reads, completion detection, and a human `attach` to watch or take over.
 
@@ -206,7 +207,7 @@ On top of that sits a productized layer a raw tmux bridge doesn't have: **token-
 | Tool | Role | Key args |
 | --- | --- | --- |
 | `pty_open` | Grab one terminal, return a `session_id` | `name?`, `shell="bash"` |
-| `pty_send` | Send text (a command) | `session_id`, `text`, `enter=true`, `mark`, `force`, `rtk`, `raw` |
+| `pty_send` | Send text (a command) | `session_id`, `text`, `enter=true`, `wait`, `timeout`, `screen`, `lines`, `mark`, `force`, `rtk`, `raw` |
 | `pty_read` | Read output, token-reduced (incremental by default) | `session_id`, `wait`, `until`, `until_regex`, `timeout`, `screen`, `full`, `lines`, `line_range`, `raw`, `rtk` |
 | `pty_key` | Send a control key | `session_id`, `key` (`C-c`/`Enter`/`Up`…) |
 | `pty_close` | Close a session | `session_id` |
@@ -218,15 +219,15 @@ Each launcher starts a specific vendor's interactive coding-agent TUI inside a f
 
 | Tool | Launches | Key args |
 | --- | --- | --- |
-| `codex_agent` | Codex CLI (OpenAI; the CLI's default model) | `prompt?`, `reasoning_effort?`, `cwd?`, `session_name?` |
-| `grok_agent` | Grok Build, model `grok-build` (xAI) | `prompt?`, `reasoning_effort?` (`low`/`medium`/`high`/`xhigh`/`max`), `cwd?`, `session_name?` |
+| `codex_agent` | Codex CLI (OpenAI; the CLI's default model) | `prompt?`, `reasoning_effort?`, `cwd?`, `session_name?`, `agent_done?` |
+| `grok_agent` | Grok Build, model `grok-build` (xAI) | `prompt?`, `reasoning_effort?` (`low`/`medium`/`high`/`xhigh`/`max`), `cwd?`, `session_name?`, `agent_done?` |
 | `composer_agent` | Grok Build, model `grok-composer-2.5-fast` (xAI) | same as `grok_agent` |
 
-The vendor CLI must be installed and authenticated (`codex` for `codex_agent`; `grok` for both Grok tools). aiterm resolves the binary via `CODEX_BIN` / `GROK_BIN`, then `~/.local/bin/codex` / `~/.grok/bin/grok`, then `PATH`. Prerequisites are validated before a session is created (grok/composer reject an out-of-range `reasoning_effort`; a missing CLI or a nonexistent `cwd` fails for all three), and a failed launch leaves no session behind. Full details under [Launch other coding agents into that terminal](#2-launch-other-coding-agents-into-that-terminal--the-orchestration-flagship). Pass an absolute path for `cwd` — `~` is not expanded.
+The vendor CLI must be installed and authenticated (`codex` for `codex_agent`; `grok` for both Grok tools). aiterm resolves the binary via `CODEX_BIN` / `GROK_BIN`, then `~/.local/bin/codex` / `~/.grok/bin/grok`, then `PATH`. Prerequisites are validated before a session is created (grok/composer reject an out-of-range `reasoning_effort`; a missing CLI or a nonexistent `cwd` fails for all three), and a failed launch leaves no session behind. Full details under [Launch other coding agents into that terminal](#2-launch-other-coding-agents-into-that-terminal--the-orchestration-flagship). Pass an absolute path for `cwd` — `~` is not expanded. `agent_done` is hook-backed for agent launchers; Codex/Grok/Composer have passing live smokes on Linux/WSL2/macOS; native Windows can launch agents but `agent_done` is not supported yet. Before the first unbound agent send, `pty_send({ wait:"agent_done" })` waits for the vendor TUI input prompt and fails before sending if it is not ready. In Grok OAuth mode, aiterm keeps hook/config isolation per launch but shares both `auth.json` and `auth.json.lock` with the normal Grok home; missing OAuth auth fails without leaving a session behind.
 
 ### Completion detection (5 layers)
 
-`pty_read({ wait: true })` decides "is the command done?" via five layers: process exit / a `mark:true` sentinel (auto-detected — see below) / an `until` match (a literal substring by default; pass `until_regex: true` for a regex) / output is quiescent ∧ the shell is back (quiescence) / timeout. While nested (inside SSH, a container, a REPL, or a launched agent's TUI), the "shell is back" check cannot fire, so pass `until` with the inner prompt — or send with `mark: true` and `pty_read({ wait: true })` auto-detects the completion sentinel (no `until` needed, works nested too) — or, for a full-screen agent TUI, read `{ screen: true }` once its output settles.
+`pty_read({ wait: true })` decides "is the command done?" via five layers: process exit / a `mark:true` sentinel (auto-detected — see below) / an `until` match (a literal substring by default; pass `until_regex: true` for a regex) / output is quiescent ∧ the shell is back (quiescence) / timeout. While nested (inside SSH, a container, a REPL, or a launched agent's TUI), the "shell is back" check cannot fire, so pass `until` with the inner prompt — or send with `mark: true` and `pty_read({ wait: true })` auto-detects the completion sentinel (no `until` needed, works nested too) — or, for a full-screen agent TUI, read `{ screen: true }` once its output settles. Sessions launched with `agent_done:true` can instead use `pty_send({ wait:"agent_done" })`, which first waits for the agent TUI input prompt when needed, then waits for the vendor Stop hook and returns the screen after the turn boundary; pre-send readiness failures are MCP errors and timeouts after sending are reported as `is_complete=False via agent_timeout`, not as success. If a complete hook JSONL line is malformed, the timeout suffix includes `malformed_events=N` for diagnosis. If the turn is done but the terminal screen/log does not settle within the flush window, aiterm appends `agent_done_but_screen_unstable`.
 
 ### Token reduction
 

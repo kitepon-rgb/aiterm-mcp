@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-07
+
+### Added
+- **Hook-backed agent turn completion**: `codex_agent` / `grok_agent` /
+  `composer_agent` can opt into `agent_done: true`, and `pty_send` now accepts
+  `wait: "agent_done"` to wait for the launched agent CLI's turn boundary before
+  returning the final terminal observation. This adds no new tools; it keeps the
+  existing persistent-PTY model and uses vendor Stop hooks only as the completion
+  boundary.
+- `pty_send` schema fields for agent waits: `wait`, `timeout`, `screen`, and
+  `lines`. `wait: "none"` remains the default and preserves the existing send
+  behavior.
+- Managed Codex/Grok/Composer hook route: launch-local vendor homes install
+  aiterm-owned Stop hooks without editing the user's normal hook files. Grok and
+  Composer isolate `GROK_HOME` / `HOME` to suppress compat hook and plugin
+  contamination while sharing the normal Grok home's `auth.json` and
+  `auth.json.lock` as a pair.
+
+### Fixed / Hardened
+- Prevent stale or unrelated hook events from completing the wrong turn:
+  `launch_id`, `vendor_session_id`, initial prompt completion, pre-send EOF, and
+  post-bind missing/null vendor ids are all guarded.
+- Wait for the launched agent TUI to reach its input prompt before the first
+  unbound `pty_send(wait:"agent_done")`; if the TUI is not ready, aiterm now
+  fails before sending text instead of dropping input and later timing out.
+- Reject concurrent `wait:"agent_done"` calls for the same session across both
+  in-process and cross-process MCP server instances with an agent wait lock file.
+- Harden hook event files and Grok auth lock handling against symlink/hard-link
+  attacks, loose state directories, malformed or oversized JSONL, and cleanup
+  that could otherwise follow symlink targets.
+- Improve screen settling after hook completion so an old stable screen is not
+  returned before the agent's rendered output catches up.
+
+### Docs / Tests
+- Documented `agent_done` usage, limits, and platform support in README,
+  design docs, ADR, and RAG. `agent_done` is supported on Linux, WSL2, and
+  macOS; native Windows keeps the core PTY tools and agent launchers but not
+  `agent_done` yet.
+- Expanded regression coverage to **166 tests**, including hook wrappers,
+  managed homes, event parsing, race/security cases, MCP schema, and screen
+  settle / TUI-ready behavior.
+- Verified real MCP `tools/call` smoke for Codex, Grok, and Composer
+  `agent_done` plus a normal Python REPL PTY smoke.
+
 ## [0.8.0] - 2026-07-05
 
 ### Fixed (全域監査スイープ 2026-07-05 — 詳細は docs/03_audit-sweep-2026-07.md)
@@ -222,7 +266,8 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.6.0...v0.7.0

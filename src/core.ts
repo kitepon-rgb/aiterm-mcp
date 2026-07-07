@@ -12,6 +12,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { createHash, randomBytes } from "node:crypto";
+import { fileURLToPath } from "node:url";
 import * as rtk from "./rtk.js";
 
 // Windows ネイティブには tmux が無い。その場合だけ全 tmux 呼び出しを WSL 経由へ橋渡しする
@@ -46,6 +47,19 @@ const NON_POSIX_MARK_SHELLS = new Set(["fish", "csh", "tcsh"]);
 // エコーは rc=%d(リテラル)。数字アンカーでエコーに免疫化し、部分一致による早期誤完了を防ぐ（B1）。
 // send の printf 書式（`rc=%d`）と対で保守すること。
 const MARK_DONE_RE = /<<<AITERM_DONE rc=[0-9]+>>>/;
+const LAUNCH_ID_RE = /^[0-9a-f]{32}$/;
+type AgentKind = "codex" | "grok" | "composer";
+
+const AGENT_DONE_POLL_MS = 100;
+const AGENT_DONE_SETTLE_MIN_MS = 250;
+const AGENT_DONE_SCREEN_SETTLE_POLL_MS = 100;
+const AGENT_DONE_SCREEN_SETTLE_MAX_POLLS = 5;
+const AGENT_DONE_SCREEN_SETTLE_MIN_SAMPLES = 3;
+const AGENT_SUBMIT_DELAY_MS = 250;
+const AGENT_EVENT_MAX_BYTES = 1024 * 1024;
+const AGENT_TUI_READY_TIMEOUT_MS = 30_000;
+const AGENT_TUI_READY_POLL_MS = 500;
+const AGENT_TUI_READY_LINES = 45;
 
 // 出力削減（RTK の CAP 思想を移植）
 const MAX_LINES_BEFORE_ELIDE = 60;
@@ -210,6 +224,122 @@ function paneCurrentCommand(name: string): string {
 function assertSessionName(name: string): void {
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(name))
     throw new AitermError(`session 名は英数字と _ - のみ・64文字以内にしてください: ${JSON.stringify(name)}`, 2);
+}
+
+function currentUid(): number {
+  if (typeof process.getuid !== "function") {
+    throw new AitermError("agent_done は POSIX/macOS/Linux のみ対応です（native Windows は未対応）", 2);
+  }
+  return process.getuid();
+}
+
+function stateRoot(): string {
+  const uid = currentUid();
+  const base = process.env.XDG_RUNTIME_DIR || os.tmpdir();
+  return path.join(base, `aiterm-mcp-${uid}`);
+}
+
+function ensureSecureStateRoot(): string {
+  const root = stateRoot();
+  fs.mkdirSync(root, { recursive: true, mode: 0o700 });
+  const st = fs.lstatSync(root);
+  if (!st.isDirectory() || st.isSymbolicLink()) {
+    throw new AitermError(`agent state root が安全な directory ではありません: ${root}`, 2);
+  }
+  if (st.uid !== currentUid()) {
+    throw new AitermError(`agent state root の owner が現在ユーザーではありません: ${root}`, 2);
+  }
+  if ((st.mode & 0o077) !== 0) {
+    fs.chmodSync(root, 0o700);
+  }
+  const agents = path.join(root, "agents");
+  fs.mkdirSync(agents, { recursive: true, mode: 0o700 });
+  const ast = fs.lstatSync(agents);
+  if (!ast.isDirectory() || ast.isSymbolicLink() || ast.uid !== currentUid()) {
+    throw new AitermError(`agent state dir が安全な directory ではありません: ${agents}`, 2);
+  }
+  if ((ast.mode & 0o077) !== 0) fs.chmodSync(agents, 0o700);
+  return root;
+}
+
+function agentsDir(): string {
+  return path.join(ensureSecureStateRoot(), "agents");
+}
+
+function agentEventPath(name: string, launchId: string): string {
+  assertSessionName(name);
+  if (!LAUNCH_ID_RE.test(launchId)) throw new AitermError(`launch_id が不正です: ${launchId}`, 2);
+  return path.join(agentsDir(), `${name}.${launchId}.events.jsonl`);
+}
+
+function agentMetadataPath(name: string, launchId: string): string {
+  assertSessionName(name);
+  if (!LAUNCH_ID_RE.test(launchId)) throw new AitermError(`launch_id が不正です: ${launchId}`, 2);
+  return path.join(agentsDir(), `${name}.${launchId}.agent.json`);
+}
+
+function agentWaitLockPath(name: string, launchId: string): string {
+  assertSessionName(name);
+  if (!LAUNCH_ID_RE.test(launchId)) throw new AitermError(`launch_id が不正です: ${launchId}`, 2);
+  return path.join(agentsDir(), `${name}.${launchId}.wait.lock`);
+}
+
+function agentManagedCodexHomePath(name: string, launchId: string): string {
+  assertSessionName(name);
+  if (!LAUNCH_ID_RE.test(launchId)) throw new AitermError(`launch_id が不正です: ${launchId}`, 2);
+  return path.join(agentsDir(), `${name}.${launchId}.codex-home`);
+}
+
+function agentManagedGrokHomePath(name: string, launchId: string): string {
+  assertSessionName(name);
+  if (!LAUNCH_ID_RE.test(launchId)) throw new AitermError(`launch_id が不正です: ${launchId}`, 2);
+  return path.join(agentsDir(), `${name}.${launchId}.grok-home`);
+}
+
+function agentManagedGrokUserHomePath(name: string, launchId: string): string {
+  assertSessionName(name);
+  if (!LAUNCH_ID_RE.test(launchId)) throw new AitermError(`launch_id が不正です: ${launchId}`, 2);
+  return path.join(agentsDir(), `${name}.${launchId}.home`);
+}
+
+function existingAgentsDir(): string | null {
+  if (typeof process.getuid !== "function") return null;
+  const root = path.join(process.env.XDG_RUNTIME_DIR || os.tmpdir(), `aiterm-mcp-${process.getuid()}`);
+  const dir = path.join(root, "agents");
+  try {
+    const rst = fs.lstatSync(root);
+    if (!rst.isDirectory() || rst.isSymbolicLink() || rst.uid !== process.getuid()) return null;
+    if ((rst.mode & 0o077) !== 0) fs.chmodSync(root, 0o700);
+    const st = fs.lstatSync(dir);
+    if (!st.isDirectory() || st.isSymbolicLink() || st.uid !== process.getuid()) return null;
+    if ((st.mode & 0o077) !== 0) fs.chmodSync(dir, 0o700);
+    return dir;
+  } catch {
+    return null;
+  }
+}
+
+function cleanupAgentState(name: string): void {
+  assertSessionName(name);
+  const dir = existingAgentsDir();
+  if (!dir) return;
+  const prefix = `${name}.`;
+  try {
+    for (const f of fs.readdirSync(dir)) {
+      if (!f.startsWith(prefix)) continue;
+      const p = path.join(dir, f);
+      try {
+        if (f.endsWith(".agent.json") || f.endsWith(".events.jsonl") || f.endsWith(".wait.lock")) fs.unlinkSync(p);
+        else if (f.endsWith(".codex-home") || f.endsWith(".grok-home") || f.endsWith(".home")) {
+          fs.rmSync(p, { recursive: true, force: true });
+        }
+      } catch {
+        /* stale agent state cleanup is best-effort */
+      }
+    }
+  } catch {
+    /* stale agent state cleanup is best-effort */
+  }
 }
 
 function logpath(name: string): string {
@@ -549,6 +679,7 @@ export function openSession(name?: string | null, shell = "bash"): [string, stri
       /* noop */
     }
   }
+  cleanupAgentState(nm);
   // pipe-pane の引数は tmux 内部の /bin/sh -c で再解釈される（argv ではない）。パスは単一引用符で包み、
   // パス自身の ' は '\'' イディオムでエスケープする（名前は検証済みだが、Windows ユーザー名 O'Brien 等が
   // 一時パスに ' を持ち込み redirect を壊すのを防ぐ。空白対策も兼ねる）。Windows は WSL から見える /mnt/c 形へ。
@@ -787,6 +918,9 @@ export function listSessions(): string {
 
 export function closeSession(name: string): string {
   assertSessionName(name);
+  if (agentWaitLocks.has(name)) {
+    throw new AitermError(`agent session '${name}' は agent_done 待機中のため close できません`, 2);
+  }
   tmux("kill-session", "-t", name);
   for (const p of [logpath(name), offsetpath(name), lastcmdpath(name), markpath(name)]) {
     try {
@@ -795,10 +929,17 @@ export function closeSession(name: string): string {
       /* noop */
     }
   }
+  cleanupAgentState(name);
   return `closed ${name}`;
 }
 
 export function killAll(): string {
+  if (agentWaitLocks.size > 0) {
+    throw new AitermError(
+      `agent_done 待機中の session があるため killAll できません: ${Array.from(agentWaitLocks).join(",")}`,
+      2,
+    );
+  }
   tmux("kill-server");
   // B9: SOCKDIR 内の .log/.offset/.lastcmd/.mark 残骸も掃除する（残すと B5 の stale-log 復活の温床）。
   try {
@@ -814,15 +955,863 @@ export function killAll(): string {
   } catch {
     /* SOCKDIR 不在等は無視 */
   }
+  const adir = existingAgentsDir();
+  if (adir) {
+    try {
+      for (const f of fs.readdirSync(adir)) {
+        if (
+          f.endsWith(".agent.json") ||
+          f.endsWith(".events.jsonl") ||
+          f.endsWith(".wait.lock") ||
+          f.endsWith(".codex-home") ||
+          f.endsWith(".grok-home") ||
+          f.endsWith(".home")
+        ) {
+          try {
+            fs.rmSync(path.join(adir, f), { recursive: true, force: true });
+          } catch {
+            /* noop */
+          }
+        }
+      }
+    } catch {
+      /* agent state dir 不在等は無視 */
+    }
+  }
   return "killed all sessions on this socket";
+}
+
+// ── agent_done: agent CLI の Stop hook を PTY 送信の完了境界として使う最小ルート ────
+interface AgentMetadata {
+  kind: AgentKind;
+  aiterm_session: string;
+  launch_id: string;
+  event_file: string;
+  created_at: string;
+  cwd: string | null;
+  vendor_session_id: string | null;
+  initial_prompt: boolean;
+  hook_route: "managed_codex_home" | "managed_grok_home";
+  node_platform: NodeJS.Platform;
+  codex_home?: string;
+  grok_home?: string;
+  home?: string;
+}
+
+interface AgentDoneEvent {
+  type: "agent_done";
+  vendor: AgentKind;
+  aiterm_session: string;
+  launch_id: string;
+  vendor_session_id: string | null;
+  turn_id: string | null;
+  reason: string;
+  done_status: "turn_done";
+  stop_hook_active?: boolean;
+  at: string;
+}
+
+interface AgentDoneParseResult {
+  event: AgentDoneEvent | null;
+  malformed: boolean;
+}
+
+interface AgentDoneWaitResult {
+  event: AgentDoneEvent | null;
+  malformedEvents: number;
+}
+
+interface AgentDoneScanResult extends AgentDoneWaitResult {
+  ambiguousVendorSession: boolean;
+}
+
+interface AgentScreenSample {
+  screen: string;
+  logSize: number;
+}
+
+interface AgentScreenSettleResult {
+  unstable: boolean;
+  samples: number;
+}
+
+interface AgentTuiReadyWaitResult {
+  ready: boolean;
+  samples: number;
+  lastScreen: string;
+}
+
+const DEFAULT_AGENT_DONE_TIMEOUT = 600;
+const agentWaitLocks = new Set<string>();
+
+function codexHookScriptPath(): string {
+  return path.join(path.dirname(fileURLToPath(import.meta.url)), "codex-stop-hook.js");
+}
+
+function grokHookScriptPath(): string {
+  return path.join(path.dirname(fileURLToPath(import.meta.url)), "grok-stop-hook.js");
+}
+
+function safeStatSize(p: string): number {
+  try {
+    return fs.statSync(p).size;
+  } catch {
+    return 0;
+  }
+}
+
+function readFileRange(p: string, from: number, to: number): Buffer {
+  const len = Math.max(0, to - from);
+  if (len === 0) return Buffer.alloc(0);
+  let fd: number | undefined;
+  try {
+    fd = fs.openSync(p, "r");
+    const buf = Buffer.alloc(len);
+    const n = fs.readSync(fd, buf, 0, len, from);
+    return n === len ? buf : buf.subarray(0, Math.max(0, n));
+  } catch {
+    return Buffer.alloc(0);
+  } finally {
+    if (fd !== undefined) {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        /* noop */
+      }
+    }
+  }
+}
+
+function writeJson0600(p: string, v: unknown): void {
+  fs.writeFileSync(p, JSON.stringify(v, null, 2) + "\n", { mode: 0o600 });
+  try {
+    fs.chmodSync(p, 0o600);
+  } catch {
+    /* noop */
+  }
+}
+
+function writeText0600(p: string, text: string): void {
+  fs.writeFileSync(p, text, { mode: 0o600 });
+  try {
+    fs.chmodSync(p, 0o600);
+  } catch {
+    /* noop */
+  }
+}
+
+function createEmpty0600NoFollow(p: string): void {
+  const nofollow = (fs.constants as Record<string, number>).O_NOFOLLOW ?? 0;
+  const fd = fs.openSync(
+    p,
+    fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY | nofollow,
+    0o600,
+  );
+  fs.closeSync(fd);
+}
+
+function realCodexHome(): string {
+  return process.env.CODEX_HOME || path.join(process.env.HOME ?? os.homedir(), ".codex");
+}
+
+function createManagedCodexHome(name: string, launchId: string): string {
+  const srcHome = realCodexHome();
+  let srcSt: fs.Stats;
+  try {
+    srcSt = fs.statSync(srcHome);
+  } catch {
+    throw new AitermError(`Codex home が見つかりません: ${srcHome}`, 2);
+  }
+  if (!srcSt.isDirectory()) throw new AitermError(`Codex home が directory ではありません: ${srcHome}`, 2);
+
+  const managedHome = agentManagedCodexHomePath(name, launchId);
+  fs.mkdirSync(managedHome, { recursive: false, mode: 0o700 });
+  fs.chmodSync(managedHome, 0o700);
+
+  let authLinked = false;
+  for (const entry of fs.readdirSync(srcHome)) {
+    if (entry === "hooks.json" || entry.startsWith("hooks.json.")) continue;
+    const src = path.join(srcHome, entry);
+    const dst = path.join(managedHome, entry);
+    if (entry === "auth.json") {
+      const st = fs.statSync(src);
+      if (!st.isFile()) throw new AitermError(`Codex auth.json が通常ファイルではありません: ${src}`, 2);
+      fs.symlinkSync(src, dst);
+      authLinked = true;
+    } else if (entry === "config.toml") {
+      const st = fs.statSync(src);
+      if (st.isFile()) {
+        fs.copyFileSync(src, dst);
+        fs.chmodSync(dst, 0o600);
+      }
+    } else {
+      fs.symlinkSync(src, dst);
+    }
+  }
+  if (!authLinked) throw new AitermError(`Codex auth.json が見つかりません。先に codex login が必要です: ${srcHome}`, 2);
+
+  const hookScript = codexHookScriptPath();
+  if (!fs.existsSync(hookScript)) {
+    throw new AitermError(`Codex Stop hook wrapper が見つかりません。npm run build を実行してください: ${hookScript}`, 2);
+  }
+  writeJson0600(path.join(managedHome, "hooks.json"), {
+    hooks: {
+      Stop: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command: `${shq(process.execPath)} ${shq(hookScript)}`,
+              timeoutSec: 10,
+              async: false,
+              statusMessage: null,
+            },
+          ],
+        },
+      ],
+    },
+  });
+  return managedHome;
+}
+
+function realGrokHome(): string {
+  return process.env.GROK_HOME || path.join(process.env.HOME ?? os.homedir(), ".grok");
+}
+
+function validateGrokAuthLock(lockPath: string): void {
+  let st: fs.Stats;
+  try {
+    st = fs.lstatSync(lockPath);
+  } catch (e) {
+    throw e;
+  }
+  if (st.isSymbolicLink()) throw new AitermError(`Grok auth lock が symlink です: ${lockPath}`, 2);
+  if (!st.isFile()) throw new AitermError(`Grok auth lock が通常ファイルではありません: ${lockPath}`, 2);
+  if (st.nlink !== 1) throw new AitermError(`Grok auth lock が hard link です: ${lockPath}`, 2);
+  try {
+    fs.chmodSync(lockPath, 0o600);
+  } catch {
+    /* lock file permission tightening is best-effort */
+  }
+}
+
+function ensureGrokAuthLock(srcHome: string): string {
+  const lockPath = path.join(srcHome, "auth.json.lock");
+  try {
+    validateGrokAuthLock(lockPath);
+    return lockPath;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+  }
+  try {
+    createEmpty0600NoFollow(lockPath);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+  }
+  validateGrokAuthLock(lockPath);
+  return lockPath;
+}
+
+function linkGrokOauthFiles(srcHome: string, grokHome: string): void {
+  const srcAuth = path.join(srcHome, "auth.json");
+  let authExists = false;
+  try {
+    const authSt = fs.statSync(srcAuth);
+    if (!authSt.isFile()) throw new AitermError(`Grok auth.json が通常ファイルではありません: ${srcAuth}`, 2);
+    authExists = true;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+  }
+  if (!authExists) {
+    if (process.env.XAI_API_KEY) return;
+    throw new AitermError(`Grok auth.json が見つかりません。先に grok login が必要です: ${srcHome}`, 2);
+  }
+
+  const srcLock = ensureGrokAuthLock(srcHome);
+  fs.symlinkSync(srcAuth, path.join(grokHome, "auth.json"));
+  fs.symlinkSync(srcLock, path.join(grokHome, "auth.json.lock"));
+}
+
+function writeManagedGrokConfig(grokHome: string): void {
+  fs.mkdirSync(path.join(grokHome, "hooks"), { recursive: false, mode: 0o700 });
+  writeText0600(path.join(grokHome, "config.toml"), [
+    "[cli]",
+    "auto_update = false",
+    "",
+    "[features]",
+    "remote_fetch = false",
+    "managed_config = false",
+    "",
+    "[compat.claude]",
+    "skills = false",
+    "rules = false",
+    "agents = false",
+    "mcps = false",
+    "hooks = false",
+    "",
+    "[compat.cursor]",
+    "skills = false",
+    "rules = false",
+    "agents = false",
+    "mcps = false",
+    "hooks = false",
+    "",
+  ].join("\n"));
+}
+
+function createManagedGrokHome(name: string, launchId: string): { grokHome: string; home: string } {
+  const srcHome = realGrokHome();
+  let srcSt: fs.Stats;
+  try {
+    srcSt = fs.statSync(srcHome);
+  } catch {
+    throw new AitermError(`Grok home が見つかりません: ${srcHome}`, 2);
+  }
+  if (!srcSt.isDirectory()) throw new AitermError(`Grok home が directory ではありません: ${srcHome}`, 2);
+
+  const grokHome = agentManagedGrokHomePath(name, launchId);
+  const fakeHome = agentManagedGrokUserHomePath(name, launchId);
+  fs.mkdirSync(grokHome, { recursive: false, mode: 0o700 });
+  fs.mkdirSync(fakeHome, { recursive: false, mode: 0o700 });
+  fs.chmodSync(grokHome, 0o700);
+  fs.chmodSync(fakeHome, 0o700);
+  fs.symlinkSync(grokHome, path.join(fakeHome, ".grok"));
+  // OAuth refresh token rotation は auth.json だけでなく vendor lock と同じ実体を共有させる。
+  // per-launch GROK_HOME 隔離は維持し、通常 Grok home の hook/config/session は読ませない。
+  linkGrokOauthFiles(srcHome, grokHome);
+
+  const hookScript = grokHookScriptPath();
+  if (!fs.existsSync(hookScript)) {
+    throw new AitermError(`Grok Stop hook wrapper が見つかりません。npm run build を実行してください: ${hookScript}`, 2);
+  }
+  writeManagedGrokConfig(grokHome);
+  writeJson0600(path.join(grokHome, "hooks", "aiterm-stop.json"), {
+    hooks: {
+      Stop: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command: `${shq(process.execPath)} ${shq(hookScript)}`,
+              timeout: 10,
+            },
+          ],
+        },
+      ],
+    },
+  });
+
+  // Grok 0.2.87 は compat false でも ~/.claude/plugins の hook file を拾う。HOME を一時化して
+  // plugin/hook source を完全に 0 にする。実 HOME は必要なら hook/agent 側で参照できるよう env で渡す。
+  return { grokHome, home: fakeHome };
+}
+
+function writeAgentMetadata(meta: AgentMetadata): void {
+  writeJson0600(agentMetadataPath(meta.aiterm_session, meta.launch_id), meta);
+}
+
+function acquireAgentWaitFileLock(meta: AgentMetadata): () => void {
+  const p = agentWaitLockPath(meta.aiterm_session, meta.launch_id);
+  const nofollow = (fs.constants as Record<string, number>).O_NOFOLLOW ?? 0;
+  let fd: number;
+  try {
+    fd = fs.openSync(p, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY | nofollow, 0o600);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new AitermError(`agent session '${meta.aiterm_session}' は別プロセスの agent_done 待機中です`, 2);
+    }
+    throw e;
+  }
+  try {
+    fs.writeSync(fd, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }) + "\n", undefined, "utf8");
+  } finally {
+    fs.closeSync(fd);
+  }
+  try {
+    fs.chmodSync(p, 0o600);
+  } catch {
+    /* noop */
+  }
+  return () => {
+    try {
+      const st = fs.lstatSync(p);
+      if (st.isFile() && !st.isSymbolicLink() && st.uid === currentUid()) fs.unlinkSync(p);
+    } catch {
+      /* noop */
+    }
+  };
+}
+
+function createCodexAgentMetadata(name: string, cwd: string | null, initialPrompt: boolean): AgentMetadata {
+  const launchId = randomBytes(16).toString("hex");
+  const eventFile = agentEventPath(name, launchId);
+  createEmpty0600NoFollow(eventFile);
+  const codexHome = createManagedCodexHome(name, launchId);
+  const meta: AgentMetadata = {
+    kind: "codex",
+    aiterm_session: name,
+    launch_id: launchId,
+    event_file: eventFile,
+    created_at: new Date().toISOString(),
+    cwd,
+    vendor_session_id: null,
+    initial_prompt: initialPrompt,
+    hook_route: "managed_codex_home",
+    node_platform: process.platform,
+    codex_home: codexHome,
+  };
+  writeAgentMetadata(meta);
+  return meta;
+}
+
+function createGrokAgentMetadata(
+  kind: "grok" | "composer",
+  name: string,
+  cwd: string | null,
+  initialPrompt: boolean,
+): AgentMetadata {
+  const launchId = randomBytes(16).toString("hex");
+  const eventFile = agentEventPath(name, launchId);
+  createEmpty0600NoFollow(eventFile);
+  const managed = createManagedGrokHome(name, launchId);
+  const meta: AgentMetadata = {
+    kind,
+    aiterm_session: name,
+    launch_id: launchId,
+    event_file: eventFile,
+    created_at: new Date().toISOString(),
+    cwd,
+    vendor_session_id: null,
+    initial_prompt: initialPrompt,
+    hook_route: "managed_grok_home",
+    node_platform: process.platform,
+    grok_home: managed.grokHome,
+    home: managed.home,
+  };
+  writeAgentMetadata(meta);
+  return meta;
+}
+
+function loadAgentMetadata(name: string): AgentMetadata {
+  assertSessionName(name);
+  const dir = agentsDir();
+  const files = fs
+    .readdirSync(dir)
+    .filter((f) => f.startsWith(`${name}.`) && f.endsWith(".agent.json"));
+  if (files.length === 0) {
+    throw new AitermError(
+      `session '${name}' は agent_done 管理セッションではありません。codex_agent(agent_done:true) で起動してください。`,
+      2,
+    );
+  }
+  if (files.length !== 1) {
+    throw new AitermError(`session '${name}' の agent metadata が複数あります。閉じて起動し直してください。`, 2);
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(fs.readFileSync(path.join(dir, files[0]), "utf8"));
+  } catch (e) {
+    throw new AitermError(`agent metadata を読めません: ${(e as Error).message}`, 2);
+  }
+  const m = raw as Partial<AgentMetadata>;
+  if (
+    (m.kind !== "codex" && m.kind !== "grok" && m.kind !== "composer") ||
+    m.aiterm_session !== name ||
+    typeof m.launch_id !== "string" ||
+    !LAUNCH_ID_RE.test(m.launch_id)
+  ) {
+    throw new AitermError(`agent metadata が不正です: ${files[0]}`, 2);
+  }
+  const expectedEvent = agentEventPath(name, m.launch_id);
+  if (m.event_file !== expectedEvent) {
+    throw new AitermError("agent metadata の path が現在の secure state root と一致しません", 2);
+  }
+  if (m.kind === "codex") {
+    const expectedHome = agentManagedCodexHomePath(name, m.launch_id);
+    if (m.hook_route !== "managed_codex_home" || m.codex_home !== expectedHome) {
+      throw new AitermError("agent metadata の path が現在の secure state root と一致しません", 2);
+    }
+    return {
+      kind: "codex",
+      aiterm_session: name,
+      launch_id: m.launch_id,
+      event_file: expectedEvent,
+      created_at: typeof m.created_at === "string" ? m.created_at : "",
+      cwd: typeof m.cwd === "string" ? m.cwd : null,
+      vendor_session_id: typeof m.vendor_session_id === "string" ? m.vendor_session_id : null,
+      initial_prompt: m.initial_prompt === true,
+      hook_route: "managed_codex_home",
+      node_platform: process.platform,
+      codex_home: expectedHome,
+    };
+  }
+  const expectedGrokHome = agentManagedGrokHomePath(name, m.launch_id);
+  const expectedHome = agentManagedGrokUserHomePath(name, m.launch_id);
+  if (m.hook_route !== "managed_grok_home" || m.grok_home !== expectedGrokHome || m.home !== expectedHome) {
+    throw new AitermError("agent metadata の path が現在の secure state root と一致しません", 2);
+  }
+  return {
+    kind: m.kind,
+    aiterm_session: name,
+    launch_id: m.launch_id,
+    event_file: expectedEvent,
+    created_at: typeof m.created_at === "string" ? m.created_at : "",
+    cwd: typeof m.cwd === "string" ? m.cwd : null,
+    vendor_session_id: typeof m.vendor_session_id === "string" ? m.vendor_session_id : null,
+    initial_prompt: m.initial_prompt === true,
+    hook_route: "managed_grok_home",
+    node_platform: process.platform,
+    grok_home: expectedGrokHome,
+    home: expectedHome,
+  };
+}
+
+function parseAgentDoneEvent(line: string, meta: AgentMetadata): AgentDoneParseResult {
+  let obj: unknown;
+  try {
+    obj = JSON.parse(line);
+  } catch {
+    return { event: null, malformed: true };
+  }
+  const ev = obj as Partial<AgentDoneEvent>;
+  if (
+    ev.type !== "agent_done" ||
+    ev.vendor !== meta.kind ||
+    ev.aiterm_session !== meta.aiterm_session ||
+    ev.launch_id !== meta.launch_id ||
+    ev.done_status !== "turn_done"
+  ) {
+    return { event: null, malformed: false };
+  }
+  if (meta.vendor_session_id && ev.vendor_session_id !== meta.vendor_session_id) {
+    return { event: null, malformed: false };
+  }
+  return {
+    event: {
+      type: "agent_done",
+      vendor: meta.kind,
+      aiterm_session: meta.aiterm_session,
+      launch_id: meta.launch_id,
+      vendor_session_id: typeof ev.vendor_session_id === "string" ? ev.vendor_session_id : null,
+      turn_id: typeof ev.turn_id === "string" ? ev.turn_id : null,
+      reason: typeof ev.reason === "string" ? ev.reason : "Stop",
+      done_status: "turn_done",
+      stop_hook_active: !!ev.stop_hook_active,
+      at: typeof ev.at === "string" ? ev.at : new Date().toISOString(),
+    },
+    malformed: false,
+  };
+}
+
+function scanAgentDoneLines(lines: string[], meta: AgentMetadata): AgentDoneScanResult {
+  let malformedEvents = 0;
+  let candidate: AgentDoneEvent | null = null;
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    if (Buffer.byteLength(line, "utf8") > 64 * 1024) {
+      malformedEvents++;
+      continue;
+    }
+    const parsed = parseAgentDoneEvent(line, meta);
+    if (parsed.malformed) {
+      malformedEvents++;
+      continue;
+    }
+    const ev = parsed.event;
+    if (!ev) continue;
+    if (meta.vendor_session_id) return { event: ev, malformedEvents, ambiguousVendorSession: false };
+    if (
+      candidate?.vendor_session_id &&
+      ev.vendor_session_id &&
+      candidate.vendor_session_id !== ev.vendor_session_id
+    ) {
+      return { event: null, malformedEvents, ambiguousVendorSession: true };
+    }
+    if (!candidate) candidate = ev;
+  }
+  return { event: candidate, malformedEvents, ambiguousVendorSession: false };
+}
+
+function bindAgentVendorSession(meta: AgentMetadata, ev: AgentDoneEvent): void {
+  if (!meta.vendor_session_id && ev.vendor_session_id) {
+    meta.vendor_session_id = ev.vendor_session_id;
+  }
+}
+
+function bindCompletedInitialPrompt(meta: AgentMetadata): void {
+  if (!meta.initial_prompt || meta.vendor_session_id) return;
+  const size = safeStatSize(meta.event_file);
+  if (size === 0) {
+    throw new AitermError(
+      `agent session '${meta.aiterm_session}' は起動時 prompt の完了待ちです。初回応答完了後に再度 pty_send(wait:"agent_done") してください。`,
+      2,
+    );
+  }
+  const text = readFileRange(meta.event_file, 0, size).toString("utf8");
+  const lines = text.split("\n");
+  const tail = lines.pop() ?? "";
+  const scanned = scanAgentDoneLines(lines, meta);
+  if (scanned.ambiguousVendorSession) {
+    throw new AitermError("agent event file に複数の vendor_session_id が混在しています。該当セッションを閉じて起動し直してください。", 2);
+  }
+  if (!scanned.event) {
+    const malformed = scanned.malformedEvents ? ` malformed_events=${scanned.malformedEvents}` : "";
+    const partial = tail.trim() ? " partial_event=true" : "";
+    throw new AitermError(
+      `agent session '${meta.aiterm_session}' は起動時 prompt の完了 event をまだ確認できません。初回応答完了後に再度 pty_send(wait:"agent_done") してください。${malformed}${partial}`,
+      2,
+    );
+  }
+  bindAgentVendorSession(meta, scanned.event);
+  meta.initial_prompt = false;
+  writeAgentMetadata(meta);
+}
+
+async function waitAgentDoneEvent(
+  meta: AgentMetadata,
+  startOffset: number,
+  timeout: number,
+): Promise<AgentDoneWaitResult> {
+  const deadline = performance.now() + timeout * 1000;
+  let cursor = startOffset;
+  let carry = "";
+  let malformedEvents = 0;
+  for (;;) {
+    const size = safeStatSize(meta.event_file);
+    if (size < cursor) {
+      cursor = 0;
+      carry = "";
+    }
+    if (size > cursor) {
+      if (size - cursor > AGENT_EVENT_MAX_BYTES) {
+        throw new AitermError("agent event file の増分が大きすぎます。該当セッションを閉じて起動し直してください。", 2);
+      }
+      carry += readFileRange(meta.event_file, cursor, size).toString("utf8");
+      cursor = size;
+      const parts = carry.split("\n");
+      carry = parts.pop() ?? "";
+      const scanned = scanAgentDoneLines(parts, meta);
+      malformedEvents += scanned.malformedEvents;
+      if (scanned.ambiguousVendorSession) {
+        throw new AitermError("agent event file に複数の vendor_session_id が混在しています。該当セッションを閉じて起動し直してください。", 2);
+      }
+      if (scanned.event) {
+        bindAgentVendorSession(meta, scanned.event);
+        if (meta.vendor_session_id) writeAgentMetadata(meta);
+        return { event: scanned.event, malformedEvents };
+      }
+    }
+    if (performance.now() >= deadline) return { event: null, malformedEvents };
+    await sleep(AGENT_DONE_POLL_MS);
+  }
+}
+
+function agentDoneSuffix(wait: AgentDoneWaitResult, vendor: AgentKind): string {
+  const ev = wait.event;
+  if (!ev) {
+    const malformed = wait.malformedEvents ? ` malformed_events=${wait.malformedEvents}` : "";
+    return ` [is_complete=False via agent_timeout vendor=${vendor}${malformed}]`;
+  }
+  const bits = [
+    "is_complete=True",
+    "via agent_done",
+    `vendor=${ev.vendor}`,
+    ev.turn_id ? `turn_id=${ev.turn_id}` : null,
+    ev.vendor_session_id ? `vendor_session_id=${ev.vendor_session_id}` : null,
+    `done_status=${ev.done_status}`,
+  ].filter(Boolean);
+  return ` [${bits.join(" ")}]`;
+}
+
+function isAgentTuiReady(kind: AgentKind, screen: string): boolean {
+  if (kind === "codex") {
+    return screen.includes("OpenAI Codex") && /(^|\n)\s*[›>]/.test(screen);
+  }
+  return screen.includes("Grok Build") && /(^|\n|\s)❯/.test(screen);
+}
+
+async function waitAgentTuiReadyImpl(
+  kind: AgentKind,
+  sample: () => string,
+  sleepFn: (ms: number) => Promise<void>,
+  opts: {
+    timeoutMs?: number;
+    pollMs?: number;
+  } = {},
+): Promise<AgentTuiReadyWaitResult> {
+  const timeoutMs = opts.timeoutMs ?? AGENT_TUI_READY_TIMEOUT_MS;
+  const pollMs = opts.pollMs ?? AGENT_TUI_READY_POLL_MS;
+  const deadline = performance.now() + timeoutMs;
+  let samples = 0;
+  let lastScreen = "";
+  for (;;) {
+    lastScreen = sample();
+    samples++;
+    if (isAgentTuiReady(kind, lastScreen)) return { ready: true, samples, lastScreen };
+    if (performance.now() >= deadline) return { ready: false, samples, lastScreen };
+    await sleepFn(pollMs);
+  }
+}
+
+async function waitAgentTuiReady(
+  name: string,
+  meta: AgentMetadata,
+  timeoutMs = AGENT_TUI_READY_TIMEOUT_MS,
+): Promise<AgentTuiReadyWaitResult> {
+  return waitAgentTuiReadyImpl(
+    meta.kind,
+    () => captureScreen(name, AGENT_TUI_READY_LINES),
+    sleep,
+    { timeoutMs },
+  );
+}
+
+async function settleAgentDoneScreenImpl(
+  sample: () => AgentScreenSample,
+  sleepFn: (ms: number) => Promise<void>,
+  opts: {
+    minDelayMs?: number;
+    pollMs?: number;
+    maxPolls?: number;
+    minSamples?: number;
+  } = {},
+): Promise<AgentScreenSettleResult> {
+  const minDelayMs = opts.minDelayMs ?? AGENT_DONE_SETTLE_MIN_MS;
+  const pollMs = opts.pollMs ?? AGENT_DONE_SCREEN_SETTLE_POLL_MS;
+  const maxPolls = opts.maxPolls ?? AGENT_DONE_SCREEN_SETTLE_MAX_POLLS;
+  const minSamples = opts.minSamples ?? AGENT_DONE_SCREEN_SETTLE_MIN_SAMPLES;
+  if (minDelayMs > 0) await sleepFn(minDelayMs);
+  let prev = sample();
+  let samples = 1;
+  let stableStreak = 1;
+  for (let i = 0; i < maxPolls; i++) {
+    if (pollMs > 0) await sleepFn(pollMs);
+    const current = sample();
+    samples++;
+    if (current.screen === prev.screen && current.logSize === prev.logSize) {
+      stableStreak++;
+      if (samples >= minSamples && stableStreak >= 2) return { unstable: false, samples };
+    } else {
+      stableStreak = 1;
+    }
+    prev = current;
+  }
+  return { unstable: true, samples };
+}
+
+async function settleAgentDoneScreen(name: string, lines: number): Promise<AgentScreenSettleResult> {
+  return settleAgentDoneScreenImpl(
+    () => ({
+      screen: captureScreen(name, lines),
+      logSize: safeStatSize(logpath(name)),
+    }),
+    sleep,
+  );
+}
+
+export async function __testSettleAgentDoneScreen(
+  samples: AgentScreenSample[],
+  opts: { minDelayMs?: number; pollMs?: number; maxPolls?: number; minSamples?: number } = {},
+): Promise<AgentScreenSettleResult & { sleeps: number[] }> {
+  if (samples.length === 0) throw new AitermError("screen settle test samples が空です", 2);
+  let i = 0;
+  const sleeps: number[] = [];
+  const result = await settleAgentDoneScreenImpl(
+    () => samples[Math.min(i++, samples.length - 1)],
+    async (ms) => {
+      sleeps.push(ms);
+    },
+    opts,
+  );
+  return { ...result, sleeps };
+}
+
+export function __testIsAgentTuiReady(kind: AgentKind, screen: string): boolean {
+  return isAgentTuiReady(kind, screen);
+}
+
+export async function __testWaitAgentTuiReady(
+  kind: AgentKind,
+  samples: string[],
+  opts: { timeoutMs?: number; pollMs?: number } = {},
+): Promise<AgentTuiReadyWaitResult & { sleeps: number[] }> {
+  if (samples.length === 0) throw new AitermError("agent ready test samples が空です", 2);
+  let i = 0;
+  const sleeps: number[] = [];
+  const result = await waitAgentTuiReadyImpl(
+    kind,
+    () => samples[Math.min(i++, samples.length - 1)],
+    async (ms) => {
+      sleeps.push(ms);
+    },
+    opts,
+  );
+  return { ...result, sleeps };
+}
+
+export interface AgentDoneSendOpts extends SendOpts {
+  timeout?: number;
+  ready_timeout?: number;
+  screen?: boolean;
+  lines?: number | null;
+}
+
+export async function sendAndWaitAgentDone(name: string, text: string, o: AgentDoneSendOpts = {}): Promise<string> {
+  assertSessionName(name);
+  if (o.enter === false) throw new AitermError('wait:"agent_done" は enter:false と併用できません', 2);
+  if (o.mark) throw new AitermError('wait:"agent_done" と mark:true は併用できません', 2);
+  if (o.rtk) throw new AitermError('wait:"agent_done" と rtk:true は併用できません', 2);
+  const meta = loadAgentMetadata(name);
+  if (agentWaitLocks.has(name)) throw new AitermError(`agent session '${name}' は別の agent_done 待機中です`, 2);
+  const releaseFileLock = acquireAgentWaitFileLock(meta);
+
+  const timeout = o.timeout ?? DEFAULT_AGENT_DONE_TIMEOUT;
+  const screen = o.screen ?? true;
+  agentWaitLocks.add(name);
+  try {
+    bindCompletedInitialPrompt(meta);
+    if (!meta.vendor_session_id) {
+      const ready = await waitAgentTuiReady(name, meta, o.ready_timeout ?? AGENT_TUI_READY_TIMEOUT_MS);
+      if (!ready.ready) {
+        throw new AitermError(
+          `agent session '${name}' の ${agentLabel(meta.kind)} TUI が入力受付状態になりません。文字列は送信していません。` +
+            "少し後で pty_read(screen:true) を確認し、TUI が起動済みなら再度 pty_send(wait:\"agent_done\") してください。",
+          2,
+        );
+      }
+    }
+    const startOffset = safeStatSize(meta.event_file);
+    send(name, text, {
+      enter: false,
+      force: o.force,
+      raw: o.raw,
+      mark: false,
+      rtk: false,
+    });
+    // Codex TUI は literal text 投入直後の Enter を取り落とすことがある。agent 経路だけ submit を分離する。
+    await sleep(AGENT_SUBMIT_DELAY_MS);
+    sendKey(name, "Enter");
+    const wait = await waitAgentDoneEvent(meta, startOffset, timeout);
+    const settled = wait.event
+      ? await settleAgentDoneScreen(name, o.lines ?? 0)
+      : { unstable: false, samples: 0 };
+    const out = await readOutput(name, {
+      screen,
+      lines: o.lines ?? null,
+      timeout: 0,
+    });
+    writeOffset(name, safeStatSize(logpath(name)));
+    return out + agentDoneSuffix(wait, meta.kind) + (settled.unstable ? " [agent_done_but_screen_unstable]" : "");
+  } finally {
+    agentWaitLocks.delete(name);
+    releaseFileLock();
+  }
 }
 
 // ── 対話型エージェント起動（Codex / Grok Build(Grok) / Grok Build(Composer)）──────
 // aiterm の永続端末に、指定モデルの対話エージェント TUI を起動する。以後は pty_read で画面を
 // 読み、pty_send で操作する＝aiterm の対話パラダイムそのもの。モデルはツールごとに固定し、
 // reasoning effort は引数で渡す。CLI 未導入環境は明示エラー（動くフリをしない）。
-type AgentKind = "codex" | "grok" | "composer";
-
 function resolveAgentBin(kind: AgentKind): string | null {
   const home = process.env.HOME ?? os.homedir();
   const [envVar, rel, name] =
@@ -857,18 +1846,53 @@ function buildAgentCmd(
   bin: string,
   effort: string | null,
   prompt: string | null,
+  meta: AgentMetadata | null = null,
 ): string {
   const parts: string[] = [shq(bin)];
   if (kind === "codex") {
+    if (meta?.kind === "codex") parts.push("--dangerously-bypass-hook-trust");
     // codex は config override で reasoning effort（例: low/medium/high）を渡す。
     if (effort) parts.push("-c", `model_reasoning_effort=${shq(effort)}`);
   } else {
     // grok / composer は同じ grok CLI をモデル違いで起動。effort は low/medium/high/xhigh/max。
+    parts.push("--no-auto-update");
+    if (meta?.kind === "grok" || meta?.kind === "composer") parts.push("--no-alt-screen");
     parts.push("--model", kind === "composer" ? "grok-composer-2.5-fast" : "grok-build");
     if (effort) parts.push("--effort", shq(effort));
+    if ((meta?.kind === "grok" || meta?.kind === "composer") && prompt) parts.push("--verbatim");
   }
   if (prompt) parts.push(shq(prompt)); // 初手プロンプト（任意）
   return parts.join(" ");
+}
+
+function agentEnvPrefix(meta: AgentMetadata | null, sid: string): string {
+  if (!meta) return "";
+  const common = [
+    `AITERM_AGENT_KIND=${shq(meta.kind)}`,
+    `AITERM_SESSION_ID=${shq(sid)}`,
+    `AITERM_AGENT_SESSION_ID=${shq(sid)}`,
+    `AITERM_AGENT_LAUNCH_ID=${shq(meta.launch_id)}`,
+  ];
+  if (meta.kind === "codex") {
+    return [`CODEX_HOME=${shq(meta.codex_home ?? "")}`, ...common].join(" ") + " ";
+  }
+  return [
+    `HOME=${shq(meta.home ?? "")}`,
+    `GROK_HOME=${shq(meta.grok_home ?? "")}`,
+    "GROK_DISABLE_AUTOUPDATER=1",
+    "GROK_CLAUDE_HOOKS_ENABLED=false",
+    "GROK_CURSOR_HOOKS_ENABLED=false",
+    "GROK_CLAUDE_SKILLS_ENABLED=false",
+    "GROK_CURSOR_SKILLS_ENABLED=false",
+    "GROK_CLAUDE_RULES_ENABLED=false",
+    "GROK_CURSOR_RULES_ENABLED=false",
+    "GROK_CLAUDE_AGENTS_ENABLED=false",
+    "GROK_CURSOR_AGENTS_ENABLED=false",
+    "GROK_CLAUDE_MCPS_ENABLED=false",
+    "GROK_CURSOR_MCPS_ENABLED=false",
+    `AITERM_REAL_HOME=${shq(process.env.HOME ?? os.homedir())}`,
+    ...common,
+  ].join(" ") + " ";
 }
 
 function agentLabel(kind: AgentKind): string {
@@ -889,6 +1913,7 @@ export function openAgent(
     reasoning_effort?: string | null;
     cwd?: string | null;
     prompt?: string | null;
+    agent_done?: boolean | null;
   } = {},
 ): [string, string] {
   const label = agentLabel(kind);
@@ -901,6 +1926,7 @@ export function openAgent(
       2,
     );
   }
+  const agentDone = !!opts.agent_done;
   const bin = resolveAgentBin(kind);
   if (!bin) {
     const where = kind === "codex" ? "~/.local/bin/codex" : "~/.grok/bin/grok";
@@ -936,9 +1962,15 @@ export function openAgent(
   const cwdForCmd = cwd && isWin ? toWslPath(cwd) : cwd;
 
   const [sid, hint] = openSession(opts.session_name ?? null, "bash");
-  const cmd = buildAgentCmd(kind, binForCmd, effort, opts.prompt ?? null);
-  const full = cwdForCmd ? `cd ${shq(cwdForCmd)} && ${cmd}` : cmd;
   try {
+    const meta = agentDone
+      ? kind === "codex"
+        ? createCodexAgentMetadata(sid, cwd, !!opts.prompt)
+        : createGrokAgentMetadata(kind, sid, cwd, !!opts.prompt)
+      : null;
+    const cmd = buildAgentCmd(kind, binForCmd, effort, opts.prompt ?? null, meta);
+    const envPrefix = agentEnvPrefix(meta, sid);
+    const full = cwdForCmd ? `cd ${shq(cwdForCmd)} && ${envPrefix}${cmd}` : `${envPrefix}${cmd}`;
     // force:true で送る。起動骨格は `bin '...'` の固定形で、prompt/cwd/effort は shq でクオート済みの
     // 引数＝シェルは決して破壊コマンドとして実行しない。破壊ゲート（生シェルコマンド想定）を prompt に
     // 掛けるのは純誤検知で、`codex 'rm -rf / を説明して'` 等の正当な起動を塞いでしまう（A4）。
@@ -954,7 +1986,8 @@ export function openAgent(
   }
   return [
     sid,
-    `${label} を session ${sid} で起動した。\n${hint}\n` +
+    `${label} を session ${sid} で起動した。${agentDone ? "agent_done 待機が有効。" : ""}` +
+      `${agentDone && kind !== "codex" ? " hook 汚染防止のため Grok 実行中は一時 HOME を使う。" : ""}\n${hint}\n` +
       `TUI の描画には数秒かかる。少し置いてから pty_read(${sid}, screen:true) で画面を読み、` +
       `pty_send(${sid}, "...") で入力・pty_key(${sid}, "Enter"/"Up"/"C-c" 等) で操作する（対話）。` +
       `起動直後に増分 pty_read すると空/半描画になり得るので screen:true を使う。`,

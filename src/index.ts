@@ -57,11 +57,20 @@ server.registerTool(
 server.registerTool(
   "pty_send",
   {
-    description: "セッションへテキスト(コマンド)を送る。送信後の出力は pty_read で取得する。",
+    description:
+      "セッションへテキスト(コマンド)を送る。通常は送信だけ行い、出力は pty_read で取得する。" +
+      "agent_done:true で起動した Codex/Grok/Composer セッションは wait:'agent_done' で Stop hook まで待てる。",
     inputSchema: {
       session_id: z.string(),
       text: z.string().describe("送る文字列（コマンド）"),
       enter: z.boolean().default(true).describe("末尾で Enter を送る"),
+      wait: z
+        .enum(["none", "agent_done"])
+        .default("none")
+        .describe("none=従来通り送信のみ。agent_done=agent Stop hook まで待って最終画面を返す"),
+      timeout: z.number().default(600).describe("wait:'agent_done' の最大待ち秒数"),
+      screen: z.boolean().default(true).describe("wait:'agent_done' の返り値を描画済みスクリーンにする"),
+      lines: z.number().int().nullish().describe("wait:'agent_done' で返す末尾 N 行"),
       mark: z
         .boolean()
         .default(false)
@@ -74,8 +83,22 @@ server.registerTool(
       raw: z.boolean().default(false).describe("送信前サニタイズを無効化"),
     },
   },
-  async ({ session_id, text, enter, mark, force, rtk, raw }) => {
+  async ({ session_id, text, enter, wait, timeout, screen, lines, mark, force, rtk, raw }) => {
     try {
+      if (wait === "agent_done") {
+        return ok(
+          await core.sendAndWaitAgentDone(session_id, text, {
+            enter,
+            mark,
+            force,
+            rtk,
+            raw,
+            timeout,
+            screen,
+            lines: lines ?? null,
+          }),
+        );
+      }
       return ok(core.send(session_id, text, { enter, mark, force, rtk, raw }));
     } catch (e) {
       return fail(e);
@@ -217,15 +240,20 @@ function registerAgentTool(
           .describe(agentEffortDesc(grokLike)),
         cwd: z.string().nullish().describe("作業ディレクトリ（対象リポのルート等・任意）"),
         session_name: z.string().nullish().describe("セッション名（省略で自動採番）"),
+        agent_done: z
+          .boolean()
+          .default(false)
+          .describe("managed Stop hook を有効化し、pty_send(wait:'agent_done') を使えるようにする"),
       },
     },
-    async ({ prompt, reasoning_effort, cwd, session_name }) => {
+    async ({ prompt, reasoning_effort, cwd, session_name, agent_done }) => {
       try {
         const [sid, hint] = core.openAgent(kind, {
           prompt: prompt ?? undefined,
           reasoning_effort: reasoning_effort ?? undefined,
           cwd: cwd ?? undefined,
           session_name: session_name ?? undefined,
+          agent_done: agent_done ?? false,
         });
         return ok(`session_id: ${sid}\n${hint}`);
       } catch (e) {

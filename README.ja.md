@@ -22,7 +22,7 @@
 
 9 ツール: 6 つの **PTY ツール**（`pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list`）で 1 本の永続端末を開き・操作し・読む。加えて 3 つの **エージェント起動ツール**（`codex_agent` / `grok_agent` / `composer_agent`）が、別のコーディングエージェントの TUI を新しい端末の中に起動する。バックエンドは **tmux** なので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
 
-**状態:** 開発継続中 · この分野では新参で、別の形に賭けている（[既存手段との比較](#既存手段との比較)参照）· 動作対象は Linux · WSL2 · macOS · Windows ネイティブ · MIT · [変更履歴](CHANGELOG.md)。
+**状態:** 開発継続中 · この分野では新参で、別の形に賭けている（[既存手段との比較](#既存手段との比較)参照）· 動作対象は Linux · WSL2 · macOS · Windows ネイティブ（core PTY ツール。`agent_done` は現時点では POSIX/WSL/macOS のみ）· MIT · [変更履歴](CHANGELOG.md)。
 
 ## なぜ今
 
@@ -45,25 +45,26 @@ pty_read(id, { wait: true })       → 削減済みの出力を読む（完了�
 
 ### 2. その端末の中に他のコーディングエージェントを起動する — オーケストレーションの旗艦
 
-同じ primitive が別エージェントの TUI を宿す。3 つの起動ツールが、各ベンダーの対話型コーディングエージェント TUI を新しい永続端末の中に起動し、`session_id` を返す。以後はどのシェルとも同じ `pty_read` / `pty_send` で操作する——出力をトークン削減して読み、次の一手を送る。（TUI は全画面アプリなので `pty_read({ screen: true })` で描画済みの画面が得られる。）これはベンダー自身の CLI が導入・認証済みであることが必要——[要件](#要件)参照。
+同じ primitive が別エージェントの TUI を宿す。3 つの起動ツールが、各ベンダーの対話型コーディングエージェント TUI を新しい永続端末の中に起動し、`session_id` を返す。以後はどのシェルとも同じ `pty_read` / `pty_send` で操作する——出力をトークン削減して読み、次の一手を送る。（TUI は全画面アプリなので `pty_read({ screen: true })` で描画済みの画面が得られる。）`agent_done: true` を付けると hook ベースのターン完了待ちが有効になり、`pty_send({ wait: "agent_done" })` が agent のターン終了後に返る。Codex/Grok/Composer は、各ベンダー CLI が認証済みなら実 smoke 済み。これはベンダー自身の CLI が導入・認証済みであることが必要——[要件](#要件)参照。
 
 ```text
-codex_agent({ session_name: "codex1", cwd: "/repo",
+codex_agent({ session_name: "codex1", cwd: "/repo", agent_done: true,
               prompt: "port test/legacy.py to vitest" })
                                     → { session_id: "codex1", … }   # Codex が永続端末で稼働開始
 pty_read("codex1", { screen: true })   → 何をしているか読む（トークン削減）
-pty_send("codex1", "also fix the imports it broke")   → 作業の途中で操舵する——TUI を操作している
+pty_send("codex1", "also fix the imports it broke", { wait: "agent_done" })
+                                    → 操舵し、Codex の次の入力境界で返る
 ```
 
 モデルごとに 1 ツール＝ツール名を見ればどのモデルか分かる:
 
 | ツール | 起動するもの | 主な引数 |
 | --- | --- | --- |
-| `codex_agent` | Codex CLI（OpenAI・モデルは CLI の既定） | `prompt?`, `reasoning_effort?`, `cwd?`, `session_name?` |
-| `grok_agent` | Grok Build の `grok-build` モデル（xAI） | `prompt?`, `reasoning_effort?`（`low`/`medium`/`high`/`xhigh`/`max`）, `cwd?`, `session_name?` |
+| `codex_agent` | Codex CLI（OpenAI・モデルは CLI の既定） | `prompt?`, `reasoning_effort?`, `cwd?`, `session_name?`, `agent_done?` |
+| `grok_agent` | Grok Build の `grok-build` モデル（xAI） | `prompt?`, `reasoning_effort?`（`low`/`medium`/`high`/`xhigh`/`max`）, `cwd?`, `session_name?`, `agent_done?` |
 | `composer_agent` | Grok Build の `grok-composer-2.5-fast` モデル（xAI） | `grok_agent` と同じ |
 
-各ベンダーの CLI が導入・認証済みであること（`codex_agent` は `codex`、Grok 系 2 つは `grok`）。バイナリは `CODEX_BIN` / `GROK_BIN` → `~/.local/bin/codex` / `~/.grok/bin/grok` → `PATH` の順で解決する。前提は **session を作る前に**検証する——`grok_agent` / `composer_agent` は範囲外の `reasoning_effort` を先に弾き（値集合は固定＝`low`/`medium`/`high`/`xhigh`/`max`）、CLI バイナリ不在・実在しない `cwd` は 3 つとも失敗する。前提（`reasoning_effort`・バイナリ・`cwd`）で弾かれた起動は **session の残骸をゼロ**にして返し、起動キーストロークを送れなければ session を畳む。（その先でベンダー CLI が実際に立ち上がったか・認証できたかは aiterm は検証しない——`openAgent` は起動コマンドを送った時点で返る。起動できたかは session を読んで確認する。）（`codex_agent` は Codex の受理値が版で変わるため、`reasoning_effort` を検証せず config override〔`-c model_reasoning_effort=…`〕として Codex CLI へ渡す。）`cwd` は絶対パスで渡す——`~` は展開されない。
+各ベンダーの CLI が導入・認証済みであること（`codex_agent` は `codex`、Grok 系 2 つは `grok`）。バイナリは `CODEX_BIN` / `GROK_BIN` → `~/.local/bin/codex` / `~/.grok/bin/grok` → `PATH` の順で解決する。前提は **session を作る前に**検証する——`grok_agent` / `composer_agent` は範囲外の `reasoning_effort` を先に弾き（値集合は固定＝`low`/`medium`/`high`/`xhigh`/`max`）、CLI バイナリ不在・実在しない `cwd` は 3 つとも失敗する。前提（`reasoning_effort`・バイナリ・`cwd`）で弾かれた起動は **session の残骸をゼロ**にして返し、起動キーストロークを送れなければ session を畳む。（その先でベンダー CLI が実際に立ち上がったか・認証できたかは aiterm は検証しない——`openAgent` は起動コマンドを送った時点で返る。起動できたかは session を読んで確認する。）（`codex_agent` は Codex の受理値が版で変わるため、`reasoning_effort` を検証せず config override〔`-c model_reasoning_effort=…`〕として Codex CLI へ渡す。）`cwd` は絶対パスで渡す——`~` は展開されない。`agent_done` は launch ごとの managed vendor home を使い、通常の hook file は書き換えない。Grok/Composer はさらに `GROK_HOME` と `HOME` を隔離し、compat hook/plugin 混入を抑える。一方で OAuth は通常 Grok home の `auth.json` と `auth.json.lock` をセットで共有し、複数セッション間で refresh lock が分裂しないようにする。初回の未 bind `pty_send({ wait: "agent_done" })` は、vendor TUI の入力欄が出るまで待ち、入力受付状態でなければ文字列を送らず送信前エラーにする。`agent_done` は `getuid`・安全な一時ファイル・hard link 検査など POSIX ファイルシステム前提を使うため、対応は Linux / WSL2 / macOS。Windows ネイティブでは core PTY と agent launcher は使えるが、`agent_done` はまだ未対応。
 
 **Claude launcher はあえて無い**し、エージェント間のプロトコルも無い: aiterm の役目は、あなたの Claude（や任意の MCP クライアント）が*他の*エージェントに手を伸ばして端末を操作できるようにすること。起動したエージェントは単なるもう 1 本の永続セッションなので、この README の他のすべて（トークン削減読取・完了検出・人の `attach` での監視/介入）がそのまま効く。
 
@@ -206,7 +207,7 @@ aiterm は同じ核心の洞察——端末を出会いの場にする——を�
 | ツール | 役割 | 主な引数 |
 | --- | --- | --- |
 | `pty_open` | 端末を 1 個握り `session_id` を返す | `name?`, `shell="bash"` |
-| `pty_send` | テキスト(コマンド)を送る | `session_id`, `text`, `enter=true`, `mark`, `force`, `rtk`, `raw` |
+| `pty_send` | テキスト(コマンド)を送る | `session_id`, `text`, `enter=true`, `wait`, `timeout`, `screen`, `lines`, `mark`, `force`, `rtk`, `raw` |
 | `pty_read` | 出力を削減して読む（既定は増分） | `session_id`, `wait`, `until`, `until_regex`, `timeout`, `screen`, `full`, `lines`, `line_range`, `raw`, `rtk` |
 | `pty_key` | 制御キーを送る | `session_id`, `key`（`C-c`/`Enter`/`Up`…） |
 | `pty_close` | セッションを閉じる | `session_id` |
@@ -218,15 +219,15 @@ aiterm は同じ核心の洞察——端末を出会いの場にする——を�
 
 | ツール | 起動するもの | 主な引数 |
 | --- | --- | --- |
-| `codex_agent` | Codex CLI（OpenAI・モデルは CLI の既定） | `prompt?`, `reasoning_effort?`, `cwd?`, `session_name?` |
-| `grok_agent` | Grok Build の `grok-build` モデル（xAI） | `prompt?`, `reasoning_effort?`（`low`/`medium`/`high`/`xhigh`/`max`）, `cwd?`, `session_name?` |
+| `codex_agent` | Codex CLI（OpenAI・モデルは CLI の既定） | `prompt?`, `reasoning_effort?`, `cwd?`, `session_name?`, `agent_done?` |
+| `grok_agent` | Grok Build の `grok-build` モデル（xAI） | `prompt?`, `reasoning_effort?`（`low`/`medium`/`high`/`xhigh`/`max`）, `cwd?`, `session_name?`, `agent_done?` |
 | `composer_agent` | Grok Build の `grok-composer-2.5-fast` モデル（xAI） | `grok_agent` と同じ |
 
-各ベンダーの CLI が導入・認証済みであること（`codex_agent` は `codex`、Grok 系 2 つは `grok`）。バイナリは `CODEX_BIN` / `GROK_BIN` → `~/.local/bin/codex` / `~/.grok/bin/grok` → `PATH` の順で解決する。前提はセッション作成前に検証し（grok/composer は範囲外の `reasoning_effort` を弾く。CLI 不在・実在しない `cwd` は 3 つとも失敗）、起動に失敗してもセッションの残骸は残さない。詳細は [その端末の中に他のコーディングエージェントを起動する](#2-その端末の中に他のコーディングエージェントを起動する--オーケストレーションの旗艦)。`cwd` は絶対パスで渡す——`~` は展開されない。
+各ベンダーの CLI が導入・認証済みであること（`codex_agent` は `codex`、Grok 系 2 つは `grok`）。バイナリは `CODEX_BIN` / `GROK_BIN` → `~/.local/bin/codex` / `~/.grok/bin/grok` → `PATH` の順で解決する。前提はセッション作成前に検証し（grok/composer は範囲外の `reasoning_effort` を弾く。CLI 不在・実在しない `cwd` は 3 つとも失敗）、起動に失敗してもセッションの残骸は残さない。詳細は [その端末の中に他のコーディングエージェントを起動する](#2-その端末の中に他のコーディングエージェントを起動する--オーケストレーションの旗艦)。`cwd` は絶対パスで渡す——`~` は展開されない。`agent_done` は hook-backed で、Codex/Grok/Composer は Linux/WSL2/macOS で実 smoke 済み。Windows ネイティブでは agent launcher は使えるが `agent_done` はまだ未対応。初回の未 bind agent send では `pty_send({ wait:"agent_done" })` が vendor TUI の入力欄を待ち、未 ready なら送信前エラーにする。Grok OAuth mode では hook/config 隔離は launch ごとに維持しつつ、通常 Grok home の `auth.json` と `auth.json.lock` をセットで共有する。OAuth auth 不在ならセッション残骸なしで失敗する。
 
 ### 完了検出（5 層）
 
-`pty_read({ wait: true })` は、プロセス終了 / `mark:true` sentinel の自動検出（後述）/ `until` 一致（**既定はリテラル部分一致**、`until_regex: true` で正規表現）/ 出力静止 ∧ シェル復帰（quiescence）/ timeout の 5 層で「コマンドが終わったか」を判定する。ネスト中（SSH・コンテナ・REPL・起動したエージェントの TUI の中）はシェル復帰判定が効かないので、`until` で内側プロンプトを指定するか、`mark: true` で送れば `pty_read({ wait: true })` が sentinel を自動検出する（until 不要・ネストでも効く）——全画面のエージェント TUI なら、出力が落ち着いた時点で `{ screen: true }` を読む。
+`pty_read({ wait: true })` は、プロセス終了 / `mark:true` sentinel の自動検出（後述）/ `until` 一致（**既定はリテラル部分一致**、`until_regex: true` で正規表現）/ 出力静止 ∧ シェル復帰（quiescence）/ timeout の 5 層で「コマンドが終わったか」を判定する。ネスト中（SSH・コンテナ・REPL・起動したエージェントの TUI の中）はシェル復帰判定が効かないので、`until` で内側プロンプトを指定するか、`mark: true` で送れば `pty_read({ wait: true })` が sentinel を自動検出する（until 不要・ネストでも効く）——全画面のエージェント TUI なら、出力が落ち着いた時点で `{ screen: true }` を読む。`agent_done:true` で起動したセッションは代わりに `pty_send({ wait:"agent_done" })` を使える。必要な場合はまず agent TUI の入力欄を待ち、その後 vendor Stop hook を待ってターン境界後の画面を返す。送信前 ready 失敗は MCP エラー、送信後 timeout は `is_complete=False via agent_timeout` で返り、成功扱いしない。完結した hook JSONL 行が壊れていた場合は、切り分け用に timeout suffix へ `malformed_events=N` が付く。ターンは完了したが端末 screen/log が flush 窓内で安定しなかった場合は、`agent_done_but_screen_unstable` が付く。
 
 ### トークン削減
 

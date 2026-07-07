@@ -72,6 +72,77 @@ test("reduceOutput: メタは raw 行数/トークン概算を併記", () => {
   assert.match(meta, /^\[aiterm x: 3 行 \/ ~\d+ tok \(raw 3 行 \/ ~\d+ tok\)\]$/);
 });
 
+// ---------------------------------------------------------------- agent_done screen settle
+test("agent_done screen settle: 不一致後に screen/log が一致すれば安定扱い", async () => {
+  const r = await core.__testSettleAgentDoneScreen(
+    [
+      { screen: "old", logSize: 1 },
+      { screen: "new", logSize: 2 },
+      { screen: "new", logSize: 2 },
+    ],
+    { minDelayMs: 10, pollMs: 20, maxPolls: 5 },
+  );
+  assert.equal(r.unstable, false);
+  assert.equal(r.samples, 3);
+  assert.deepEqual(r.sleeps, [10, 20, 20]);
+});
+
+test("agent_done screen settle: 古い画面の一時的な一致だけでは早期安定扱いしない", async () => {
+  const r = await core.__testSettleAgentDoneScreen(
+    [
+      { screen: "old", logSize: 1 },
+      { screen: "old", logSize: 1 },
+      { screen: "new", logSize: 2 },
+      { screen: "new", logSize: 2 },
+    ],
+    { minDelayMs: 0, pollMs: 0, maxPolls: 5 },
+  );
+  assert.equal(r.unstable, false);
+  assert.equal(r.samples, 4);
+});
+
+test("agent_done screen settle: 上限まで一致しなければ unstable", async () => {
+  const r = await core.__testSettleAgentDoneScreen(
+    [
+      { screen: "a", logSize: 1 },
+      { screen: "b", logSize: 2 },
+      { screen: "c", logSize: 3 },
+      { screen: "d", logSize: 4 },
+    ],
+    { minDelayMs: 0, pollMs: 0, maxPolls: 3 },
+  );
+  assert.equal(r.unstable, true);
+  assert.equal(r.samples, 4);
+});
+
+// ---------------------------------------------------------------- agent_done TUI ready gate
+test("agent_done ready gate: Codex/Grok/Composer の入力欄を判定する", () => {
+  assert.equal(core.__testIsAgentTuiReady("codex", "╭─╮\n│ >_ OpenAI Codex │\n› "), true);
+  assert.equal(core.__testIsAgentTuiReady("grok", "Grok Build  0.2.87 Beta\n  │ ❯"), true);
+  assert.equal(core.__testIsAgentTuiReady("composer", "Grok Build  0.2.87 Beta\n  │ ❯"), true);
+  assert.equal(core.__testIsAgentTuiReady("codex", "OpenAI Codex\n◦ Starting MCP servers"), false);
+  assert.equal(core.__testIsAgentTuiReady("grok", "Grok Build\nChangelog"), false);
+});
+
+test("agent_done ready gate: ready になるまで polling し、timeout なら false", async () => {
+  const ok = await core.__testWaitAgentTuiReady(
+    "codex",
+    ["OpenAI Codex\n◦ Starting MCP servers", "OpenAI Codex\n› "],
+    { timeoutMs: 100, pollMs: 10 },
+  );
+  assert.equal(ok.ready, true);
+  assert.equal(ok.samples, 2);
+  assert.deepEqual(ok.sleeps, [10]);
+
+  const bad = await core.__testWaitAgentTuiReady("grok", ["Grok Build\nChangelog"], {
+    timeoutMs: 0,
+    pollMs: 10,
+  });
+  assert.equal(bad.ready, false);
+  assert.equal(bad.samples, 1);
+  assert.deepEqual(bad.sleeps, []);
+});
+
 // ---------------------------------------------------------------- toWslPath（Windows 橋渡しのパス変換）
 test("toWslPath: ドライブパスを /mnt 形へ（ドライブ文字は小文字化）", () => {
   assert.equal(core.toWslPath("C:\\Users\\x\\f.log"), "/mnt/c/Users/x/f.log");

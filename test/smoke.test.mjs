@@ -60,4 +60,11 @@ test("smoke: stdout は JSON-RPC のみ / 9 ツール公開", async () => {
     "pty_read",
     "pty_send",
   ]);
+  const ptySend = toolsResp.result.tools.find((t) => t.name === "pty_send");
+  assert.deepEqual(ptySend.inputSchema.properties.wait.enum, ["none", "agent_done"]);
+  assert.equal(ptySend.inputSchema.properties.wait.default, "none");
+  for (const name of ["codex_agent", "grok_agent", "composer_agent"]) {
+    const tool = toolsResp.result.tools.find((t) => t.name === name);
+    assert.equal(tool.inputSchema.properties.agent_done.type, "boolean", `${name} agent_done schema`);
+  }
 });

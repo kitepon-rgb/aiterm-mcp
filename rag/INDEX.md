@@ -4,7 +4,7 @@ AIターミナル直接操作プロジェクトの調査一次資料。`rag/sour
 忠実 Markdown 化した版（front-matter にメタdata）。
 **設計/実装の前にまずここを読み、該当資料を再利用する（再フェッチしない）。**
 
-- 総数: **74** 件 / 更新: 2026-06-01
+- 総数: **82** 件 / 更新: 2026-07-07
 - 取り込み: `python3 rag/ingest.py <sources.json>` → `python3 rag/build_index.py`
 - 統合分析: [briefs/](briefs/)
 
@@ -89,20 +89,44 @@ AIターミナル直接操作プロジェクトの調査一次資料。`rag/sour
   - 出典: <https://raw.githubusercontent.com/rusiaaman/wcgw/main/README.md> (github_readme, 14491 chars)
   - 効きどころ: 完了検出が二段(短timeoutで即抜け+出力ストリーム継続を見て待ち時間調整)で、純粋quiescenceとexit-codeの中間設計の実例。screen -xで人間が同一端末にアタッチ、背景コマンド多重化は我々のバックエンド選定(tmux代替案)とsend設計の比較対象。
 
-## 完了境界の検出 (completion-detection) — 15件
+## 完了境界の検出 (completion-detection) — 23件
 
+- [Phase 0 multi-agent smoke: AI CLI TUI done detection](sources/completion-detection/agent-cli-done-phase0-smoke-2026-07-07.md) — Codex/Grok/Composer の TUI Stop hook をマルチエージェントで実測した。hook 発火自体は確認できたが、Codex continuation と temporary home 差分が実装前ブロッカーとして残った。
+  - 出典: <local:multi-agent-smoke-2026-07-07> (local_probe, 7446 chars)
+  - 効きどころ: pty_send(wait:"agent_done") 実装前の採用ゲート。Stop hook を捕まえるだけでは final done にならない条件と、temporary vendor home をそのまま使えない条件を固定する。
+- [Codex agent_done MVP implementation smoke](sources/completion-detection/agent-done-codex-mvp-2026-07-07.md) — aiterm-mcp に Codex managed Stop hook route を実装し、codex_agent(agent_done:true) から pty_send(wait:"agent_done") が実 Codex TUI の1ターン終了を待てることを確認した。
+  - 出典: <local:aiterm-mcp-codex-agent-done-mvp-2026-07-07> (local_probe, 3128 chars)
+  - 効きどころ: AI CLI done 検知計画の採用ゲート。Codex は画面推測ではなく Stop hook event で done を返せること、また tmux send-keys では text と Enter を分離すべきことを固定する。
+- [Grok/Composer agent_done implementation probe](sources/completion-detection/grok-agent-done-implementation-probe-2026-07-07.md) — Grok/Composer 用 managed GROK_HOME + fake HOME + Stop hook wrapper を実装し、追加敵対的検証で GROK_HOME 全体共有案を棄却、OAuth auth.json/auth.json.lock だけを通常 Grok home と共有する実装に修正した。grok login 後に Grok/Composer TUI smoke、通常 headless 並行 smoke、同一cwdのCodex/Grok/Composer並列agent_done smoke、MCP tools/call smoke、TUI ready gate 実装、起動直後即送信 smoke、166件の回帰が成功した。
+  - 出典: <local:aiterm-mcp-grok-agent-done-implementation-2026-07-07> (local_probe, 6035 chars)
+  - 効きどころ: Grok/Composer の TUI hook route 実装状況、OAuth credential/lock 共有の採用理由、実 TUI smoke、agent_done 負系/race/security/schema/root-symlink 回帰を固定する。
 - [agent-stuff tmux skill (send-keys + capture-pane completion polling)](sources/completion-detection/agent-stuff-tmux-skill.md) — エージェントがtmux send-keys/capture-paneで対話プログラムを操る実践手順。完了テキストをポーリングで待つ方式。
   - 出典: <https://raw.githubusercontent.com/mitsuhiko/agent-stuff/main/skills/tmux/SKILL.md> (github_readme, 5549 chars)
   - 効きどころ: tmuxバックエンドでsend-keys後にcapture-pane差分+完了文字列(sentinel)で境界を取る具体パターン。実装の即戦力レシピ。
 - [Terminal-Shell integration - a proposed specification (Per Bothner)](sources/completion-detection/bothner-shell-integration-proposal.md) — OSC 133系セマンティックプロンプトの設計思想と要件を整理した提案記事。FinalTerm/iTerm2/DomTermの実装差を横断。
   - 出典: <https://per.bothner.com/blog/2019/shell-integration-proposal/> (article, 10489 chars)
   - 効きどころ: 完了境界(プロンプト開始/コマンド開始/出力開始/終了+exit code)をなぜ・どう区切るかの原典的論拠。我々の境界検出設計の出発点になる。
+- [Codex CLI Stop hook as turn-done signal](sources/completion-detection/codex-cli-stop-hook.md) — Codex CLI の Stop hook はターン終了時に発火する。exec、直接TUI、aiterm openAgent相当のtmux経路で発火を実測した。ただし co-located Stop hook の decision:block continuation で初回Stopは final done ではなくなる。
+  - 出典: <https://developers.openai.com/codex/hooks> (official_docs_and_local_probe, 6163 chars)
+  - 効きどころ: Codex TUI の画面文言や静止状態ではなく、CLIライフサイクルイベントで done を捕まえる根拠。同時に、既存 Stop hook へ単純appendする bridge が誤doneする反証でもある。
+- [Codex exec --json turn.completed as structured done signal](sources/completion-detection/codex-exec-json-turn-completed.md) — Codex の non-interactive mode は `codex exec --json` で JSONL を出し、`turn.completed` / `turn.failed` を機械可読なターン境界として読める。
+  - 出典: <https://developers.openai.com/codex/noninteractive> (official_docs_and_local_probe, 2300 chars)
+  - 効きどころ: Codex をTUI画面ではなく構造化stdoutで委譲する場合の最も堅い done 検知経路。
 - [OSC 133 - Shell Integration (Contour Terminal)](sources/completion-detection/contour-osc-133-spec.md) — OSC 133のA/B/C/Dを書式(OSC 133;Cmd[;Params]ST)とパラメータ付きで明示した仕様ページ。
   - 出典: <https://contour-terminal.org/vt-extensions/osc-133-shell-integration/> (spec, 6171 chars)
   - 効きどころ: パラメータ(click_events, cmdline_url, exit code)まで含むパース仕様。read層でOSC 133を解釈する際の実装基準。
 - [expect(1) man page (Don Libes)](sources/completion-detection/expect-man-page.md) — Don LibesによるExpect公式man。expect/spawn/sendとglob/-re/-exパターン、timeoutやprompt照合の挙動。
   - 出典: <https://www.tcl-lang.org/man/expect5.31/expect.1.html> (man, 76740 chars)
   - 効きどころ: prompt正規表現待ち受けの原典。pexpectが模した照合セマンティクスとtimeout設計の権威ソース。
+- [Grok agent stdio ACP as persistent structured agent protocol](sources/completion-detection/grok-agent-stdio-acp.md) — Grok の `grok agent stdio` は JSON-RPC/ACP で永続agent processを操作する。docs上は `session/prompt` response をターン完了境界として扱えるが、実装スパイクは未実施。
+  - 出典: <local:~/.grok/docs/user-guide/15-agent-mode.md> (local_vendor_docs, 2699 chars)
+  - 効きどころ: GrokをTUIではなく構造化プロトコルで永続操作する長期候補。PTY画面スクレイピングやHook設置を避けられる可能性はあるが、現時点では docs 確認のみ。
+- [Grok Build Stop hook as turn-done signal](sources/completion-detection/grok-cli-stop-hook.md) — Grok の Stop hook は agent turn 終了時に発火する。headless、Grok TUI、Composer TUI で payload に sessionId/promptId/reason/transcriptPath が入ることを実測した。ただし temporary home と Claude/Cursor compat hook 混入が未解決。
+  - 出典: <local:~/.grok/docs/user-guide/10-hooks.md> (local_vendor_docs_and_probe, 5666 chars)
+  - 効きどころ: Grok/Composer TUI の done を lifecycle hook で捕まえる根拠。同時に、GROK_HOME 隔離・auto-update・compat hook/plugin 抑制を実装前ブロッカーとして固定する資料。
+- [Grok headless streaming-json end event](sources/completion-detection/grok-headless-streaming-json-end.md) — Grok headless mode は `--output-format streaming-json` で JSONL を出し、`type: end` をターン完了イベントとして読める。
+  - 出典: <local:~/.grok/docs/user-guide/14-headless-mode.md> (local_vendor_docs_and_probe, 2158 chars)
+  - 効きどころ: Grok Build をAIからAIへ委譲する用途で、TUIやHookなしにstdoutだけで done を取る最短経路。
 - [Proprietary Escape Codes - iTerm2 Documentation](sources/completion-detection/iterm2-proprietary-escape-codes.md) — iTerm2公式のエスケープコード仕様。FTCS_PROMPT(A)/COMMAND_START(B)/COMMAND_EXECUTED(C)/COMMAND_FINISHED(D)とexit code報告を定義。
   - 出典: <https://iterm2.com/documentation-escape-codes.html> (docs, 23177 chars)
   - 効きどころ: OSC 133のA/B/C/Dの正準的定義と各マーカーの意味を権威ソースで確定。完了=Dの受信で判定する設計の根拠。
