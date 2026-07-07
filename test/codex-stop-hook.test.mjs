@@ -11,6 +11,14 @@ const HOOK = path.join(HERE, "..", "dist", "codex-stop-hook.js");
 const GROK_HOOK = path.join(HERE, "..", "dist", "grok-stop-hook.js");
 const skip = typeof process.getuid === "function" ? undefined : "POSIX getuid が無い";
 
+function baseHookEnv(tmp) {
+  return {
+    PATH: process.env.PATH ?? "",
+    HOME: process.env.HOME ?? "",
+    TMPDIR: tmp,
+  };
+}
+
 function makeHookState(prefix) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   const uid = process.getuid();
@@ -27,9 +35,7 @@ function spawnCodexHook(tmp, env, payload = {}) {
     input: JSON.stringify(payload),
     encoding: "utf8",
     env: {
-      ...process.env,
-      TMPDIR: tmp,
-      XDG_RUNTIME_DIR: tmp,
+      ...baseHookEnv(tmp),
       ...env,
     },
   });
@@ -40,9 +46,7 @@ function spawnGrokHook(tmp, env, payload = {}) {
     input: JSON.stringify(payload),
     encoding: "utf8",
     env: {
-      ...process.env,
-      TMPDIR: tmp,
-      XDG_RUNTIME_DIR: tmp,
+      ...baseHookEnv(tmp),
       ...env,
     },
   });
