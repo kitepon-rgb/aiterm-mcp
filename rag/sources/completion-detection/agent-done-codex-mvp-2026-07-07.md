@@ -16,6 +16,14 @@ chars: 3128
 調査日: 2026-07-07  
 対象: `aiterm-mcp` local implementation
 
+Current status (2026-07-07 finalization): this note records the first Codex
+MVP cut. It is superseded by the later Grok/Composer implementation probe and
+Codex managed home allowlist hardening. Current released state is
+`aiterm-mcp@0.9.1`: Codex/Grok/Composer `agent_done` are released, Codex
+managed `CODEX_HOME` allowlists only `auth.json` symlink + private
+`config.toml` copy + aiterm-owned `hooks.json`, and the regression suite is
+168 tests.
+
 ## 結論
 
 Codex については、永続PTY TUIを維持したまま `pty_send(wait:"agent_done")` で turn done を待つ最小縦断が通った。
@@ -37,7 +45,8 @@ pty_send(wait:"agent_done", text:"Reply exactly OK and nothing else.")
 
 - `codex_agent` に `agent_done?: boolean` を追加した。
 - `agent_done:true` の時だけ managed `CODEX_HOME` を作る。
-- managed home は通常 `~/.codex` の top-level entry を symlink し、`config.toml` を copy、`auth.json` を symlink、`hooks.json` だけ aiterm 管理の Stop hook に差し替える。
+- 当時の MVP route は通常 `~/.codex` の top-level entry を広く symlink し、`config.toml` を copy、`auth.json` を symlink、`hooks.json` だけ aiterm 管理の Stop hook に差し替えていた。
+- 現在の v0.9.1 route はこの広い symlink を廃止し、通常 Codex home からは `auth.json` symlink と `config.toml` private copy だけを持ち込み、`hooks.json` は aiterm が managed home 内で所有する。
 - Codex 起動コマンドには `CODEX_HOME=<managedHome>`、`AITERM_AGENT_KIND=codex`、`AITERM_SESSION_ID`、`AITERM_AGENT_LAUNCH_ID`、`--dangerously-bypass-hook-trust` を付ける。
 - hook wrapper は `AITERM_AGENT_*` から secure state root 配下の event file path を再構成し、`agent_done` JSONL を append する。
 - hook wrapper stdout は Codex への JSON 応答 `{ "continue": false }` だけにし、診断は stderr。
@@ -72,7 +81,8 @@ core.sendKey(sid, "Enter")
 
 ## 回帰テスト
 
-`npm test` で 134 tests pass。
+当時の `npm test` は 134 tests pass。現在の v0.9.1 finalization 後は
+168 tests pass。
 
 追加した主なテスト:
 
@@ -81,10 +91,13 @@ core.sendKey(sid, "Enter")
 - `sendAndWaitAgentDone` が fake event 到着まで待ち、`agent_done` suffix を付ける。
 - 普通のPTY session は `agent_done` 待機を送信前に拒否する。
 - `enter:false` は `agent_done` 待機で送信前に拒否する。
-- Grok/Composer の `agent_done:true` は現時点で送信前に拒否する。
+- Grok/Composer の `agent_done:true` は当時は送信前に拒否していた
+  （現在は実装・実 smoke 済み）。
 
 ## 残る未解決
 
-- Grok/Composer は TUI Stop hook 発火までは実測済みだが、auto-update と Claude/Cursor compat hook/plugin 混入が未解決なので未実装。
-- Codex の未 trust project prompt、キャンセル、権限待ち、長文回答時の screen settle は追加 smoke が必要。
-- 現在の screen settle は fixed delay。capture-pane 連続一致や不安定 suffix は未実装。
+- Grok/Composer はこの時点では未実装だったが、後続の
+  `grok-agent-done-implementation-probe-2026-07-07.md` で実装・実 smoke 済み。
+- Codex managed home の広い symlink pass-through は後続の
+  `codex-managed-home-allowlist-2026-07-07.md` で hardening 済み。
+- StopFailure、キャンセル、権限待ち、長文回答時の screen settle は追加 smoke が必要。

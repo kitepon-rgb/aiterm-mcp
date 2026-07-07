@@ -217,7 +217,7 @@ WSL2 の Claude Code（MCP クライアント）から、登録した `aiterm` �
 - **状態追跡（未決A）**: 層スタック（今どの層・cwd）の自動追跡は本計画の範囲外（設計 §10-A のまま）。
 - **大出力 × MCP 25k 上限**: `full=true` や TUI ダンプで超過の可能性。既定は増分 + 削減で回避。
 - **自動テスト**（当初リスク→解消済み）: 現在は `node:test` の回帰スイート 128 件＋CI（ubuntu/macos の
-  Node 18/20/22、Windows は非ブロッキング）で自動検証している。詳細は CLAUDE.md と docs/03_audit-sweep-2026-07.md。
+  Node 18/20/22、Windows は非ブロッキング）で自動検証している。詳細は CLAUDE.md と docs/archive/03_audit-sweep-2026-07.md。
 
 ---
 

@@ -1,16 +1,18 @@
-# AI CLI done 検知 実装計画
+# AI CLI done 検知 設計・実装ノート
 
 更新日: 2026-07-07  
 状態: Codex/Grok/Composer の `*_agent(agent_done:true)` -> `pty_send(wait:"agent_done")` 実 smoke は成功。2026-07-07 の追加敵対的検証で、Grok の `GROK_HOME` 全体を aiterm 永続共有にする案は hook/config/session 汚染リスクが大きいため棄却し、per-launch isolated `GROK_HOME` を維持したまま OAuth `auth.json` と `auth.json.lock` だけを通常 Grok home と共有する方針へ修正した。v0.9.1 で Codex managed `CODEX_HOME` は `auth.json` だけを symlink し、`config.toml` は private copy、その他の通常 `~/.codex` エントリは共有しない allowlist に修正した。`grok login` 後に Grok TUI・Composer TUI・通常 headless `grok -p` の並行 smoke も通過し、login 再要求なしを確認した。同一 cwd で Codex/Grok/Composer を並列起動しても event は混線せず、普通PTYの Python REPL smoke も通過。さらに 2026-07-07 に `node dist/index.js` を実起動し、JSON-RPC `tools/call` 経由で `codex_agent` / `grok_agent` / `composer_agent` + `pty_send(wait:"agent_done")` と普通PTY Python REPL が通ることを確認した。リリース前 smoke で「起動直後に送ると vendor TUI の入力受付前に文字が落ち、hook が来ず `agent_timeout` になる」ケースを再現したため、未 bind の初回 `pty_send(wait:"agent_done")` に vendor TUI ready gate を追加し、未 ready なら送信前エラーにする実装へ修正した。ready gate 実装後は明示的な `pty_read` ready 待ちなしの起動直後即送信 smoke も通過した。CI 系の agent_done 負系/race/security/schema テストは、古い event、初回 prompt done、TUI ready gate、同時 wait、即時 event、`launch_id`/`vendor_session_id` 不一致、bind 後の vendor_session_id 欠落、bind 前 vendor_session_id 混在、初回 prompt pending、partial/malformed/oversized JSONL、done 後 offset consume、wait file lock、wait 中 close/killAll 拒否、hook no-env、存在しない `XDG_RUNTIME_DIR` fallback、path injection、hard link 拒否、secure root、core cleanup root symlink no-follow、緩い state root での stale metadata cleanup、screen settle、MCP schema、managed home cleanup、release metadata version sync まで追加済み。`npm test` は 168/168 pass。
 
+この文書は実装計画として開始したが、`v0.9.1` 公開後は `agent_done` の設計判断・敵対的検証・実測結果の正本ノートとして保持する。完了済みチェックリストそのものは履歴として読む。
+
 ## 0. 位置づけ
 
 Codex / Grok Build(Grok) / Grok Build(Composer) の対話 TUI を永続PTYで扱う現行方針は維持する。
-本計画は、AI CLI セッションに入力したあと、画面ポーリングや静止推測ではなく vendor hook の turn done を境界にして、境界後の端末観測結果を `pty_send` の返り値として返すための計画。
+この文書は、AI CLI セッションに入力したあと、画面ポーリングや静止推測ではなく vendor hook の turn done を境界にして、境界後の端末観測結果を `pty_send` の返り値として返すための設計・検証記録。
 
 敵対的検証と Phase 0 smoke の結果、初期計画から次を修正した。
 
-- MVP は全 vendor 同時対応ではなく、まず Codex 1本の最小縦断で通す。
+- 初期実装は全 vendor 同時対応ではなく、まず Codex 1本の最小縦断で通した。
 - `codex_send` / `grok_send` / `composer_send` や `codex_run` / `grok_run` は作らない。
 - user-level hook の自動 merge を MVP 第一候補にしない。
 - `AITERM_AGENT_EVENT_FILE` のような任意 path env を hook wrapper に信じさせない。
@@ -18,7 +20,7 @@ Codex / Grok Build(Grok) / Grok Build(Composer) の対話 TUI を永続PTYで扱
 - `core.send` は同期関数のまま維持し、待機は別の async wrapper に分離する。
 - Codex は aiterm の tmux/openAgent 相当経路でも Stop hook と `AITERM_AGENT_*` env が届くことを実測した。
 - ただし Codex Stop hook は同居 hook が `decision:"block"` を返すと同じ `turn_id` のまま継続する。bridge が初回 Stop を見ただけで done と呼ぶ設計は禁止する。
-- Codex MVP は managed `CODEX_HOME` で Stop chain を aiterm が単独所有する route を採用した。既存 `~/.codex/hooks.json` は変更しない。2026-07-07 の追加 hardening で、通常 Codex home の広い symlink は廃止し、managed home へ持ち込む通常 home 側エントリは `auth.json` symlink と `config.toml` copy に限定した。
+- Codex route は managed `CODEX_HOME` で Stop chain を aiterm が単独所有する形を採用した。既存 `~/.codex/hooks.json` は変更しない。2026-07-07 の追加 hardening で、通常 Codex home の広い symlink は廃止し、managed home へ持ち込む通常 home 側エントリは `auth.json` symlink と `config.toml` copy に限定した。
 - Codex TUI は literal text 投入直後の Enter を取り落とすことがある。`wait:"agent_done"` 経路では text と submit Enter を分離し、短い delay を挟む。
 - Grok Build(Grok) / Grok Build(Composer) の TUI Stop hook は実測で発火した。payload は同型だが model id は入らないため、aiterm 側の `kind` metadata で区別する。
 - `CODEX_HOME` / `GROK_HOME` の temporary home + auth symlink だけでは採用不可。Codex は `auth.json` symlink + `config.toml` copy + aiterm-owned `hooks.json` の allowlist route を採用し、通常 home のその他 state/cache/session entry は managed home へ symlink しない。

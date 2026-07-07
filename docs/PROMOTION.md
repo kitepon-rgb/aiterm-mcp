@@ -15,10 +15,10 @@ output) is already committed — these steps activate it.
 
 Done and verified:
 
-- ✅ **npm 0.4.1 republished** — new keywords + `mcpName` active.
-- ✅ **Official MCP Registry** — `io.github.kitepon-rgb/aiterm-mcp@0.4.1` listed; auto-registers on each release via `.github/workflows/registry.yml` (OIDC).
+- ✅ **npm `0.9.1` is latest** — keywords + `mcpName` active; global install verified via `npm install -g aiterm-mcp`.
+- ✅ **Official MCP Registry** — `io.github.kitepon-rgb/aiterm-mcp@0.9.1` listed; auto-registers on each release via `.github/workflows/registry.yml` (OIDC).
 - ✅ **mcp.so** — submitted/listed (with the square `.github/avatar.png`).
-- ✅ **GitHub topic** `mcp-server` added; **v0.3.1 Release** backfilled. （以降 v0.5.0〜**v0.7.1** までリリース継続。この節は 0.4.1 時点の発見性作業の記録＝現行の最新版・ツール数は CLAUDE.md / README を参照。）
+- ✅ **GitHub topic** `mcp-server` added; **v0.9.1 Release** published. Earlier 0.4.1 discovery work is historical; the current version/tool surface is `v0.9.1` / 9 tools.
 - 🔄 **awesome-mcp-servers** — PR [#7620](https://github.com/punkpeye/awesome-mcp-servers/pull/7620) open (awaiting maintainer merge).
 - ✅ **Announced** on r/mcp.
 
@@ -52,10 +52,10 @@ npm only re-indexes keywords on a new published version. Bump a patch, keep
 `server.json` `version` in lockstep, then let CI publish on the tag.
 
 ```bash
-# 1. bump package.json + server.json to the same new version (e.g. 0.4.1)
-#    (add a CHANGELOG [0.4.1] "metadata/docs: registry manifest, keywords, real demo" entry)
+# 1. bump package.json + package-lock.json + server.json to the same new version (e.g. next patch)
+#    (add a CHANGELOG entry for the release)
 # 2. commit, then tag — CI (.github/workflows/ci.yml) publishes to npm with provenance on v* tags
-git tag v0.4.1
+git tag vX.Y.Z
 git push origin main --tags
 ```
 

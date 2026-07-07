@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Synced release-facing documentation, RAG notes, and distribution playbooks to
+  the `v0.9.1` state after adversarial documentation verification.
+- Added release metadata version-sync coverage so `package.json`,
+  `package-lock.json`, and `server.json` stay aligned after release hardening.
+
+### Docs / Verification
+- Rechecked the public docs against npm/global install/Official MCP Registry
+  state, current CI shape, and the **168-test** regression suite.
+- Archived completed planning/checklist documents so `docs/` keeps only live
+  docs and current operational notes at top level.
+
 ## [0.9.1] - 2026-07-07
 
 ### Fixed / Hardened
@@ -64,7 +76,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.8.0] - 2026-07-05
 
-### Fixed (全域監査スイープ 2026-07-05 — 詳細は docs/03_audit-sweep-2026-07.md)
+### Fixed (全域監査スイープ 2026-07-05 — 詳細は docs/archive/03_audit-sweep-2026-07.md)
 - **pytest 収集エラーの誤変換**: `read rtk:true` で pytest の収集エラー（import 失敗等）が
   `Pytest: No tests collected` や `Pytest: 1 passed` に潰れ、赤を無害/緑と誤読していた問題を修正（C1）。
 - **mark 完了検出のエコー誤爆**: `pty_send(mark:true)` の sentinel がコマンドエコーに部分一致し、

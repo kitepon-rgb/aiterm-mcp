@@ -1,8 +1,10 @@
 # 全域バグ狩り＆磨き込み（2026-07）— 計画＋進捗台帳
 
-> 生きた文書。方針＋TODO＋進捗を兼ねる。作業ブランチ: `fix/full-audit-sweep`。
+> Archive note（2026-07-07）: この台帳は全ウェーブ完了済みの履歴文書。現行の設計・テスト状態は `../01_design-plan.md`、`../../CLAUDE.md`、`../../CHANGELOG.md` を参照する。
+
+> 当時の方針＋TODO＋進捗を兼ねた台帳。作業ブランチ: `fix/full-audit-sweep`。
 > 原本の策定過程は `~/.claude/plans/codex-grok-composer-typed-lecun.md`（プランモード下書き）。
-> 完了したら docs/archive/ へ退避する。
+> 全ウェーブ完了後に docs/archive/ へ退避済み。
 
 ## 進捗トラッカー
 

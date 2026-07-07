@@ -42,7 +42,7 @@ The design source of truth is `docs/01_design-plan.md` — read it before changi
 
 ## Tests
 
-Tests live in `test/` and use the built-in `node:test` runner (`node --test test/*.test.mjs`). Run the whole suite with `npm test`. The current suite is **97 tests**; on POSIX they all run, on native Windows one POSIX-only test (`core-resolve.test.mjs`) is skipped (it exercises the `resolveTmux()`/`AITERM_TMUX` failure path, which Windows bypasses via the WSL bridge).
+Tests live in `test/` and use the built-in `node:test` runner (`node --test test/*.test.mjs`). Run the whole suite with `npm test`. The current suite is **168 tests**. On POSIX and macOS, the full tmux-backed suite runs when tmux is installed. Native Windows CI runs the tmux-independent layer on Node 20/22 as a non-blocking guard; the WSL tmux bridge still requires manual validation on a real Windows machine.
 
 The integration tests that touch real tmux **isolate themselves** so they never pollute your live session (`claude.sock`):
 
@@ -65,7 +65,7 @@ Tests skip gracefully when tmux is absent (they detect it via `tmux -V`, or `wsl
 
 1. Branch from `main`.
 2. Make sure `npm test` passes locally **with tmux installed**.
-3. Open a PR against `main`. CI (`.github/workflows/ci.yml`) must pass: it builds and tests on **ubuntu-latest and macos-latest**, each across **Node 18, 20, and 22**. (The native-Windows WSL bridge is not in CI — note in the PR if you verified it manually.)
+3. Open a PR against `main`. CI (`.github/workflows/ci.yml`) must pass on **ubuntu-latest and macos-latest**, each across **Node 18, 20, and 22**. Native Windows also runs the tmux-independent layer on **Node 20 and 22** as a non-blocking guard; the WSL tmux bridge is still manual, so note in the PR if you verified it on Windows.
 4. Keep the change scoped. If you're changing design behavior (completion detection, reduction, safety), update `docs/01_design-plan.md` to match.
 
 Publishing to npm (`npm publish --provenance --access public`) is automated on `v*` tags via the `publish` CI job — contributors don't publish.
