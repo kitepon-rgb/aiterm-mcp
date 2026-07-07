@@ -18,10 +18,10 @@ Codex / Grok Build(Grok) / Grok Build(Composer) の対話 TUI を永続PTYで扱
 - `core.send` は同期関数のまま維持し、待機は別の async wrapper に分離する。
 - Codex は aiterm の tmux/openAgent 相当経路でも Stop hook と `AITERM_AGENT_*` env が届くことを実測した。
 - ただし Codex Stop hook は同居 hook が `decision:"block"` を返すと同じ `turn_id` のまま継続する。bridge が初回 Stop を見ただけで done と呼ぶ設計は禁止する。
-- Codex MVP は managed `CODEX_HOME` で Stop chain を aiterm が単独所有する route を採用した。既存 `~/.codex/hooks.json` は変更しない。
+- Codex MVP は managed `CODEX_HOME` で Stop chain を aiterm が単独所有する route を採用した。既存 `~/.codex/hooks.json` は変更しない。2026-07-07 の追加 hardening で、通常 Codex home の広い symlink は廃止し、managed home へ持ち込む通常 home 側エントリは `auth.json` symlink と `config.toml` copy に限定した。
 - Codex TUI は literal text 投入直後の Enter を取り落とすことがある。`wait:"agent_done"` 経路では text と submit Enter を分離し、短い delay を挟む。
 - Grok Build(Grok) / Grok Build(Composer) の TUI Stop hook は実測で発火した。payload は同型だが model id は入らないため、aiterm 側の `kind` metadata で区別する。
-- `CODEX_HOME` / `GROK_HOME` の temporary home + auth symlink だけでは採用不可。Codex MVP は auth symlink だけでなく通常 home の上位エントリを symlink し、`config.toml` をコピーし、`hooks.json` だけを managed hook に差し替える。
+- `CODEX_HOME` / `GROK_HOME` の temporary home + auth symlink だけでは採用不可。Codex は `auth.json` symlink + `config.toml` copy + aiterm-owned `hooks.json` の allowlist route を採用し、通常 home のその他 state/cache/session entry は managed home へ symlink しない。
 - Grok/Composer は `GROK_HOME` 全体共有ではなく、per-launch isolated `GROK_HOME` と fake `HOME` を維持する。共有対象は OAuth credential と lock file に限定し、通常 `grok` CLI と同じ `auth.json` / `auth.json.lock` を見る形にする。
 
 根拠資料:
@@ -256,7 +256,7 @@ Grok payload mapping:
 - auth の mtime/hash が変わらないことを smoke する。
 - 通常 home と temp home の model / project trust / MCP / plugin / hook / session 挙動差を redaction 付きで確認する。
 - Grok は Claude/Cursor 互換 hook 混入を無効化できるか検証する。
-- Phase 0 の結果、auth symlink だけの temporary home は不採用。Codex は model/MCP/plugins/sandbox/approval が通常 home と変わり、Grok は native config を失う一方で Claude 互換 hook/plugin が残る。
+- Phase 0 の結果、auth symlink だけの temporary home は不採用。Codex は model/MCP/plugins/sandbox/approval の差分を抑えるため `config.toml` をコピーするが、通常 home のその他 state/cache/session entry は managed home へ symlink しない。Grok は native config を失う一方で Claude 互換 hook/plugin が残るため、fake `HOME` + managed `GROK_HOME` を採用する。
 
 候補C: project-local hook
 

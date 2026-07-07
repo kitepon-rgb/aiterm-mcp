@@ -100,6 +100,9 @@ AIターミナル直接操作プロジェクトの調査一次資料。`rag/sour
 - [Grok/Composer agent_done implementation probe](sources/completion-detection/grok-agent-done-implementation-probe-2026-07-07.md) — Grok/Composer 用 managed GROK_HOME + fake HOME + Stop hook wrapper を実装し、追加敵対的検証で GROK_HOME 全体共有案を棄却、OAuth auth.json/auth.json.lock だけを通常 Grok home と共有する実装に修正した。grok login 後に Grok/Composer TUI smoke、通常 headless 並行 smoke、同一cwdのCodex/Grok/Composer並列agent_done smoke、MCP tools/call smoke、TUI ready gate 実装、起動直後即送信 smoke、167件の回帰が成功した。
   - 出典: <local:aiterm-mcp-grok-agent-done-implementation-2026-07-07> (local_probe, 6035 chars)
   - 効きどころ: Grok/Composer の TUI hook route 実装状況、OAuth credential/lock 共有の採用理由、実 TUI smoke、agent_done 負系/race/security/schema/root-symlink 回帰を固定する。
+- [Codex managed CODEX_HOME allowlist hardening](sources/completion-detection/codex-managed-home-allowlist-2026-07-07.md) — Codex agent_done の managed CODEX_HOME を `auth.json` symlink + `config.toml` copy + aiterm-owned `hooks.json` に限定し、通常 Codex home のその他 state/cache/session entry を symlink しない方針へ hardening した。
+  - 出典: <local:aiterm-mcp-codex-managed-home-allowlist-2026-07-07> (local_decision, 1523 chars)
+  - 効きどころ: 「通常 hook は触らない」と「ユーザー環境に一切触らない」の境界を固定し、余計な write-through symlink を再導入しない回帰条件にする。
 - [agent-stuff tmux skill (send-keys + capture-pane completion polling)](sources/completion-detection/agent-stuff-tmux-skill.md) — エージェントがtmux send-keys/capture-paneで対話プログラムを操る実践手順。完了テキストをポーリングで待つ方式。
   - 出典: <https://raw.githubusercontent.com/mitsuhiko/agent-stuff/main/skills/tmux/SKILL.md> (github_readme, 5549 chars)
   - 効きどころ: tmuxバックエンドでsend-keys後にcapture-pane差分+完了文字列(sentinel)で境界を取る具体パターン。実装の即戦力レシピ。

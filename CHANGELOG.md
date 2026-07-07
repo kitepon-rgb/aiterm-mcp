@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-07-07
+
+### Fixed / Hardened
+- Codex `agent_done` managed `CODEX_HOME` now allowlists only the required
+  normal-home files: `auth.json` is linked for authentication and `config.toml`
+  is copied privately. Other normal `~/.codex` entries are no longer symlinked
+  into the managed home, reducing write-through side effects while still keeping
+  aiterm-owned Stop hooks isolated from the user's normal `hooks.json`.
+
 ## [0.9.0] - 2026-07-07
 
 ### Added

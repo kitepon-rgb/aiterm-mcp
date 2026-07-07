@@ -32,6 +32,8 @@ function makeFakeCodexHome() {
   const dir = fs.mkdtempSync(path.join(process.env.TMPDIR, "fake-codex-home-"));
   fs.writeFileSync(path.join(dir, "auth.json"), "{}\n", { mode: 0o600 });
   fs.writeFileSync(path.join(dir, "config.toml"), 'model = "test-model"\n', { mode: 0o600 });
+  fs.writeFileSync(path.join(dir, "history.jsonl"), "{}\n", { mode: 0o600 });
+  fs.mkdirSync(path.join(dir, "sessions"), { mode: 0o700 });
   return dir;
 }
 
@@ -225,6 +227,10 @@ test("openAgent codex agent_done: managed CODEX_HOME と Stop hook を組み立�
       assert.equal(hooks.hooks.Stop[0].hooks[0].type, "command");
       assert.match(hooks.hooks.Stop[0].hooks[0].command, /codex-stop-hook\.js/);
       assert.equal(fs.readlinkSync(path.join(meta.codex_home, "auth.json")), path.join(fakeHome, "auth.json"));
+      assert.equal(fs.lstatSync(path.join(meta.codex_home, "config.toml")).isSymbolicLink(), false);
+      assert.equal(fs.readFileSync(path.join(meta.codex_home, "config.toml"), "utf8"), 'model = "test-model"\n');
+      assert.equal(fs.existsSync(path.join(meta.codex_home, "history.jsonl")), false);
+      assert.equal(fs.existsSync(path.join(meta.codex_home, "sessions")), false);
 
       const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
       assert.match(out, /--dangerously-bypass-hook-trust/, `codex managed command: ${out}`);

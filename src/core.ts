@@ -1140,27 +1140,28 @@ function createManagedCodexHome(name: string, launchId: string): string {
   fs.mkdirSync(managedHome, { recursive: false, mode: 0o700 });
   fs.chmodSync(managedHome, 0o700);
 
-  let authLinked = false;
-  for (const entry of fs.readdirSync(srcHome)) {
-    if (entry === "hooks.json" || entry.startsWith("hooks.json.")) continue;
-    const src = path.join(srcHome, entry);
-    const dst = path.join(managedHome, entry);
-    if (entry === "auth.json") {
-      const st = fs.statSync(src);
-      if (!st.isFile()) throw new AitermError(`Codex auth.json が通常ファイルではありません: ${src}`, 2);
-      fs.symlinkSync(src, dst);
-      authLinked = true;
-    } else if (entry === "config.toml") {
-      const st = fs.statSync(src);
-      if (st.isFile()) {
-        fs.copyFileSync(src, dst);
-        fs.chmodSync(dst, 0o600);
-      }
-    } else {
-      fs.symlinkSync(src, dst);
+  const authSrc = path.join(srcHome, "auth.json");
+  try {
+    const st = fs.statSync(authSrc);
+    if (!st.isFile()) throw new AitermError(`Codex auth.json が通常ファイルではありません: ${authSrc}`, 2);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new AitermError(`Codex auth.json が見つかりません。先に codex login が必要です: ${srcHome}`, 2);
     }
+    throw e;
   }
-  if (!authLinked) throw new AitermError(`Codex auth.json が見つかりません。先に codex login が必要です: ${srcHome}`, 2);
+  fs.symlinkSync(authSrc, path.join(managedHome, "auth.json"));
+
+  const configSrc = path.join(srcHome, "config.toml");
+  try {
+    const st = fs.statSync(configSrc);
+    if (st.isFile()) {
+      fs.copyFileSync(configSrc, path.join(managedHome, "config.toml"));
+      fs.chmodSync(path.join(managedHome, "config.toml"), 0o600);
+    }
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+  }
 
   const hookScript = codexHookScriptPath();
   if (!fs.existsSync(hookScript)) {
