@@ -76,8 +76,10 @@ jobs:
           node-version: 22
           registry-url: "https://registry.npmjs.org"
           cache: npm
-      # npm Trusted Publishing (OIDC) は npm >= 11.5.1 が必要（Node 22 同梱は 10.x）
-      - run: npm install -g npm@latest
+      # npm Trusted Publishing (OIDC) は npm >= 11.5.1 が必要（Node 22 同梱は 10.x）。
+      # npm@latest は 2026-07-09 時点で publish --provenance が sigstore 欠落で落ちたため、
+      # dry-run で sigstore 欠落しないことを確認した 11.6.4 に固定する。
+      - run: npm install -g npm@11.6.4
       - run: npm ci
       - run: npm run build
       # 認証は npmjs.com 側の Trusted Publisher 設定（GitHub Actions OIDC）。
