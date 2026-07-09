@@ -227,6 +227,16 @@ function registerAgentTool(
   desc: string,
   grokLike: boolean,
 ): void {
+  const initialPromptWaitSchema: Record<string, z.ZodTypeAny> = {};
+  if (kind === "codex") {
+    initialPromptWaitSchema.wait = z
+      .enum(["none", "agent_done"])
+      .default("none")
+      .describe("none=従来通り起動/初回prompt送信のみ。agent_done=起動時promptのStop hookまで待つ（agent_done:true必須）");
+    initialPromptWaitSchema.timeout = z.number().default(600).describe("wait:'agent_done' の最大待ち秒数");
+    initialPromptWaitSchema.screen = z.boolean().default(true).describe("wait:'agent_done' の返り値を描画済みスクリーンにする");
+    initialPromptWaitSchema.lines = z.number().int().nullish().describe("wait:'agent_done' で返す末尾 N 行");
+  }
   server.registerTool(
     toolName,
     {
@@ -244,16 +254,21 @@ function registerAgentTool(
           .boolean()
           .default(false)
           .describe("managed Stop hook を有効化し、pty_send(wait:'agent_done') を使えるようにする"),
+        ...initialPromptWaitSchema,
       },
     },
-    async ({ prompt, reasoning_effort, cwd, session_name, agent_done }) => {
+    async ({ prompt, reasoning_effort, cwd, session_name, agent_done, wait, timeout, screen, lines }: any) => {
       try {
-        const [sid, hint] = core.openAgent(kind, {
+        const [sid, hint] = await core.openAgentWithInitialPrompt(kind, {
           prompt: prompt ?? undefined,
           reasoning_effort: reasoning_effort ?? undefined,
           cwd: cwd ?? undefined,
           session_name: session_name ?? undefined,
           agent_done: agent_done ?? false,
+          wait: wait ?? "none",
+          timeout,
+          screen,
+          lines,
         });
         return ok(`session_id: ${sid}\n${hint}`);
       } catch (e) {

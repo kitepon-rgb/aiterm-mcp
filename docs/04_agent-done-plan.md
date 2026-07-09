@@ -1,7 +1,9 @@
 # AI CLI done 検知 設計・実装ノート
 
-更新日: 2026-07-07  
-状態: Codex/Grok/Composer の `*_agent(agent_done:true)` -> `pty_send(wait:"agent_done")` 実 smoke は成功。2026-07-07 の追加敵対的検証で、Grok の `GROK_HOME` 全体を aiterm 永続共有にする案は hook/config/session 汚染リスクが大きいため棄却し、per-launch isolated `GROK_HOME` を維持したまま OAuth `auth.json` と `auth.json.lock` だけを通常 Grok home と共有する方針へ修正した。v0.9.1 で Codex managed `CODEX_HOME` は `auth.json` だけを symlink し、`config.toml` は private copy、その他の通常 `~/.codex` エントリは共有しない allowlist に修正した。`grok login` 後に Grok TUI・Composer TUI・通常 headless `grok -p` の並行 smoke も通過し、login 再要求なしを確認した。同一 cwd で Codex/Grok/Composer を並列起動しても event は混線せず、普通PTYの Python REPL smoke も通過。さらに 2026-07-07 に `node dist/index.js` を実起動し、JSON-RPC `tools/call` 経由で `codex_agent` / `grok_agent` / `composer_agent` + `pty_send(wait:"agent_done")` と普通PTY Python REPL が通ることを確認した。リリース前 smoke で「起動直後に送ると vendor TUI の入力受付前に文字が落ち、hook が来ず `agent_timeout` になる」ケースを再現したため、未 bind の初回 `pty_send(wait:"agent_done")` に vendor TUI ready gate を追加し、未 ready なら送信前エラーにする実装へ修正した。ready gate 実装後は明示的な `pty_read` ready 待ちなしの起動直後即送信 smoke も通過した。CI 系の agent_done 負系/race/security/schema テストは、古い event、初回 prompt done、TUI ready gate、同時 wait、即時 event、`launch_id`/`vendor_session_id` 不一致、bind 後の vendor_session_id 欠落、bind 前 vendor_session_id 混在、初回 prompt pending、partial/malformed/oversized JSONL、done 後 offset consume、wait file lock、wait 中 close/killAll 拒否、hook no-env、存在しない `XDG_RUNTIME_DIR` fallback、path injection、hard link 拒否、secure root、core cleanup root symlink no-follow、緩い state root での stale metadata cleanup、screen settle、MCP schema、managed home cleanup、release metadata version sync まで追加済み。`npm test` は 168/168 pass。
+更新日: 2026-07-09
+状態: Codex/Grok/Composer の `*_agent(agent_done:true)` -> `pty_send(wait:"agent_done")` 実 smoke は成功。2026-07-07 の追加敵対的検証で、Grok の `GROK_HOME` 全体を aiterm 永続共有にする案は hook/config/session 汚染リスクが大きいため棄却し、per-launch isolated `GROK_HOME` を維持したまま OAuth `auth.json` と `auth.json.lock` だけを通常 Grok home と共有する方針へ修正した。v0.9.1 で Codex managed `CODEX_HOME` は `auth.json` だけを symlink し、`config.toml` は private copy、その他の通常 `~/.codex` エントリは共有しない allowlist に修正した。`grok login` 後に Grok TUI・Composer TUI・通常 headless `grok -p` の並行 smoke も通過し、login 再要求なしを確認した。同一 cwd で Codex/Grok/Composer を並列起動しても event は混線せず、普通PTYの Python REPL smoke も通過。さらに 2026-07-07 に `node dist/index.js` を実起動し、JSON-RPC `tools/call` 経由で `codex_agent` / `grok_agent` / `composer_agent` + `pty_send(wait:"agent_done")` と普通PTY Python REPL が通ることを確認した。リリース前 smoke で「起動直後に送ると vendor TUI の入力受付前に文字が落ち、hook が来ず `agent_timeout` になる」ケースを再現したため、未 bind の初回 `pty_send(wait:"agent_done")` に vendor TUI ready gate を追加し、未 ready なら送信前エラーにする実装へ修正した。ready gate 実装後は明示的な `pty_read` ready 待ちなしの起動直後即送信 smoke も通過した。CI 系の agent_done 負系/race/security/schema テストは、古い event、初回 prompt done、TUI ready gate、同時 wait、即時 event、`launch_id`/`vendor_session_id` 不一致、bind 後の vendor_session_id 欠落、bind 前 vendor_session_id 混在、初回 prompt pending、partial/malformed/oversized JSONL、done 後 offset consume、wait file lock、wait 中 close/killAll 拒否、hook no-env、存在しない `XDG_RUNTIME_DIR` fallback、path injection、hard link 拒否、secure root、core cleanup root symlink no-follow、緩い state root での stale metadata cleanup、screen settle、MCP schema、managed home cleanup、release metadata version sync まで追加済み。`npm test` は 177/177 pass。
+
+2026-07-09 追補: `codex_agent` launcher の起動時 `prompt` に `wait:"agent_done"` を追加した。これは `codex_run` 復活ではなく、永続 TUI session を残したまま「初回 prompt だけ」を TUI ready 後に送信し、その初回ターンの Stop hook を待つ convenience route。`wait:"agent_done"` は `prompt` と `agent_done:true` が必須で、暗黙に managed hook を有効化しない。起動時 prompt は shell command line に載せず、TUI ready 後に送るため、複数行日本語 prompt で shell continuation 表示を読ませる経路を避ける。TUI ready 前にログイン画面などで止まる場合は prompt を送らず `initial_prompt=not_sent` を返し、session を調査可能なまま残す。起動時 prompt が `pending`/`sent` の間は通常 `pty_send` を拒否し、後続入力の混入を防ぐ。通常 `pty_read` には agent 補助 metadata（`agent_event_seen` / `completion_attribution=none` / `initial_prompt` など）を出すが、stale Stop hook を通常 read の `is_complete=True` には昇格しない。Codex は単一行・長い日本語・複数行日本語の実 initial prompt wait smoke を通過。Grok/Composer の同 route は現在の環境で OAuth browser approval 画面に止まり、prompt 未送信の `initial_prompt=not_sent` を確認したため、公開 schema には出さず、ログイン承認後の再 smoke を別フェーズに残す。`npm test` は 177/177 pass。
 
 この文書は実装計画として開始したが、`v0.9.1` 公開後は `agent_done` の設計判断・敵対的検証・実測結果の正本ノートとして保持する。完了済みチェックリストそのものは履歴として読む。
 
@@ -98,6 +100,19 @@ lines?: number;
 `wait: "agent_done"` は agent session 専用。普通のPTY session に指定した場合は、送信前に副作用ゼロで明示エラーにする。
 
 `wait: "agent_done"` と `mark:true` / `rtk:true` は併用しない。MVP では送信前に明示エラーにする。agent TUI へ shell sentinel や command rewrite を混ぜない。
+
+launcher 側では、まず `codex_agent` の起動時 `prompt` 専用に同名 `wait` を追加する。Grok/Composer の launcher 初回 prompt wait は post-OAuth smoke が通るまで公開しない。
+
+```ts
+prompt?: string;
+agent_done?: boolean;
+wait?: "none" | "agent_done";
+timeout?: number;
+screen?: boolean;
+lines?: number;
+```
+
+`wait:"agent_done"` は `prompt` と `agent_done:true` の両方がある時だけ有効。`prompt` がない場合、または `agent_done:true` がない場合は session 作成前に明示エラーにする。`prompt + wait:"none"` は TUI ready 後に prompt を送るが、Stop hook は待たず `initial_prompt=pending` を返す。`prompt + wait:"agent_done"` は起動時 prompt の送信直前 event EOF を境界にして Stop hook を待つ。TUI ready failure では prompt を送らず、session を残して `initial_prompt=not_sent` を返す。
 
 ### 3.2 返り値
 

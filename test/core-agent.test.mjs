@@ -103,6 +103,42 @@ function readAgentMeta(sid) {
   return JSON.parse(fs.readFileSync(path.join(agentStateDir(), metaFiles[0]), "utf8"));
 }
 
+function sessionLogPath(sid) {
+  return path.join(process.env.TMPDIR, "claude-tmux-sockets", `${sid}.log`);
+}
+
+function makeFakeCodexTuiBin() {
+  const bin = path.join(process.env.TMPDIR, `fake-codex-tui-${Date.now().toString(36)}.sh`);
+  fs.writeFileSync(
+    bin,
+    [
+      "#!/bin/sh",
+      "printf 'OpenAI Codex\\n› ready\\n'",
+      "while IFS= read -r line; do",
+      "  printf '%s\\n' \"$line\"",
+      "done",
+      "",
+    ].join("\n"),
+    { mode: 0o700 },
+  );
+  return bin;
+}
+
+function appendAgentDoneWhenLogContains(sid, needle, events) {
+  const timer = setInterval(() => {
+    try {
+      const text = fs.readFileSync(sessionLogPath(sid), "utf8");
+      if (!text.includes(needle)) return;
+      const meta = readAgentMeta(sid);
+      for (const ev of events) appendAgentDone(meta, ev);
+      clearInterval(timer);
+    } catch {
+      /* session/log may not exist yet */
+    }
+  }, 50);
+  return () => clearInterval(timer);
+}
+
 function agentDoneLine(meta, overrides = {}) {
   return (
     JSON.stringify({
@@ -206,6 +242,25 @@ test("openAgent codex: -c model_reasoning_effort=<effort> を組み立てる", {
   try {
     const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
     assert.match(out, /-c model_reasoning_effort=high/, `codex 組立: ${out}`);
+  } finally {
+    core.closeSession(sid);
+  }
+});
+
+test("openAgent codex: 複数行日本語 prompt は argv に残るが shell continuation 表示を出す", { skip }, async () => {
+  const prompt = [
+    "NoveLore リポジトリで、docs/23_graph_upsert_tool_contract_plan.md を敵対的にレビューしてください。",
+    "重点:",
+    "- 現行 graph_upsert inputSchema と必須/任意の差分",
+    "- docs/07_mcp_interface.md と server.ts / handlers.ts / validate.ts のズレ",
+  ].join("\n");
+  const [sid] = core.openAgent("codex", { prompt }); // CODEX_BIN=/bin/echo
+  try {
+    const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
+    assert.match(out, /> 重点:/, `shell continuation 表示が出ることを固定する: ${out}`);
+    assert.match(out, /NoveLore リポジトリで、docs\/23_graph_upsert_tool_contract_plan\.md/, `prompt 先頭: ${out}`);
+    assert.match(out, /重点:\r?\n- 現行 graph_upsert inputSchema と必須\/任意の差分/, `prompt 本文: ${out}`);
+    assert.match(out, /docs\/07_mcp_interface\.md と server\.ts \/ handlers\.ts \/ validate\.ts のズレ/, `prompt 末尾: ${out}`);
   } finally {
     core.closeSession(sid);
   }
@@ -552,6 +607,215 @@ test("sendAndWaitAgentDone: 起動時 prompt が未完了なら follow-up を送
   });
 });
 
+test("openAgentWithInitialPrompt: wait agent_done は prompt と agent_done:true を必須にする", { skip }, async () => {
+  await assert.rejects(
+    () => core.openAgentWithInitialPrompt("codex", { prompt: "Reply READY.", wait: "bogus" }),
+    (e) => e.code === 2 && /wait/.test(e.message),
+  );
+  await assert.rejects(
+    () => core.openAgentWithInitialPrompt("codex", { wait: "agent_done", agent_done: true }),
+    (e) => e.code === 2 && /prompt/.test(e.message),
+  );
+  await assert.rejects(
+    () => core.openAgentWithInitialPrompt("codex", { prompt: "Reply READY.", wait: "agent_done" }),
+    (e) => e.code === 2 && /agent_done:true/.test(e.message),
+  );
+  await assert.rejects(
+    () => core.openAgentWithInitialPrompt("grok", { prompt: "Reply READY.", agent_done: true, wait: "agent_done" }),
+    (e) => e.code === 2 && /未対応/.test(e.message),
+  );
+});
+
+test("openAgentWithInitialPrompt: TUI ready 失敗では prompt を送らず session を残す", { skip: skipAgentDone }, async () => {
+  await withFakeCodexHome(async () => {
+    const [sid, hint] = await core.openAgentWithInitialPrompt("codex", {
+      prompt: "Reply READY.",
+      agent_done: true,
+      ready_timeout: 0,
+    });
+    try {
+      assert.match(hint, /initial_prompt=not_sent/, `ready failure hint: ${hint}`);
+      assert.match(core.listSessions(), new RegExp(`(^|\\n)${sid}\\t`), "session は調査用に残す");
+      const meta = readAgentMeta(sid);
+      assert.equal(meta.initial_prompt, "not_sent");
+    } finally {
+      core.closeSession(sid);
+    }
+  });
+});
+
+test("openAgentWithInitialPrompt: prompt を shell argv に載せず初回 agent_done まで待つ", { skip: skipAgentDone }, async () => {
+  const savedBin = process.env.CODEX_BIN;
+  const fakeBin = makeFakeCodexTuiBin();
+  process.env.CODEX_BIN = fakeBin;
+  try {
+    await withFakeCodexHome(async () => {
+      const sid = `initial_success_${Date.now().toString(36)}`;
+      const marker = "AITERM_OPEN_AGENT_INITIAL_OK";
+      const stop = appendAgentDoneWhenLogContains(sid, marker, [
+        { turn_id: "open-agent-initial", vendor_session_id: "open-agent-vendor" },
+      ]);
+      try {
+        const [actualSid, out] = await core.openAgentWithInitialPrompt("codex", {
+          session_name: sid,
+          prompt: `日本語の複数行 prompt です。\n${marker}\nこの token だけを返してください。`,
+          agent_done: true,
+          wait: "agent_done",
+          timeout: 5,
+          screen: false,
+        });
+        assert.equal(actualSid, sid);
+        assert.match(out, new RegExp(marker), `initial prompt output: ${out}`);
+        assert.match(out, /is_complete=True via agent_done vendor=codex turn_id=open-agent-initial/, `agent_done suffix: ${out}`);
+        assert.doesNotMatch(out, /> .*AITERM_OPEN_AGENT_INITIAL_OK/, `shell continuation に prompt を載せない: ${out}`);
+        const meta = readAgentMeta(sid);
+        assert.equal(meta.initial_prompt, "done");
+        assert.equal(meta.vendor_session_id, "open-agent-vendor");
+      } finally {
+        stop();
+        try {
+          core.closeSession(sid);
+        } catch {
+          /* noop */
+        }
+      }
+    });
+  } finally {
+    if (savedBin === undefined) delete process.env.CODEX_BIN;
+    else process.env.CODEX_BIN = savedBin;
+    fs.rmSync(fakeBin, { force: true });
+  }
+});
+
+test("openAgentWithInitialPrompt: 起動後 error でも session_id を失わない", { skip: skipAgentDone }, async () => {
+  const savedBin = process.env.CODEX_BIN;
+  const fakeBin = makeFakeCodexTuiBin();
+  process.env.CODEX_BIN = fakeBin;
+  try {
+    await withFakeCodexHome(async () => {
+      const sid = `initial_error_${Date.now().toString(36)}`;
+      const marker = "AITERM_OPEN_AGENT_INITIAL_AMBIGUOUS";
+      const stop = appendAgentDoneWhenLogContains(sid, marker, [
+        { turn_id: "ambiguous-a", vendor_session_id: "vendor-a" },
+        { turn_id: "ambiguous-b", vendor_session_id: "vendor-b" },
+      ]);
+      try {
+        await assert.rejects(
+          () =>
+            core.openAgentWithInitialPrompt("codex", {
+              session_name: sid,
+              prompt: marker,
+              agent_done: true,
+              wait: "agent_done",
+              timeout: 5,
+              screen: false,
+            }),
+          (e) => e.code === 2 && e.message.includes(`session_id: ${sid}`) && /複数の vendor_session_id/.test(e.message),
+        );
+        assert.match(core.listSessions(), new RegExp(`(^|\\n)${sid}\\t`), "失敗後も session は残す");
+      } finally {
+        stop();
+        try {
+          core.closeSession(sid);
+        } catch {
+          /* noop */
+        }
+      }
+    });
+  } finally {
+    if (savedBin === undefined) delete process.env.CODEX_BIN;
+    else process.env.CODEX_BIN = savedBin;
+    fs.rmSync(fakeBin, { force: true });
+  }
+});
+
+test("sendInitialAgentPrompt: 初回 prompt を専用 boundary で待ち destructive gate を誤爆させない", { skip: skipAgentDone }, async () => {
+  await withFakeCodexHome(async () => {
+    const [sid] = core.openAgent("codex", { agent_done: true });
+    try {
+      await markFakeAgentReady(sid);
+      const meta = readAgentMeta(sid);
+      const p = core.sendInitialAgentPrompt(sid, "explain what rm -rf / does", {
+        wait: "agent_done",
+        timeout: 3,
+        screen: false,
+      });
+      scheduleAgentDone(meta, { turn_id: "initial-turn", vendor_session_id: "initial-vendor" }, 200);
+      const out = await p;
+      assert.match(out, /is_complete=True via agent_done vendor=codex turn_id=initial-turn/, `initial prompt suffix: ${out}`);
+      const updated = readAgentMeta(sid);
+      assert.equal(updated.initial_prompt, "done");
+      assert.equal(updated.vendor_session_id, "initial-vendor");
+    } finally {
+      core.closeSession(sid);
+    }
+  });
+});
+
+test("sendInitialAgentPrompt: timeout は pending のまま返し成功扱いしない", { skip: skipAgentDone }, async () => {
+  await withFakeCodexHome(async () => {
+    const [sid] = core.openAgent("codex", { agent_done: true });
+    try {
+      await markFakeAgentReady(sid);
+      const out = await core.sendInitialAgentPrompt(sid, "echo INITIAL_TIMEOUT_BODY", {
+        wait: "agent_done",
+        timeout: 0,
+        screen: false,
+      });
+      assert.match(out, /INITIAL_TIMEOUT_BODY/, `initial prompt の送信結果を読める: ${out}`);
+      assert.match(out, /is_complete=False via agent_timeout vendor=codex/, `timeout suffix: ${out}`);
+      const meta = readAgentMeta(sid);
+      assert.equal(meta.initial_prompt, "pending");
+    } finally {
+      core.closeSession(sid);
+    }
+  });
+});
+
+test("sendInitialAgentPrompt: wait none は pending にし follow-up を送信前に拒否する", { skip: skipAgentDone }, async () => {
+  await withFakeCodexHome(async () => {
+    const [sid] = core.openAgent("codex", { agent_done: true });
+    try {
+      await markFakeAgentReady(sid);
+      const hint = await core.sendInitialAgentPrompt(sid, "Reply READY.", { wait: "none" });
+      assert.match(hint, /initial_prompt=pending/, `wait none hint: ${hint}`);
+      const meta = readAgentMeta(sid);
+      assert.equal(meta.initial_prompt, "pending");
+      await assert.rejects(
+        () => core.sendAndWaitAgentDone(sid, "echo SHOULD_NOT_BE_SENT", { timeout: 1, screen: false }),
+        (e) => e.code === 2 && /起動時 prompt/.test(e.message),
+      );
+      assert.throws(
+        () => core.send(sid, "echo SHOULD_NOT_BE_SENT"),
+        (e) => e.code === 2 && /混入防止/.test(e.message),
+      );
+      const out = await core.readOutput(sid, { screen: true, raw: true });
+      assert.doesNotMatch(out, /SHOULD_NOT_BE_SENT/);
+    } finally {
+      core.closeSession(sid);
+    }
+  });
+});
+
+test("readOutput: agent event は補助 metadata に出すが completion には昇格しない", { skip: skipAgentDone }, async () => {
+  await withFakeCodexHome(async () => {
+    const [sid] = core.openAgent("codex", { agent_done: true });
+    try {
+      await markFakeAgentReady(sid);
+      const meta = readAgentMeta(sid);
+      appendAgentDone(meta, { turn_id: "stale-read-turn", vendor_session_id: "stale-vendor" });
+      const out = await core.readOutput(sid, { screen: true, timeout: 0 });
+      assert.match(out, /agent vendor=codex/, `agent metadata: ${out}`);
+      assert.match(out, /agent_event_seen=true/, `agent event seen: ${out}`);
+      assert.match(out, /completion_attribution=none/, `agent attribution: ${out}`);
+      assert.match(out, /last_turn_id=stale-read-turn/, `agent turn id: ${out}`);
+      assert.doesNotMatch(out, /is_complete=True via agent_done/, `stale event を completion にしない: ${out}`);
+    } finally {
+      core.closeSession(sid);
+    }
+  });
+});
+
 test("sendAndWaitAgentDone: agent TUI ready 前は送信前に拒否し文字を流さない", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const [sid] = core.openAgent("codex", { agent_done: true });
@@ -580,7 +844,8 @@ test("sendAndWaitAgentDone: 送信前の古い event / 初回 prompt done を fo
       const out = await core.sendAndWaitAgentDone(sid, "echo FOLLOWUP_BODY", { timeout: 0, screen: false });
       assert.match(out, /FOLLOWUP_BODY/, `follow-up の出力は返す: ${out}`);
       assert.match(out, /is_complete=False via agent_timeout vendor=codex/, `古い event を拾っていない: ${out}`);
-      assert.doesNotMatch(out, /initial-turn/);
+      assert.match(out, /completion_attribution=none last_turn_id=initial-turn/, `古い event は補助 metadata にだけ出る: ${out}`);
+      assert.doesNotMatch(out, /is_complete=True via agent_done vendor=codex turn_id=initial-turn/);
     } finally {
       core.closeSession(sid);
     }

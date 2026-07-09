@@ -63,8 +63,22 @@ test("smoke: stdout は JSON-RPC のみ / 9 ツール公開", async () => {
   const ptySend = toolsResp.result.tools.find((t) => t.name === "pty_send");
   assert.deepEqual(ptySend.inputSchema.properties.wait.enum, ["none", "agent_done"]);
   assert.equal(ptySend.inputSchema.properties.wait.default, "none");
-  for (const name of ["codex_agent", "grok_agent", "composer_agent"]) {
+  const codexAgent = toolsResp.result.tools.find((t) => t.name === "codex_agent");
+  assert.equal(codexAgent.inputSchema.properties.agent_done.type, "boolean", "codex_agent agent_done schema");
+  assert.deepEqual(codexAgent.inputSchema.properties.wait.enum, ["none", "agent_done"], "codex_agent wait schema");
+  assert.equal(codexAgent.inputSchema.properties.wait.default, "none", "codex_agent wait default");
+  assert.equal(codexAgent.inputSchema.properties.timeout.type, "number", "codex_agent timeout schema");
+  assert.equal(codexAgent.inputSchema.properties.screen.type, "boolean", "codex_agent screen schema");
+  assert.ok(
+    codexAgent.inputSchema.properties.lines.anyOf?.some((v) => v.type === "integer"),
+    "codex_agent lines schema",
+  );
+  for (const name of ["grok_agent", "composer_agent"]) {
     const tool = toolsResp.result.tools.find((t) => t.name === name);
     assert.equal(tool.inputSchema.properties.agent_done.type, "boolean", `${name} agent_done schema`);
+    assert.equal(tool.inputSchema.properties.wait, undefined, `${name} initial prompt wait は未公開`);
+    assert.equal(tool.inputSchema.properties.timeout, undefined, `${name} initial prompt timeout は未公開`);
+    assert.equal(tool.inputSchema.properties.screen, undefined, `${name} initial prompt screen は未公開`);
+    assert.equal(tool.inputSchema.properties.lines, undefined, `${name} initial prompt lines は未公開`);
   }
 });

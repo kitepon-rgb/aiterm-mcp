@@ -49,6 +49,7 @@ const NON_POSIX_MARK_SHELLS = new Set(["fish", "csh", "tcsh"]);
 const MARK_DONE_RE = /<<<AITERM_DONE rc=[0-9]+>>>/;
 const LAUNCH_ID_RE = /^[0-9a-f]{32}$/;
 type AgentKind = "codex" | "grok" | "composer";
+type InitialPromptState = "none" | "not_sent" | "sent" | "pending" | "done" | "failed";
 
 const AGENT_DONE_POLL_MS = 100;
 const AGENT_DONE_SETTLE_MIN_MS = 250;
@@ -724,6 +725,7 @@ export function send(name: string, text: string, o: SendOpts = {}): string {
   assertSessionName(name);
   const enter = o.enter ?? true;
   if (!sessionExists(name)) throw new AitermError(`session '${name}' が無い（open してください）`, 2);
+  assertInitialPromptNotPendingForSend(name, !!o.force);
   if (!o.raw) {
     text = text.replace(PASTE_MARKERS_RE, "").replace(ANSI_RE, "").replace(CTRL_RE, "");
   }
@@ -834,7 +836,7 @@ export async function readOutput(name: string, o: ReadOpts = {}): Promise<string
     const rawTxt = captureScreen(name, o.lines || 0);
     if (o.raw) return rawTxt;
     const [body, meta] = reduceOutput(rawTxt, name, true);
-    return body + "\n" + meta + (status ? completionSuffix(status) : "");
+    return body + "\n" + meta + agentReadMetadataSuffix(name, rawTxt) + (status ? completionSuffix(status) : "");
   }
 
   // ログ全体を毎回メモリに載せず、必要な範囲だけ fd で読む（B7）。size は statSync で取る。
@@ -906,16 +908,18 @@ export async function readOutput(name: string, o: ReadOpts = {}): Promise<string
       const [reduced, rname] = rtk.reduce(cmd, framed);
       if (reduced !== null) {
         const meta = `[aiterm ${name}: rtk:${rname} 適用 / ~${estimateTokens(reduced)} tok (raw ~${estimateTokens(text)} tok)]`;
-        if (status) return reduced + "\n" + meta + completionSuffix(status);
-        return reduced + "\n" + meta;
+        const agentMeta = agentReadMetadataSuffix(name);
+        if (status) return reduced + "\n" + meta + agentMeta + completionSuffix(status);
+        return reduced + "\n" + meta + agentMeta;
       }
     }
     // reducer 非該当 → 汎用削減へフォールバック
   }
 
   const [body, meta] = reduceOutput(text, name, !o.range);
-  if (status) return body + "\n" + meta + completionSuffix(status);
-  return body + "\n" + meta;
+  const agentMeta = agentReadMetadataSuffix(name);
+  if (status) return body + "\n" + meta + agentMeta + completionSuffix(status);
+  return body + "\n" + meta + agentMeta;
 }
 
 export function listSessions(): string {
@@ -1002,7 +1006,7 @@ interface AgentMetadata {
   created_at: string;
   cwd: string | null;
   vendor_session_id: string | null;
-  initial_prompt: boolean;
+  initial_prompt: InitialPromptState;
   hook_route: "managed_codex_home" | "managed_grok_home";
   node_platform: NodeJS.Platform;
   codex_home?: string;
@@ -1053,8 +1057,16 @@ interface AgentTuiReadyWaitResult {
   lastScreen: string;
 }
 
+type AgentLauncherWait = "none" | "agent_done";
+
 const DEFAULT_AGENT_DONE_TIMEOUT = 600;
 const agentWaitLocks = new Set<string>();
+
+function normalizeAgentLauncherWait(v: unknown): AgentLauncherWait {
+  if (v == null || v === "none") return "none";
+  if (v === "agent_done") return "agent_done";
+  throw new AitermError('wait は "none" または "agent_done" を指定してください', 2);
+}
 
 function codexHookScriptPath(): string {
   return path.join(path.dirname(fileURLToPath(import.meta.url)), "codex-stop-hook.js");
@@ -1323,6 +1335,27 @@ function writeAgentMetadata(meta: AgentMetadata): void {
   writeJson0600(agentMetadataPath(meta.aiterm_session, meta.launch_id), meta);
 }
 
+function normalizeInitialPromptState(v: unknown): InitialPromptState {
+  if (v === true) return "pending";
+  if (v === false || v == null) return "none";
+  if (
+    v === "none" ||
+    v === "not_sent" ||
+    v === "sent" ||
+    v === "pending" ||
+    v === "done" ||
+    v === "failed"
+  ) {
+    return v;
+  }
+  return "none";
+}
+
+function setInitialPromptState(meta: AgentMetadata, state: InitialPromptState): void {
+  meta.initial_prompt = state;
+  writeAgentMetadata(meta);
+}
+
 function acquireAgentWaitFileLock(meta: AgentMetadata): () => void {
   const p = agentWaitLockPath(meta.aiterm_session, meta.launch_id);
   const nofollow = (fs.constants as Record<string, number>).O_NOFOLLOW ?? 0;
@@ -1355,7 +1388,7 @@ function acquireAgentWaitFileLock(meta: AgentMetadata): () => void {
   };
 }
 
-function createCodexAgentMetadata(name: string, cwd: string | null, initialPrompt: boolean): AgentMetadata {
+function createCodexAgentMetadata(name: string, cwd: string | null, initialPrompt: InitialPromptState): AgentMetadata {
   const launchId = randomBytes(16).toString("hex");
   const eventFile = agentEventPath(name, launchId);
   createEmpty0600NoFollow(eventFile);
@@ -1381,7 +1414,7 @@ function createGrokAgentMetadata(
   kind: "grok" | "composer",
   name: string,
   cwd: string | null,
-  initialPrompt: boolean,
+  initialPrompt: InitialPromptState,
 ): AgentMetadata {
   const launchId = randomBytes(16).toString("hex");
   const eventFile = agentEventPath(name, launchId);
@@ -1452,7 +1485,7 @@ function loadAgentMetadata(name: string): AgentMetadata {
       created_at: typeof m.created_at === "string" ? m.created_at : "",
       cwd: typeof m.cwd === "string" ? m.cwd : null,
       vendor_session_id: typeof m.vendor_session_id === "string" ? m.vendor_session_id : null,
-      initial_prompt: m.initial_prompt === true,
+      initial_prompt: normalizeInitialPromptState(m.initial_prompt),
       hook_route: "managed_codex_home",
       node_platform: process.platform,
       codex_home: expectedHome,
@@ -1471,7 +1504,7 @@ function loadAgentMetadata(name: string): AgentMetadata {
     created_at: typeof m.created_at === "string" ? m.created_at : "",
     cwd: typeof m.cwd === "string" ? m.cwd : null,
     vendor_session_id: typeof m.vendor_session_id === "string" ? m.vendor_session_id : null,
-    initial_prompt: m.initial_prompt === true,
+    initial_prompt: normalizeInitialPromptState(m.initial_prompt),
     hook_route: "managed_grok_home",
     node_platform: process.platform,
     grok_home: expectedGrokHome,
@@ -1552,7 +1585,11 @@ function bindAgentVendorSession(meta: AgentMetadata, ev: AgentDoneEvent): void {
 }
 
 function bindCompletedInitialPrompt(meta: AgentMetadata): void {
-  if (!meta.initial_prompt || meta.vendor_session_id) return;
+  if (meta.initial_prompt !== "pending" && meta.initial_prompt !== "sent") return;
+  if (meta.vendor_session_id) {
+    setInitialPromptState(meta, "done");
+    return;
+  }
   const size = safeStatSize(meta.event_file);
   if (size === 0) {
     throw new AitermError(
@@ -1576,8 +1613,67 @@ function bindCompletedInitialPrompt(meta: AgentMetadata): void {
     );
   }
   bindAgentVendorSession(meta, scanned.event);
-  meta.initial_prompt = false;
-  writeAgentMetadata(meta);
+  setInitialPromptState(meta, "done");
+}
+
+function tryLoadAgentMetadata(name: string): AgentMetadata | null {
+  try {
+    return loadAgentMetadata(name);
+  } catch {
+    return null;
+  }
+}
+
+function latestAgentDoneEvent(meta: AgentMetadata): AgentDoneEvent | null {
+  const size = safeStatSize(meta.event_file);
+  if (size === 0 || size > AGENT_EVENT_MAX_BYTES) return null;
+  const text = readFileRange(meta.event_file, 0, size).toString("utf8");
+  let latest: AgentDoneEvent | null = null;
+  for (const line of text.split("\n")) {
+    if (!line.trim() || Buffer.byteLength(line, "utf8") > 64 * 1024) continue;
+    const parsed = parseAgentDoneEvent(line, meta);
+    if (parsed.event) latest = parsed.event;
+  }
+  return latest;
+}
+
+function inferAgentFrontend(name: string, meta: AgentMetadata, screen?: string): string {
+  const fg = paneCurrentCommand(name);
+  const view = screen ?? captureScreen(name, AGENT_TUI_READY_LINES);
+  if (isAgentTuiReady(meta.kind, view)) return "agent_tui";
+  if (SHELLS.has(fg)) {
+    if (/(^|\n)\s*>\s/.test(view)) return "shell_continuation";
+    return "shell";
+  }
+  return "unknown";
+}
+
+function agentReadMetadataSuffix(name: string, screen?: string): string {
+  const meta = tryLoadAgentMetadata(name);
+  if (!meta) return "";
+  const ev = latestAgentDoneEvent(meta);
+  const bits = [
+    "agent",
+    `vendor=${meta.kind}`,
+    `initial_prompt=${meta.initial_prompt}`,
+    `agent_event_seen=${ev ? "true" : "false"}`,
+    "completion_attribution=none",
+    ev?.turn_id ? `last_turn_id=${ev.turn_id}` : null,
+    `frontend=${inferAgentFrontend(name, meta, screen)}`,
+  ].filter(Boolean);
+  return ` [${bits.join(" ")}]`;
+}
+
+function assertInitialPromptNotPendingForSend(name: string, force: boolean): void {
+  if (force) return;
+  const meta = tryLoadAgentMetadata(name);
+  if (!meta) return;
+  if (meta.initial_prompt !== "pending" && meta.initial_prompt !== "sent") return;
+  throw new AitermError(
+    `agent session '${name}' は起動時 prompt の完了待ちです。通常 pty_send は混入防止のため送信しません。` +
+      `完了後に pty_send(wait:"agent_done") するか、手動介入が必要な場合だけ force:true を明示してください。`,
+    2,
+  );
 }
 
 async function waitAgentDoneEvent(
@@ -1679,6 +1775,19 @@ async function waitAgentTuiReady(
   );
 }
 
+async function waitAgentTuiReadyByKind(
+  name: string,
+  kind: AgentKind,
+  timeoutMs = AGENT_TUI_READY_TIMEOUT_MS,
+): Promise<AgentTuiReadyWaitResult> {
+  return waitAgentTuiReadyImpl(
+    kind,
+    () => captureScreen(name, AGENT_TUI_READY_LINES),
+    sleep,
+    { timeoutMs },
+  );
+}
+
 async function settleAgentDoneScreenImpl(
   sample: () => AgentScreenSample,
   sleepFn: (ms: number) => Promise<void>,
@@ -1767,6 +1876,93 @@ export interface AgentDoneSendOpts extends SendOpts {
   ready_timeout?: number;
   screen?: boolean;
   lines?: number | null;
+}
+
+export interface InitialAgentPromptOpts {
+  wait?: AgentLauncherWait;
+  timeout?: number;
+  ready_timeout?: number;
+  screen?: boolean;
+  lines?: number | null;
+}
+
+async function sendAgentPromptText(name: string, text: string): Promise<void> {
+  send(name, text, {
+    enter: false,
+    force: true,
+    raw: false,
+    mark: false,
+    rtk: false,
+  });
+  await sleep(AGENT_SUBMIT_DELAY_MS);
+  sendKey(name, "Enter");
+}
+
+export async function sendInitialAgentPrompt(
+  name: string,
+  text: string,
+  o: InitialAgentPromptOpts = {},
+): Promise<string> {
+  assertSessionName(name);
+  const waitMode = normalizeAgentLauncherWait(o.wait);
+  const meta = loadAgentMetadata(name);
+  if (agentWaitLocks.has(name)) throw new AitermError(`agent session '${name}' は別の agent_done 待機中です`, 2);
+  if (meta.initial_prompt === "done") {
+    throw new AitermError(`agent session '${name}' の起動時 prompt は既に完了しています`, 2);
+  }
+  if (meta.initial_prompt === "pending" || meta.initial_prompt === "sent") {
+    throw new AitermError(
+      `agent session '${name}' は起動時 prompt の完了待ちです。初回応答完了後に再度操作してください。`,
+      2,
+    );
+  }
+  const releaseFileLock = acquireAgentWaitFileLock(meta);
+  const timeout = o.timeout ?? DEFAULT_AGENT_DONE_TIMEOUT;
+  const screen = o.screen ?? true;
+  agentWaitLocks.add(name);
+  try {
+    setInitialPromptState(meta, "not_sent");
+    const ready = await waitAgentTuiReady(name, meta, o.ready_timeout ?? AGENT_TUI_READY_TIMEOUT_MS);
+    if (!ready.ready) {
+      return (
+        `initial_prompt=not_sent vendor=${meta.kind} ready=false samples=${ready.samples}\n` +
+        `agent session '${name}' の ${agentLabel(meta.kind)} TUI が入力受付状態になりません。prompt は送信していません。`
+      );
+    }
+    const startOffset = safeStatSize(meta.event_file);
+    try {
+      await sendAgentPromptText(name, text);
+      setInitialPromptState(meta, "pending");
+    } catch (e) {
+      setInitialPromptState(meta, "failed");
+      throw e;
+    }
+    if (waitMode === "none") {
+      return (
+        `initial_prompt=pending vendor=${meta.kind}\n` +
+        `起動時 prompt を送信しました。完了後の follow-up は pty_send(wait:"agent_done") を使ってください。`
+      );
+    }
+    const wait = await waitAgentDoneEvent(meta, startOffset, timeout);
+    if (wait.event) {
+      setInitialPromptState(meta, "done");
+    } else {
+      setInitialPromptState(meta, "pending");
+    }
+    const settled = wait.event
+      ? await settleAgentDoneScreen(name, o.lines ?? 0)
+      : { unstable: false, samples: 0 };
+    const out = await readOutput(name, {
+      screen,
+      lines: o.lines ?? null,
+      timeout: 0,
+    });
+    writeOffset(name, safeStatSize(logpath(name)));
+    return out + agentDoneSuffix(wait, meta.kind) + (settled.unstable ? " [agent_done_but_screen_unstable]" : "");
+  } finally {
+    agentWaitLocks.delete(name);
+    releaseFileLock();
+  }
 }
 
 export async function sendAndWaitAgentDone(name: string, text: string, o: AgentDoneSendOpts = {}): Promise<string> {
@@ -1978,8 +2174,8 @@ export function openAgent(
   try {
     const meta = agentDone
       ? kind === "codex"
-        ? createCodexAgentMetadata(sid, cwd, !!opts.prompt)
-        : createGrokAgentMetadata(kind, sid, cwd, !!opts.prompt)
+        ? createCodexAgentMetadata(sid, cwd, opts.prompt ? "pending" : "none")
+        : createGrokAgentMetadata(kind, sid, cwd, opts.prompt ? "pending" : "none")
       : null;
     const cmd = buildAgentCmd(kind, binForCmd, effort, opts.prompt ?? null, meta);
     const envPrefix = agentEnvPrefix(meta, sid);
@@ -2005,4 +2201,89 @@ export function openAgent(
       `pty_send(${sid}, "...") で入力・pty_key(${sid}, "Enter"/"Up"/"C-c" 等) で操作する（対話）。` +
       `起動直後に増分 pty_read すると空/半描画になり得るので screen:true を使う。`,
   ];
+}
+
+async function sendInitialPromptWithoutAgentDone(
+  name: string,
+  kind: AgentKind,
+  text: string,
+  opts: { ready_timeout?: number } = {},
+): Promise<string> {
+  const ready = await waitAgentTuiReadyByKind(name, kind, opts.ready_timeout ?? AGENT_TUI_READY_TIMEOUT_MS);
+  if (!ready.ready) {
+    return (
+      `initial_prompt=not_sent vendor=${kind} ready=false samples=${ready.samples}\n` +
+      `agent session '${name}' の ${agentLabel(kind)} TUI が入力受付状態になりません。prompt は送信していません。`
+    );
+  }
+  await sendAgentPromptText(name, text);
+  return `initial_prompt=sent vendor=${kind}\n起動時 prompt を送信しました。完了待ちは通常の pty_read で行ってください。`;
+}
+
+export async function openAgentWithInitialPrompt(
+  kind: AgentKind,
+  opts: {
+    session_name?: string | null;
+    reasoning_effort?: string | null;
+    cwd?: string | null;
+    prompt?: string | null;
+    agent_done?: boolean | null;
+    wait?: AgentLauncherWait | null;
+    timeout?: number | null;
+    ready_timeout?: number | null;
+    screen?: boolean | null;
+    lines?: number | null;
+  } = {},
+): Promise<[string, string]> {
+  const waitMode = normalizeAgentLauncherWait(opts.wait);
+  const prompt = opts.prompt ?? null;
+  const agentDone = !!opts.agent_done;
+  if (waitMode === "agent_done" && !prompt) {
+    throw new AitermError('wait:"agent_done" は prompt 指定時だけ使えます', 2);
+  }
+  if (waitMode === "agent_done" && !agentDone) {
+    throw new AitermError('wait:"agent_done" には agent_done:true が必要です', 2);
+  }
+  if (!prompt) {
+    return openAgent(kind, opts);
+  }
+  if (kind !== "codex") {
+    if (waitMode === "agent_done") {
+      throw new AitermError(
+        `${agentLabel(kind)} の起動時 prompt wait は未対応です。` +
+          `agent_done:true で prompt なし起動後、TUI のログイン/ready を確認してから pty_send(wait:"agent_done") を使ってください。`,
+        2,
+      );
+    }
+    return openAgent(kind, opts);
+  }
+  const [sid, hint] = openAgent(kind, {
+    session_name: opts.session_name ?? null,
+    reasoning_effort: opts.reasoning_effort ?? null,
+    cwd: opts.cwd ?? null,
+    prompt: null,
+    agent_done: agentDone,
+  });
+  try {
+    const initial = agentDone
+      ? await sendInitialAgentPrompt(sid, prompt, {
+          wait: waitMode,
+          timeout: opts.timeout ?? undefined,
+          ready_timeout: opts.ready_timeout ?? undefined,
+          screen: opts.screen ?? undefined,
+          lines: opts.lines ?? null,
+        })
+      : await sendInitialPromptWithoutAgentDone(sid, kind, prompt, {
+          ready_timeout: opts.ready_timeout ?? undefined,
+        });
+    return [sid, `${hint}\n${initial}`];
+  } catch (e) {
+    const code = e instanceof AitermError ? e.code : 1;
+    const message = e instanceof Error ? e.message : String(e);
+    throw new AitermError(
+      `session_id: ${sid}\n` +
+        `起動後の初回 prompt 処理で失敗しました。session は調査/復旧用に残しています。\n${message}`,
+      code,
+    );
+  }
 }

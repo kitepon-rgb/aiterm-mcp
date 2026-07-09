@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Codex launcher initial-prompt waits: `codex_agent` now exposes `wait`,
+  `timeout`, `screen`, and `lines` for the launch-time `prompt`.
+  `prompt + wait: "agent_done"` starts the persistent TUI first, waits for the
+  TUI input area, submits the initial prompt, and waits for that first turn's
+  Stop hook. `wait: "agent_done"` requires both `prompt` and
+  `agent_done: true`; it does not implicitly enable hooks. Grok/Composer
+  initial-prompt waits are intentionally not exposed until the post-OAuth smoke
+  passes; their existing follow-up `pty_send(wait:"agent_done")` route remains
+  unchanged.
+- Agent-session reads now include auxiliary metadata such as
+  `initial_prompt`, `agent_event_seen`, `completion_attribution=none`,
+  `last_turn_id`, and a best-effort `frontend` hint. Stale hook events are not
+  promoted to `is_complete=True`.
+
+### Fixed / Hardened
+- Codex initial launcher prompts are no longer placed on the shell command line
+  in the MCP launcher path, avoiding shell continuation display for long or
+  multiline prompts. If the TUI is blocked before input, for example on a
+  vendor login screen, the prompt is not sent and the launcher returns the
+  session with `initial_prompt=not_sent`.
+- Ordinary `pty_send` now refuses to type into a session while a launch-time
+  initial prompt is still `pending` or `sent`, preventing follow-up input from
+  mixing into the same live TUI turn. Manual takeover is still possible with
+  `pty_key` or intentional `pty_send(..., force:true)`.
+- Post-launch initial-prompt failures preserve the created `session_id` in the
+  error text, so the caller can inspect or recover the remaining session instead
+  of losing the handle.
+
 ### Changed
 - Synced release-facing documentation, RAG notes, and distribution playbooks to
   the `v0.9.1` state after adversarial documentation verification.
@@ -15,7 +44,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Docs / Verification
 - Rechecked the public docs against npm/global install/Official MCP Registry
-  state, current CI shape, and the **168-test** regression suite.
+  state, current CI shape, and the **177-test** regression suite.
+- Verified real Codex launcher `prompt + agent_done:true + wait:"agent_done"`
+  smoke for single-line, long Japanese, and multiline Japanese prompts.
+- Attempted the internal Grok/Composer initial-prompt route before exposing it;
+  the current environment stopped at OAuth browser approval and correctly
+  returned `initial_prompt=not_sent` without sending the prompt. Public schema
+  therefore remains Codex-only for launch-time initial-prompt waits.
 - Archived completed planning/checklist documents so `docs/` keeps only live
   docs and current operational notes at top level.
 
