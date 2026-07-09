@@ -15,10 +15,10 @@ output) is already committed — these steps activate it.
 
 Done and verified:
 
-- ✅ **npm `0.9.1` is latest** — keywords + `mcpName` active; global install verified via `npm install -g aiterm-mcp`.
-- ✅ **Official MCP Registry** — `io.github.kitepon-rgb/aiterm-mcp@0.9.1` listed; auto-registers on each release via `.github/workflows/registry.yml` (OIDC).
+- ✅ **npm `0.10.0` is latest** — keywords + `mcpName` active; global install verified via `npm install -g aiterm-mcp`.
+- ✅ **Official MCP Registry** — `io.github.kitepon-rgb/aiterm-mcp@0.10.0` listed; auto-registers on each release via `.github/workflows/registry.yml` (OIDC).
 - ✅ **mcp.so** — submitted/listed (with the square `.github/avatar.png`).
-- ✅ **GitHub topic** `mcp-server` added; **v0.9.1 Release** published. Earlier 0.4.1 discovery work is historical; the current version/tool surface is `v0.9.1` / 9 tools.
+- ✅ **GitHub topic** `mcp-server` added; **v0.10.0 Release** published. Earlier 0.4.1 discovery work is historical; the current version/tool surface is `v0.10.0` / 9 tools.
 - 🔄 **awesome-mcp-servers** — PR [#7620](https://github.com/punkpeye/awesome-mcp-servers/pull/7620) open (awaiting maintainer merge).
 - ✅ **Announced** on r/mcp.
 

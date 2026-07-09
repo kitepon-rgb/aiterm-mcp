@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-07-09
+
 ### Added
 - Codex launcher initial-prompt waits: `codex_agent` now exposes `wait`,
   `timeout`, `screen`, and `lines` for the launch-time `prompt`.
@@ -38,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Synced release-facing documentation, RAG notes, and distribution playbooks to
-  the `v0.9.1` state after adversarial documentation verification.
+  the `v0.10.0` state after adversarial documentation verification.
 - Added release metadata version-sync coverage so `package.json`,
   `package-lock.json`, and `server.json` stay aligned after release hardening.
 
@@ -324,7 +326,8 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.7.1...v0.8.0

@@ -1,6 +1,6 @@
 {
   "name": "aiterm-mcp",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "mcpName": "io.github.kitepon-rgb/aiterm-mcp",
   "description": "AI-driven persistent terminal as a local stdio MCP server (tmux-backed). Holds one local PTY; SSH and containers are just commands you send into it. Also launches interactive Codex/Grok/Composer agent TUIs in a persistent terminal. Token-reducing reads.",
   "keywords": [
