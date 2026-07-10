@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-07-11
+
 ### Added
 - Agent launchers accept a `model` argument. `codex_agent` passes it as `-m`
   and, when `agent_done: true` creates a managed `CODEX_HOME`, explicitly
