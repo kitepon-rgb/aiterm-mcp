@@ -1138,7 +1138,64 @@ function realCodexHome(): string {
   return process.env.CODEX_HOME || path.join(process.env.HOME ?? os.homedir(), ".codex");
 }
 
-function createManagedCodexHome(name: string, launchId: string): string {
+// 引数で model/effort を渡された時は managed config のピンを上書きする（端末 config の
+// model/model_reasoning_effort ピン——例: effort=ultra は proactive 自動委譲 ON——が対話子へ
+// 黙って波及するのを防ぐ）。TOML の top-level キーは最初のテーブルヘッダより前にしか置けないため、
+// 既存行の除去は先頭領域に限定し、上書き行はファイル先頭へ置く。
+function applyCodexConfigOverrides(
+  body: string | null,
+  overrides: { model?: string | null; effort?: string | null },
+): string | null {
+  const lines: string[] = [];
+  if (overrides.model) lines.push(`model = ${JSON.stringify(overrides.model)}`);
+  if (overrides.effort) lines.push(`model_reasoning_effort = ${JSON.stringify(overrides.effort)}`);
+  if (!lines.length) return body;
+  if (body == null) return lines.join("\n") + "\n";
+  const rows = body.split(/\r?\n/);
+  let firstTable = rows.findIndex((l) => /^\s*\[/.test(l));
+  if (firstTable === -1) firstTable = rows.length;
+  const head = rows.slice(0, firstTable).filter((l) => {
+    if (overrides.model && /^\s*model\s*=/.test(l)) return false;
+    if (overrides.effort && /^\s*model_reasoning_effort\s*=/.test(l)) return false;
+    return true;
+  });
+  let out = [...lines, ...head, ...rows.slice(firstTable)].join("\n");
+  if (!out.endsWith("\n")) out += "\n";
+  return out;
+}
+
+// config.toml の top-level model / model_reasoning_effort ピンを起動報告用に読む。TOML パーサは
+// 持ち込まず基本形（key = "値"）だけ解決する。行はあるが値を解析できない場合も「継承あり」として
+// 正直に報告する（黙って CLI 既定扱いにしない）。
+type CodexConfigPin = { present: boolean; value: string | null };
+function readCodexConfigPins(configPath: string): { model: CodexConfigPin; effort: CodexConfigPin } {
+  let body: string;
+  try {
+    body = fs.readFileSync(configPath, "utf8");
+  } catch {
+    return { model: { present: false, value: null }, effort: { present: false, value: null } };
+  }
+  const rows = body.split(/\r?\n/);
+  let firstTable = rows.findIndex((l) => /^\s*\[/.test(l));
+  if (firstTable === -1) firstTable = rows.length;
+  const pick = (key: string): CodexConfigPin => {
+    for (const l of rows.slice(0, firstTable)) {
+      const m = l.match(new RegExp(`^\\s*${key}\\s*=\\s*(.*)$`));
+      if (m) {
+        const v = m[1].trim().match(/^"([^"\\]*)"\s*(?:#.*)?$/);
+        return { present: true, value: v ? v[1] : null };
+      }
+    }
+    return { present: false, value: null };
+  };
+  return { model: pick("model"), effort: pick("model_reasoning_effort") };
+}
+
+function createManagedCodexHome(
+  name: string,
+  launchId: string,
+  overrides: { model?: string | null; effort?: string | null } = {},
+): string {
   const srcHome = realCodexHome();
   let srcSt: fs.Stats;
   try {
@@ -1165,14 +1222,18 @@ function createManagedCodexHome(name: string, launchId: string): string {
   fs.symlinkSync(authSrc, path.join(managedHome, "auth.json"));
 
   const configSrc = path.join(srcHome, "config.toml");
+  let configBody: string | null = null;
   try {
     const st = fs.statSync(configSrc);
-    if (st.isFile()) {
-      fs.copyFileSync(configSrc, path.join(managedHome, "config.toml"));
-      fs.chmodSync(path.join(managedHome, "config.toml"), 0o600);
-    }
+    if (st.isFile()) configBody = fs.readFileSync(configSrc, "utf8");
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+  }
+  const configOut = applyCodexConfigOverrides(configBody, overrides);
+  if (configOut != null) {
+    const configDst = path.join(managedHome, "config.toml");
+    fs.writeFileSync(configDst, configOut, { mode: 0o600 });
+    fs.chmodSync(configDst, 0o600);
   }
 
   const hookScript = codexHookScriptPath();
@@ -1388,11 +1449,16 @@ function acquireAgentWaitFileLock(meta: AgentMetadata): () => void {
   };
 }
 
-function createCodexAgentMetadata(name: string, cwd: string | null, initialPrompt: InitialPromptState): AgentMetadata {
+function createCodexAgentMetadata(
+  name: string,
+  cwd: string | null,
+  initialPrompt: InitialPromptState,
+  overrides: { model?: string | null; effort?: string | null } = {},
+): AgentMetadata {
   const launchId = randomBytes(16).toString("hex");
   const eventFile = agentEventPath(name, launchId);
   createEmpty0600NoFollow(eventFile);
-  const codexHome = createManagedCodexHome(name, launchId);
+  const codexHome = createManagedCodexHome(name, launchId, overrides);
   const meta: AgentMetadata = {
     kind: "codex",
     aiterm_session: name,
@@ -2050,9 +2116,17 @@ function shq(s: string): string {
   return `'${s.replace(/'/g, "'\\''")}'`;
 }
 
+// grok CLI はモデル未指定だと端末側 default に従うため、ツール契約として既定 slug を固定する。
+// codex は既定 slug を持たず端末 config／CLI 既定に委ねる（起動応答で実効値を報告する）。
+const GROK_MODEL_DEFAULTS: Record<"grok" | "composer", string> = {
+  grok: "grok-4.5",
+  composer: "grok-composer-2.5-fast",
+};
+
 function buildAgentCmd(
   kind: AgentKind,
   bin: string,
+  model: string | null,
   effort: string | null,
   prompt: string | null,
   meta: AgentMetadata | null = null,
@@ -2060,14 +2134,16 @@ function buildAgentCmd(
   const parts: string[] = [shq(bin)];
   if (kind === "codex") {
     if (meta?.kind === "codex") parts.push("--dangerously-bypass-hook-trust");
-    // codex は config override で reasoning effort（例: low/medium/high）を渡す。
+    // model/effort は CLI 引数で明示（config 継承より優先）。agent_done 時は managed home 側
+    // config.toml も同値で上書き済み（applyCodexConfigOverrides）。
+    if (model) parts.push("-m", shq(model));
     if (effort) parts.push("-c", `model_reasoning_effort=${shq(effort)}`);
   } else {
-    // grok / composer は同じ grok CLI をモデル違いで起動。effort は low/medium/high/xhigh/max。
+    // grok / composer は同じ grok CLI をモデル違いで起動。--effort は headless（grok -p）専用で
+    // 対話 TUI では警告の上無視されるため渡さない（openAgent が指定を事前拒否する）。
     parts.push("--no-auto-update");
     if (meta?.kind === "grok" || meta?.kind === "composer") parts.push("--no-alt-screen");
-    parts.push("--model", kind === "composer" ? "grok-composer-2.5-fast" : "grok-build");
-    if (effort) parts.push("--effort", shq(effort));
+    parts.push("--model", shq(model ?? GROK_MODEL_DEFAULTS[kind]));
     if ((meta?.kind === "grok" || meta?.kind === "composer") && prompt) parts.push("--verbatim");
   }
   if (prompt) parts.push(shq(prompt)); // 初手プロンプト（任意）
@@ -2112,13 +2188,48 @@ function agentLabel(kind: AgentKind): string {
       : "Codex";
 }
 
-// grok CLI の --effort が受ける値集合（codex は CLI 側の値集合が版で変わるため縛らない）。
-const GROK_EFFORTS = new Set(["low", "medium", "high", "xhigh", "max"]);
+// 起動応答にモデル/effort の実効値と出所を明示する。codex は端末 config のピン（model /
+// model_reasoning_effort）が対話子へ波及する構造のため、引数・端末config継承・CLI既定の
+// どれで起動したかを起動時点で可視化し、実効 effort=ultra は proactive 自動委譲 ON を警告する。
+function buildAgentLaunchNote(
+  kind: AgentKind,
+  model: string | null,
+  effort: string | null,
+  meta: AgentMetadata | null,
+): string {
+  if (kind !== "codex") {
+    return (
+      `起動設定: model=${model ?? GROK_MODEL_DEFAULTS[kind]}（${model ? "引数" : "ツール既定"}）。` +
+      "reasoning effort は対話 TUI 非対応＝未指定で起動。"
+    );
+  }
+  const configPath =
+    meta?.kind === "codex" && meta.codex_home
+      ? path.join(meta.codex_home, "config.toml")
+      : path.join(realCodexHome(), "config.toml");
+  const pins = readCodexConfigPins(configPath);
+  const describePin = (arg: string | null, pin: CodexConfigPin): string =>
+    arg
+      ? `${arg}（引数）`
+      : pin.present
+        ? pin.value
+          ? `${pin.value}（端末config継承）`
+          : "端末config継承（値未解析）"
+        : "CLI既定";
+  const effectiveEffort = effort ?? (pins.effort.present ? pins.effort.value : null);
+  return (
+    `起動設定: model=${describePin(model, pins.model)} effort=${describePin(effort, pins.effort)}。` +
+    (effectiveEffort === "ultra"
+      ? "⚠ effort=ultra は max 推論＋proactive 自動委譲 ON（子エージェント自動生成・使用量急増に注意）。"
+      : "")
+  );
+}
 
 export function openAgent(
   kind: AgentKind,
   opts: {
     session_name?: string | null;
+    model?: string | null;
     reasoning_effort?: string | null;
     cwd?: string | null;
     prompt?: string | null;
@@ -2127,11 +2238,28 @@ export function openAgent(
 ): [string, string] {
   const label = agentLabel(kind);
   // 前提検証は session を作る前に全部済ませる（失敗の残骸 session を作らない）。
-  // effort → bin → cwd の順: effort 検証は CLI 不在の端末でも同じ結果になる（テスト可能性）。
+  // model/effort → bin → cwd の順: model/effort 検証は CLI 不在の端末でも同じ結果になる（テスト可能性）。
+  let model: string | null = null;
+  if (opts.model != null) {
+    model = opts.model.trim();
+    if (!model) throw new AitermError("model が空文字です（省略するか有効なモデル名を指定してください）", 2);
+  }
   const effort = opts.reasoning_effort ?? null;
-  if (effort && kind !== "codex" && !GROK_EFFORTS.has(effort)) {
+  // grok CLI の --effort は headless（grok -p）専用で、対話 TUI では警告の上無視される。
+  // 黙って no-op の引数を受けない＝起動前に明示エラーで拒否する（codex は CLI 側の値集合が
+  // 版で変わるため縛らず送信まで通す）。
+  if (effort && kind === "grok") {
     throw new AitermError(
-      `reasoning_effort '${effort}' は不正です（${label} は low/medium/high/xhigh/max）`,
+      `${label} は reasoning_effort を指定できません。grok CLI の --effort は headless（grok -p）専用で、` +
+        "対話 TUI では警告の上無視されます（grok-4.5 の TUI 既定 effort は high）。" +
+        "effort 制御が必要なら通常 PTY で `grok -p --effort low|medium|high ...` を使ってください",
+      2,
+    );
+  }
+  if (effort && kind === "composer") {
+    throw new AitermError(
+      `${label} は reasoning_effort を指定できません。grok-composer-2.5-fast は reasoning effort 非対応です` +
+        "（モデルカタログ supports_reasoning_effort=false）",
       2,
     );
   }
@@ -2171,13 +2299,15 @@ export function openAgent(
   const cwdForCmd = cwd && isWin ? toWslPath(cwd) : cwd;
 
   const [sid, hint] = openSession(opts.session_name ?? null, "bash");
+  let launchNote = "";
   try {
     const meta = agentDone
       ? kind === "codex"
-        ? createCodexAgentMetadata(sid, cwd, opts.prompt ? "pending" : "none")
+        ? createCodexAgentMetadata(sid, cwd, opts.prompt ? "pending" : "none", { model, effort })
         : createGrokAgentMetadata(kind, sid, cwd, opts.prompt ? "pending" : "none")
       : null;
-    const cmd = buildAgentCmd(kind, binForCmd, effort, opts.prompt ?? null, meta);
+    launchNote = buildAgentLaunchNote(kind, model, effort, meta);
+    const cmd = buildAgentCmd(kind, binForCmd, model, effort, opts.prompt ?? null, meta);
     const envPrefix = agentEnvPrefix(meta, sid);
     const full = cwdForCmd ? `cd ${shq(cwdForCmd)} && ${envPrefix}${cmd}` : `${envPrefix}${cmd}`;
     // force:true で送る。起動骨格は `bin '...'` の固定形で、prompt/cwd/effort は shq でクオート済みの
@@ -2195,7 +2325,7 @@ export function openAgent(
   }
   return [
     sid,
-    `${label} を session ${sid} で起動した。${agentDone ? "agent_done 待機が有効。" : ""}` +
+    `${label} を session ${sid} で起動した。${launchNote}${agentDone ? "agent_done 待機が有効。" : ""}` +
       `${agentDone && kind !== "codex" ? " hook 汚染防止のため Grok 実行中は一時 HOME を使う。" : ""}\n${hint}\n` +
       `TUI の描画には数秒かかる。少し置いてから pty_read(${sid}, screen:true) で画面を読み、` +
       `pty_send(${sid}, "...") で入力・pty_key(${sid}, "Enter"/"Up"/"C-c" 等) で操作する（対話）。` +
@@ -2224,6 +2354,7 @@ export async function openAgentWithInitialPrompt(
   kind: AgentKind,
   opts: {
     session_name?: string | null;
+    model?: string | null;
     reasoning_effort?: string | null;
     cwd?: string | null;
     prompt?: string | null;
@@ -2259,6 +2390,7 @@ export async function openAgentWithInitialPrompt(
   }
   const [sid, hint] = openAgent(kind, {
     session_name: opts.session_name ?? null,
+    model: opts.model ?? null,
     reasoning_effort: opts.reasoning_effort ?? null,
     cwd: opts.cwd ?? null,
     prompt: null,

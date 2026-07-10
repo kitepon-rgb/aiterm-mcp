@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Agent launchers accept a `model` argument. `codex_agent` passes it as `-m`
+  and, when `agent_done: true` creates a managed `CODEX_HOME`, explicitly
+  passed `model` / `reasoning_effort` values also rewrite the corresponding
+  top-level pins in the managed `config.toml` copy, so terminal pins (for
+  example an `ultra` effort pin, which enables proactive multi-agent
+  delegation) no longer silently leak into interactive children.
+  `grok_agent` / `composer_agent` use it to override `--model`.
+- Codex launch responses now state the effective model and effort with their
+  origin — argument, terminal-config inheritance, or CLI default — and warn
+  explicitly when the effective effort is `ultra`.
+
+### Changed
+- `grok_agent` default model moved from the stale `grok-build` slug to
+  `grok-4.5` (`grok-build` no longer exists in the live model catalog).
+- `grok_agent` / `composer_agent` now reject `reasoning_effort` with a clear
+  error before creating a session, instead of forwarding `--effort` to the
+  interactive TUI where the grok CLI warns and ignores it (the flag is
+  headless-only, and Composer does not support reasoning effort at all). The
+  former `low/medium/high/xhigh/max` enum on these tools is gone; `codex_agent`
+  keeps an unconstrained string (CLI-version dependent, up to `ultra`).
+
 ## [0.10.0] - 2026-07-09
 
 ### Added

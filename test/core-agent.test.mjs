@@ -1,5 +1,5 @@
 // openAgent の前提検証と残骸ゼロ保証の characterization。
-// - effort 検証は bin 解決より先＝CLI 不在の端末でも同じ結果（環境非依存）。
+// - model/effort 検証は bin 解決より先＝CLI 不在の端末でも同じ結果（環境非依存）。
 // - CODEX_BIN 環境変数で bin を無害コマンドに偽装し、CLI 未導入環境でも cwd 検証・残骸テストを回す。
 // - tmux 実機を使うケースは core-tmux.test.mjs と同じ隔離ソケット方式（TMPDIR 退避・skip 制御）。
 import { test, after } from "node:test";
@@ -192,10 +192,17 @@ after(() => {
   }
 });
 
-test("openAgent: grok の不正 effort は session を作る前に拒否（CLI 不在でも同じ）", () => {
+test("openAgent: grok は effort 指定自体を session 作成前に拒否（headless 専用）", () => {
   assert.throws(
-    () => core.openAgent("grok", { reasoning_effort: "bogus" }),
-    (e) => e.code === 2 && /low\/medium\/high\/xhigh\/max/.test(e.message),
+    () => core.openAgent("grok", { reasoning_effort: "high" }),
+    (e) => e.code === 2 && /headless（grok -p）専用/.test(e.message) && /対話 TUI では警告の上無視され/.test(e.message),
+  );
+});
+
+test("openAgent: composer は effort 指定自体を session 作成前に拒否", () => {
+  assert.throws(
+    () => core.openAgent("composer", { reasoning_effort: "high" }),
+    (e) => e.code === 2 && /supports_reasoning_effort=false/.test(e.message),
   );
 });
 
@@ -247,6 +254,16 @@ test("openAgent codex: -c model_reasoning_effort=<effort> を組み立てる", {
   }
 });
 
+test("openAgent codex: model 引数を -m で組み立てる", { skip }, async () => {
+  const [sid] = core.openAgent("codex", { model: "gpt-5.6-terra" }); // CODEX_BIN=/bin/echo
+  try {
+    const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
+    assert.match(out, /-m gpt-5\.6-terra/, `codex model: ${out}`);
+  } finally {
+    core.closeSession(sid);
+  }
+});
+
 test("openAgent codex: 複数行日本語 prompt は argv に残るが shell continuation 表示を出す", { skip }, async () => {
   const prompt = [
     "NoveLore リポジトリで、docs/23_graph_upsert_tool_contract_plan.md を敵対的にレビューしてください。",
@@ -283,9 +300,11 @@ test("openAgent codex agent_done: managed CODEX_HOME と Stop hook を組み立�
       assert.match(hooks.hooks.Stop[0].hooks[0].command, /codex-stop-hook\.js/);
       assert.equal(fs.readlinkSync(path.join(meta.codex_home, "auth.json")), path.join(fakeHome, "auth.json"));
       assert.equal(fs.lstatSync(path.join(meta.codex_home, "config.toml")).isSymbolicLink(), false);
-      assert.equal(fs.readFileSync(path.join(meta.codex_home, "config.toml"), "utf8"), 'model = "test-model"\n');
+      const config = fs.readFileSync(path.join(meta.codex_home, "config.toml"), "utf8");
+      assert.match(config, /^model_reasoning_effort = "high"\nmodel = "test-model"\n/);
       assert.equal(fs.existsSync(path.join(meta.codex_home, "history.jsonl")), false);
       assert.equal(fs.existsSync(path.join(meta.codex_home, "sessions")), false);
+      assert.match(hint, /起動設定: model=test-model（端末config継承） effort=high（引数）/);
 
       const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
       assert.match(out, /--dangerously-bypass-hook-trust/, `codex managed command: ${out}`);
@@ -302,7 +321,6 @@ test("openAgent grok agent_done: isolated HOME と managed GROK_HOME/Stop hook/O
   try {
     await withFakeGrokHome(async (fakeHome) => {
       const [sid, hint] = core.openAgent("grok", {
-        reasoning_effort: "high",
         agent_done: true,
         prompt: "Reply READY.",
       });
@@ -330,8 +348,8 @@ test("openAgent grok agent_done: isolated HOME と managed GROK_HOME/Stop hook/O
         assert.match(out, /--no-auto-update/, `grok managed command: ${out}`);
         assert.match(out, /--no-alt-screen/, `grok managed no-alt-screen: ${out}`);
         assert.match(out, /--verbatim/, `grok managed verbatim: ${out}`);
-        assert.match(out, /--model grok-build/, `grok managed model: ${out}`);
-        assert.match(out, /--effort high/, `grok managed effort: ${out}`);
+        assert.match(out, /--model grok-4\.5/, `grok managed model: ${out}`);
+        assert.doesNotMatch(out, /--effort/, `grok managed effort: ${out}`);
       } finally {
         core.closeSession(sid);
       }
@@ -394,7 +412,6 @@ test("openAgent composer agent_done: vendor=composer の metadata を作る", { 
   try {
     await withFakeGrokHome(async () => {
       const [sid] = core.openAgent("composer", {
-        reasoning_effort: "low",
         agent_done: true,
         prompt: "Reply READY.",
       });
@@ -408,6 +425,7 @@ test("openAgent composer agent_done: vendor=composer の metadata を作る", { 
         assert.match(out, /--no-alt-screen/, `composer managed no-alt-screen: ${out}`);
         assert.match(out, /--verbatim/, `composer managed verbatim: ${out}`);
         assert.match(out, /--model grok-composer-2\.5-fast/, `composer managed model: ${out}`);
+        assert.doesNotMatch(out, /--effort/, `composer managed effort: ${out}`);
       } finally {
         core.closeSession(sid);
       }
@@ -1132,35 +1150,113 @@ test("sendAndWaitAgentDone: enter:false は送信前に拒否する", { skip: sk
     }
   });
 });
-test("openAgent grok: --model grok-build と --effort を組み立てる", { skip }, async () => {
+test("openAgent grok: --model grok-4.5 を組み立て、--effort は渡さない", { skip }, async () => {
   const saved = process.env.GROK_BIN;
   process.env.GROK_BIN = "/bin/echo"; // grok 経路を echo で可視化
   try {
-    const [sid] = core.openAgent("grok", { reasoning_effort: "high" });
+    const [sid] = core.openAgent("grok", {});
     const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
     assert.match(out, /--no-auto-update/, `grok no-auto-update: ${out}`);
-    assert.match(out, /--model grok-build/, `grok model: ${out}`);
-    assert.match(out, /--effort high/, `grok effort: ${out}`);
+    assert.match(out, /--model grok-4\.5/, `grok model: ${out}`);
+    assert.doesNotMatch(out, /--effort/, `grok effort: ${out}`);
     core.closeSession(sid);
   } finally {
     if (saved === undefined) delete process.env.GROK_BIN;
     else process.env.GROK_BIN = saved;
   }
 });
-test("openAgent composer: --model grok-composer-2.5-fast を組み立てる（コピペ swap 検出）", { skip }, async () => {
+test("openAgent composer: --model grok-composer-2.5-fast を組み立て、--effort は渡さない（コピペ swap 検出）", { skip }, async () => {
   const saved = process.env.GROK_BIN;
   process.env.GROK_BIN = "/bin/echo";
   try {
-    const [sid] = core.openAgent("composer", { reasoning_effort: "low" });
+    const [sid] = core.openAgent("composer", {});
     const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
     assert.match(out, /--no-auto-update/, `composer no-auto-update: ${out}`);
     assert.match(out, /--model grok-composer-2\.5-fast/, `composer model: ${out}`);
-    assert.match(out, /--effort low/, `composer effort: ${out}`);
+    assert.doesNotMatch(out, /--effort/, `composer effort: ${out}`);
     core.closeSession(sid);
   } finally {
     if (saved === undefined) delete process.env.GROK_BIN;
     else process.env.GROK_BIN = saved;
   }
+});
+
+test("openAgent grok/composer: model 引数で既定モデルを上書きする", { skip }, async () => {
+  const saved = process.env.GROK_BIN;
+  process.env.GROK_BIN = "/bin/echo";
+  try {
+    for (const [kind, model] of [["grok", "grok-next"], ["composer", "composer-next"]]) {
+      const [sid] = core.openAgent(kind, { model });
+      try {
+        const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
+        assert.match(out, new RegExp(`--model ${model}`), `${kind} model: ${out}`);
+      } finally {
+        core.closeSession(sid);
+      }
+    }
+  } finally {
+    if (saved === undefined) delete process.env.GROK_BIN;
+    else process.env.GROK_BIN = saved;
+  }
+});
+
+test("openAgent codex agent_done: model 上書きは managed config の該当 top-level 行だけを置換する", { skip: skipAgentDone }, async () => {
+  await withFakeCodexHome(async (fakeHome) => {
+    fs.writeFileSync(
+      path.join(fakeHome, "config.toml"),
+      'model = "pinned"\nmodel_reasoning_effort = "ultra"\nkeep_me = true\n\n[mcp_servers.x]\ncommand = "y"\n',
+      { mode: 0o600 },
+    );
+    const [sid, hint] = core.openAgent("codex", { model: "gpt-5.6-terra", agent_done: true });
+    try {
+      const config = fs.readFileSync(path.join(readAgentMeta(sid).codex_home, "config.toml"), "utf8");
+      assert.match(config, /^model = "gpt-5\.6-terra"\n/);
+      assert.match(config, /model_reasoning_effort = "ultra"/);
+      assert.match(config, /keep_me = true/);
+      assert.match(config, /\[mcp_servers\.x\]\ncommand = "y"/);
+      assert.doesNotMatch(config, /model = "pinned"/);
+      assert.match(hint, /端末config継承/);
+      assert.match(hint, /proactive 自動委譲/);
+    } finally {
+      core.closeSession(sid);
+    }
+  });
+});
+
+test("openAgent codex agent_done: model と effort の両引数で managed config を置換する", { skip: skipAgentDone }, async () => {
+  await withFakeCodexHome(async (fakeHome) => {
+    fs.writeFileSync(
+      path.join(fakeHome, "config.toml"),
+      'model = "pinned"\nmodel_reasoning_effort = "ultra"\nkeep_me = true\n\n[mcp_servers.x]\ncommand = "y"\n',
+      { mode: 0o600 },
+    );
+    const [sid] = core.openAgent("codex", {
+      model: "gpt-5.6-terra",
+      reasoning_effort: "high",
+      agent_done: true,
+    });
+    try {
+      const config = fs.readFileSync(path.join(readAgentMeta(sid).codex_home, "config.toml"), "utf8");
+      assert.match(config, /^model = "gpt-5\.6-terra"\nmodel_reasoning_effort = "high"\n/);
+      assert.match(config, /keep_me = true/);
+      assert.match(config, /\[mcp_servers\.x\]\ncommand = "y"/);
+      assert.doesNotMatch(config, /"pinned"|"ultra"/);
+    } finally {
+      core.closeSession(sid);
+    }
+  });
+});
+
+test("openAgent: 空/空白 model は session を残さず拒否する", () => {
+  // throw 自体は session 作成前＝tmux 不要。残骸ゼロ確認だけ tmux が要る（listSessions）。
+  const before = skip ? null : core.listSessions();
+  for (const model of ["", "   "]) {
+    assert.throws(
+      () => core.openAgent("codex", { model }),
+      (e) => e.code === 2 && /model が空文字/.test(e.message),
+    );
+  }
+  if (!skip) assert.equal(core.listSessions(), before, "空 model の失敗が session を残した");
 });
 
 // A3: env 指定 bin の実在検証（存在しないパスを黙って返して偽成功にしない）。tmux 不要（session 前に throw）。

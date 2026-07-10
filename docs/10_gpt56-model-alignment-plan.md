@@ -7,27 +7,44 @@ dotagents 側の GPT-5.6 世代再配線（オーケストレーション決定�
 
 ## 依頼（チェックボックス＝消化管理）
 
-- [ ] **1. `codex_agent` に `model` 引数を追加**
+- [x] **1. `codex_agent` に `model` 引数を追加**
   現状はツールごとにモデルがハードコードされ（`buildAgentCmd`、dist/core.js L1871-1893 付近）、`codex_agent` の起動モデルを呼び出し側から指定する手段がない。dotagents の決定表は「入口ごとにモデル×エフォートを明示」を規範にしたため、引数で上書きできるようにしたい（省略時は現状どおりで可）。
 
-- [ ] **2. codex の managed home が端末 `~/.codex/config.toml` を丸ごとコピーする挙動の明示化／上書き手段**
+- [x] **2. codex の managed home が端末 `~/.codex/config.toml` を丸ごとコピーする挙動の明示化／上書き手段**
   `createManagedCodexHome`（dist/core.js L1067-1085 付近、`copyFileSync` L1084）が config を丸ごと継承するため、端末側の model/effort ピン（例: Sol×ultra。ultra は自動マルチエージェント委譲 ON）が対話子にそのまま波及する。少なくとも引数で model/effort を渡した時は managed home 側 config を上書きしてほしい。参考: codex-sidecar は model/model_provider/model_reasoning_effort の3キーだけを最小継承する方式（caveat 登録済み: `codex-sidecar-home-config-toml-…`）。
 
-- [ ] **3. `grok_agent` のハードコード `--model grok-build` を現行モデルへ**
+- [x] **3. `grok_agent` のハードコード `--model grok-build` を現行モデルへ**
   `grok-build` はライブカタログ（`~/.grok/models_cache.json`）に存在しない stale 名（現行は `grok-4.5` / `grok-composer-2.5-fast` の2つ）。`--model grok-build` が現行サーバでどう解決されるかは未確定（alias か、default へのフォールバックか、エラーか）。`grok-4.5` への更新＋できれば引数化を依頼。
 
-- [ ] **4. `reasoning_effort` enum と実態の整合**
+- [x] **4. `reasoning_effort` enum と実態の整合**
   現状の enum は `{low, medium, high, xhigh, max}`（dist/core.js L1933/1939-1940 付近）だが実態は:
   - grok-4.5 = low/medium/high の3段のみ（xhigh/max 不在）
   - composer-2.5-fast = effort 非対応
   - codex (GPT-5.6) = low/medium/high/xhigh/max/**ultra**（ただし ultra=max 推論＋proactive 自動委譲 ON なので、既定で渡せない方が安全）
   さらに **grok の `--effort` は headless（`-p`）専用で、対話 TUI では警告の上無視される**（`~/.grok/README.md` 明記・caveat 登録済み: `grok-cli-effort-headless-…`）＝現状 grok/composer への effort 指定は実質 no-op。ツール別 enum に分離するか、grok 系では受けた値の扱い（無視される旨の返却など）を明示してほしい。
 
+## 実装決定（2026-07-11・着手時）
+
+前提の再検証: 端末実測で `~/.grok/models_cache.json` に `grok-build` 不在（`grok-4.5`=high/medium/low・`grok-composer-2.5-fast`=`supports_reasoning_effort:false`）、`~/.codex/config.toml` に `model="gpt-5.6-sol"` ピン実在、codex CLI `-m/--model` あり、を確認。src/ 側の該当は `createManagedCodexHome`（src/core.ts）・`buildAgentCmd`（src/core.ts）・agent ツール schema（src/index.ts）で dist 観測と一致。
+
+- **依頼1**: 3ツール共通で `model` 引数を追加（codex は `-m`、grok/composer は `--model` 上書き。省略時は現状どおり）。モデル名はカタログ検証しない（世代交代で腐るピンを作らない）。空文字/空白のみは起動前エラー。
+- **依頼2**: `-m`/`-c model_reasoning_effort=` の CLI 引数明示（config より優先）に加え、引数で渡された時は managed home 側 config.toml の top-level `model`/`model_reasoning_effort` 行を上書き（TOML の top-level キーはテーブルヘッダより前のみ＝先頭領域だけ書換え）。さらに「明示化」として、codex 起動応答に実効 model/effort とその出所（引数／端末config継承／CLI既定）を常に報告し、実効 effort=ultra の時は proactive 自動委譲 ON の警告を付す。
+- **依頼3**: 既定を `grok-4.5` へ更新＋`model` 引数化（composer 既定は `grok-composer-2.5-fast` のまま）。
+- **依頼4**: grok/composer への `reasoning_effort` 指定は**起動前に明示エラーで拒否**（黙って no-op の `--effort` を TUI に渡す現状を廃止。grok は headless `grok -p --effort` への誘導文つき・composer は effort 非対応の旨）。codex は従来どおり値集合を縛らず（CLI 版差）、schema 説明に ultra=max 推論＋proactive 自動委譲 ON の警告を明記。ultra は「引数で明示した時だけ渡る」＝既定で渡らない設計は現状維持。
+- 着手ゲート: F=src（公開 MCP スキーマ＋managed config 書換え）は統括直轄／A=テスト・README 更新 →（Codex 中位 `gpt-5.6-terra`, medium, `codex exec`）。
+
 ## 検証の目安
 
 - `codex_agent` に model 引数を渡して起動 → セッション内 `/status` が指定モデルを示す（端末 config のピンと無関係に）
 - `grok_agent` 起動 → `/status`（相当）が現行カタログ上のモデルを示す
 - grok/composer に effort を渡した場合の挙動がツール応答から判別できる（黙って no-op にしない）
+
+## 検証結果（2026-07-11・全4件消化）
+
+- 実起動: `codex_agent(model="gpt-5.6-terra")` → TUI に terra 表示（端末ピン sol を無視）、起動応答は `model=gpt-5.6-terra（引数） effort=low（端末config継承）`。grok 起動 → footer `Grok 4.5 (high)`。composer 起動 → Composer 表示。いずれも新 dist 直叩きで確認。
+- grok/composer への effort 指定 → session 作成前に明示エラー（headless 専用／effort 非対応の説明文つき）＝ツール応答で判別可能。
+- managed config 上書き: fake home 実物で `model` 行のみ置換・未指定 effort ピン（ultra）は継承＋警告表示・`[table]` 以降原文保持を確認。
+- 回帰テスト **183 件全 green**（+6。model 引数組み立て・effort 拒否・managed config 置換・空 model 残骸ゼロ・MCP schema）。テスト・README 更新は Codex 中位（terra×medium, codex exec）へ委譲し、統括が diff レビュー＋再実行で採用。
 
 ## 出典
 

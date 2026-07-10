@@ -64,6 +64,10 @@ test("smoke: stdout は JSON-RPC のみ / 9 ツール公開", async () => {
   assert.deepEqual(ptySend.inputSchema.properties.wait.enum, ["none", "agent_done"]);
   assert.equal(ptySend.inputSchema.properties.wait.default, "none");
   const codexAgent = toolsResp.result.tools.find((t) => t.name === "codex_agent");
+  assert.ok(
+    codexAgent.inputSchema.properties.model.anyOf?.some((v) => v.type === "string"),
+    "codex_agent model schema",
+  );
   assert.equal(codexAgent.inputSchema.properties.agent_done.type, "boolean", "codex_agent agent_done schema");
   assert.deepEqual(codexAgent.inputSchema.properties.wait.enum, ["none", "agent_done"], "codex_agent wait schema");
   assert.equal(codexAgent.inputSchema.properties.wait.default, "none", "codex_agent wait default");
@@ -75,6 +79,11 @@ test("smoke: stdout は JSON-RPC のみ / 9 ツール公開", async () => {
   );
   for (const name of ["grok_agent", "composer_agent"]) {
     const tool = toolsResp.result.tools.find((t) => t.name === name);
+    assert.ok(
+      tool.inputSchema.properties.model.anyOf?.some((v) => v.type === "string"),
+      `${name} model schema`,
+    );
+    assert.equal(tool.inputSchema.properties.reasoning_effort.enum, undefined, `${name} reasoning_effort enum は未公開`);
     assert.equal(tool.inputSchema.properties.agent_done.type, "boolean", `${name} agent_done schema`);
     assert.equal(tool.inputSchema.properties.wait, undefined, `${name} initial prompt wait は未公開`);
     assert.equal(tool.inputSchema.properties.timeout, undefined, `${name} initial prompt timeout は未公開`);

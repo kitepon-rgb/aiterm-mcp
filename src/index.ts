@@ -217,10 +217,17 @@ server.registerTool(
 
 // 対話型エージェント起動ツール（モデルごとに1つ＝ツール名/説明でどのモデルか一目で分かる）。
 // いずれも永続端末に TUI を起動し session_id を返す。以後 pty_read/pty_send で対話操作する。
+const agentModelDesc = (kind: "codex" | "grok" | "composer") =>
+  kind === "codex"
+    ? "起動モデル（例: gpt-5.6-sol / gpt-5.6-terra / gpt-5.6-luna）。省略時は端末 config／CLI 既定を継承" +
+      "（端末側のピンがそのまま効く。実効値は起動応答に明示される）"
+    : `起動モデル。省略時は ${kind === "grok" ? "grok-4.5" : "grok-composer-2.5-fast"}`;
 const agentEffortDesc = (grokLike: boolean) =>
-  "reasoning effort（思考レベル）。" +
-  (grokLike ? "low/medium/high/xhigh/max" : "low/medium/high 等") +
-  "。省略時は CLI 既定。";
+  grokLike
+    ? "指定不可（grok CLI の --effort は headless 専用で、対話 TUI では警告の上無視される。" +
+      "composer は effort 自体非対応）。指定すると起動前にエラーを返す"
+    : "reasoning effort（思考レベル）。low/medium/high/xhigh/max/ultra（CLI 版依存）。" +
+      "ultra は max 推論＋proactive 自動委譲 ON＝使用量急増注意（明示要求時のみ）。省略時は端末 config／CLI 既定。";
 function registerAgentTool(
   toolName: string,
   kind: "codex" | "grok" | "composer",
@@ -243,11 +250,10 @@ function registerAgentTool(
       description: desc,
       inputSchema: {
         prompt: z.string().nullish().describe("起動時に渡す初手プロンプト（任意）。省略で素のTUI起動"),
-        // grok/composer の effort は有限集合＝schema で拒否（session を作る前に弾く）。
+        model: z.string().nullish().describe(agentModelDesc(kind)),
+        // grok/composer の effort は対話 TUI で無効（headless 専用）＝core 側が起動前に明示エラーで拒否。
         // codex は CLI 側の値集合が版で変わるため縛らない（core 側も同方針）。
-        reasoning_effort: (grokLike ? z.enum(["low", "medium", "high", "xhigh", "max"]) : z.string())
-          .nullish()
-          .describe(agentEffortDesc(grokLike)),
+        reasoning_effort: z.string().nullish().describe(agentEffortDesc(grokLike)),
         cwd: z.string().nullish().describe("作業ディレクトリ（対象リポのルート等・任意）"),
         session_name: z.string().nullish().describe("セッション名（省略で自動採番）"),
         agent_done: z
@@ -257,10 +263,11 @@ function registerAgentTool(
         ...initialPromptWaitSchema,
       },
     },
-    async ({ prompt, reasoning_effort, cwd, session_name, agent_done, wait, timeout, screen, lines }: any) => {
+    async ({ prompt, model, reasoning_effort, cwd, session_name, agent_done, wait, timeout, screen, lines }: any) => {
       try {
         const [sid, hint] = await core.openAgentWithInitialPrompt(kind, {
           prompt: prompt ?? undefined,
+          model: model ?? undefined,
           reasoning_effort: reasoning_effort ?? undefined,
           cwd: cwd ?? undefined,
           session_name: session_name ?? undefined,
@@ -281,22 +288,23 @@ function registerAgentTool(
 registerAgentTool(
   "codex_agent",
   "codex",
-  "【Codex (OpenAI・モデルは Codex CLI の既定)】の対話エージェント TUI を永続端末に起動する。実装・レビュー・調査を対話で回す。" +
-    "起動後は pty_read で画面を読み pty_send で操作する。reasoning_effort を引数で指定可。",
+  "【Codex (OpenAI)】の対話エージェント TUI を永続端末に起動する。実装・レビュー・調査を対話で回す。" +
+    "起動後は pty_read で画面を読み pty_send で操作する。model / reasoning_effort を引数で指定可" +
+    "（省略時は端末 config／CLI 既定を継承。実効値は起動応答に明示）。",
   false,
 );
 registerAgentTool(
   "grok_agent",
   "grok",
-  "【Grok Build の Grok モデル (grok-build)】の対話エージェント TUI を永続端末に起動する。" +
-    "起動後は pty_read/pty_send で対話操作。reasoning_effort を引数で指定可。",
+  "【Grok Build の Grok モデル (既定 grok-4.5)】の対話エージェント TUI を永続端末に起動する。" +
+    "起動後は pty_read/pty_send で対話操作。model を引数で指定可。reasoning_effort は対話 TUI 非対応（指定はエラー）。",
   true,
 );
 registerAgentTool(
   "composer_agent",
   "composer",
-  "【Grok Build の Composer モデル (grok-composer-2.5-fast)】の対話エージェント TUI を永続端末に起動する。" +
-    "起動後は pty_read/pty_send で対話操作。reasoning_effort を引数で指定可。",
+  "【Grok Build の Composer モデル (既定 grok-composer-2.5-fast)】の対話エージェント TUI を永続端末に起動する。" +
+    "起動後は pty_read/pty_send で対話操作。model を引数で指定可。reasoning_effort は非対応（指定はエラー）。",
   true,
 );
 
