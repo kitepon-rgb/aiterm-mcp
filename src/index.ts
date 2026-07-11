@@ -76,9 +76,13 @@ server.registerTool(
         .default(false)
         .describe(
           "完了 sentinel(終了コード付き)で包む。pty_read(wait:true) が until 無しでも自動検出して" +
-            "完了確定する（ネスト中や非シェル前面でも効く確実な完了検出。手で until を組む必要なし）",
+            "完了確定する（ネスト中や非シェル前面でも効く確実な完了検出。手で until を組む必要なし）。" +
+            " enter:false と併用すると sentinel が実行されず完了検出が発火しない（送信後に pty_key(\"Enter\") で実行される）。",
         ),
-      force: z.boolean().default(false).describe("破壊的コマンドゲートを越える"),
+      force: z
+        .boolean()
+        .default(false)
+        .describe("破壊的コマンドゲートを越える。agent 起動時 prompt の完了待ち中の混入防止ガードも同時に解除する"),
       rtk: z.boolean().default(false).describe("既知コマンドを rtk 形へ委譲して送る（rtk 不在なら素通し）"),
       raw: z.boolean().default(false).describe("送信前サニタイズを無効化"),
     },
@@ -146,7 +150,11 @@ server.registerTool(
         // 下端は負値を 0 にクランプする（"-3:5" が負 slice にならないように・C12）。
         const loN = Math.max(0, parseInt(lo, 10) || 0);
         const hiN = hi ? parseInt(hi, 10) : NaN;
-        range = [loN, Number.isNaN(hiN) || hiN < 0 ? null : hiN];
+        const upper = Number.isNaN(hiN) || hiN < 0 ? null : hiN;
+        if (upper !== null && upper < loN) {
+          throw new Error(`line_range ${JSON.stringify(line_range)} が不正です: 上端が下端より小さい`);
+        }
+        range = [loN, upper];
       }
       const out = await core.readOutput(session_id, {
         wait,
@@ -203,7 +211,7 @@ server.registerTool(
 server.registerTool(
   "pty_list",
   {
-    description: "握っているセッション一覧（名前 / 現在の前面コマンド / attach 状態 / サイズ）。",
+    description: "握っているセッション一覧（名前 / 現在の前面コマンド / attach 状態 / サイズ / agent 情報）。",
     inputSchema: {},
   },
   async () => {

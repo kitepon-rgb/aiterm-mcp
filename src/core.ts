@@ -965,7 +965,25 @@ export function listSessions(): string {
     "-F",
     "#{session_name}\t#{pane_current_command}\t#{?session_attached,attached,detached}\t#{window_width}x#{window_height}",
   );
-  if (r.code === 0 && r.stdout.trim()) return r.stdout.replace(/\s+$/, "");
+  if (r.code === 0 && r.stdout.trim()) {
+    return r.stdout
+      .replace(/\s+$/, "")
+      .split("\n")
+      .map((line) => {
+        const name = line.split("\t", 1)[0];
+        const meta = tryLoadAgentMetadata(name);
+        if (!meta) return line;
+        const agent = [
+          `agent=${meta.kind}`,
+          "agent_done=true",
+          meta.vendor_session_id ? `vendor_session_id=${meta.vendor_session_id}` : null,
+        ]
+          .filter(Boolean)
+          .join(" ");
+        return `${line}\t${agent}`;
+      })
+      .join("\n");
+  }
   return "(セッション無し)";
 }
 
@@ -1223,8 +1241,8 @@ function applyCodexConfigOverrides(
   let firstTable = rows.findIndex((l) => /^\s*\[/.test(l));
   if (firstTable === -1) firstTable = rows.length;
   const head = rows.slice(0, firstTable).filter((l) => {
-    if (overrides.model && /^\s*model\s*=/.test(l)) return false;
-    if (overrides.effort && /^\s*model_reasoning_effort\s*=/.test(l)) return false;
+    if (overrides.model && /^\s*(?:"model"|'model'|model)\s*=/.test(l)) return false;
+    if (overrides.effort && /^\s*(?:"model_reasoning_effort"|'model_reasoning_effort'|model_reasoning_effort)\s*=/.test(l)) return false;
     return true;
   });
   let out = [...lines, ...head, ...rows.slice(firstTable)].join("\n");
@@ -1248,7 +1266,7 @@ function readCodexConfigPins(configPath: string): { model: CodexConfigPin; effor
   if (firstTable === -1) firstTable = rows.length;
   const pick = (key: string): CodexConfigPin => {
     for (const l of rows.slice(0, firstTable)) {
-      const m = l.match(new RegExp(`^\\s*${key}\\s*=\\s*(.*)$`));
+      const m = l.match(new RegExp(`^\\s*(?:"${key}"|'${key}'|${key})\\s*=\\s*(.*)$`));
       if (m) {
         const v = m[1].trim().match(/^"([^"\\]*)"\s*(?:#.*)?$/);
         return { present: true, value: v ? v[1] : null };
@@ -1257,6 +1275,34 @@ function readCodexConfigPins(configPath: string): { model: CodexConfigPin; effor
     return { present: false, value: null };
   };
   return { model: pick("model"), effort: pick("model_reasoning_effort") };
+}
+
+function managedCodexConfigSummary(configPath: string, hookTrustBypass: boolean): string {
+  let body: string;
+  try {
+    body = fs.readFileSync(configPath, "utf8");
+  } catch {
+    return "";
+  }
+  const rows = body.split(/\r?\n/);
+  const mcpServers = rows.filter((line) => /^\s*\[mcp_servers\./.test(line)).length;
+  const firstTable = rows.findIndex((line) => /^\s*\[/.test(line));
+  const topLevel = rows.slice(0, firstTable === -1 ? rows.length : firstTable);
+  const valueOf = (key: string): string | null => {
+    const row = topLevel.find((line) => new RegExp(`^\\s*(?:"${key}"|'${key}'|${key})\\s*=\\s*(.+?)\\s*(?:#.*)?$`).test(line));
+    if (!row) return null;
+    const raw = row.match(/=\s*(.+?)(?:\s+#.*)?$/)?.[1].trim() ?? null;
+    if (!raw) return null;
+    const quoted = raw.match(/^(?:"([^"\\]*)"|'([^'\\]*)')$/);
+    return quoted ? quoted[1] ?? quoted[2] : raw;
+  };
+  const bits = [`mcp_servers ${mcpServers} 個継承`];
+  const approvalPolicy = valueOf("approval_policy");
+  const sandboxMode = valueOf("sandbox_mode");
+  if (approvalPolicy) bits.push(`approval_policy=${approvalPolicy}`);
+  if (sandboxMode) bits.push(`sandbox_mode=${sandboxMode}`);
+  if (hookTrustBypass) bits.push("hook trust bypass 有効");
+  return `managed config: ${bits.join(" / ")}`;
 }
 
 function createManagedCodexHome(
@@ -2367,12 +2413,13 @@ function buildAgentLaunchNote(
           : "端末config継承（値未解析）"
         : "CLI既定";
   const effectiveEffort = effort ?? (pins.effort.present ? pins.effort.value : null);
-  return (
+  const launch =
     `起動設定: model=${describePin(model, pins.model)} effort=${describePin(effort, pins.effort)}。` +
     (effectiveEffort === "ultra"
       ? "⚠ effort=ultra は max 推論＋proactive 自動委譲 ON（子エージェント自動生成・使用量急増に注意）。"
-      : "")
-  );
+      : "");
+  const summary = meta?.kind === "codex" && meta.codex_home ? managedCodexConfigSummary(configPath, true) : "";
+  return summary ? `${launch}\n${summary}\n` : launch;
 }
 
 export function openAgent(

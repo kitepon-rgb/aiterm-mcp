@@ -20,6 +20,9 @@ test("smoke: stdout は JSON-RPC のみ / 9 ツール公開", async () => {
     { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "smoke", version: "0" } } },
     { jsonrpc: "2.0", method: "notifications/initialized" },
     { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} },
+    { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "no_such_tool", arguments: {} } },
+    { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "pty_read", arguments: {} } },
+    { jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "pty_read", arguments: { session_id: "unused", line_range: "5:3" } } },
   ];
   child.stdin.write(msgs.map((m) => JSON.stringify(m)).join("\n") + "\n");
 
@@ -33,7 +36,7 @@ test("smoke: stdout は JSON-RPC のみ / 9 ツール公開", async () => {
       reject(new Error(`smoke: 15s 以内に tools/list 応答が来ない。stdout=${JSON.stringify(out)} stderr=${JSON.stringify(errOut)}`));
     }, 15000);
     child.stdout.on("data", () => {
-      if (out.includes('"id":2')) { clearTimeout(timer); try { child.kill(); } catch {} resolve(); }
+      if (out.includes('"id":5')) { clearTimeout(timer); try { child.kill(); } catch {} resolve(); }
     });
     child.on("error", (e) => { clearTimeout(timer); reject(e); });
   });
@@ -41,10 +44,12 @@ test("smoke: stdout は JSON-RPC のみ / 9 ツール公開", async () => {
   const lines = out.split("\n").filter((l) => l.trim());
   assert.ok(lines.length >= 1, `stdout に応答が無い: ${JSON.stringify(out)}`);
   let toolsResp = null;
+  const responses = new Map();
   for (const ln of lines) {
     let obj;
     try { obj = JSON.parse(ln); } catch { assert.fail(`stdout に非 JSON-RPC 行: ${JSON.stringify(ln)}`); }
     assert.equal(obj.jsonrpc, "2.0", `JSON-RPC 2.0 でない: ${ln}`);
+    responses.set(obj.id, obj);
     if (obj.id === 2) toolsResp = obj;
   }
   assert.ok(toolsResp, "tools/list 応答が無い");
@@ -90,4 +95,9 @@ test("smoke: stdout は JSON-RPC のみ / 9 ツール公開", async () => {
     assert.equal(tool.inputSchema.properties.screen, undefined, `${name} initial prompt screen は未公開`);
     assert.equal(tool.inputSchema.properties.lines, undefined, `${name} initial prompt lines は未公開`);
   }
+  assert.equal(responses.get(3)?.result?.isError, true, "未知 tool は tool error 応答を返す");
+  assert.match(responses.get(3)?.result?.content?.[0]?.text ?? "", /Tool no_such_tool not found/);
+  assert.equal(responses.get(4)?.result?.isError, true, "不正引数は isError:true");
+  assert.equal(responses.get(5)?.result?.isError, true, "逆転 line_range は isError:true");
+  assert.match(responses.get(5)?.result?.content?.[0]?.text ?? "", /上端が下端より小さい/);
 });

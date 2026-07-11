@@ -31,7 +31,11 @@ const agentStateDir = () => path.join(process.env.TMPDIR, `aiterm-mcp-${process.
 function makeFakeCodexHome() {
   const dir = fs.mkdtempSync(path.join(process.env.TMPDIR, "fake-codex-home-"));
   fs.writeFileSync(path.join(dir, "auth.json"), "{}\n", { mode: 0o600 });
-  fs.writeFileSync(path.join(dir, "config.toml"), 'model = "test-model"\n', { mode: 0o600 });
+  fs.writeFileSync(
+    path.join(dir, "config.toml"),
+    'model = "test-model"\napproval_policy = "never"\nsandbox_mode = "danger-full-access"\n\n[mcp_servers.test]\ncommand = "test"\n',
+    { mode: 0o600 },
+  );
   fs.writeFileSync(path.join(dir, "history.jsonl"), "{}\n", { mode: 0o600 });
   fs.mkdirSync(path.join(dir, "sessions"), { mode: 0o700 });
   return dir;
@@ -242,6 +246,24 @@ test("openAgent: 前段検証で落ちたら session を残さない（残骸ゼ
   assert.equal(core.listSessions(), before, "失敗した openAgent が session を残した");
 });
 
+test("listSessions: agent 行だけに agent 情報を追加し、通常 session 行は不変", { skip: skipAgentDone }, async () => {
+  await withFakeCodexHome(async () => {
+    const plain = "list_plain";
+    const agent = "list_agent";
+    core.openSession(plain);
+    const plainBefore = core.listSessions().split("\n").find((line) => line.startsWith(`${plain}\t`));
+    const [sid] = core.openAgent("codex", { session_name: agent, agent_done: true });
+    try {
+      const rows = core.listSessions().split("\n");
+      assert.equal(rows.find((line) => line.startsWith(`${plain}\t`)), plainBefore, "通常 session 行は変更しない");
+      assert.match(rows.find((line) => line.startsWith(`${sid}\t`)) ?? "", /\tagent=codex agent_done=true$/);
+    } finally {
+      core.closeSession(sid);
+      core.closeSession(plain);
+    }
+  });
+});
+
 // A-test: grok/composer 経路の組立コマンドを実検証（従来は codex 経路のみで未カバー）。
 // 偽 bin を /bin/echo にすると起動コマンドがそのまま echo で出力され、組立内容を観測できる。
 test("openAgent codex: -c model_reasoning_effort=<effort> を組み立てる", { skip }, async () => {
@@ -305,6 +327,7 @@ test("openAgent codex agent_done: managed CODEX_HOME と Stop hook を組み立�
       assert.equal(fs.existsSync(path.join(meta.codex_home, "history.jsonl")), false);
       assert.equal(fs.existsSync(path.join(meta.codex_home, "sessions")), false);
       assert.match(hint, /起動設定: model=test-model（端末config継承） effort=high（引数）/);
+      assert.match(hint, /managed config: mcp_servers 1 個継承 \/ approval_policy=never \/ sandbox_mode=danger-full-access \/ hook trust bypass 有効/);
 
       const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
       assert.match(out, /--dangerously-bypass-hook-trust/, `codex managed command: ${out}`);
@@ -1322,6 +1345,30 @@ test("openAgent codex agent_done: model と effort の両引数で managed confi
       assert.match(config, /keep_me = true/);
       assert.match(config, /\[mcp_servers\.x\]\ncommand = "y"/);
       assert.doesNotMatch(config, /"pinned"|"ultra"/);
+    } finally {
+      core.closeSession(sid);
+    }
+  });
+});
+
+test("openAgent codex agent_done: quoted top-level pin を重複なく上書きする", { skip: skipAgentDone }, async () => {
+  await withFakeCodexHome(async (fakeHome) => {
+    fs.writeFileSync(
+      path.join(fakeHome, "config.toml"),
+      '"model" = "pinned"\n\'model_reasoning_effort\' = "ultra"\nkeep_me = true\n',
+      { mode: 0o600 },
+    );
+    const [sid, hint] = core.openAgent("codex", {
+      model: "gpt-5.6-terra",
+      reasoning_effort: "high",
+      agent_done: true,
+    });
+    try {
+      const config = fs.readFileSync(path.join(readAgentMeta(sid).codex_home, "config.toml"), "utf8");
+      assert.match(config, /^model = "gpt-5\.6-terra"\nmodel_reasoning_effort = "high"\n/);
+      assert.doesNotMatch(config, /["']model(?:_reasoning_effort)?["']\s*=/);
+      assert.match(config, /keep_me = true/);
+      assert.match(hint, /model=gpt-5\.6-terra（引数） effort=high（引数）/);
     } finally {
       core.closeSession(sid);
     }
