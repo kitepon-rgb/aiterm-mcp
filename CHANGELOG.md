@@ -63,6 +63,15 @@ rejection ledger: `docs/11_audit-2026-07-11.md`; transcript-read design:
   re-checks the tripwire against the post-`rtk`-rewrite text before sending.
 - `pty_read` with an inverted `line_range` (`"5:3"`) is now an explicit error
   instead of a silent empty result.
+- Quiescence detection no longer mis-attributes a completion when output
+  arrives during the foreground-shell probe: the size samples are from the
+  past while the `pane_current_command` check is now, and output landing in
+  that gap used to be returned as `via quiescent` even though a `mark`
+  sentinel (or `until` match) was already in the log. The stability window is
+  now re-validated (re-stat) after the probe; if the log grew, the loop
+  re-runs and the sentinel/`until` claims the completion. Found by CI on slow
+  macOS runners (the B1 regression test), where the `sleep 0.6` margin over
+  the 0.5 s quiescence window was routinely blown.
 - The `force` / `mark` argument descriptions now state their full effect
   (`force` also lifts the initial-prompt mixing guard; `mark` needs `enter` to
   actually run the sentinel). Codex managed-config pin overrides now also match

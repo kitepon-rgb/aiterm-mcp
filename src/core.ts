@@ -628,16 +628,22 @@ async function waitCompletion(
       stable++;
       if (stable >= STABLE_POLLS) {
         const fg = paneCurrentCommand(name);
-        if (SHELLS.has(fg)) {
+        // サイズ標本は過去・fg は今、の時間差 race を閉じる: fg 取得（サブプロセス spawn）の間に
+        // 出力が伸びていたら「静止」は不成立として周回をやり直す。閉じないと、コマンド完了直後の
+        // 出力＋シェル復帰が quiescent に誤帰属され、mark/until が帰属を取り損ねる
+        // （macOS CI 実測: sleep 0.6 の mark 送信が via quiescent に化けた・B1 flake の根因）。
+        // 次周回の先頭で新増分に対する mark/until 判定が走る。
+        if (safeStatSize(logpath(name)) !== size) {
+          stable = 0;
+        } else if (SHELLS.has(fg)) {
           if (isWin) await settleWinLog(name);
           return [true, "quiescent"]; // 出力静止 ∧ シェル復帰 ＝ 確証つき完了
-        }
-        // ネスト中（前面が ssh/docker/REPL 等でシェル集合外）は quiescence の「シェル復帰」条件を
-        // 原理的に満たせない。until も mark も無ければこれ以上待っても確証は増えない（until/dead/
-        // quiescent/mark のいずれも発火し得ない）ので、出力静止時点で「未確定」のまま早期返却する。
-        // markActive のときは sentinel を待つべく早期返却せず、非シェル前面（sleep 等）でも待ち続ける。
-        // fg==="" は前面コマンド取得失敗＝ネスト断定不可なので早期返却せず従来どおり timeout まで待つ。
-        if (!until && !markActive && fg !== "") {
+        } else if (!until && !markActive && fg !== "") {
+          // ネスト中（前面が ssh/docker/REPL 等でシェル集合外）は quiescence の「シェル復帰」条件を
+          // 原理的に満たせない。until も mark も無ければこれ以上待っても確証は増えない（until/dead/
+          // quiescent/mark のいずれも発火し得ない）ので、出力静止時点で「未確定」のまま早期返却する。
+          // markActive のときは sentinel を待つべく早期返却せず、非シェル前面（sleep 等）でも待ち続ける。
+          // fg==="" は前面コマンド取得失敗＝ネスト断定不可なので早期返却せず従来どおり timeout まで待つ。
           if (isWin) await settleWinLog(name);
           return [false, "nested"];
         }
