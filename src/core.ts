@@ -1899,6 +1899,158 @@ function latestAgentDoneEvent(meta: AgentMetadata): AgentDoneEvent | null {
   return latest;
 }
 
+function findLatestCodexTranscript(codexHome: string, vendorSessionId: string): string | null {
+  const sessionsDir = path.join(codexHome, "sessions");
+  let latestFile: string | null = null;
+  let latestMtime = -Infinity;
+  const visit = (dir: string): void => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const file = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        visit(file);
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.startsWith("rollout-") || !entry.name.endsWith(".jsonl") || !entry.name.includes(vendorSessionId)) continue;
+      try {
+        const mtimeMs = fs.statSync(file).mtimeMs;
+        if (mtimeMs > latestMtime) {
+          latestFile = file;
+          latestMtime = mtimeMs;
+        }
+      } catch {
+        // 探索中に消えた transcript は候補にしない。候補が無ければ明示エラーにする。
+      }
+    }
+  };
+  visit(sessionsDir);
+  return latestFile;
+}
+
+function transcriptUnavailable(): never {
+  throw new AitermError("transcript がまだありません。ターン完了後に再取得してください。", 2);
+}
+
+function transcriptNotFound(vendor: AgentKind): never {
+  throw new AitermError(
+    `最終 assistant メッセージを特定できませんでした（vendor=${vendor}）。screen で確認してください。`,
+    2,
+  );
+}
+
+function readTranscriptLines(file: string): string[] {
+  try {
+    return fs.readFileSync(file, "utf8").split("\n");
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") transcriptUnavailable();
+    throw new AitermError(`transcript を読めません: ${(e as Error).message}`, 2);
+  }
+}
+
+/** agent vendor の構造化 transcript から直近完了ターンの最終回答を読む。 */
+export async function readAgentTranscript(
+  name: string,
+  o: { lines?: number | null } = {},
+): Promise<string> {
+  const meta = loadAgentMetadata(name);
+  if (!meta.vendor_session_id) {
+    throw new AitermError(
+      `agent session '${name}' はまだターンが完了していません。agent_done 完了後に再取得してください。`,
+      2,
+    );
+  }
+
+  const done = latestAgentDoneEvent(meta);
+  const turnId = done?.turn_id ?? null;
+  let text = "";
+
+  if (meta.kind === "codex") {
+    if (!meta.codex_home) transcriptUnavailable();
+    const transcript = findLatestCodexTranscript(meta.codex_home, meta.vendor_session_id);
+    if (!transcript) transcriptUnavailable();
+    const lines = readTranscriptLines(transcript);
+    const matching: string[] = [];
+    let finalAnswer = "";
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      let record: any;
+      try {
+        record = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      const payload = record?.payload;
+      if (
+        record?.type === "response_item" &&
+        payload?.type === "message" &&
+        payload?.role === "assistant" &&
+        payload?.internal_chat_message_metadata_passthrough?.turn_id === turnId &&
+        Array.isArray(payload?.content)
+      ) {
+        for (const item of payload.content) {
+          if (item?.type === "output_text" && typeof item.text === "string") matching.push(item.text);
+        }
+      }
+      if (
+        record?.type === "event_msg" &&
+        payload?.type === "agent_message" &&
+        payload?.phase === "final_answer" &&
+        typeof payload?.message === "string"
+      ) {
+        finalAnswer = payload.message;
+      }
+    }
+    text = matching.join("\n") || finalAnswer;
+  } else {
+    if (!meta.grok_home) transcriptUnavailable();
+    // cwd 未指定で起動した TUI はサーバープロセスの cwd を継承する。metadata に null が残る既存
+    // launch との互換のため、その実際の起動 cwd を path 導出に使う（launch 側は変更しない）。
+    const cwd = meta.cwd ?? process.cwd();
+    const transcript = path.join(
+      meta.grok_home,
+      "sessions",
+      encodeURIComponent(cwd),
+      meta.vendor_session_id,
+      "chat_history.jsonl",
+    );
+    const lines = readTranscriptLines(transcript);
+    let lastUser = -1;
+    const records: any[] = [];
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const record = JSON.parse(line);
+        records.push(record);
+        if (record?.type === "user" && !("synthetic_reason" in record)) lastUser = records.length - 1;
+      } catch {
+        // 外部 transcript の壊れた1行は残りの完結行を読む妨げにしない。
+      }
+    }
+    text = records
+      .slice(lastUser + 1)
+      .filter((record) => record?.type === "assistant" && typeof record?.content === "string")
+      .map((record) => record.content)
+      .join("\n");
+  }
+
+  if (!text.trim()) transcriptNotFound(meta.kind);
+  if (o.lines != null) text = text.split("\n").slice(-o.lines).join("\n");
+  const rawChars = text.length;
+  const [body, outputMeta] = reduceOutput(text, name, true);
+  const transcriptMeta = [
+    "agent_transcript",
+    `vendor=${meta.kind}`,
+    `turn_id=${turnId ?? "unknown"}`,
+    `raw_chars=${rawChars}`,
+  ].join(" ");
+  return `${body}\n${outputMeta} [${transcriptMeta}]`;
+}
+
 function inferAgentFrontend(name: string, meta: AgentMetadata, screen?: string): string {
   const fg = paneCurrentCommand(name);
   const view = screen ?? captureScreen(name, AGENT_TUI_READY_LINES);

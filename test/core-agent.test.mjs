@@ -107,6 +107,38 @@ function readAgentMeta(sid) {
   return JSON.parse(fs.readFileSync(path.join(agentStateDir(), metaFiles[0]), "utf8"));
 }
 
+function writeAgentMeta(sid, meta) {
+  const metaFiles = fs.readdirSync(agentStateDir()).filter((f) => f.startsWith(`${sid}.`) && f.endsWith(".agent.json"));
+  assert.equal(metaFiles.length, 1);
+  fs.writeFileSync(path.join(agentStateDir(), metaFiles[0]), JSON.stringify(meta) + "\n", { mode: 0o600 });
+}
+
+function bindTranscriptTurn(sid, vendorSessionId, turnId) {
+  const meta = readAgentMeta(sid);
+  meta.vendor_session_id = vendorSessionId;
+  writeAgentMeta(sid, meta);
+  fs.appendFileSync(meta.event_file, agentDoneLine(meta, { vendor_session_id: vendorSessionId, turn_id: turnId }));
+  return meta;
+}
+
+function writeCodexTranscript(meta, vendorSessionId, records) {
+  const dir = path.join(meta.codex_home, "sessions", "2026", "07", "11");
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const file = path.join(dir, `rollout-2026-07-11T00-00-00-${vendorSessionId}.jsonl`);
+  fs.writeFileSync(file, records.map((record) => (typeof record === "string" ? record : JSON.stringify(record))).join("\n") + "\n", {
+    mode: 0o600,
+  });
+  return file;
+}
+
+function writeGrokTranscript(meta, vendorSessionId, records) {
+  const dir = path.join(meta.grok_home, "sessions", encodeURIComponent(meta.cwd), vendorSessionId);
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(path.join(dir, "chat_history.jsonl"), records.map((record) => JSON.stringify(record)).join("\n") + "\n", {
+    mode: 0o600,
+  });
+}
+
 function sessionLogPath(sid) {
   return path.join(process.env.TMPDIR, "claude-tmux-sockets", `${sid}.log`);
 }
@@ -1407,4 +1439,152 @@ test("openAgent: 空文字 cwd は明示エラー（A6）", () => {
 });
 test("openAgent: ~ 始まりの cwd は展開されない旨の明示エラー（A6）", () => {
   assert.throws(() => core.openAgent("codex", { cwd: "~/repo" }), (e) => e.code === 2 && /~/.test(e.message));
+});
+
+test("readAgentTranscript: Codex の単一 output_text を直近完了 turn から回収する", { skip: skipAgentDone }, async () => {
+  await withFakeCodexHome(async () => {
+    const [sid] = core.openAgent("codex", { agent_done: true });
+    try {
+      const vendorSessionId = "transcript-codex-single";
+      const turnId = "transcript-turn-single";
+      const meta = bindTranscriptTurn(sid, vendorSessionId, turnId);
+      writeCodexTranscript(meta, vendorSessionId, [
+        "{ malformed jsonl line",
+        {
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "assistant",
+            content: [{ type: "output_text", text: "Codex single answer" }],
+            internal_chat_message_metadata_passthrough: { turn_id: turnId },
+          },
+        },
+      ]);
+      const out = await core.readAgentTranscript(sid);
+      assert.match(out, /Codex single answer/);
+      assert.match(out, /vendor=codex turn_id=transcript-turn-single raw_chars=19/);
+    } finally {
+      core.closeSession(sid);
+    }
+  });
+});
+
+test("readAgentTranscript: Codex の複数 assistant block を join し lines は末尾へ絞る", { skip: skipAgentDone }, async () => {
+  await withFakeCodexHome(async () => {
+    const [sid] = core.openAgent("codex", { agent_done: true });
+    try {
+      const vendorSessionId = "transcript-codex-blocks";
+      const turnId = "transcript-turn-blocks";
+      const meta = bindTranscriptTurn(sid, vendorSessionId, turnId);
+      writeCodexTranscript(meta, vendorSessionId, [
+        {
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "assistant",
+            content: [{ type: "output_text", text: "first\nsecond" }],
+            internal_chat_message_metadata_passthrough: { turn_id: turnId },
+          },
+        },
+        {
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "assistant",
+            content: [{ type: "output_text", text: "third" }],
+            internal_chat_message_metadata_passthrough: { turn_id: turnId },
+          },
+        },
+      ]);
+      const out = await core.readAgentTranscript(sid, { lines: 2 });
+      assert.doesNotMatch(out, /first/);
+      assert.match(out, /second\nthird/);
+      assert.match(out, /raw_chars=12/);
+    } finally {
+      core.closeSession(sid);
+    }
+  });
+});
+
+test("readAgentTranscript: Grok は最後の実 user 入力以降の assistant 群だけを回収する", { skip: skipAgentDone }, async () => {
+  const savedBin = process.env.GROK_BIN;
+  process.env.GROK_BIN = "/bin/echo";
+  try {
+    await withFakeGrokHome(async () => {
+      const [sid] = core.openAgent("grok", { agent_done: true, cwd: process.cwd() });
+      try {
+        const vendorSessionId = "transcript-grok-latest";
+        const meta = bindTranscriptTurn(sid, vendorSessionId, "transcript-turn-grok");
+        writeGrokTranscript(meta, vendorSessionId, [
+          { type: "user", content: "old question" },
+          { type: "assistant", content: "old answer" },
+          { type: "user", content: "synthetic", synthetic_reason: "resume" },
+          { type: "assistant", content: "still old answer" },
+          { type: "user", content: "latest question" },
+          { type: "reasoning", content: "thinking" },
+          { type: "assistant", content: "latest first" },
+          { type: "assistant", content: "latest second" },
+        ]);
+        const out = await core.readAgentTranscript(sid);
+        assert.doesNotMatch(out, /old answer|still old answer/);
+        assert.match(out, /latest first\nlatest second/);
+        assert.match(out, /vendor=grok turn_id=transcript-turn-grok/);
+      } finally {
+        core.closeSession(sid);
+      }
+    });
+  } finally {
+    if (savedBin === undefined) delete process.env.GROK_BIN;
+    else process.env.GROK_BIN = savedBin;
+  }
+});
+
+test("readAgentTranscript: 非 agent session は既存の明示エラーを返す", async () => {
+  await assert.rejects(
+    () => core.readAgentTranscript("not_an_agent_transcript"),
+    (e) => e.code === 2 && /agent_done 管理セッションではありません/.test(e.message),
+  );
+});
+
+test("readAgentTranscript: transcript 不在は明示エラーにする", { skip: skipAgentDone }, async () => {
+  await withFakeCodexHome(async () => {
+    const [sid] = core.openAgent("codex", { agent_done: true });
+    try {
+      bindTranscriptTurn(sid, "transcript-missing", "transcript-turn-missing");
+      await assert.rejects(
+        () => core.readAgentTranscript(sid),
+        (e) => e.code === 2 && /transcript がまだありません/.test(e.message),
+      );
+    } finally {
+      core.closeSession(sid);
+    }
+  });
+});
+
+test("readAgentTranscript: 巨大回答は既存 reduceOutput の行数 bound を通す", { skip: skipAgentDone }, async () => {
+  await withFakeCodexHome(async () => {
+    const [sid] = core.openAgent("codex", { agent_done: true });
+    try {
+      const vendorSessionId = "transcript-codex-large";
+      const turnId = "transcript-turn-large";
+      const meta = bindTranscriptTurn(sid, vendorSessionId, turnId);
+      const answer = Array.from({ length: 70 }, (_, i) => `line-${i + 1}`).join("\n");
+      writeCodexTranscript(meta, vendorSessionId, [
+        {
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "assistant",
+            content: [{ type: "output_text", text: answer }],
+            internal_chat_message_metadata_passthrough: { turn_id: turnId },
+          },
+        },
+      ]);
+      const out = await core.readAgentTranscript(sid);
+      assert.match(out, /〈20 行省略。全文は full=true、範囲は line_range="A:B"〉/);
+      assert.match(out, /raw_chars=550/);
+    } finally {
+      core.closeSession(sid);
+    }
+  });
 });

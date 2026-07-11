@@ -115,7 +115,9 @@ server.registerTool(
   {
     description:
       "セッションの出力をトークン削減して読む（既定は前回読取位置からの増分）。" +
-      "削減: 制御文字除去 / 反復圧縮 / head+tail 折りたたみ＋復元ヒント＋メタ併記。",
+      "削減: 制御文字除去 / 反復圧縮 / head+tail 折りたたみ＋復元ヒント＋メタ併記。" +
+      "agent_transcript:true は agent session の直近完了ターンの最終 assistant メッセージを vendor transcript から平文で返す。" +
+      "長い回答が screen tail で切れた時の回収用。",
     inputSchema: {
       session_id: z.string(),
       wait: z
@@ -137,10 +139,20 @@ server.registerTool(
       line_range: z.string().nullish().describe('全文からの行範囲 "A:B"'),
       raw: z.boolean().default(false).describe("削減せず生テキスト"),
       rtk: z.boolean().default(false).describe("直前コマンド別の自前 reducer(git/grep/pytest 等)で縮約"),
+      agent_transcript: z
+        .boolean()
+        .default(false)
+        .describe("agent session の直近完了ターンの最終 assistant メッセージを vendor transcript から平文で返す。長い回答が screen tail で切れた時の回収用"),
     },
   },
-  async ({ session_id, wait, until, until_regex, timeout, screen, full, lines, line_range, raw, rtk }) => {
+  async ({ session_id, wait, until, until_regex, timeout, screen, full, lines, line_range, raw, rtk, agent_transcript }) => {
     try {
+      if (agent_transcript) {
+        if (screen || full || rtk || wait || line_range != null) {
+          throw new Error("agent_transcript:true は screen / full / rtk / line_range / wait と併用できません。lines のみ指定できます。");
+        }
+        return ok(await core.readAgentTranscript(session_id, { lines: lines ?? null }));
+      }
       let range: [number, number | null] | null = null;
       if (line_range) {
         const idx = line_range.indexOf(":");
