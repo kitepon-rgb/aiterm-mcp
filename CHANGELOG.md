@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-07-11
+
+Hardening sweep that clears the audit's remaining low-priority notes
+(`docs/11` section C — now fully consumed). Regression suite 203 → 205.
+
+### Fixed
+- Stop hooks now check the `writeSync` return value when appending an event
+  line; a short write (e.g. ENOSPC) is truncated back to the pre-write size
+  and reported, so a fragment can never corrupt the next event line.
+- `latestAgentDoneEvent` no longer goes silently blind when the events file
+  exceeds 1 MB: it now reads a bounded 64 KB tail (dropping the first partial
+  line), so `agent_event_seen` / `last_turn_id` metadata stays live on
+  long-lived agent sessions — and mid-size files are read more cheaply than
+  before (the old path read the whole file up to 1 MB on every read).
+- Non-agent sessions no longer pay the agent-metadata directory probe on
+  every `pty_read`: a 2-second in-process negative cache (absence-only,
+  read-suffix path only, invalidated on `openAgent`/`closeSession`/`killAll`)
+  skips the redundant filesystem work.
+
 ## [0.12.0] - 2026-07-11
 
 Full-repo adversarial audit (multi-agent find → adversarial refutation → live

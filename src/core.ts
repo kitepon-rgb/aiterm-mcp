@@ -58,6 +58,8 @@ const AGENT_DONE_SCREEN_SETTLE_MAX_POLLS = 5;
 const AGENT_DONE_SCREEN_SETTLE_MIN_SAMPLES = 3;
 const AGENT_SUBMIT_DELAY_MS = 250;
 const AGENT_EVENT_MAX_BYTES = 1024 * 1024;
+const AGENT_EVENT_TAIL_BYTES = 64 * 1024;
+const AGENT_METADATA_NEGATIVE_CACHE_TTL_MS = 2_000;
 const AGENT_TUI_READY_TIMEOUT_MS = 30_000;
 const AGENT_TUI_READY_POLL_MS = 500;
 const AGENT_TUI_READY_LINES = 45;
@@ -337,6 +339,7 @@ function existingAgentsDir(): string | null {
 
 function cleanupAgentState(name: string): void {
   assertSessionName(name);
+  agentMetadataNegativeCache.delete(name);
   const dir = existingAgentsDir();
   if (!dir) return;
   const prefix = `${name}.`;
@@ -1074,6 +1077,7 @@ export function killAll(): string {
       /* agent state dir 不在等は無視 */
     }
   }
+  agentMetadataNegativeCache.clear();
   return "killed all sessions on this socket";
 }
 
@@ -1141,6 +1145,7 @@ type AgentLauncherWait = "none" | "agent_done";
 
 const DEFAULT_AGENT_DONE_TIMEOUT = 600;
 const agentWaitLocks = new Set<string>();
+const agentMetadataNegativeCache = new Map<string, number>();
 
 function normalizeAgentLauncherWait(v: unknown): AgentLauncherWait {
   if (v == null || v === "none") return "none";
@@ -1894,8 +1899,14 @@ function tryLoadAgentMetadata(name: string): AgentMetadata | null {
 
 function latestAgentDoneEvent(meta: AgentMetadata): AgentDoneEvent | null {
   const size = safeStatSize(meta.event_file);
-  if (size === 0 || size > AGENT_EVENT_MAX_BYTES) return null;
-  const text = readFileRange(meta.event_file, 0, size).toString("utf8");
+  if (size === 0) return null;
+  const isTailRead = size > AGENT_EVENT_TAIL_BYTES;
+  let text = readFileRange(meta.event_file, isTailRead ? size - AGENT_EVENT_TAIL_BYTES : 0, size).toString("utf8");
+  if (isTailRead) {
+    const firstNewline = text.indexOf("\n");
+    if (firstNewline === -1) return null;
+    text = text.slice(firstNewline + 1);
+  }
   let latest: AgentDoneEvent | null = null;
   for (const line of text.split("\n")) {
     if (!line.trim() || Buffer.byteLength(line, "utf8") > 64 * 1024) continue;
@@ -2069,8 +2080,19 @@ function inferAgentFrontend(name: string, meta: AgentMetadata, screen?: string):
 }
 
 function agentReadMetadataSuffix(name: string, screen?: string): string {
-  const meta = tryLoadAgentMetadata(name);
-  if (!meta) return "";
+  const now = Date.now();
+  const negativeCacheUntil = agentMetadataNegativeCache.get(name);
+  if (negativeCacheUntil && negativeCacheUntil > now) return "";
+  let meta: AgentMetadata;
+  try {
+    meta = loadAgentMetadata(name);
+  } catch (e) {
+    if (e instanceof AitermError && e.message.includes("agent_done 管理セッションではありません")) {
+      agentMetadataNegativeCache.set(name, now + AGENT_METADATA_NEGATIVE_CACHE_TTL_MS);
+    }
+    return "";
+  }
+  agentMetadataNegativeCache.delete(name);
   const ev = latestAgentDoneEvent(meta);
   const bits = [
     "agent",
@@ -2661,6 +2683,7 @@ export function openAgent(
         ? createCodexAgentMetadata(sid, cwd, opts.prompt ? "pending" : "none", { model, effort })
         : createGrokAgentMetadata(kind, sid, cwd, opts.prompt ? "pending" : "none")
       : null;
+    if (meta) agentMetadataNegativeCache.delete(sid);
     launchNote = buildAgentLaunchNote(kind, model, effort, meta);
     const cmd = buildAgentCmd(kind, binForCmd, model, effort, opts.prompt ?? null, meta);
     const envPrefix = agentEnvPrefix(meta, sid);

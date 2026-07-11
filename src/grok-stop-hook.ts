@@ -82,7 +82,11 @@ function appendEvent(file: string, event: unknown): void {
     if (!st.isFile() || st.uid !== uid() || st.nlink !== 1 || (st.mode & 0o077) !== 0) {
       fail(`event file が安全ではありません: ${file}`);
     }
-    fs.writeSync(fd, line, undefined, "utf8");
+    const written = fs.writeSync(fd, line, undefined, "utf8");
+    if (written < Buffer.byteLength(line, "utf8")) {
+      fs.ftruncateSync(fd, st.size);
+      fail(`event file への書込みが途中で終了しました: ${file}`);
+    }
   } finally {
     fs.closeSync(fd);
   }

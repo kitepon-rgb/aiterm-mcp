@@ -889,6 +889,46 @@ test("readOutput: agent event は補助 metadata に出すが completion には�
   });
 });
 
+test("readOutput: 1MB 超の agent event tail でも最新 metadata を表示する", { skip: skipAgentDone }, async () => {
+  await withFakeCodexHome(async () => {
+    const [sid] = core.openAgent("codex", { agent_done: true });
+    try {
+      await markFakeAgentReady(sid);
+      const meta = readAgentMeta(sid);
+      fs.appendFileSync(meta.event_file, "not-json\n".repeat(140_000));
+      appendAgentDone(meta, { turn_id: "tail-read-turn", vendor_session_id: "tail-vendor" });
+      const out = await core.readOutput(sid, { screen: true, timeout: 0 });
+      assert.match(out, /agent_event_seen=true/, `agent event seen: ${out}`);
+      assert.match(out, /last_turn_id=tail-read-turn/, `agent turn id: ${out}`);
+    } finally {
+      core.closeSession(sid);
+    }
+  });
+});
+
+test("readOutput: 非 agent metadata negative-cache は close/openAgent で無効化される", { skip: skipAgentDone }, async () => {
+  await withFakeCodexHome(async () => {
+    const session = "negativecache";
+    core.openSession(session);
+    const first = await core.readOutput(session, { screen: true, timeout: 0 });
+    const second = await core.readOutput(session, { screen: true, timeout: 0 });
+    assert.equal(second, first, "negative-cache 中も通常 read の出力は変わらない");
+    core.closeSession(session);
+
+    const [sid] = core.openAgent("codex", { session_name: session, agent_done: true });
+    try {
+      await markFakeAgentReady(sid);
+      const meta = readAgentMeta(sid);
+      appendAgentDone(meta, { turn_id: "cache-cleared-turn", vendor_session_id: "cache-cleared-vendor" });
+      const out = await core.readOutput(sid, { screen: true, timeout: 0 });
+      assert.match(out, /agent_event_seen=true/, `agent event seen: ${out}`);
+      assert.match(out, /last_turn_id=cache-cleared-turn/, `agent turn id: ${out}`);
+    } finally {
+      core.closeSession(sid);
+    }
+  });
+});
+
 test("sendAndWaitAgentDone: agent TUI ready 前は送信前に拒否し文字を流さない", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const [sid] = core.openAgent("codex", { agent_done: true });
