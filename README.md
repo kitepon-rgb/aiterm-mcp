@@ -20,6 +20,8 @@
 >
 > *MCP = Model Context Protocol — the open standard that lets tools like Claude Code plug capabilities into an AI.*
 
+**Measured, not claimed:** on this repo's own 183-test suite, a `pty_read` puts **~6.7× fewer tokens** in your context than the raw log — and the pass/fail verdict survives the fold. → [When to reach for it vs. the built-in shell](#when-to-reach-for-it-vs-the-built-in-shell)
+
 Nine tools: six **PTY tools** — `pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list` — to open, drive, and read one persistent terminal, plus three **agent launchers** — `codex_agent` / `grok_agent` / `composer_agent` — that each start another coding agent's TUI inside a fresh one. The backend is **tmux**, so sessions survive even if the MCP server or the AI client restarts.
 
 **Status:** actively maintained · the newcomer here, betting on a different shape (see [vs. the alternatives](#vs-the-alternatives)) · runs on Linux · WSL2 · macOS · native Windows for the core PTY tools (`agent_done` is POSIX/WSL/macOS only for now) · MIT · see the [CHANGELOG](CHANGELOG.md).
@@ -173,6 +175,42 @@ flowchart LR
 ```
 
 One PTY is the only primitive. Everything else — SSH, containers, REPLs, and the launched agent TUIs — is just something interactive running inside a persistent terminal, driven with the same `pty_send` / `pty_read`. Each launcher opens its own fresh PTY. Because the PTYs live in tmux, sessions outlive the MCP server and the AI client.
+
+## When to reach for it vs. the built-in shell
+
+Your MCP client already has a shell tool, and it wins on some jobs. aiterm wins on others. We measured both on the same commands in this repo, counting tokens the same way on each side (characters ÷ 4, aiterm's own estimator), so the comparison is apples-to-apples.
+
+Start with the built-in tool for a light one-shot. `git log --oneline -5` is one round-trip; aiterm is two — `pty_send` then `pty_read` — and that second round-trip costs more than a light command saves (~7 s vs ~13 s).
+
+The second round-trip pays for itself once the output runs long, or the state has to outlive the call.
+
+| Command | Built-in shell | aiterm | Verdict |
+| --- | --- | --- | --- |
+| `git log --oneline -5` | 1 call, ~7 s | 2 calls, ~13 s | **shell** (fewer round-trips) |
+| `npm test` (183 tests) | ~4,024 tok | ~599 tok | **aiterm** (~6.7× fewer, verdict kept) |
+| `find node_modules -type f` | ~500 tok¹ | ~456 tok | tokens tie; aiterm keeps head and tail + `line_range` |
+| `grep -rn "session" src/` | ~2,989 tok | ~1,096 tok | **aiterm** (~2.7×; long lines get clipped²) |
+
+On the repo's own 183-test suite the reduction is real and safe. The built-in tool drops the whole 199-line log — ~4,024 tokens — into context. aiterm folds its own capture of the run down to ~599:
+
+```text
+[aiterm bench2: 51 行 / ~599 tok (raw 203 行 / ~3856 tok); 152 行 hidden] [is_complete=True via mark]
+```
+
+<sub>`行` = lines; the meta line is quoted verbatim from aiterm's real output.</sub>
+
+That is about **6.7× fewer** tokens reaching the model, and the verdict survives the fold: the tail still carries `ℹ tests 183 / ℹ pass 183 / ℹ fail 0`. The reduction drops the noise and keeps the line you opened the log for. Wall-clock effectively ties (~39 s vs ~46 s), so on a run this long the extra round-trip is a small part of the total.
+
+aiterm also holds state across calls. The built-in tool runs each call in a fresh shell, so cwd resets between calls and the environment doesn't carry. Send `cd /tmp && export BENCH_VAR=hello123`, then read it back in a second, separate call:
+
+```text
+built-in shell  →  var=                   # empty; env dropped, cwd back at project root
+aiterm          →  cwd=/tmp var=hello123  # one tmux session holds both
+```
+
+`cd` then set env then build, `ssh` once then run ten commands on the authenticated session, drive a live REPL or a launched agent's TUI turn by turn — one tmux session holds all of it. Reach for aiterm when the terminal has to remember something.
+
+<sub>¹ Today's harness auto-offloads the ~192 KB dump to a file and previews only a ~2 KB head, so the token counts nearly tie; aiterm reports the accurate line count and lets `line_range="A:B"` pull any slice later, head or tail. ² The `rtk` grep reducer truncates long lines (~80 chars) and folds the overflow into `[+N more]`, which suits scanning; use the built-in tool when you need every full line.</sub>
 
 ## vs. the alternatives
 
