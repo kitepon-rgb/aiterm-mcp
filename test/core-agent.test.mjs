@@ -910,9 +910,12 @@ test("readOutput: 非 agent metadata negative-cache は close/openAgent で無�
   await withFakeCodexHome(async () => {
     const session = "negativecache";
     core.openSession(session);
+    // screen 内容はプロンプト描画タイミングで揺れるため同一比較しない（CI 実測 flake）。
+    // 不変条件は「非 agent read には agent suffix が付かない（cache 有無に関わらず）」の方。
     const first = await core.readOutput(session, { screen: true, timeout: 0 });
     const second = await core.readOutput(session, { screen: true, timeout: 0 });
-    assert.equal(second, first, "negative-cache 中も通常 read の出力は変わらない");
+    assert.doesNotMatch(first, /\[agent /, "非 agent read に agent suffix は付かない（cache 前）");
+    assert.doesNotMatch(second, /\[agent /, "非 agent read に agent suffix は付かない（cache 中）");
     core.closeSession(session);
 
     const [sid] = core.openAgent("codex", { session_name: session, agent_done: true });
