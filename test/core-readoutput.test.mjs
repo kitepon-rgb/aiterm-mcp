@@ -82,6 +82,27 @@ test("readOutput 増分: offset 以降のみ・読後は末尾へ前進", async 
   assert.ok(!/^[0-9]$/m.test(out2.replace(/\[aiterm[^\]]*\]/g, "")), "二度読みで数字行が再出現しない");
 });
 
+test("readOutput 増分: UTF-8 文字の途中 offset では継続バイトを捨て U+FFFD を出さない", async () => {
+  const n = "ro_incr_utf8_midchar";
+  const log = "A😀B\n";
+  fab(n, log, 2); // 😀 の第2バイトから
+  const out = await core.readOutput(n, {});
+  assert.ok(out.startsWith("B"), `継続バイトを読み出さない: ${JSON.stringify(out.slice(0, 8))}`);
+  assert.ok(!out.includes("\uFFFD"));
+  assert.equal(fs.readFileSync(op(n), "utf8"), String(Buffer.byteLength(log)));
+});
+
+test("readOutput full: 8MB 切り詰めが UTF-8 文字の途中でも U+FFFD を出さない", async () => {
+  const n = "ro_full_utf8_midchar";
+  const maxFullBytes = 8 * 1024 * 1024;
+  const log = Buffer.concat([Buffer.from("A😀"), Buffer.alloc(maxFullBytes - 3, "x")]); // 切断開始は 😀 の第2バイト
+  fab(n, log, 0);
+  const out = await core.readOutput(n, { full: true, raw: true });
+  assert.match(out, /^\[… 先頭 2 バイトを省略/); // 既存のサイズ省略メタは raw でも付く
+  assert.ok(out.includes("…]\nx"));
+  assert.ok(!out.includes("\uFFFD"));
+});
+
 test("readOutput raw: 生テキスト・末尾改行付与・メタ無し", async () => {
   const n = "ro_raw";
   fab(n, "\x1b[31mred\x1b[0m\nplain", 0);

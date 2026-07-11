@@ -66,6 +66,9 @@ const AGENT_TUI_READY_LINES = 45;
 const MAX_LINES_BEFORE_ELIDE = 60;
 const HEAD_LINES = 30;
 const TAIL_LINES = 20;
+const MAX_LINE_CHARS_BEFORE_ELIDE = 2000;
+const LINE_HEAD_CHARS = 1200;
+const LINE_TAIL_CHARS = 600;
 const DEDUP_MIN_RUN = 3; // 同一行がこれ以上連続したら 1 行＋件数に畳む
 const MAX_FULL_BYTES = 8 * 1024 * 1024; // full/range 読取で一度にメモリへ載せる上限（B7）
 
@@ -457,6 +460,28 @@ function dedupRuns(lines: string[]): string[] {
   return out;
 }
 
+function surrogateSafeEnd(text: string, end: number): number {
+  return end > 0 && end < text.length && /[\uD800-\uDBFF]/.test(text[end - 1]) && /[\uDC00-\uDFFF]/.test(text[end])
+    ? end + 1
+    : end;
+}
+
+function surrogateSafeStart(text: string, start: number): number {
+  return start > 0 && start < text.length && /[\uD800-\uDBFF]/.test(text[start - 1]) && /[\uDC00-\uDFFF]/.test(text[start])
+    ? start - 1
+    : start;
+}
+
+function elideLongLines(lines: string[]): string[] {
+  return lines.map((line) => {
+    if (line.length <= MAX_LINE_CHARS_BEFORE_ELIDE) return line;
+    const headEnd = surrogateSafeEnd(line, LINE_HEAD_CHARS);
+    const tailStart = surrogateSafeStart(line, line.length - LINE_TAIL_CHARS);
+    const omitted = tailStart - headEnd;
+    return `${line.slice(0, headEnd)}… 〈行内 ${omitted} 文字省略。全文は raw:true か line_range で取得〉 …${line.slice(tailStart)}`;
+  });
+}
+
 /** RTK 4戦略を移植: 制御除去 / 空白正規化 / 連続重複圧縮 / head+tail 折りたたみ。返り値 [body, meta]。 */
 export function reduceOutput(raw: string, name: string, elide = true): [string, string] {
   const rawLinesN = (raw.match(/\n/g)?.length ?? 0) + (raw && !raw.endsWith("\n") ? 1 : 0);
@@ -469,6 +494,7 @@ export function reduceOutput(raw: string, name: string, elide = true): [string, 
     const hint = `… 〈${elided} 行省略。全文は full=true、範囲は line_range="A:B"〉 …`;
     lines = [...lines.slice(0, HEAD_LINES), hint, ...lines.slice(lines.length - TAIL_LINES)];
   }
+  if (elide) lines = elideLongLines(lines);
   const body = lines.join("\n");
   const meta =
     `[aiterm ${name}: ${lines.length} 行 / ~${estimateTokens(body)} tok ` +
@@ -819,6 +845,13 @@ export function utf8SafeEnd(buf: Buffer, end: number): number {
   return end - i >= need ? end : i; // 末尾文字が完結していれば end、不完全なら開始位置まで戻す
 }
 
+/** 途中 offset から読んだ Buffer の先頭にある UTF-8 継続バイトを最大3バイト捨てる。 */
+export function utf8SafeSliceStart(buf: Buffer): Buffer {
+  let start = 0;
+  while (start < buf.length && start < 3 && (buf[start] & 0xc0) === 0x80) start++;
+  return buf.subarray(start);
+}
+
 export async function readOutput(name: string, o: ReadOpts = {}): Promise<string> {
   assertSessionName(name);
   const timeout = o.timeout ?? DEFAULT_TIMEOUT;
@@ -874,7 +907,7 @@ export async function readOutput(name: string, o: ReadOpts = {}): Promise<string
     // full/range は全体が対象だが、巨大ログは末尾 MAX_FULL_BYTES に制限してメモリを守る（B7）。
     let from = 0;
     if (size > MAX_FULL_BYTES) from = size - MAX_FULL_BYTES;
-    text = readRange(from, size).toString("utf8");
+    text = utf8SafeSliceStart(readRange(from, size)).toString("utf8");
     if (from > 0) text = `[… 先頭 ${from} バイトを省略（ログがサイズ上限を超過。close で破棄されます）…]\n` + text;
     if (o.range) {
       const [lo, hi] = o.range;
@@ -888,11 +921,12 @@ export async function readOutput(name: string, o: ReadOpts = {}): Promise<string
     // WSL 再起動等でログが作り直されると、Windows 側に残った旧 offset が新ログ長を超え、
     // 空を返して「何も読めない」状態になる。末尾越えは先頭から読み直す（POSIX では no-op）。
     if (off > size) off = 0;
-    const buf = readRange(off, size); // 増分のみをメモリに載せる
-    // 末尾の不完全マルチバイト列は次回へ持ち越す（B3）。off は前回この分岐が safeEnd を書くので先頭は割れない。
+    const initial = readRange(off, size); // 増分のみをメモリに載せる
+    const buf = utf8SafeSliceStart(initial);
+    // 先頭の継続バイトは捨て、末尾の不完全マルチバイト列は次回へ持ち越す（B3）。
     const safeLen = utf8SafeEnd(buf, buf.length);
     text = buf.subarray(0, safeLen).toString("utf8");
-    nextOffset = off + safeLen;
+    nextOffset = off + (initial.length - buf.length) + safeLen;
     if (o.lines) text = text.split("\n").slice(-o.lines).join("\n");
   }
 

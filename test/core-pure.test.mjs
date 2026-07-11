@@ -67,6 +67,30 @@ test("reduceOutput: elide=false なら折りたたまない", () => {
   assert.equal(body.split("\n").length, 100);
 });
 
+test("reduceOutput: 少数の巨大行は行数を保ったまま行内を省略する", () => {
+  const lines = Array.from({ length: 3 }, (_, i) => `${i}${"x".repeat(100_000)}`);
+  const [body] = core.reduceOutput(lines.join("\n"), "huge");
+  const out = body.split("\n");
+  assert.equal(out.length, 3);
+  assert.ok(body.length < 10_000, `出力が有界: ${body.length}`);
+  assert.equal((body.match(/行内 \d+ 文字省略/g) ?? []).length, 3);
+  assert.ok(out.every((line, i) => line.startsWith(String(i))), "行順序を保つ");
+});
+
+test("reduceOutput: 行内省略はサロゲートペアとマルチバイト文字を分断しない", () => {
+  const line = `${"a".repeat(1199)}😀あ${"b".repeat(2000)}`;
+  const [body] = core.reduceOutput(line, "unicode");
+  assert.ok(body.startsWith(`${"a".repeat(1199)}😀`));
+  assert.ok(body.endsWith("b".repeat(600)));
+  assert.doesNotMatch(body, /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
+});
+
+test("reduceOutput: elide=false は巨大行もそのまま返し line_range の復元経路を保つ", () => {
+  const line = "x".repeat(2001);
+  const [body] = core.reduceOutput(line, "range", false);
+  assert.equal(body, line);
+});
+
 test("reduceOutput: メタは raw 行数/トークン概算を併記", () => {
   const [, meta] = core.reduceOutput("a\nb\nc", "x");
   assert.match(meta, /^\[aiterm x: 3 行 \/ ~\d+ tok \(raw 3 行 \/ ~\d+ tok\)\]$/);
