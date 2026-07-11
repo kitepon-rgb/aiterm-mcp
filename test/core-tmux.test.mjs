@@ -51,6 +51,7 @@ async function waitForForeground(name, cmd, timeoutMs = 3000) {
 // ---------------------------------------------------------------- 破壊ゲート（10 正規表現を網羅・遮断＝未送信）
 const BLOCKED = [
   ["rm -rf /", "rm /"],
+  ["rm -rf " + "-- /", "rm オプション終端子 root"],
   ["rm -rf ~", "rm ~"],
   ["rm -rf $HOME", "rm $HOME"],
   ["rm -rf /*", "rm /*"],
@@ -104,6 +105,33 @@ test("破壊ゲート: force=true で越える（使い捨てパス・未実行�
 });
 test("破壊ゲート: raw=true でもゲートは効く", { skip }, () => {
   assert.throws(() => core.send(SESS, "rm -rf /", { raw: true, enter: false }), (e) => e.code === 3);
+});
+
+test("破壊ゲート: rtk 変換後の破壊コマンドを送信前に拒否する", { skip: skip ?? (process.platform === "win32" ? "Windows の rtk は WSL 側で起動するため fake PATH を使えない" : undefined) }, async () => {
+  const fakeDir = fs.mkdtempSync(path.join(process.env.TMPDIR, "fake-rtk-"));
+  const fakeRtk = path.join(fakeDir, "rtk");
+  const oldPath = process.env.PATH;
+  const rtkSession = "selftest_rtk_guard";
+  const rewritten = "rm -rf /aiterm_rtk_rewrite_should_never_send";
+  fs.writeFileSync(fakeRtk, `#!/bin/sh\n[ "$1" = rewrite ] && printf '%s\\n' '${rewritten}'\n`);
+  fs.chmodSync(fakeRtk, 0o755);
+  process.env.PATH = `${fakeDir}${path.delimiter}${oldPath ?? ""}`;
+  core.openSession(rtkSession);
+  try {
+    assert.throws(
+      () => core.send(rtkSession, "safe input", { rtk: true, enter: false }),
+      (e) => e.code === 3 && /rtk 変換後/.test(e.message),
+    );
+    const out = await core.readOutput(rtkSession, { full: true, raw: true });
+    assert.ok(!out.includes(rewritten), "rtk 書換後の文字列は session へ送られない");
+    const forced = core.send(rtkSession, "safe input", { rtk: true, force: true, enter: false });
+    assert.match(forced, /sent \d+ chars/);
+    core.sendKey(rtkSession, "C-u");
+  } finally {
+    process.env.PATH = oldPath;
+    try { core.closeSession(rtkSession); } catch {}
+    fs.rmSync(fakeDir, { recursive: true, force: true });
+  }
 });
 
 // ---------------------------------------------------------------- サニタイズ（送信文字数で確認）

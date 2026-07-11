@@ -77,7 +77,7 @@ const DESTRUCTIVE: RegExp[] = [
   // rm -rf の危険な対象形（best-effort・force で越えられる）。先頭の任意クオート ['"]? で
   // `rm -rf "/"` / `'/'` / `"~"` を捕捉。`\.\/\*`=./*（相対 glob）、`\.\.?\/?\s*$`=. / .. / ./ / ../
   // （カレント/親そのもの）。`./build` 等の相対サブディレクトリは末尾でないので非該当（過剰ブロック回避）。
-  /\brm\s+-[rfRF]*[rf][rfRF]*\s+['"]?(\/|~|\$HOME|\.\/\*|\.\.?\/?\s*$|\*\s*$)/i,
+  /\brm\s+-[rfRF]*[rf][rfRF]*\s+(?:--\s+)?['"]?(\/|~|\$HOME|\.\/\*|\.\.?\/?\s*$|\*\s*$)/i,
   /\bmkfs(\.\w+)?\b/i,
   /\bdd\b[^\n]*\bof=\/dev\//i,
   />\s*\/dev\/(sd|nvme|hd|mmcblk)/i,
@@ -676,6 +676,18 @@ function rtkRewrite(text: string): string {
   return text;
 }
 
+function assertNotDestructive(text: string, code: number, context = ""): void {
+  for (const pat of DESTRUCTIVE) {
+    if (pat.test(text)) {
+      throw new AitermError(
+        `${context}破壊的の可能性があるコマンドを遮断しました: /${pat.source}/\n` +
+          `  本当に実行するなら force を有効にして再実行してください。`,
+        code,
+      );
+    }
+  }
+}
+
 // ---------------------------------------------------------------- 操作（return で返す / 失敗は AitermError）
 
 export function openSession(name?: string | null, shell = "bash"): [string, string] {
@@ -755,17 +767,7 @@ export function send(name: string, text: string, o: SendOpts = {}): string {
   if (!o.raw) {
     text = text.replace(PASTE_MARKERS_RE, "").replace(ANSI_RE, "").replace(CTRL_RE, "");
   }
-  if (!o.force) {
-    for (const pat of DESTRUCTIVE) {
-      if (pat.test(text)) {
-        throw new AitermError(
-          `破壊的の可能性があるコマンドを遮断しました: /${pat.source}/\n` +
-            `  本当に実行するなら force を有効にして再実行してください。`,
-          3,
-        );
-      }
-    }
-  }
+  if (!o.force) assertNotDestructive(text, 3);
   if (o.mark) {
     // mark の sentinel は POSIX シェル構文。前面が fish/csh/tcsh 等の非 POSIX 対話シェルだと "$?" が
     // 壊れて sentinel が成立しない。黙って壊れた完了検出を作らず、明示エラーで until を促す（B8）。
@@ -780,6 +782,7 @@ export function send(name: string, text: string, o: SendOpts = {}): string {
   }
   writeLastcmd(name, text); // read rtk の reducer 分類用（書換/mark 前の素のコマンド）
   if (o.rtk) text = rtkRewrite(text);
+  if (o.rtk && !o.force) assertNotDestructive(text, 3, "rtk 変換後: ");
   if (o.mark) {
     // 実出力は rc=<数字>、この行のエコーは rc=%d(リテラル)。MARK_DONE_RE は数字アンカーで後者に免疫。
     text = text + `; printf '\\n<<<AITERM_DONE rc=%d>>>\\n' "$?"`;

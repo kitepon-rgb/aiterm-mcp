@@ -59,10 +59,11 @@ export function stripShellFrame(text: string, command: string): string {
 
 // ---------------------------------------------------------------- pytest
 
-export function reducePytest(output: string): string {
+export function reducePytest(output: string): string | null {
   let summaryLine = "";
   const failures: string[] = [];
   const xfailLines: string[] = [];
+  let pytestEvidence = false;
   let state = "header";
   let current: string[] = [];
   const flush = () => {
@@ -79,14 +80,17 @@ export function reducePytest(output: string): string {
       continue;
     }
     if (t.startsWith("===") && t.includes("FAILURES")) {
+      pytestEvidence = true;
       state = "failures";
       continue;
     }
     if (t.startsWith("===") && t.includes("short test summary")) {
+      pytestEvidence = true;
       state = "summary";
       flush();
       continue;
     }
+    if (t.includes("no tests ran in")) pytestEvidence = true;
     if (
       t.startsWith("===") &&
       (t.includes("passed") || t.includes("failed") || t.includes("skipped") || t.includes("error"))
@@ -126,6 +130,8 @@ export function reducePytest(output: string): string {
   flush();
 
   const [p, f, s, xf, xp, e] = parsePytestCounts(summaryLine);
+  if (/\b\d+\s+(?:passed|failed|skipped|xfailed|xpassed|errors?)\b/.test(summaryLine)) pytestEvidence = true;
+  if (!pytestEvidence) return null;
   if (p === 0 && f === 0 && s === 0 && xf === 0 && xp === 0 && e === 0) return "Pytest: No tests collected";
   // error(収集/内部エラー)は失敗の一種＝緑扱いにしない。extras に含め、"N passed" 早期 return を止める。
   const extras = s > 0 || xf > 0 || xp > 0 || e > 0 || xfailLines.length > 0;

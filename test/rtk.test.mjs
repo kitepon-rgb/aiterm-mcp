@@ -25,13 +25,25 @@ for (const c of PYTEST_CASES) {
   });
 }
 
-test("reducePytest: 0件は 'No tests collected'", () => {
-  assert.equal(rtk.reducePytest("1 file skipped\n"), "Pytest: No tests collected");
-  assert.equal(rtk.reducePytest(""), "Pytest: No tests collected");
+test("reducePytest: pytest 証拠ゼロは null（虚偽の 'No tests collected' を作らない）", () => {
+  assert.equal(rtk.reducePytest("1 file skipped\n"), null);
+  assert.equal(rtk.reducePytest(""), null);
 });
 
 test("reducePytest: 全パスは 'Pytest: N passed' のみ", () => {
   assert.equal(rtk.reducePytest("... [100%]\n=== 5 passed in 0.10s ==="), "Pytest: 5 passed");
+});
+
+test("reduce: pytest 名を含む非 pytest 出力は generic フォールバックへ戻す", () => {
+  assert.deepEqual(rtk.reduce("python run_not_pytest.py", "Processing 500 records...\ndone: 500 ok"), [null, null]);
+});
+
+test("reduce: quiet pytest 出力は引き続き pytest reducer を適用する", () => {
+  const input = fs.readFileSync(path.join(FIX, "pytest", "allpass.input.txt"), "utf8");
+  const expected = fs.readFileSync(path.join(FIX, "pytest", "allpass.expected.txt"), "utf8");
+  const [got, name] = rtk.reduce("python -m pytest -q", input);
+  assert.equal(name, "pytest");
+  assert.equal(rstrip(got), rstrip(expected));
 });
 
 // 収集エラー（import 失敗等）を無害/緑に偽装しないこと（rtk 0.42.0 とは意図的に相違＝失敗マスキング禁止）。
