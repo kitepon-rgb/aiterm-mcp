@@ -7,6 +7,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-07-11
+
+Full-repo adversarial audit (multi-agent find → adversarial refutation → live
+smoke) plus the fixes and one feature that survived it. Design record and
+rejection ledger: `docs/11_audit-2026-07-11.md`; transcript-read design:
+`docs/12_agent-transcript-read-plan.md`. Regression suite 183 → 203.
+
+### Added
+- `pty_read({ agent_transcript: true })` recovers an agent session's most
+  recently completed turn's final assistant message, in plain text, from the
+  vendor's structured session transcript (JSONL under the managed home). This
+  fixes the case where a long agent answer is truncated by the `wait:
+  "agent_done"` screen tail (pane height ≈ 24 lines). Codex joins on the Stop
+  hook `turn_id`; Grok/Composer take the assistant rows after the last
+  non-synthetic user row. The extracted text is bounded through the normal
+  reduction pipeline. Mutually exclusive with `screen`/`full`/`rtk`/
+  `line_range`/`wait` (`lines` is allowed). Missing transcript / non-agent
+  session / no extractable message are explicit errors, never a silent empty.
+- `pty_list` now appends agent metadata (`agent=<kind> agent_done=true`, plus
+  `vendor_session_id` once bound) to agent session rows, so a resumable
+  Codex/Grok/Composer session is distinguishable after an MCP server restart.
+  Plain shell rows are unchanged.
+- `codex_agent` launch responses now surface the inherited managed-config
+  reality: `managed config: mcp_servers <N> 個継承 / approval_policy=… /
+  sandbox_mode=… / hook trust bypass 有効`. The inheritance itself is the
+  intended design (the child matches the terminal's Codex behavior); this only
+  makes its consequences visible so a "review-only" child isn't silently
+  full-access.
+
+### Fixed
+- Agent `wait` file locks now reclaim stale locks. A lock left behind by a
+  crashed/killed waiter (the pid recorded in the lock is dead, or the lock is
+  old and unreadable) no longer rejects `wait:"agent_done"` on that session
+  forever; the live-pid check (`process.kill(pid, 0)`) reclaims dead locks and
+  fails safe (rejects) when liveness is indeterminate. `closeSession`/`killAll`
+  now also honor a live cross-process wait lock (previously only the in-process
+  set), with the holder pid in the message. Agent metadata writes are now
+  atomic (temp + rename).
+- `reduceOutput` now bounds over-long single lines (head + tail with a restore
+  hint), so a few huge lines — e.g. a full-screen TUI's absolute-cursor repaint
+  stream — no longer slip past the line-count fold and blow the response token
+  budget. Line count and order are preserved (the `line_range` domain is
+  unchanged); `raw: true` is untouched.
+- Reading from a mid-multibyte offset (full/range 8 MB truncation and the
+  incremental path) no longer emits a leading U+FFFD; the skipped bytes are
+  accounted into the next offset.
+- The pytest reducer returns `null` (falls back to generic) when the output has
+  no pytest evidence, instead of replacing an unrelated command's output with a
+  fabricated "Pytest: No tests collected". `classify` is unchanged, so genuine
+  pytest wrappers still reduce; the six golden fixtures stay byte-exact. Empty
+  input now yields `null` too.
+- The destructive-command tripwire now absorbs a `--` option terminator
+  (`rm -rf -- /` was previously waved through), and `pty_send({ rtk: true })`
+  re-checks the tripwire against the post-`rtk`-rewrite text before sending.
+- `pty_read` with an inverted `line_range` (`"5:3"`) is now an explicit error
+  instead of a silent empty result.
+- The `force` / `mark` argument descriptions now state their full effect
+  (`force` also lifts the initial-prompt mixing guard; `mark` needs `enter` to
+  actually run the sentinel). Codex managed-config pin overrides now also match
+  quoted TOML keys.
+
+### Tests
+- Added `tools/call` dispatch coverage to the smoke test (unknown tool, bad
+  args, inverted `line_range` — all `isError`), plus regressions for wait-lock
+  reclamation, transcript recovery (both vendor shapes), the line/byte guards,
+  and the tripwire gaps.
+
 ## [0.11.0] - 2026-07-11
 
 ### Added

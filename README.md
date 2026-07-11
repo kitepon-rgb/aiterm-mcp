@@ -20,7 +20,7 @@
 >
 > *MCP = Model Context Protocol — the open standard that lets tools like Claude Code plug capabilities into an AI.*
 
-**Measured, not claimed:** on this repo's own 183-test suite, a `pty_read` puts **~6.7× fewer tokens** in your context than the raw log — and the pass/fail verdict survives the fold. → [When to reach for it vs. the built-in shell](#when-to-reach-for-it-vs-the-built-in-shell)
+**Measured, not claimed:** on this repo's own 203-test suite, a `pty_read` puts **~7.1× fewer tokens** in your context than the raw log — and the pass/fail verdict survives the fold. → [When to reach for it vs. the built-in shell](#when-to-reach-for-it-vs-the-built-in-shell)
 
 Nine tools: six **PTY tools** — `pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list` — to open, drive, and read one persistent terminal, plus three **agent launchers** — `codex_agent` / `grok_agent` / `composer_agent` — that each start another coding agent's TUI inside a fresh one. The backend is **tmux**, so sessions survive even if the MCP server or the AI client restarts.
 
@@ -187,19 +187,19 @@ The second round-trip pays for itself once the output runs long, or the state ha
 | Command | Built-in shell | aiterm | Verdict |
 | --- | --- | --- | --- |
 | `git log --oneline -5` | 1 call, ~7 s | 2 calls, ~13 s | **shell** (fewer round-trips) |
-| `npm test` (183 tests) | ~4,024 tok | ~599 tok | **aiterm** (~6.7× fewer, verdict kept) |
+| `npm test` (203 tests) | ~4,292 tok | ~607 tok | **aiterm** (~7.1× fewer, verdict kept) |
 | `find node_modules -type f` | ~500 tok¹ | ~456 tok | tokens tie; aiterm keeps head and tail + `line_range` |
 | `grep -rn "session" src/` | ~2,989 tok | ~1,096 tok | **aiterm** (~2.7×; long lines get clipped²) |
 
-On the repo's own 183-test suite the reduction is real and safe. The built-in tool drops the whole 199-line log — ~4,024 tokens — into context. aiterm folds its own capture of the run down to ~599:
+On the repo's own 203-test suite the reduction is real and safe. The built-in tool drops the whole 223-line log — ~4,292 tokens — into context. aiterm folds its own capture of the run down to ~607:
 
 ```text
-[aiterm bench2: 51 行 / ~599 tok (raw 203 行 / ~3856 tok); 152 行 hidden] [is_complete=True via mark]
+[aiterm demo: 51 行 / ~607 tok (raw 223 行 / ~4292 tok); 172 行 hidden] [is_complete=True via mark]
 ```
 
 <sub>`行` = lines; the meta line is quoted verbatim from aiterm's real output.</sub>
 
-That is about **6.7× fewer** tokens reaching the model, and the verdict survives the fold: the tail still carries `ℹ tests 183 / ℹ pass 183 / ℹ fail 0`. The reduction drops the noise and keeps the line you opened the log for. Wall-clock effectively ties (~39 s vs ~46 s), so on a run this long the extra round-trip is a small part of the total.
+That is about **7.1× fewer** tokens reaching the model, and the verdict survives the fold: the tail still carries `ℹ tests 203 / ℹ pass 203 / ℹ fail 0`. The reduction drops the noise and keeps the line you opened the log for. Wall-clock effectively ties, so on a run this long the extra round-trip is a small part of the total.
 
 aiterm also holds state across calls. The built-in tool runs each call in a fresh shell, so cwd resets between calls and the environment doesn't carry. Send `cd /tmp && export BENCH_VAR=hello123`, then read it back in a second, separate call:
 
@@ -246,10 +246,10 @@ On top of that sits a productized layer a raw tmux bridge doesn't have: **token-
 | --- | --- | --- |
 | `pty_open` | Grab one terminal, return a `session_id` | `name?`, `shell="bash"` |
 | `pty_send` | Send text (a command) | `session_id`, `text`, `enter=true`, `wait`, `timeout`, `screen`, `lines`, `mark`, `force`, `rtk`, `raw` |
-| `pty_read` | Read output, token-reduced (incremental by default) | `session_id`, `wait`, `until`, `until_regex`, `timeout`, `screen`, `full`, `lines`, `line_range`, `raw`, `rtk` |
+| `pty_read` | Read output, token-reduced (incremental by default) | `session_id`, `wait`, `until`, `until_regex`, `timeout`, `screen`, `full`, `lines`, `line_range`, `raw`, `rtk`, `agent_transcript` |
 | `pty_key` | Send a control key | `session_id`, `key` (`C-c`/`Enter`/`Up`…) |
 | `pty_close` | Close a session | `session_id` |
-| `pty_list` | List sessions | (none) |
+| `pty_list` | List sessions (agent rows carry `agent=<kind>` metadata) | (none) |
 
 ### Interactive agent launchers
 
@@ -262,6 +262,8 @@ Each launcher starts a specific vendor's interactive coding-agent TUI inside a f
 | `composer_agent` | Grok Build, model `grok-composer-2.5-fast` by default (`model?` overrides) (xAI) | `prompt?`, `model?`, `reasoning_effort?` unsupported (an explicit value is an error), `cwd?`, `session_name?`, `agent_done?` |
 
 The vendor CLI must be installed and authenticated (`codex` for `codex_agent`; `grok` for both Grok tools). aiterm resolves the binary via `CODEX_BIN` / `GROK_BIN`, then `~/.local/bin/codex` / `~/.grok/bin/grok`, then `PATH`. Prerequisites are validated before a session is created: empty `model` and any Grok/Composer `reasoning_effort` are errors, while a missing CLI or nonexistent `cwd` fails for all three; a failed launch leaves no session behind. Codex forwards `model` as `-m` and `reasoning_effort` as `-c model_reasoning_effort=…`; Grok/Composer reject effort because interactive TUI does not support it (Grok CLI `--effort` is headless-only). Full details under [Launch other coding agents into that terminal](#2-launch-other-coding-agents-into-that-terminal--the-orchestration-flagship). Pass an absolute path for `cwd` — `~` is not expanded. `agent_done` is hook-backed for agent launchers; Codex/Grok/Composer have passing live smokes on Linux/WSL2/macOS for follow-up `pty_send(wait:"agent_done")`, and Codex has a live smoke for launcher `prompt + wait:"agent_done"`. Native Windows can launch agents but `agent_done` is not supported yet. Codex managed `CODEX_HOME` links only `auth.json`, copies `config.toml`, and owns its own `hooks.json`. Before the first unbound agent send, `pty_send({ wait:"agent_done" })` waits for the vendor TUI input prompt and fails before sending if it is not ready. `codex_agent` launcher `wait:"agent_done"` requires `prompt` plus `agent_done:true`; it sends the initial prompt only after the TUI is ready, and returns `initial_prompt=not_sent` without sending if the TUI is blocked before input. In Grok OAuth mode, aiterm keeps hook/config isolation per launch but shares both `auth.json` and `auth.json.lock` with the normal Grok home; missing OAuth auth fails without leaving a session behind.
+
+When an agent's answer is longer than the `wait:"agent_done"` screen tail (pane height ≈ 24 lines), recover it in full with `pty_read({ agent_transcript: true })`. It returns the most recently completed turn's final assistant message in plain text, read from the vendor's structured session transcript under the managed home — no re-prompting. Codex joins on the Stop hook `turn_id`; Grok/Composer take the assistant rows after the last real user row. Read-only, and mutually exclusive with `screen`/`full`/`rtk`/`line_range`/`wait` (`lines` is allowed). A missing transcript, a non-agent session, or an unextractable message is an explicit error, never a silent empty.
 
 ### Completion detection (5 layers)
 

@@ -20,7 +20,7 @@
 >
 > *MCP = Model Context Protocol — Claude Code のようなツールが AI に機能を差し込むためのオープン標準。*
 
-**言葉でなく実測で:** このリポジトリ自身の 183 テストで、`pty_read` はコンテキストに載るトークンを生ログの **約 6.7 分の 1** に減らす。しかも pass/fail の判定は畳んでも残る。→ [組み込みシェルツールとの使い分け](#組み込みシェルツールとの使い分け)
+**言葉でなく実測で:** このリポジトリ自身の 203 テストで、`pty_read` はコンテキストに載るトークンを生ログの **約 7.1 分の 1** に減らす。しかも pass/fail の判定は畳んでも残る。→ [組み込みシェルツールとの使い分け](#組み込みシェルツールとの使い分け)
 
 9 ツール: 6 つの **PTY ツール**（`pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list`）で 1 本の永続端末を開き・操作し・読む。加えて 3 つの **エージェント起動ツール**（`codex_agent` / `grok_agent` / `composer_agent`）が、別のコーディングエージェントの TUI を新しい端末の中に起動する。バックエンドは **tmux** なので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
 
@@ -187,17 +187,17 @@ MCP クライアントには最初からシェルツールが付いている。�
 | コマンド | 組み込みシェル | aiterm | 判定 |
 | --- | --- | --- | --- |
 | `git log --oneline -5` | 1 回・~7 秒 | 2 回・~13 秒 | **シェル**（往復が少ない） |
-| `npm test`（183 テスト） | ~4,024 tok | ~599 tok | **aiterm**（判定は残る） |
+| `npm test`（203 テスト） | ~4,292 tok | ~607 tok | **aiterm**（判定は残る） |
 | `find node_modules -type f` | ~500 tok¹ | ~456 tok | 互角。aiterm は先頭も末尾も残す |
 | `grep -rn "session" src/` | ~2,989 tok | ~1,096 tok | **aiterm**（長い行は切られる²） |
 
-例えばこのリポジトリの 183 テストを走らせてみる。組み込みツールはログ 199 行をまるごと——~4,024 トークン——コンテキストに流し込む。aiterm は同じ出力を head+tail に畳んで ~599 トークンまで縮める。
+例えばこのリポジトリの 203 テストを走らせてみる。組み込みツールはログ 223 行をまるごと——~4,292 トークン——コンテキストに流し込む。aiterm は同じ出力を head+tail に畳んで ~607 トークンまで縮める。
 
 ```text
-[aiterm bench2: 51 行 / ~599 tok (raw 203 行 / ~3856 tok); 152 行 hidden] [is_complete=True via mark]
+[aiterm demo: 51 行 / ~607 tok (raw 223 行 / ~4292 tok); 172 行 hidden] [is_complete=True via mark]
 ```
 
-モデルに読ませるトークンは約 **6.7 分の 1** に減る。それでも判定は残る。畳んだ後の tail に `ℹ tests 183 / ℹ pass 183 / ℹ fail 0` がちゃんと載っている。削れたのは繰り返しのノイズで、ログを開いた目的の行は生きている。実行時間はほぼ同じ（~39 秒 vs ~46 秒）なので、これだけ長いコマンドになると 2 往復の差は誤差に埋もれる。
+モデルに読ませるトークンは約 **7.1 分の 1** に減る。それでも判定は残る。畳んだ後の tail に `ℹ tests 203 / ℹ pass 203 / ℹ fail 0` がちゃんと載っている。削れたのは繰り返しのノイズで、ログを開いた目的の行は生きている。実行時間はほぼ同じなので、これだけ長いコマンドになると 2 往復の差は誤差に埋もれる。
 
 aiterm はセッションの状態も持ち越せる。組み込みツールは呼び出しごとにまっさらなシェルを立てるので、cwd は毎回プロジェクト直下に戻り、環境変数も引き継がれない。試しに `cd /tmp && export BENCH_VAR=hello123` を送って、別の呼び出しで読み返してみる。
 
@@ -244,7 +244,7 @@ aiterm は同じ核心の洞察——端末を出会いの場にする——を�
 | --- | --- | --- |
 | `pty_open` | 端末を 1 個握り `session_id` を返す | `name?`, `shell="bash"` |
 | `pty_send` | テキスト(コマンド)を送る | `session_id`, `text`, `enter=true`, `wait`, `timeout`, `screen`, `lines`, `mark`, `force`, `rtk`, `raw` |
-| `pty_read` | 出力を削減して読む（既定は増分） | `session_id`, `wait`, `until`, `until_regex`, `timeout`, `screen`, `full`, `lines`, `line_range`, `raw`, `rtk` |
+| `pty_read` | 出力を削減して読む（既定は増分） | `session_id`, `wait`, `until`, `until_regex`, `timeout`, `screen`, `full`, `lines`, `line_range`, `raw`, `rtk`, `agent_transcript` |
 | `pty_key` | 制御キーを送る | `session_id`, `key`（`C-c`/`Enter`/`Up`…） |
 | `pty_close` | セッションを閉じる | `session_id` |
 | `pty_list` | セッション一覧 | （なし） |
@@ -260,6 +260,8 @@ aiterm は同じ核心の洞察——端末を出会いの場にする——を�
 | `composer_agent` | Grok Build の `grok-composer-2.5-fast` モデル（xAI） | `grok_agent` と同じ |
 
 各ベンダーの CLI が導入・認証済みであること（`codex_agent` は `codex`、Grok 系 2 つは `grok`）。バイナリは `CODEX_BIN` / `GROK_BIN` → `~/.local/bin/codex` / `~/.grok/bin/grok` → `PATH` の順で解決する。前提はセッション作成前に検証し（grok/composer は範囲外の `reasoning_effort` を弾く。CLI 不在・実在しない `cwd` は 3 つとも失敗）、起動に失敗してもセッションの残骸は残さない。詳細は [その端末の中に他のコーディングエージェントを起動する](#2-その端末の中に他のコーディングエージェントを起動する--オーケストレーションの旗艦)。`cwd` は絶対パスで渡す——`~` は展開されない。`agent_done` は hook-backed で、Codex/Grok/Composer は Linux/WSL2/macOS の後続 `pty_send(wait:"agent_done")` で実 smoke 済み。Codex は launcher の `prompt + wait:"agent_done"` も実 smoke 済み。Windows ネイティブでは agent launcher は使えるが `agent_done` はまだ未対応。Codex の managed `CODEX_HOME` は `auth.json` だけを symlink し、`config.toml` をコピーし、`hooks.json` は aiterm が所有する。初回の未 bind agent send では `pty_send({ wait:"agent_done" })` が vendor TUI の入力欄を待ち、未 ready なら送信前エラーにする。`codex_agent` launcher の `wait:"agent_done"` は `prompt` と `agent_done:true` が必須で、TUI ready 後にだけ初回 prompt を送る。入力欄 ready にならない場合は prompt を送らず、`initial_prompt=not_sent` を返して session を残す。Grok OAuth mode では hook/config 隔離は launch ごとに維持しつつ、通常 Grok home の `auth.json` と `auth.json.lock` をセットで共有する。OAuth auth 不在ならセッション残骸なしで失敗する。
+
+エージェントの回答が `wait:"agent_done"` の画面 tail（ペイン高 ≒ 24 行）より長くて切れたら、`pty_read({ agent_transcript: true })` で全文回収する。managed home 配下の vendor 構造化 transcript から、直近完了ターンの最終 assistant メッセージを平文で返す（再プロンプト不要）。Codex は Stop hook の `turn_id` で join、Grok/Composer は最後の実ユーザー行より後ろの assistant 行を採る。読み取り専用で、`screen`/`full`/`rtk`/`line_range`/`wait` とは併用不可（`lines` のみ可）。transcript 不在・非 agent session・抽出不能はいずれも明示エラー（黙って空を返さない）。
 
 ### 完了検出（5 層）
 
