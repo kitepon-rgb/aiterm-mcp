@@ -937,6 +937,17 @@ export function closeSession(name: string): string {
   if (agentWaitLocks.has(name)) {
     throw new AitermError(`agent session '${name}' は agent_done 待機中のため close できません`, 2);
   }
+  {
+    // 別プロセスの待機は in-memory Set に映らない。生きた file lock があれば close で state を消さない
+    const foreign = liveWaitLocks(name);
+    if (foreign.length > 0) {
+      const d = foreign[0];
+      throw new AitermError(
+        `agent session '${name}' は別プロセス${d.pid != null ? `（pid ${d.pid}）` : ""}の agent_done 待機中のため close できません`,
+        2,
+      );
+    }
+  }
   tmux("kill-session", "-t", name);
   for (const p of [logpath(name), offsetpath(name), lastcmdpath(name), markpath(name)]) {
     try {
@@ -955,6 +966,14 @@ export function killAll(): string {
       `agent_done 待機中の session があるため killAll できません: ${Array.from(agentWaitLocks).join(",")}`,
       2,
     );
+  }
+  {
+    // 別プロセスの待機（file lock が生きているもの）も巻き添えにしない
+    const foreign = liveWaitLocks(null);
+    if (foreign.length > 0) {
+      const list = foreign.map((d) => `${d.session}${d.pid != null ? `(pid ${d.pid})` : ""}`).join(",");
+      throw new AitermError(`agent_done 待機中の session があるため killAll できません: ${list}`, 2);
+    }
   }
   tmux("kill-server");
   // B9: SOCKDIR 内の .log/.offset/.lastcmd/.mark 残骸も掃除する（残すと B5 の stale-log 復活の温床）。
@@ -1107,11 +1126,23 @@ function readFileRange(p: string, from: number, to: number): Buffer {
 }
 
 function writeJson0600(p: string, v: unknown): void {
-  fs.writeFileSync(p, JSON.stringify(v, null, 2) + "\n", { mode: 0o600 });
+  // truncate-in-place はクラッシュ/ENOSPC の窓で空・途中 JSON を残すので、temp→rename の原子的置換にする
+  const tmp = `${p}.${randomBytes(6).toString("hex")}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(v, null, 2) + "\n", { mode: 0o600, flag: "wx" });
   try {
-    fs.chmodSync(p, 0o600);
+    fs.chmodSync(tmp, 0o600);
   } catch {
     /* noop */
+  }
+  try {
+    fs.renameSync(tmp, p);
+  } catch (e) {
+    try {
+      fs.unlinkSync(tmp);
+    } catch {
+      /* noop */
+    }
+    throw e;
   }
 }
 
@@ -1417,18 +1448,100 @@ function setInitialPromptState(meta: AgentMetadata, state: InitialPromptState): 
   writeAgentMetadata(meta);
 }
 
+// wait lock の鮮度猶予: lock は open(O_EXCL)→pid 書込みの2段なので、中身が読めない直後の lock を
+// stale と誤判定しないための下限。これより古くて pid が読めない lock だけ残骸として回収する。
+const WAIT_LOCK_FRESH_MS = 5_000;
+
+interface WaitLockProbe {
+  pid: number | null;
+  at: string | null;
+  live: boolean;
+}
+
+function isPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    // ESRCH=不在。EPERM 等の判定不能は生存扱い（誤回収より拒否に倒す）
+    return (e as NodeJS.ErrnoException).code !== "ESRCH";
+  }
+}
+
+// wait lock が「生きた待機」か「消滅プロセスの残骸」かを判定する。
+// 前提: 呼び出し側は in-memory agentWaitLocks を先に確認している。よって pid=自プロセスの lock は
+// 例外経路で release が漏れた残骸と確定できる。
+function probeWaitLock(p: string): WaitLockProbe {
+  let pid: number | null = null;
+  let at: string | null = null;
+  let ageMs = 0;
+  try {
+    const st = fs.lstatSync(p);
+    if (!st.isFile() || st.isSymbolicLink()) return { pid: null, at: null, live: true };
+    ageMs = Math.max(0, Date.now() - st.mtimeMs);
+    const v = JSON.parse(fs.readFileSync(p, "utf8").split("\n", 1)[0]) as { pid?: unknown; at?: unknown };
+    if (typeof v.pid === "number" && Number.isInteger(v.pid) && v.pid > 0) pid = v.pid;
+    if (typeof v.at === "string") at = v.at;
+  } catch {
+    /* pid 不明のまま鮮度判定に落ちる */
+  }
+  if (pid == null) return { pid: null, at, live: ageMs < WAIT_LOCK_FRESH_MS };
+  if (pid === process.pid) return { pid, at, live: false };
+  return { pid, at, live: isPidAlive(pid) };
+}
+
+function unlinkStaleWaitLock(p: string): void {
+  try {
+    const st = fs.lstatSync(p);
+    if (st.isFile() && !st.isSymbolicLink() && st.uid === currentUid()) fs.unlinkSync(p);
+  } catch {
+    /* noop */
+  }
+}
+
+// close/killAll 用: 生きた別プロセス待機の wait lock を列挙する（stale 残骸は数えない）。
+function liveWaitLocks(name: string | null): Array<{ session: string; pid: number | null; at: string | null }> {
+  const dir = existingAgentsDir();
+  if (!dir) return [];
+  let files: string[];
+  try {
+    files = fs.readdirSync(dir);
+  } catch {
+    return [];
+  }
+  const out: Array<{ session: string; pid: number | null; at: string | null }> = [];
+  for (const f of files) {
+    if (!f.endsWith(".wait.lock")) continue;
+    const session = f.slice(0, f.indexOf("."));
+    if (name != null && session !== name) continue;
+    if (agentWaitLocks.has(session)) continue; // in-process 待機は呼び出し側の既存ガードが担当
+    const probe = probeWaitLock(path.join(dir, f));
+    if (probe.live) out.push({ session, pid: probe.pid, at: probe.at });
+  }
+  return out;
+}
+
+function waitLockBusyError(session: string, probe: WaitLockProbe): AitermError {
+  const detail = probe.pid != null ? `（pid ${probe.pid}${probe.at ? ` / ${probe.at} 開始` : ""}）` : "";
+  return new AitermError(`agent session '${session}' は別プロセスの agent_done 待機中です${detail}`, 2);
+}
+
 function acquireAgentWaitFileLock(meta: AgentMetadata): () => void {
   const p = agentWaitLockPath(meta.aiterm_session, meta.launch_id);
   const nofollow = (fs.constants as Record<string, number>).O_NOFOLLOW ?? 0;
-  let fd: number;
-  try {
-    fd = fs.openSync(p, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY | nofollow, 0o600);
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "EEXIST") {
-      throw new AitermError(`agent session '${meta.aiterm_session}' は別プロセスの agent_done 待機中です`, 2);
+  let fd: number | null = null;
+  for (let attempt = 0; attempt < 2 && fd == null; attempt++) {
+    try {
+      fd = fs.openSync(p, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY | nofollow, 0o600);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+      const probe = probeWaitLock(p);
+      // 生きた待機、または回収後の再取得でも EEXIST（=直後に別プロセスが取得した race）は拒否
+      if (probe.live || attempt > 0) throw waitLockBusyError(meta.aiterm_session, probe);
+      unlinkStaleWaitLock(p);
     }
-    throw e;
   }
+  if (fd == null) throw new AitermError(`agent session '${meta.aiterm_session}' は別プロセスの agent_done 待機中です`, 2);
   try {
     fs.writeSync(fd, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }) + "\n", undefined, "utf8");
   } finally {

@@ -1060,6 +1060,87 @@ test("sendAndWaitAgentDone: wait 中の close/killAll と stale file lock を拒
   });
 });
 
+test("agent wait lock: 死んだ pid の stale lock は自動回収して待機を再開できる", { skip: skipAgentDone }, async () => {
+  await withFakeCodexHome(async () => {
+    const [sid] = core.openAgent("codex", { agent_done: true });
+    try {
+      const meta = readAgentMeta(sid);
+      await markFakeAgentReady(sid, "codex");
+      const lockPath = path.join(agentStateDir(), `${sid}.${meta.launch_id}.wait.lock`);
+      // 実在しない pid（クラッシュした待機プロセスの残骸を再現）
+      fs.writeFileSync(lockPath, JSON.stringify({ pid: 99999999, at: "2026-01-01T00:00:00Z" }) + "\n", {
+        mode: 0o600,
+      });
+      const p = core.sendAndWaitAgentDone(sid, "echo STALE_RECLAIM", { timeout: 3, screen: false });
+      scheduleAgentDone(meta, { vendor_session_id: "codex-session-stale", turn_id: "stale-reclaim-turn" });
+      const out = await p;
+      assert.match(out, /turn_id=stale-reclaim-turn/);
+    } finally {
+      core.closeSession(sid);
+    }
+  });
+});
+
+test("agent wait lock: 古い malformed lock も残骸として回収する", { skip: skipAgentDone }, async () => {
+  await withFakeCodexHome(async () => {
+    const [sid] = core.openAgent("codex", { agent_done: true });
+    try {
+      const meta = readAgentMeta(sid);
+      await markFakeAgentReady(sid, "codex");
+      const lockPath = path.join(agentStateDir(), `${sid}.${meta.launch_id}.wait.lock`);
+      fs.writeFileSync(lockPath, "stale\n", { mode: 0o600 });
+      const old = new Date(Date.now() - 60_000);
+      fs.utimesSync(lockPath, old, old);
+      const p = core.sendAndWaitAgentDone(sid, "echo OLD_MALFORMED", { timeout: 3, screen: false });
+      scheduleAgentDone(meta, { vendor_session_id: "codex-session-oldmal", turn_id: "old-malformed-turn" });
+      const out = await p;
+      assert.match(out, /turn_id=old-malformed-turn/);
+    } finally {
+      core.closeSession(sid);
+    }
+  });
+});
+
+test("agent wait lock: 生きた別プロセスの lock は pid 診断付きで拒否し close/killAll も塞ぐ", { skip: skipAgentDone }, async () => {
+  await withFakeCodexHome(async () => {
+    const [sid] = core.openAgent("codex", { agent_done: true });
+    const meta = readAgentMeta(sid);
+    const lockPath = path.join(agentStateDir(), `${sid}.${meta.launch_id}.wait.lock`);
+    try {
+      await markFakeAgentReady(sid, "codex");
+      // 生きている外部プロセス＝テストランナーの親 pid を待機者として偽装
+      const livePid = process.ppid;
+      fs.writeFileSync(lockPath, JSON.stringify({ pid: livePid, at: "2026-01-01T00:00:00Z" }) + "\n", {
+        mode: 0o600,
+      });
+      await assert.rejects(
+        () => core.sendAndWaitAgentDone(sid, "echo SHOULD_NOT_BE_SENT2", { timeout: 0, screen: false }),
+        (e) =>
+          e.code === 2 &&
+          /別プロセスの agent_done 待機中/.test(e.message) &&
+          new RegExp(`pid ${livePid}`).test(e.message),
+      );
+      assert.throws(
+        () => core.closeSession(sid),
+        (e) => e.code === 2 && new RegExp(`pid ${livePid}`).test(e.message) && /close できません/.test(e.message),
+      );
+      assert.throws(
+        () => core.killAll(),
+        (e) => e.code === 2 && /killAll できません/.test(e.message) && new RegExp(`${sid}\\(pid ${livePid}\\)`).test(e.message),
+      );
+      const out = await core.readOutput(sid, { screen: true, raw: true });
+      assert.doesNotMatch(out, /SHOULD_NOT_BE_SENT2/);
+    } finally {
+      try {
+        fs.unlinkSync(lockPath);
+      } catch {
+        /* noop */
+      }
+      core.closeSession(sid);
+    }
+  });
+});
+
 test("sendAndWaitAgentDone: partial JSONL fragment は次 poll まで保持する", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const [sid] = core.openAgent("codex", { agent_done: true });
