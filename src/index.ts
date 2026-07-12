@@ -32,6 +32,46 @@ function fail(e: unknown): ToolResult {
   return { content: [{ type: "text", text: "aiterm: " + msg }], isError: true };
 }
 
+/**
+ * Factory 向けの read-only 診断。JSON の field は意図的に allowlist 制で、絶対 path、環境変数、
+ * token、コマンド本文、PTY 出力、raw log、認証状態を公開しない。
+ */
+function factoryDiagnostics(): string {
+  const ptyList = core.readOnlyPtyListDiagnostic();
+  const codex = core.vendorLauncherDiagnostic("codex");
+  const grok = core.vendorLauncherDiagnostic("grok");
+  const overall = ptyList.status === "unverified" ? "unverified" : "ready";
+  return JSON.stringify({
+    diagnostic_schema: "aiterm-mcp.factory-diagnostics.v1",
+    version: pkg.version,
+    overall,
+    mcp: { transport: "stdio", initialize: "ready", tool_call: "ready" },
+    pty_list: { access: "read_only", ...ptyList },
+    vendor_dependencies: {
+      codex: {
+        status: codex,
+        optional: true,
+        required_for: ["codex_agent"],
+      },
+      grok: {
+        status: grok,
+        optional: true,
+        required_for: ["grok_agent", "composer_agent"],
+      },
+    },
+  });
+}
+
+server.registerTool(
+  "diagnostics",
+  {
+    description:
+      "Factory 向け read-only 診断。安全な状態語彙だけを機械可読 JSON で返す（PTY 内容・認証情報・path・環境値は返さない）。",
+    inputSchema: {},
+  },
+  async () => ok(factoryDiagnostics()),
+);
+
 server.registerTool(
   "pty_open",
   {

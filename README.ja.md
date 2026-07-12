@@ -22,7 +22,7 @@
 
 **言葉でなく実測で:** このリポジトリ自身の 203 テストで、`pty_read` はコンテキストに載るトークンを生ログの **約 7.1 分の 1** に減らす。しかも pass/fail の判定は畳んでも残る。→ [組み込みシェルツールとの使い分け](#組み込みシェルツールとの使い分け)
 
-9 ツール: 6 つの **PTY ツール**（`pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list`）で 1 本の永続端末を開き・操作し・読む。加えて 3 つの **エージェント起動ツール**（`codex_agent` / `grok_agent` / `composer_agent`）が、別のコーディングエージェントの TUI を新しい端末の中に起動する。バックエンドは **tmux** なので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
+10 ツール: 6 つの **PTY ツール**（`pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list`）で 1 本の永続端末を開き・操作し・読む。加えて 3 つの **エージェント起動ツール**（`codex_agent` / `grok_agent` / `composer_agent`）が、別のコーディングエージェントの TUI を新しい端末の中に起動し、`diagnostics` が安全な factory readiness を返す。バックエンドは **tmux** なので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
 
 **状態:** 開発継続中 · この分野では新参で、別の形に賭けている（[既存手段との比較](#既存手段との比較)参照）· 動作対象は Linux · WSL2 · macOS · Windows ネイティブ（core PTY ツール。`agent_done` は現時点では POSIX/WSL/macOS のみ）· MIT · [変更履歴](CHANGELOG.md)。
 
@@ -129,7 +129,7 @@ claude mcp add --scope user --transport stdio aiterm -- npx -y aiterm-mcp
 Claude Code を再起動して、接続を確認:
 
 ```bash
-/mcp        # aiterm が connected・9 ツール公開、と出る
+/mcp        # aiterm が connected・10 ツール公開、と出る
 ```
 
 最初のセッション——4 回の呼び出しで、1 個の永続端末:
@@ -167,7 +167,7 @@ MCP クライアントが aiterm を stdio 越しにプログラムから駆動�
 
 ```mermaid
 flowchart LR
-    AI["AI / MCP client<br/>(the orchestrator)"] -->|"pty_send · codex_agent<br/>grok_agent · composer_agent"| S["aiterm-mcp<br/>stdio MCP · 9 tools"]
+    AI["AI / MCP client<br/>(the orchestrator)"] -->|"pty_send · codex_agent<br/>grok_agent · composer_agent · diagnostics"| S["aiterm-mcp<br/>stdio MCP · 10 tools"]
     S -->|"pty_read<br/>token-reduced"| AI
     S -->|"tmux send-keys<br/>capture-pane"| P["persistent PTYs<br/>tmux · survive restarts"]
     P -->|"ssh · docker · repl"| R["nested<br/>remote · container · REPL"]
@@ -248,6 +248,9 @@ aiterm は同じ核心の洞察——端末を出会いの場にする——を�
 | `pty_key` | 制御キーを送る | `session_id`, `key`（`C-c`/`Enter`/`Up`…） |
 | `pty_close` | セッションを閉じる | `session_id` |
 | `pty_list` | セッション一覧 | （なし） |
+| `diagnostics` | 機械可読 JSON による read-only factory readiness | （なし） |
+
+`diagnostics` は PTY やエージェントを起動しない。パッケージ版、MCP 呼出 readiness、read-only な PTY 一覧要約、任意 vendor launcher の可用性だけを返す。path・環境値・認証情報・コマンド本文・PTY 出力・raw log は意図的に返さない。通常未設定の任意依存は `not_applicable`、安全に確定できない状態は `unverified` と表す。
 
 ### 対話エージェント起動ツール
 

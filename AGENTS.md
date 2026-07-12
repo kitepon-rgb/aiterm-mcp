@@ -14,7 +14,7 @@ Claude Code 固有のツール名・人格・ワークフローは、Codex の�
 
 - `aiterm-mcp` は Node/TypeScript 製の stdio MCP サーバです。
 - tmux をバックエンドに、AI がローカル/SSH/コンテナ/REPL を 1 つの永続 PTY として操作できるようにします。
-- 公開ツールは PTY 6 種 (`pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list`) と、対話エージェント起動 3 種 (`codex_agent` / `grok_agent` / `composer_agent`) の計 9 種です。
+- 公開ツールは PTY 6 種 (`pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list`)、対話エージェント起動 3 種 (`codex_agent` / `grok_agent` / `composer_agent`)、factory 向け read-only `diagnostics` の計 10 種です。
 - セッション種別を増やす設計ではなく、SSH・docker・wsl・REPL は PTY 内へ送る通常テキストとして扱います。
 - エージェント起動ツールは例外的なブートストラップ層です。CLI バイナリ、`cwd`、`reasoning_effort` などを session 作成前に検証し、失敗時に残骸セッションを残さないことが重要です。
 

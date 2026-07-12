@@ -22,7 +22,7 @@
 
 **Measured, not claimed:** on this repo's own 203-test suite, a `pty_read` puts **~7.1× fewer tokens** in your context than the raw log — and the pass/fail verdict survives the fold. → [When to reach for it vs. the built-in shell](#when-to-reach-for-it-vs-the-built-in-shell)
 
-Nine tools: six **PTY tools** — `pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list` — to open, drive, and read one persistent terminal, plus three **agent launchers** — `codex_agent` / `grok_agent` / `composer_agent` — that each start another coding agent's TUI inside a fresh one. The backend is **tmux**, so sessions survive even if the MCP server or the AI client restarts.
+Ten tools: six **PTY tools** — `pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list` — to open, drive, and read one persistent terminal, three **agent launchers** — `codex_agent` / `grok_agent` / `composer_agent` — that each start another coding agent's TUI inside a fresh one, and `diagnostics` for safe factory readiness. The backend is **tmux**, so sessions survive even if the MCP server or the AI client restarts.
 
 **Status:** actively maintained · the newcomer here, betting on a different shape (see [vs. the alternatives](#vs-the-alternatives)) · runs on Linux · WSL2 · macOS · native Windows for the core PTY tools (`agent_done` is POSIX/WSL/macOS only for now) · MIT · see the [CHANGELOG](CHANGELOG.md).
 
@@ -129,7 +129,7 @@ claude mcp add --scope user --transport stdio aiterm -- npx -y aiterm-mcp
 Restart Claude Code, then verify the connection:
 
 ```bash
-/mcp        # aiterm should show as connected, exposing 9 tools
+/mcp        # aiterm should show as connected, exposing 10 tools
 ```
 
 Your first session — four calls, one persistent terminal:
@@ -167,7 +167,7 @@ The terminal is real and shared, so a human *can* jump in ([A human can watch](#
 
 ```mermaid
 flowchart LR
-    AI["AI / MCP client<br/>(the orchestrator)"] -->|"pty_send · codex_agent<br/>grok_agent · composer_agent"| S["aiterm-mcp<br/>stdio MCP · 9 tools"]
+    AI["AI / MCP client<br/>(the orchestrator)"] -->|"pty_send · codex_agent<br/>grok_agent · composer_agent · diagnostics"| S["aiterm-mcp<br/>stdio MCP · 10 tools"]
     S -->|"pty_read<br/>token-reduced"| AI
     S -->|"tmux send-keys<br/>capture-pane"| P["persistent PTYs<br/>tmux · survive restarts"]
     P -->|"ssh · docker · repl"| R["nested<br/>remote · container · REPL"]
@@ -250,6 +250,9 @@ On top of that sits a productized layer a raw tmux bridge doesn't have: **token-
 | `pty_key` | Send a control key | `session_id`, `key` (`C-c`/`Enter`/`Up`…) |
 | `pty_close` | Close a session | `session_id` |
 | `pty_list` | List sessions (agent rows carry `agent=<kind>` metadata) | (none) |
+| `diagnostics` | Read-only factory readiness as machine-readable JSON | (none) |
+
+`diagnostics` never starts a PTY or agent. It reports package version, MCP call readiness, a read-only PTY-list summary, and optional vendor-launcher availability. It deliberately excludes paths, environment values, credentials, command text, PTY output, and raw logs; normal unset optional dependencies are `not_applicable`, while an indeterminate probe is `unverified`.
 
 ### Interactive agent launchers
 

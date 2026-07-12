@@ -31,7 +31,7 @@ claude mcp add --scope user --transport stdio aiterm -- aiterm-mcp
 
 | File | Responsibility |
 | --- | --- |
-| `src/index.ts` | The MCP surface — exposes 9 tools over stdio via `@modelcontextprotocol/sdk` + `zod`: 6 PTY tools (`pty_open`/`pty_send`/`pty_read`/`pty_key`/`pty_close`/`pty_list`) + 3 agent launcher tools (`codex_agent`/`grok_agent`/`composer_agent`). |
+| `src/index.ts` | The MCP surface — exposes 10 tools over stdio via `@modelcontextprotocol/sdk` + `zod`: 6 PTY tools, 3 agent launcher tools, and one read-only `diagnostics` tool. |
 | `src/core.ts` | All the logic: tmux control, the `resolveTmux()` discovery layer, output reduction, 4-layer completion detection, the destructive-command safety gate, session-name validation, and the WSL bridge. |
 | `src/rtk.ts` | Per-command output reducers (`git status`/`git log`/`grep`/`pytest` and more) — a self-contained reimplementation, no `rtk` binary required. |
 | `prototype/python/` | The original Python MVP. It is the **porting source / verification baseline** — reference only, the shipped artifact is the Node version. |
@@ -59,7 +59,7 @@ Tests skip gracefully when tmux is absent (they detect it via `tmux -V`, or `wsl
 - **Never pollute stdout.** stdout is the JSON-RPC channel and nothing else. All diagnostics, notes, and warnings go to **stderr** (e.g. the `resolveTmux()` discovery note). A regression test (`smoke.test.mjs`) asserts every stdout line is JSON-RPC — a stray `console.log` will break it.
 - **No silent fallbacks.** When something can't be done, surface a clear error (the macOS work replaced an empty-stderr failure with an explicit "install tmux with brew" diagnostic). Don't paper over failures.
 - **Comments stay bilingual.** The codebase uses Japanese explanatory comments alongside the code (see `src/core.ts`). Match that style — explain the *why* and the non-obvious tradeoffs, in the same voice as the surrounding comments.
-- **Keep the PTY surface thin.** The project currently ships 9 tools — 6 PTY primitives (`pty_open`/`pty_send`/`pty_read`/`pty_key`/`pty_close`/`pty_list`) plus 3 agent launchers (`codex_agent`/`grok_agent`/`composer_agent`). SSH, containers, and REPLs are nested via `pty_send`, not added as tools — new session *kinds* reached by nesting are not new tools.
+- **Keep the PTY surface thin.** The project currently ships 10 tools — 6 PTY primitives, 3 agent launchers, and one read-only `diagnostics` tool. SSH, containers, and REPLs are nested via `pty_send`, not added as tools — new session *kinds* reached by nesting are not new tools.
 
 ## Pull requests
 

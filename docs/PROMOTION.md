@@ -15,10 +15,10 @@ output) is already committed — these steps activate it.
 
 Done and verified:
 
-- ✅ **npm `0.11.0` is latest** — keywords + `mcpName` active; global install verified via `npm install -g aiterm-mcp`.
-- ✅ **Official MCP Registry** — `io.github.kitepon-rgb/aiterm-mcp@0.11.0` listed; auto-registers on each release via `.github/workflows/registry.yml` (OIDC).
+- ✅ **npm `0.12.1` is latest** — keywords + `mcpName` active; registry version verified on 2026-07-13.
+- ✅ **Official MCP Registry** — `v0.12.1` registration workflow completed successfully; auto-registers on each release via `.github/workflows/registry.yml` (OIDC).
 - ✅ **mcp.so** — submitted/listed (with the square `.github/avatar.png`).
-- ✅ **GitHub topic** `mcp-server` added; **v0.11.0 Release** published. Earlier 0.4.1 discovery work is historical; the current version/tool surface is `v0.11.0` / 9 tools.
+- ✅ **GitHub topic** `mcp-server` added; **v0.12.1 Release** published. The published release has 9 tools; the next release adds read-only `diagnostics` as tool 10.
 - 🔄 **awesome-mcp-servers** — PR [#7620](https://github.com/punkpeye/awesome-mcp-servers/pull/7620) open (awaiting maintainer merge).
 - ✅ **Announced** on r/mcp.
 
@@ -162,7 +162,7 @@ on the SSH-persistence wedge, not "another tmux MCP".
 > token-reduced (per-command reducers for git/grep/pytest), and there's a
 > 4-layer completion detector so the AI knows when a command is actually done.
 >
-> Nine tools (6 PTY primitives + 3 interactive agent launchers), no clone/build
+> Ten tools (6 PTY primitives + 3 interactive agent launchers + read-only diagnostics), no clone/build
 > (`npx -y aiterm-mcp`), works on Linux/WSL2/macOS and native Windows (via a WSL
 > tmux bridge). MIT.
 >
@@ -187,7 +187,7 @@ on the SSH-persistence wedge, not "another tmux MCP".
    every command after rides the same authenticated session. SSH, docker, REPLs
    are just text you send in, not separate tools.
 3. Reads come back token-reduced (git/grep/pytest reducers), with a 4-layer
-   "is the command done?" detector. `npx -y aiterm-mcp`, 9 tools, MIT,
+   "is the command done?" detector. `npx -y aiterm-mcp`, 10 tools, MIT,
    Linux/WSL2/macOS/Windows. [demo gif]
 4. Repo + one-line Claude Code install 👇 https://github.com/kitepon-rgb/aiterm-mcp
 

@@ -1,0 +1,28 @@
+{
+  "diagnostic_schema": "aiterm-mcp.factory-diagnostics.v1",
+  "top_level_fields": [
+    "diagnostic_schema",
+    "version",
+    "overall",
+    "mcp",
+    "pty_list",
+    "vendor_dependencies"
+  ],
+  "status_values": ["ready", "not_applicable", "unverified"],
+  "mcp": {
+    "transport": "stdio",
+    "initialize": "ready",
+    "tool_call": "ready"
+  },
+  "mcp_fields": ["transport", "initialize", "tool_call"],
+  "pty_list": {
+    "access": "read_only"
+  },
+  "pty_list_fields": ["access", "status", "session_count"],
+  "vendor_keys": ["codex", "grok"],
+  "vendor_fields": ["status", "optional", "required_for"],
+  "vendor_required_for": {
+    "codex": ["codex_agent"],
+    "grok": ["grok_agent", "composer_agent"]
+  }
+}

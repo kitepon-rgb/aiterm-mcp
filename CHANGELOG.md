@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `diagnostics`: a read-only, machine-readable factory diagnostic that reports
+  package version, MCP call readiness, a privacy-safe PTY-list summary, and
+  optional Codex/Grok launcher availability. It never launches a PTY or agent,
+  and excludes paths, environment values, credentials, command text, terminal
+  output, and raw logs. Optional unset dependencies report `not_applicable`;
+  indeterminate probes report `unverified`.
+
 ## [0.12.1] - 2026-07-11
 
 Hardening sweep that clears the audit's remaining low-priority notes

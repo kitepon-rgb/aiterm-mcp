@@ -996,6 +996,31 @@ export function listSessions(): string {
   return "(セッション無し)";
 }
 
+// factory diagnostics 用の安全な状態語彙。通常の未設定と、状態を安全に確定できない失敗を混同しない。
+export type DiagnosticStatus = "ready" | "not_applicable" | "unverified";
+
+/**
+ * `pty_list` 相当を read-only に照会し、内容を返さず session 件数だけを返す。
+ * session 名・前面コマンド・PTY 出力を診断応答へ持ち出さないため、factory が安全に readiness を
+ * 見られる。socket 不在は「セッション未設定」であって障害ではない。
+ */
+export function readOnlyPtyListDiagnostic(): { status: DiagnosticStatus; session_count: number | null } {
+  try {
+    const r = tmux("list-sessions", "-F", "#{session_name}");
+    if (r.code === 0) {
+      return { status: "ready", session_count: r.stdout.split(/\r?\n/).filter(Boolean).length };
+    }
+    // tmux は専用 socket に server がいない通常状態を exit 1 で返す。その他の失敗を「空」と
+    // 偽装しないため、メッセージを公開せず unverified に留める。
+    if (/no server running|failed to connect/i.test(r.stderr)) {
+      return { status: "not_applicable", session_count: 0 };
+    }
+  } catch {
+    // tmux 未導入・WSL bridge 不全等。絶対 path や生 stderr を診断 JSON に出さない。
+  }
+  return { status: "unverified", session_count: null };
+}
+
 export function closeSession(name: string): string {
   assertSessionName(name);
   if (agentWaitLocks.has(name)) {
@@ -2474,17 +2499,40 @@ function resolveAgentBin(kind: AgentKind): string | null {
     // 明示指定 env は実在を検証する。存在しないパスを黙って返すと、session を作って
     // `'/typo' ...` を送信し bash が command not found を出すだけで openAgent は「起動した」と
     // 偽成功を返す（既定パス/PATH 経路は検証するのに env だけ無検証だった非対称の解消・A3）。
-    if (fs.existsSync(fromEnv)) return fromEnv;
+    if (isUsableExecutableFile(fromEnv)) return fromEnv;
     throw new AitermError(`${envVar} に指定された ${name} が存在しません: ${fromEnv}`, 2);
   }
   const cand = path.join(home, ...(rel as string[]));
-  if (fs.existsSync(cand)) return cand;
+  if (isUsableExecutableFile(cand)) return cand;
   const w = spawnSync(isWin ? "where" : "which", [name as string], {
     encoding: "utf8",
     timeout: 5000,
   });
-  if (w.status === 0 && (w.stdout ?? "").trim()) return w.stdout.trim().split(/\r?\n/)[0];
+  if (w.status === 0 && (w.stdout ?? "").trim()) {
+    const resolved = w.stdout.trim().split(/\r?\n/)[0];
+    if (isUsableExecutableFile(resolved)) return resolved;
+  }
   return null;
+}
+
+function isUsableExecutableFile(candidate: string): boolean {
+  try {
+    if (!fs.statSync(candidate).isFile()) return false;
+    if (isWin) return /\.(?:exe|cmd|bat|com)$/i.test(candidate);
+    fs.accessSync(candidate, fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** vendor CLI の存在だけを安全に要約する。認証状態・実行出力・解決先 path は返さない。 */
+export function vendorLauncherDiagnostic(kind: AgentKind): DiagnosticStatus {
+  try {
+    return resolveAgentBin(kind) ? "ready" : "not_applicable";
+  } catch {
+    return "unverified";
+  }
 }
 
 // 単一引用符で安全に包む（' は '\'' で脱出）。send は raw:true で送るため自前で quote する。

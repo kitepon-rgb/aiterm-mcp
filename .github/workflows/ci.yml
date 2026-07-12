@@ -42,7 +42,7 @@ jobs:
 
   # ネイティブ Windows は WSL/tmux 無しの GitHub runner では tmux 呼び出し（ensureWinBridge）が throw する。
   # よって tmux に触れない純粋層のみを検証する（C9・plan の明示フォールバック）: core-pure（toWslPath・
-  # utf8SafeEnd・stripControl・reduceOutput）／rtk（reducer 全般）／smoke（サーバ起動・stdout 衛生・9 ツール）。
+  # utf8SafeEnd・stripControl・reduceOutput）／rtk（reducer 全般）／smoke（サーバ起動・stdout 衛生・10 ツール）。
   # WSL ブリッジ統合経路（ensureWinBridge・pipe-pane の /mnt/c 書込・settleWinLog・PTY 完了検出）は手動
   # Windows 検証ゲートに残す（docs/archive/03_audit-sweep-2026-07.md）。continue-on-error: 緑安定後に needs へ昇格。
   test-windows:

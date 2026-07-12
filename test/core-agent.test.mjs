@@ -1476,6 +1476,20 @@ test("openAgent: 存在しない CODEX_BIN は明示エラー（偽成功にし�
   }
 });
 
+test("agent bin: ディレクトリや非実行fileをreadyにしない", () => {
+  const saved = process.env.CODEX_BIN;
+  process.env.CODEX_BIN = os.tmpdir();
+  try {
+    assert.equal(core.vendorLauncherDiagnostic("codex"), "unverified");
+    assert.throws(
+      () => core.openAgent("codex", {}),
+      (e) => e.code === 2 && /CODEX_BIN/.test(e.message),
+    );
+  } finally {
+    process.env.CODEX_BIN = saved;
+  }
+});
+
 // A6: cwd の空文字・~ 未展開を明示エラーに。tmux 不要（bin 解決後・session 前に throw）。
 test("openAgent: 空文字 cwd は明示エラー（A6）", () => {
   assert.throws(() => core.openAgent("codex", { cwd: "" }), (e) => e.code === 2 && /空/.test(e.message));
