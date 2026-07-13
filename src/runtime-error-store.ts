@@ -300,9 +300,10 @@ function processStartIdentity(pid: number, platform: NodeJS.Platform): string | 
     } catch { return null; }
   }
   if (platform === "win32") {
-    const script = "$p=Get-Process -Id $args[0] -ErrorAction Stop; $p.StartTime.ToUniversalTime().Ticks";
-    const result = spawnSync("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script, String(pid)], {
+    const script = "$p=Get-Process -Id $env:AITERMMCP_PROCESS_ID -ErrorAction Stop; $p.StartTime.ToUniversalTime().Ticks";
+    const result = spawnSync("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script], {
       encoding: "utf8", timeout: 1000, maxBuffer: 4096, windowsHide: true,
+      env: { ...process.env, AITERMMCP_PROCESS_ID: String(pid) },
     });
     const value = result.status === 0 ? (result.stdout ?? "").trim() : "";
     return /^\d+$/.test(value) ? `win32:${value}` : null;
