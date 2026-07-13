@@ -1,6 +1,6 @@
 # BugHub runtime error store plan
 
-Status: implementation complete; v0.12.2 release pending
+Status: complete; v0.12.2 published 2026-07-13
 
 This plan is aiterm-mcp's implementation TODO for a product-owned local runtime
 error projection. MCP stdout remains JSON-RPC-only and the existing PTY/session
@@ -60,6 +60,6 @@ state contract is unchanged.
 
 - [x] Bump `package.json`, `package-lock.json`, and `server.json` together to `0.12.2`; update release-facing documentation without moving an existing tag.
 - [x] Run build/full tests, pack/secret inspection, and a temporary-prefix stdio MCP smoke.
-- [ ] Push the release commit and require the tag-triggered npm provenance CI gate to pass.
-- [ ] After the owner H gate, create and push `v0.12.2`; verify npm publication, then create the GitHub Release so the MCP Registry workflow can register the already-published version.
-- [ ] Verify the published package exposes ten MCP tools, factory diagnostics, and runtime snapshot/ack; record npm, GitHub Release, and MCP Registry results in the canonical docs.
+- [x] Push the release commit and require the tag-triggered npm provenance CI gate to pass (`239e7e4`, CI `29245251184`).
+- [x] After the owner H gate, create and push `v0.12.2`; verify npm publication, then create the GitHub Release so MCP Registry workflow `29245462227` registers the already-published version.
+- [x] Verify the published package exposes ten MCP tools, factory diagnostics, and runtime snapshot; record npm, GitHub Release, and MCP Registry results in the canonical docs.

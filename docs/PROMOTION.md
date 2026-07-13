@@ -13,15 +13,16 @@ output) is already committed — these steps activate it.
 
 ## Status (live)
 
-> **v0.12.2 release candidate（公開待ち）**: factory diagnostics と opt-in の
-> local runtime error store を公開候補へ同期済み。collection は既定OFFで canonical
-> dotagents config の `collection.enabled: true` が明示された時だけ有効、network送信は行わない。
-> npm公開、tag、CI、MCP Registry登録、registry由来installの確認は未実施。
+> **v0.12.2（2026-07-13公開）**: factory diagnostics と opt-in の local runtime
+> error store を追加した。collection は既定OFFで canonical dotagents config の
+> `collection.enabled: true` が明示された時だけ有効、network送信は行わない。公開commit
+> `239e7e4`、tag CI `29245251184`、npm `latest`、tag / GitHub Release、MCP Registry
+> workflow `29245462227`、registry由来隔離installとMCP diagnosticsを確認済み。
 
 Done and verified:
 
-- ✅ **npm `0.12.1` is latest** — keywords + `mcpName` active; registry version verified on 2026-07-13.
-- ✅ **Official MCP Registry** — `v0.12.1` registration workflow completed successfully; auto-registers on each release via `.github/workflows/registry.yml` (OIDC).
+- ✅ **npm `0.12.2` is latest** — provenance publish and registry install verified on 2026-07-13.
+- ✅ **Official MCP Registry** — `v0.12.2` registration workflow `29245462227` completed successfully; auto-registers on each release via `.github/workflows/registry.yml` (OIDC).
 - ✅ **mcp.so** — submitted/listed (with the square `.github/avatar.png`).
 - ✅ **GitHub topic** `mcp-server` added; **v0.12.1 Release** published. The published release has 9 tools; the next release adds read-only `diagnostics` as tool 10.
 - 🔄 **awesome-mcp-servers** — PR [#7620](https://github.com/punkpeye/awesome-mcp-servers/pull/7620) open (awaiting maintainer merge).

@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.12.2] - release candidate (pending)
+## [0.12.2] - 2026-07-13
 
 ### Added
 - `diagnostics`: a read-only, machine-readable factory diagnostic that reports
@@ -25,9 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   persisted input is exact-validated with fingerprint recomputation; locks bind
   PID/start identity/token; permissions are revalidated; and typed ownership
   prevents lower PTY failures from being counted again as launcher failures.
-- Release candidate only: collection is disabled by default and the local store
-  performs no network I/O. Publication, tag, CI, registry registration, and
-  registry-install verification are pending.
+- Collection is disabled by default and the local store performs no network I/O.
+  Public commit `239e7e4`, provenance CI `29245251184`, npm `latest`, tag /
+  GitHub Release, MCP Registry workflow `29245462227`, and a registry-derived
+  isolated install were verified.
 
 ### Fixed
 - `aiterm-runtime-errors` now recognizes npm's POSIX bin symlink as its direct
