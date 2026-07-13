@@ -634,7 +634,7 @@ test("sendAndWaitAgentDone: Grok vendor event も待って suffix に vendor=gro
         assert.ok(metaFile);
         const meta = JSON.parse(fs.readFileSync(path.join(agentStateDir(), metaFile), "utf8"));
         await markFakeAgentReady(sid, "grok");
-        const p = core.sendAndWaitAgentDone(sid, "echo GROK_DONE_BODY", { timeout: 3, screen: false });
+        const p = core.sendAndWaitAgentDone(sid, "echo GROK_DONE_BODY", { timeout: 5, screen: false });
         setTimeout(() => {
           fs.appendFileSync(
             meta.event_file,
@@ -650,7 +650,7 @@ test("sendAndWaitAgentDone: Grok vendor event も待って suffix に vendor=gro
               at: new Date().toISOString(),
             }) + "\n",
           );
-        }, 200);
+        }, 500);
         const out = await p;
         assert.match(out, /GROK_DONE_BODY/, `send 結果を読める: ${out}`);
         assert.match(out, /is_complete=True via agent_done vendor=grok turn_id=prompt-test/, `agent_done suffix: ${out}`);

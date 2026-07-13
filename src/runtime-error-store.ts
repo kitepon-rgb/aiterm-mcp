@@ -136,7 +136,7 @@ const WINDOWS_DACL_VERIFY_SCRIPT = String.raw`
 $ErrorActionPreference='Stop'
 $target=$args[0]; $kind=$args[1]
 $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User
-$check=Get-Acl -LiteralPath $target
+$check=if($kind -eq 'directory'){[IO.Directory]::GetAccessControl($target)}else{[IO.File]::GetAccessControl($target)}
 $ownerSid=$check.GetOwner([Security.Principal.SecurityIdentifier]).Value
 $rules=@($check.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier]))
 if($ownerSid -ne $sid.Value -or $rules.Count -ne 1 -or $rules[0].IdentityReference.Value -ne $sid.Value -or $rules[0].AccessControlType -ne 'Allow' -or $rules[0].IsInherited -or (($rules[0].FileSystemRights -band [Security.AccessControl.FileSystemRights]::FullControl) -ne [Security.AccessControl.FileSystemRights]::FullControl)){exit 9}
@@ -148,7 +148,7 @@ $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User
 if($kind -eq 'directory'){$acl=New-Object Security.AccessControl.DirectorySecurity;$inherit=[Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'}else{$acl=New-Object Security.AccessControl.FileSecurity;$inherit=[Security.AccessControl.InheritanceFlags]::None}
 $acl.SetOwner($sid); $acl.SetAccessRuleProtection($true,$false)
 $rule=New-Object Security.AccessControl.FileSystemAccessRule($sid,[Security.AccessControl.FileSystemRights]::FullControl,$inherit,[Security.AccessControl.PropagationFlags]::None,[Security.AccessControl.AccessControlType]::Allow)
-$acl.AddAccessRule($rule); Set-Acl -LiteralPath $target -AclObject $acl
+$acl.AddAccessRule($rule); if($kind -eq 'directory'){[IO.Directory]::SetAccessControl($target,$acl)}else{[IO.File]::SetAccessControl($target,$acl)}
 ` + WINDOWS_DACL_VERIFY_SCRIPT;
 
 export function windowsPrivateDaclCommand(target: string, kind: "directory" | "file" = "directory"):

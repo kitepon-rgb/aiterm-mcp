@@ -413,7 +413,7 @@ test("Windows native の canonical config/state path と current SID only DACL c
   assert.match(command.args.at(-3), /GetOwner\(\[Security\.Principal\.SecurityIdentifier\]\)/);
   assert.match(command.args.at(-3), /FileSystemRights.*FullControl/);
   const verify = windowsPrivateDaclVerifyCommand("D:\\Local\\dotagents\\factory-reporter\\config.json", "file");
-  assert.equal(verify.command, "powershell.exe"); assert.match(verify.args.at(-3), /Get-Acl/); assert.doesNotMatch(verify.args.at(-3), /Set-Acl/);
+  assert.equal(verify.command, "powershell.exe"); assert.match(verify.args.at(-3), /GetAccessControl/); assert.doesNotMatch(verify.args.at(-3), /SetAccessControl/);
 });
 
 test("aiterm-runtime-errors CLI は snapshot/ack を JSON で公開し network を使わない", () => {
