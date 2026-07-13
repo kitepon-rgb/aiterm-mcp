@@ -22,30 +22,39 @@ const STORE_URL = pathToFileURL(path.join(HERE, "..", "dist", "runtime-error-sto
 const actualProfile = () => process.platform === "darwin" ? "mac"
   : process.platform === "win32" ? "windows-native"
     : (process.env.WSL_DISTRO_NAME || /microsoft/i.test(os.release()) ? "wsl" : "server");
+function applyWindowsPrivateAcl(target, kind = "file") {
+  if (process.platform !== "win32") return;
+  const command = windowsPrivateDaclCommand(target, kind);
+  const result = spawnSync(command.command, command.args, { encoding: "utf8", windowsHide: true });
+  assert.equal(result.status, 0, result.stderr || result.error?.message);
+}
 
 function fixture(enabled = true) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "aiterm-runtime-errors-"));
   const configPath = path.join(root, "config.json");
   const storePath = path.join(root, "state", "runtime-errors.json");
+  const platform = process.platform === "win32" ? "win32" : "darwin";
+  const profile = platform === "win32" ? "windows-native" : "mac";
   fs.writeFileSync(configPath, JSON.stringify({
     schema_version: "1.0",
-    host: { id: "test-host", profile: "mac" },
+    host: { id: "test-host", profile },
     collection: { enabled },
     reporting: { enabled: false },
   }), { mode: 0o600 });
+  applyWindowsPrivateAcl(configPath);
   let now = Date.parse("2026-07-13T00:00:00.000Z");
   const stderr = [];
   const store = new RuntimeErrorStore({
     configPath,
     storePath,
-    platform: "darwin",
+    platform,
     arch: "arm64",
     productVersion: "0.12.1-test",
     now: () => new Date(now),
     stderr: (line) => stderr.push(line),
   });
   return {
-    root, configPath, storePath, store, stderr,
+    root, configPath, storePath, store, stderr, platform, profile,
     tick(ms = 1000) { now += ms; },
     cleanup() { fs.rmSync(root, { recursive: true, force: true }); },
   };
@@ -73,7 +82,7 @@ test("canonical config は dotagents schema と同値の exact/length/conditiona
   const f = fixture();
   const base = {
     schema_version: "1.0",
-    host: { id: "test-host", profile: "mac" },
+    host: { id: "test-host", profile: f.profile },
     collection: { enabled: true },
     reporting: { enabled: false },
   };
@@ -83,8 +92,8 @@ test("canonical config は dotagents schema と同値の exact/length/conditiona
     for (const invalid of [
       { ...base, extra: true },
       { ...base, host: { ...base.host, extra: true } },
-      { ...base, host: { id: "a".repeat(65), profile: "mac" } },
-      { ...base, host: { id: "test-host", profile: "server" } },
+      { ...base, host: { id: "a".repeat(65), profile: f.profile } },
+      { ...base, host: { id: "test-host", profile: f.profile === "mac" ? "server" : "mac" } },
       { ...base, collection: { enabled: true, extra: true } },
       { ...base, reporting: { enabled: false, extra: true } },
       { ...base, reporting: { enabled: true } },
@@ -213,11 +222,13 @@ test("bakery ticket queue は dead owner の固有ticketだけを回収する", 
   } finally { f.cleanup(); }
 });
 
-test("20 process の同時観測をbakery ticket queueで全件保持する", async () => {
+test("20 process の同時観測をbakery ticket queueで全件保持する", {
+  skip: process.platform === "win32" ? "bakery排他はPOSIX matrix、Windowsはnative DACL/store試験で固定" : undefined,
+}, async () => {
   const f = fixture();
   try {
     const script = `import {RuntimeErrorStore} from ${JSON.stringify(STORE_URL)}; new RuntimeErrorStore(${JSON.stringify({
-      configPath: f.configPath, storePath: f.storePath, platform: "darwin", arch: "arm64", productVersion: "0.12.1-test",
+      configPath: f.configPath, storePath: f.storePath, platform: f.platform, arch: process.arch, productVersion: "0.12.1-test",
     })}).record({code:"AITERM.PTY_DEPENDENCY_UNAVAILABLE"});`;
     const outcomes = await Promise.all(Array.from({ length: 20 }, () => new Promise((resolve) => {
       const child = spawn(process.execPath, ["--input-type=module", "-e", script], { stdio: ["ignore", "ignore", "pipe"] });
@@ -239,17 +250,17 @@ test("採番前choosing公開は後発ticketのcritical section入場を止め�
     fs.mkdirSync(queue, { recursive: true, mode: 0o700 });
     const token = "b".repeat(32);
     let startId;
-    if (process.platform === "linux") {
+    if (f.platform === "linux") {
       const stat = fs.readFileSync(`/proc/${process.pid}/stat`, "utf8");
       startId = `linux:${stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19]}`;
     } else {
       const value = spawnSync("ps", ["-o", "lstart=", "-p", String(process.pid)], { encoding: "utf8" }).stdout.trim();
-      startId = `${process.platform}:${value}`;
+      startId = `${f.platform}:${value}`;
     }
     const choosing = path.join(queue, `choosing-${token}.json`);
     fs.writeFileSync(choosing, `${JSON.stringify({ pid: process.pid, start_id: startId, token })}\n`, { mode: 0o600 });
     const script = `import {RuntimeErrorStore} from ${JSON.stringify(STORE_URL)}; new RuntimeErrorStore(${JSON.stringify({
-      configPath: f.configPath, storePath: f.storePath, platform: process.platform, arch: process.arch, productVersion: "0.12.1-test",
+      configPath: f.configPath, storePath: f.storePath, platform: f.platform, arch: process.arch, productVersion: "0.12.1-test",
     })}).record({code:"AITERM.PTY_DEPENDENCY_UNAVAILABLE"});`;
     const child = spawn(process.execPath, ["--input-type=module", "-e", script], { stdio: "ignore" });
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -341,7 +352,7 @@ test("retention は acknowledged resolved record だけ compact し、unacked �
     const store = new RuntimeErrorStore({
       configPath: f.configPath,
       storePath: f.storePath,
-      platform: "darwin",
+      platform: f.platform,
       arch: "arm64",
       productVersion: "test",
       maxRecords: 2,
@@ -357,7 +368,7 @@ test("retention は acknowledged resolved record だけ compact し、unacked �
     const f2 = fixture();
     try {
       const bounded = new RuntimeErrorStore({
-        configPath: f2.configPath, storePath: f2.storePath, platform: "darwin", arch: "arm64",
+        configPath: f2.configPath, storePath: f2.storePath, platform: f2.platform, arch: process.arch,
         productVersion: "test", maxRecords: 2,
       });
       bounded.record({ code: "AITERM.PTY_DEPENDENCY_UNAVAILABLE" });
@@ -410,15 +421,20 @@ test("aiterm-runtime-errors CLI は snapshot/ack を JSON で公開し network �
   try {
     const configHome = path.join(root, "config");
     const stateHome = path.join(root, "state");
-    fs.mkdirSync(path.join(configHome, "dotagents"), { recursive: true });
-    fs.writeFileSync(path.join(configHome, "dotagents", "factory-reporter.json"), JSON.stringify({
+    const defaults = defaultRuntimeErrorPaths({
+      platform: process.platform, home: root, localAppData: root,
+      xdgConfigHome: configHome, xdgStateHome: stateHome,
+    });
+    fs.mkdirSync(path.dirname(defaults.configPath), { recursive: true });
+    fs.writeFileSync(defaults.configPath, JSON.stringify({
       schema_version: "1.0",
       host: { id: "test-host", profile: actualProfile() },
       collection: { enabled: true },
       reporting: { enabled: true, endpoint: "https://must-not-connect.invalid", credential_file: "/must/not/read" },
     }), { mode: 0o600 });
-    const env = { ...process.env, HOME: root, XDG_CONFIG_HOME: configHome, XDG_STATE_HOME: stateHome };
-    const entry = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "dist", "runtime-errors-cli.js");
+    applyWindowsPrivateAcl(defaults.configPath);
+    const env = { ...process.env, HOME: root, USERPROFILE: root, LOCALAPPDATA: root, XDG_CONFIG_HOME: configHome, XDG_STATE_HOME: stateHome };
+    const entry = path.join(HERE, "..", "dist", "runtime-errors-cli.js");
     let result = spawnSync(process.execPath, [entry, "snapshot"], { env, encoding: "utf8" });
     assert.equal(result.status, 0, result.stderr);
     let body = JSON.parse(result.stdout);
@@ -497,7 +513,9 @@ test("PTY dependency failure は core owner layer で固定 code を一度だけ
   assert.equal(snapshot.records[0].occurrence_count, 1);
 });
 
-test("vendor launcher failure は openAgent owner layer で固定 code を一度だけ記録する", () => {
+test("vendor launcher failure は openAgent owner layer で固定 code を一度だけ記録する", {
+  skip: process.platform === "win32" ? "Windows native は WSL bridge の実機境界" : undefined,
+}, () => {
   const { result, snapshot } = runOwnedFailure(
     'core.openAgent("codex", {})',
     { CODEX_BIN: "/definitely/missing/codex" },
