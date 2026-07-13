@@ -6,6 +6,7 @@
     "overall",
     "mcp",
     "pty_list",
+    "runtime_error_store",
     "vendor_dependencies"
   ],
   "status_values": ["ready", "not_applicable", "unverified"],
@@ -19,6 +20,7 @@
     "access": "read_only"
   },
   "pty_list_fields": ["access", "status", "session_count"],
+  "runtime_error_store_fields": ["status", "collection", "record_count", "unacknowledged_count"],
   "vendor_keys": ["codex", "grok"],
   "vendor_fields": ["status", "optional", "required_for"],
   "vendor_required_for": {

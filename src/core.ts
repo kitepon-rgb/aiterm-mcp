@@ -14,6 +14,7 @@ import * as os from "node:os";
 import { createHash, randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import * as rtk from "./rtk.js";
+import { recordRuntimeError, type RuntimeErrorCode } from "./runtime-error-store.js";
 
 // Windows ネイティブには tmux が無い。その場合だけ全 tmux 呼び出しを WSL 経由へ橋渡しする
 // （POSIX = Linux/WSL2/macOS は従来どおり tmux を直接叩く）。
@@ -115,6 +116,33 @@ export class AitermError extends Error {
   }
 }
 
+class TelemetryOwnedError extends AitermError {
+  readonly telemetryCode: RuntimeErrorCode;
+  constructor(message: string, code: number, telemetryCode: RuntimeErrorCode, cause?: unknown) {
+    super(message, code);
+    this.name = "TelemetryOwnedError";
+    this.telemetryCode = telemetryCode;
+    if (cause !== undefined) (this as Error & { cause?: unknown }).cause = cause;
+  }
+}
+
+function telemetryOwnedFailure(telemetryCode: RuntimeErrorCode, error: unknown, fallbackCode = 1): TelemetryOwnedError {
+  if (error instanceof TelemetryOwnedError) return error;
+  recordRuntimeError(telemetryCode);
+  const message = error instanceof Error ? error.message : String(error);
+  const code = error instanceof AitermError ? error.code : fallbackCode;
+  return new TelemetryOwnedError(message, code, telemetryCode, error);
+}
+function ownTelemetryFailure(telemetryCode: RuntimeErrorCode, error: unknown, fallbackCode = 1): never {
+  throw telemetryOwnedFailure(telemetryCode, error, fallbackCode);
+}
+
+function ptyDependencyError(message: string, observe = true): never {
+  const error = new AitermError(message, 2);
+  if (observe) ownTelemetryFailure("AITERM.PTY_DEPENDENCY_UNAVAILABLE", error, 2);
+  throw error;
+}
+
 // Windows のドライブパス (C:\a\b) を WSL から見える /mnt/c/a/b へ変換する。
 // 一時領域は常にドライブ直下なので UNC は想定外＝弾く（黙って壊れた //server パスを作らない）。
 export function toWslPath(p: string): string {
@@ -126,21 +154,21 @@ export function toWslPath(p: string): string {
 // Windows で最初の tmux 呼び出し前に一度だけ WSL+tmux の可用性を確かめ、失敗は原因別に投げる。
 // -e（ログインシェル非経由）＋短い timeout で、初回セットアップ未完了の wsl によるハングも防ぐ。
 let winBridgeOk = false;
-function ensureWinBridge(): void {
+function ensureWinBridge(observe = true): void {
   if (winBridgeOk) return;
   const r = spawnSync("wsl.exe", ["-e", "tmux", "-V"], { encoding: "utf8", timeout: 10000 });
   if (r.error) {
     const code = (r.error as NodeJS.ErrnoException).code;
     if (code === "ETIMEDOUT")
-      throw new AitermError("WSL が応答しません（初回セットアップ未完了の可能性）。一度 `wsl` を起動してから再実行してください。", 2);
+      ptyDependencyError("WSL が応答しません（初回セットアップ未完了の可能性）。一度 `wsl` を起動してから再実行してください。", observe);
     if (code === "ENOENT")
-      throw new AitermError("wsl.exe が見つかりません。Windows では WSL 上の tmux 経由で動作します。WSL と tmux を導入してください。", 2);
-    throw new AitermError(`wsl.exe を起動できませんでした（${code ?? "unknown"}）。`, 2);
+      ptyDependencyError("wsl.exe が見つかりません。Windows では WSL 上の tmux 経由で動作します。WSL と tmux を導入してください。", observe);
+    ptyDependencyError(`wsl.exe を起動できませんでした（${code ?? "unknown"}）。`, observe);
   }
   // wsl.exe は System32 にあるので「起動」は成功するが、ディストリ未導入や distro 内に tmux が無いと
   // 非ゼロで終わる。両方を区別せず（wsl の出力は UTF-16 で文字化けし得るため）正直に表す。
   if (r.status !== 0)
-    throw new AitermError("WSL 経由で tmux を起動できませんでした。WSL のディストリ未導入、または distro 内に tmux が無い可能性があります。`wsl tmux -V` が通るか確認してください（tmux 導入例: sudo apt install tmux）。", 2);
+    ptyDependencyError("WSL 経由で tmux を起動できませんでした。WSL のディストリ未導入、または distro 内に tmux が無い可能性があります。`wsl tmux -V` が通るか確認してください（tmux 導入例: sudo apt install tmux）。", observe);
   winBridgeOk = true;
 }
 
@@ -162,15 +190,15 @@ function tmuxMissingMessage(): string {
 // 解決順: AITERM_TMUX（明示指定）→ PATH 上の tmux → Homebrew 既定パス。一度だけ実行しキャッシュする。
 // 見つからなければ tmuxMissingMessage で投げる（黙ってフォールバックせず、原因が見えるようにする）。
 let tmuxBin: string | null = null;
-function resolveTmux(): string {
+function resolveTmux(observe = true): string {
   if (tmuxBin) return tmuxBin;
   const override = process.env.AITERM_TMUX;
   if (override) {
     const r = spawnSync(override, ["-V"], { encoding: "utf8", timeout: 5000 });
     if (!r.error && r.status === 0) return (tmuxBin = override);
-    throw new AitermError(
+    ptyDependencyError(
       `AITERM_TMUX に指定された tmux を起動できません: ${override}（\`${override} -V\` が通りません）`,
-      2,
+      observe,
     );
   }
   // CLI/開発時は PATH 上の tmux をそのまま使う（最優先）。
@@ -187,20 +215,20 @@ function resolveTmux(): string {
       /* 次の候補へ */
     }
   }
-  throw new AitermError(tmuxMissingMessage(), 2);
+  ptyDependencyError(tmuxMissingMessage(), observe);
 }
 
-function tmux(...args: string[]): { code: number; stdout: string; stderr: string } {
+function tmuxCommand(observe: boolean, ...args: string[]): { code: number; stdout: string; stderr: string } {
   // maxBuffer は既定 1MiB。capture-pane（大きなスクロールバック）や多セッションの list-sessions で
   // 頭打ちになり stdout が切れる/空になる。Python の subprocess.run は無制限だったので 64MiB へ広げる。
   // Windows は同じ tmux を WSL 経由（-e でログインシェル非経由＝$ 展開やクオート崩れを防ぐ）で叩く。
   let r;
   if (isWin) {
-    ensureWinBridge();
+    ensureWinBridge(observe);
     r = spawnSync("wsl.exe", ["-e", "tmux", "-S", SOCK, ...args], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   } else {
     // resolveTmux() は tmux を解決できなければ明確な AitermError を投げる（POSIX 版の事前確認）。
-    r = spawnSync(resolveTmux(), ["-S", SOCK, ...args], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    r = spawnSync(resolveTmux(observe), ["-S", SOCK, ...args], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   }
   // ENOBUFS（出力が 64MiB 超）を「code=1 の失敗」へ握り潰すと部分/空 stdout を正常扱いしてしまう。区別して投げる。
   // EXPECTED-FAILURE: 外部システム境界（tmux 出力過大）
@@ -211,9 +239,16 @@ function tmux(...args: string[]): { code: number; stdout: string; stderr: string
   // 通常は resolveTmux() が事前に弾くため発火しないが、mid-run 消滅に対する正直な防御。
   if (!isWin && r.error && (r.error as NodeJS.ErrnoException).code === "ENOENT") {
     tmuxBin = null; // 次回 resolveTmux で再解決を許す
-    throw new AitermError(tmuxMissingMessage(), 2);
+    ptyDependencyError(tmuxMissingMessage(), observe);
   }
   return { code: r.status ?? 1, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
+}
+
+function tmux(...args: string[]): { code: number; stdout: string; stderr: string } {
+  return tmuxCommand(true, ...args);
+}
+function tmuxCleanup(...args: string[]): { code: number; stdout: string; stderr: string } {
+  return tmuxCommand(false, ...args);
 }
 
 function sessionExists(name: string): boolean {
@@ -700,7 +735,11 @@ function assertNotDestructive(text: string, code: number, context = ""): void {
 // ---------------------------------------------------------------- 操作（return で返す / 失敗は AitermError）
 
 export function openSession(name?: string | null, shell = "bash"): [string, string] {
-  fs.mkdirSync(SOCKDIR, { recursive: true });
+  try {
+    fs.mkdirSync(SOCKDIR, { recursive: true });
+  } catch (error) {
+    ownTelemetryFailure("AITERM.PERSISTENCE_WRITE_FAILED", error);
+  }
   // macOS の /bin/bash は 3.2 で、起動時に zsh 移行バナーを出して最初の read を汚す。darwin かつ bash の
   // ときだけ -e で環境変数を渡して抑止する。-e は tmux>=3.2 が必要だが macOS の Homebrew tmux は常に該当。
   // （古い tmux<3.2 が残る Linux/WSL で -e を渡すと new-session が落ちるため、darwin 限定にする。）
@@ -731,7 +770,11 @@ export function openSession(name?: string | null, shell = "bash"): [string, stri
   // 新規セッションの .log は必ず truncate する。"a"（追記）だと外部 kill / killAll / クラッシュで
   // 同名 session だけ消えて .log が残った場合、offset=0 と相まって旧出力を新規として返す（B5）。
   // break は new-session 成功後にのみ到達＝作りたての空 session ゆえ切り詰めは安全。lastcmd/mark 残骸も掃除。
-  fs.writeFileSync(logpath(nm), "");
+  try {
+    fs.writeFileSync(logpath(nm), "");
+  } catch (error) {
+    ownTelemetryFailure("AITERM.PERSISTENCE_WRITE_FAILED", error);
+  }
   for (const p of [lastcmdpath(nm), markpath(nm)]) {
     try {
       fs.unlinkSync(p);
@@ -748,15 +791,23 @@ export function openSession(name?: string | null, shell = "bash"): [string, stri
   const pr = tmux("pipe-pane", "-t", nm, "-o", `cat >> ${quoted}`);
   if (pr.code !== 0) {
     // 配管に失敗した session は pty_read が永遠に空を返す＝成功を装わない。作った session を片付けて明示エラー。
-    tmux("kill-session", "-t", nm);
+    try { tmuxCleanup("kill-session", "-t", nm); } catch { /* cleanup failure is not a second observation */ }
     try {
       fs.unlinkSync(logpath(nm)); // B14: 直前に作った空 .log も残さない
     } catch {
       /* noop */
     }
-    throw new AitermError("tmux pipe-pane 失敗（出力ログを配管できないため session を破棄）: " + pr.stderr.trim(), 2);
+    ownTelemetryFailure(
+      "AITERM.PERSISTENCE_WRITE_FAILED",
+      new AitermError("tmux pipe-pane 失敗（出力ログを配管できないため session を破棄）: " + pr.stderr.trim(), 2),
+      2,
+    );
   }
-  writeOffset(nm, 0);
+  try {
+    writeOffset(nm, 0);
+  } catch (error) {
+    ownTelemetryFailure("AITERM.PERSISTENCE_WRITE_FAILED", error);
+  }
   return [nm, attachHint(nm)];
 }
 
@@ -1021,7 +1072,7 @@ export function readOnlyPtyListDiagnostic(): { status: DiagnosticStatus; session
   return { status: "unverified", session_count: null };
 }
 
-export function closeSession(name: string): string {
+function closeSessionInternal(name: string, observeDependency = true): string {
   assertSessionName(name);
   if (agentWaitLocks.has(name)) {
     throw new AitermError(`agent session '${name}' は agent_done 待機中のため close できません`, 2);
@@ -1037,7 +1088,7 @@ export function closeSession(name: string): string {
       );
     }
   }
-  tmux("kill-session", "-t", name);
+  (observeDependency ? tmux : tmuxCleanup)("kill-session", "-t", name);
   for (const p of [logpath(name), offsetpath(name), lastcmdpath(name), markpath(name)]) {
     try {
       fs.unlinkSync(p);
@@ -1047,6 +1098,10 @@ export function closeSession(name: string): string {
   }
   cleanupAgentState(name);
   return `closed ${name}`;
+}
+
+export function closeSession(name: string): string {
+  return closeSessionInternal(name, true);
 }
 
 export function killAll(): string {
@@ -2689,10 +2744,15 @@ export function openAgent(
     );
   }
   const agentDone = !!opts.agent_done;
-  const bin = resolveAgentBin(kind);
+  let bin: string | null;
+  try {
+    bin = resolveAgentBin(kind);
+  } catch (error) {
+    ownTelemetryFailure("AITERM.VENDOR_LAUNCHER_FAILED", error, 2);
+  }
   if (!bin) {
     const where = kind === "codex" ? "~/.local/bin/codex" : "~/.grok/bin/grok";
-    throw new AitermError(`${label} の CLI が見つかりません（${where} か PATH が必要）`, 2);
+    ownTelemetryFailure("AITERM.VENDOR_LAUNCHER_FAILED", new AitermError(`${label} の CLI が見つかりません（${where} か PATH が必要）`, 2), 2);
   }
   // cwd 検証（session を作る前に。cd 失敗はシェル内で静かに死に「起動した」と偽成功を返すため）。
   let cwd: string | null = null;
@@ -2741,13 +2801,14 @@ export function openAgent(
     // 掛けるのは純誤検知で、`codex 'rm -rf / を説明して'` 等の正当な起動を塞いでしまう（A4）。
     send(sid, full, { enter: true, mark: false, force: true, rtk: false, raw: true });
   } catch (e) {
+    const failure = telemetryOwnedFailure("AITERM.VENDOR_LAUNCHER_FAILED", e);
     // 起動コマンドを投入できなかった session は空のまま残る＝残骸を作らない。片付けてから元エラーを伝える。
     try {
-      closeSession(sid);
+      closeSessionInternal(sid, false);
     } catch {
       /* 片付け失敗より元エラーの伝達を優先 */
     }
-    throw e;
+    throw failure;
   }
   return [
     sid,

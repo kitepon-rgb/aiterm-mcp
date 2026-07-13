@@ -32,7 +32,8 @@
   "homepage": "https://github.com/kitepon-rgb/aiterm-mcp#readme",
   "type": "module",
   "bin": {
-    "aiterm-mcp": "dist/index.js"
+    "aiterm-mcp": "dist/index.js",
+    "aiterm-runtime-errors": "dist/runtime-errors-cli.js"
   },
   "files": [
     "dist",

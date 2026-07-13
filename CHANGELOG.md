@@ -14,6 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and excludes paths, environment values, credentials, command text, terminal
   output, and raw logs. Optional unset dependencies report `not_applicable`;
   indeterminate probes report `unverified`.
+- Product-owned local runtime error aggregation and the `aiterm-runtime-errors`
+  snapshot/ack/resolve/reopen CLI. Collection is explicit opt-in through the
+  canonical dotagents `collection.enabled` JSON boolean; the store is offline,
+  accepts only fixed error codes/templates, preserves unacknowledged records,
+  and exposes only bounded privacy-safe status through `diagnostics`.
+  MCP-side collection/diagnostics run in timeout-bounded child processes;
+  persisted input is exact-validated with fingerprint recomputation; locks bind
+  PID/start identity/token; permissions are revalidated; and typed ownership
+  prevents lower PTY failures from being counted again as launcher failures.
 
 ## [0.12.1] - 2026-07-11
 

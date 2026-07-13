@@ -133,7 +133,19 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 10 ツール公�
   assert.ok(diagnostics.pty_list.session_count === null ||
     (Number.isInteger(diagnostics.pty_list.session_count) && diagnostics.pty_list.session_count >= 0));
   assert.equal(diagnostics.pty_list.status === "unverified", diagnostics.pty_list.session_count === null);
-  assert.equal(diagnostics.overall, diagnostics.pty_list.status === "unverified" ? "unverified" : "ready");
+  assert.equal(
+    diagnostics.overall,
+    diagnostics.pty_list.status === "unverified" || diagnostics.runtime_error_store.status === "unverified"
+      ? "unverified"
+      : "ready",
+  );
+  assert.deepEqual(Object.keys(diagnostics.runtime_error_store), DIAGNOSTICS_FIXTURE.runtime_error_store_fields);
+  assert.ok(DIAGNOSTICS_FIXTURE.status_values.includes(diagnostics.runtime_error_store.status));
+  assert.ok(["enabled", "disabled", "malformed"].includes(diagnostics.runtime_error_store.collection));
+  for (const key of ["record_count", "unacknowledged_count"]) {
+    assert.ok(diagnostics.runtime_error_store[key] === null ||
+      (Number.isInteger(diagnostics.runtime_error_store[key]) && diagnostics.runtime_error_store[key] >= 0));
+  }
   assert.deepEqual(Object.keys(diagnostics.vendor_dependencies).sort(), DIAGNOSTICS_FIXTURE.vendor_keys);
   for (const [name, vendor] of Object.entries(diagnostics.vendor_dependencies)) {
     assert.deepEqual(Object.keys(vendor), DIAGNOSTICS_FIXTURE.vendor_fields);

@@ -12,6 +12,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import * as core from "./core.js";
+import { runtimeErrorStoreDiagnostic } from "./runtime-error-store.js";
 import { createRequire } from "node:module";
 
 // package.json の version を実行時に読み、MCP initialize で配るサーバ版と一致させる。
@@ -36,17 +37,19 @@ function fail(e: unknown): ToolResult {
  * Factory 向けの read-only 診断。JSON の field は意図的に allowlist 制で、絶対 path、環境変数、
  * token、コマンド本文、PTY 出力、raw log、認証状態を公開しない。
  */
-function factoryDiagnostics(): string {
+async function factoryDiagnostics(): Promise<string> {
   const ptyList = core.readOnlyPtyListDiagnostic();
   const codex = core.vendorLauncherDiagnostic("codex");
   const grok = core.vendorLauncherDiagnostic("grok");
-  const overall = ptyList.status === "unverified" ? "unverified" : "ready";
+  const runtimeErrors = await runtimeErrorStoreDiagnostic();
+  const overall = ptyList.status === "unverified" || runtimeErrors.status === "unverified" ? "unverified" : "ready";
   return JSON.stringify({
     diagnostic_schema: "aiterm-mcp.factory-diagnostics.v1",
     version: pkg.version,
     overall,
     mcp: { transport: "stdio", initialize: "ready", tool_call: "ready" },
     pty_list: { access: "read_only", ...ptyList },
+    runtime_error_store: runtimeErrors,
     vendor_dependencies: {
       codex: {
         status: codex,
@@ -69,7 +72,7 @@ server.registerTool(
       "Factory 向け read-only 診断。安全な状態語彙だけを機械可読 JSON で返す（PTY 内容・認証情報・path・環境値は返さない）。",
     inputSchema: {},
   },
-  async () => ok(factoryDiagnostics()),
+  async () => ok(await factoryDiagnostics()),
 );
 
 server.registerTool(
