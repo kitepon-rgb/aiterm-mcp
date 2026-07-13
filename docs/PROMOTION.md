@@ -13,6 +13,11 @@ output) is already committed — these steps activate it.
 
 ## Status (live)
 
+> **v0.12.2 release candidate（公開待ち）**: factory diagnostics と opt-in の
+> local runtime error store を公開候補へ同期済み。collection は既定OFFで canonical
+> dotagents config の `collection.enabled: true` が明示された時だけ有効、network送信は行わない。
+> npm公開、tag、CI、MCP Registry登録、registry由来installの確認は未実施。
+
 Done and verified:
 
 - ✅ **npm `0.12.1` is latest** — keywords + `mcpName` active; registry version verified on 2026-07-13.

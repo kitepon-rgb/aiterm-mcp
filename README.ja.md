@@ -24,6 +24,11 @@
 
 10 ツール: 6 つの **PTY ツール**（`pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list`）で 1 本の永続端末を開き・操作し・読む。加えて 3 つの **エージェント起動ツール**（`codex_agent` / `grok_agent` / `composer_agent`）が、別のコーディングエージェントの TUI を新しい端末の中に起動し、`diagnostics` が安全な factory readiness を返す。バックエンドは **tmux** なので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
 
+**v0.12.2 は release candidate（公開待ち）です。** factory diagnostics と local
+runtime-error store は canonical dotagents config の `collection.enabled: true` が明示された
+場合だけ収集し、既定OFF、network送信は行いません。npm公開、tag、CI、registry登録、registry由来install
+の確認は未実施です。
+
 **状態:** 開発継続中 · この分野では新参で、別の形に賭けている（[既存手段との比較](#既存手段との比較)参照）· 動作対象は Linux · WSL2 · macOS · Windows ネイティブ（core PTY ツール。`agent_done` は現時点では POSIX/WSL/macOS のみ）· MIT · [変更履歴](CHANGELOG.md)。
 
 ## なぜ今

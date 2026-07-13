@@ -132,6 +132,15 @@ export function defaultRuntimeErrorPaths(options: {
   };
 }
 
+const WINDOWS_DACL_VERIFY_SCRIPT = String.raw`
+$ErrorActionPreference='Stop'
+$target=$args[0]; $kind=$args[1]
+$sid=[Security.Principal.WindowsIdentity]::GetCurrent().User
+$check=Get-Acl -LiteralPath $target
+$ownerSid=$check.GetOwner([Security.Principal.SecurityIdentifier]).Value
+$rules=@($check.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier]))
+if($ownerSid -ne $sid.Value -or $rules.Count -ne 1 -or $rules[0].IdentityReference.Value -ne $sid.Value -or $rules[0].AccessControlType -ne 'Allow' -or $rules[0].IsInherited -or (($rules[0].FileSystemRights -band [Security.AccessControl.FileSystemRights]::FullControl) -ne [Security.AccessControl.FileSystemRights]::FullControl)){exit 9}
+`;
 const WINDOWS_DACL_SCRIPT = String.raw`
 $ErrorActionPreference='Stop'
 $target=$args[0]; $kind=$args[1]
@@ -140,11 +149,7 @@ if($kind -eq 'directory'){$acl=New-Object Security.AccessControl.DirectorySecuri
 $acl.SetOwner($sid); $acl.SetAccessRuleProtection($true,$false)
 $rule=New-Object Security.AccessControl.FileSystemAccessRule($sid,[Security.AccessControl.FileSystemRights]::FullControl,$inherit,[Security.AccessControl.PropagationFlags]::None,[Security.AccessControl.AccessControlType]::Allow)
 $acl.AddAccessRule($rule); Set-Acl -LiteralPath $target -AclObject $acl
-$check=Get-Acl -LiteralPath $target
-$ownerSid=$check.GetOwner([Security.Principal.SecurityIdentifier]).Value
-$rules=@($check.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier]))
-if($ownerSid -ne $sid.Value -or $rules.Count -ne 1 -or $rules[0].IdentityReference.Value -ne $sid.Value -or $rules[0].AccessControlType -ne 'Allow' -or $rules[0].IsInherited -or (($rules[0].FileSystemRights -band [Security.AccessControl.FileSystemRights]::FullControl) -ne [Security.AccessControl.FileSystemRights]::FullControl)){exit 9}
-`;
+` + WINDOWS_DACL_VERIFY_SCRIPT;
 
 export function windowsPrivateDaclCommand(target: string, kind: "directory" | "file" = "directory"):
   { command: string; args: string[] } {
@@ -152,6 +157,10 @@ export function windowsPrivateDaclCommand(target: string, kind: "directory" | "f
     command: "powershell.exe",
     args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", WINDOWS_DACL_SCRIPT, target, kind],
   };
+}
+export function windowsPrivateDaclVerifyCommand(target: string, kind: "directory" | "file" = "file"):
+  { command: string; args: string[] } {
+  return { command: "powershell.exe", args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", WINDOWS_DACL_VERIFY_SCRIPT, target, kind] };
 }
 
 function expectedHostProfile(platform: NodeJS.Platform): "server" | "mac" | "wsl" | "windows-native" {
@@ -168,9 +177,10 @@ function assertPrivatePosixStat(info: fs.Stats, expectedMode: number, label: str
 
 function readBoundedFile(file: string, maxBytes: number, platform: NodeJS.Platform, requirePrivate: boolean): string {
   if (platform === "win32") {
-    const info = fs.statSync(file);
-    if (!info.isFile() || info.size > maxBytes) throw new Error("file shape/size が不正です");
-    return fs.readFileSync(file, "utf8");
+    const before = fs.lstatSync(file);
+    if (!before.isFile() || before.isSymbolicLink() || before.size > maxBytes) throw new Error("file shape/size が不正です");
+    if (requirePrivate) { const command = windowsPrivateDaclVerifyCommand(file); const verified = spawnSync(command.command, command.args, { encoding: "utf8", windowsHide: true, timeout: 5000, maxBuffer: 16 * 1024 }); if (verified.error || verified.status !== 0) throw new Error("file DACL が不正です"); }
+    const fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK); try { const after = fs.fstatSync(fd); if (before.dev !== after.dev || before.ino !== after.ino || after.size > maxBytes) throw new Error("file が read 中に置換されました"); return fs.readFileSync(fd, "utf8"); } finally { fs.closeSync(fd); }
   }
   const before = fs.lstatSync(file);
   if (requirePrivate) assertPrivatePosixStat(before, 0o600, "runtime store/config");
@@ -212,7 +222,7 @@ function validateCanonicalConfig(config: unknown, platform: NodeJS.Platform): bo
 
 function collectionStatus(configPath: string, platform: NodeJS.Platform): CollectionStatus {
   let text: string;
-  try { text = readBoundedFile(configPath, MAX_CONFIG_BYTES, platform, platform !== "win32"); }
+  try { text = readBoundedFile(configPath, MAX_CONFIG_BYTES, platform, true); }
   catch (error) { return (error as NodeJS.ErrnoException).code === "ENOENT" ? "disabled" : "malformed"; }
   try {
     const config: unknown = JSON.parse(text);

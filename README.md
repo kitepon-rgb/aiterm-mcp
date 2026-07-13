@@ -24,6 +24,12 @@
 
 Ten tools: six **PTY tools** — `pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list` — to open, drive, and read one persistent terminal, three **agent launchers** — `codex_agent` / `grok_agent` / `composer_agent` — that each start another coding agent's TUI inside a fresh one, and `diagnostics` for safe factory readiness. The backend is **tmux**, so sessions survive even if the MCP server or the AI client restarts.
 
+**v0.12.2 is a release candidate (pending).** Factory diagnostics and the local
+runtime-error store collect only when canonical dotagents config explicitly sets
+`collection.enabled: true`; collection is off by default and performs no network
+I/O. Publication, tag, CI, registry registration, and registry-install verification
+are pending.
+
 **Status:** actively maintained · the newcomer here, betting on a different shape (see [vs. the alternatives](#vs-the-alternatives)) · runs on Linux · WSL2 · macOS · native Windows for the core PTY tools (`agent_done` is POSIX/WSL/macOS only for now) · MIT · see the [CHANGELOG](CHANGELOG.md).
 
 ## Why now

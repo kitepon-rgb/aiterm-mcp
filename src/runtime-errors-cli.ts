@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import process from "node:process";
-import { pathToFileURL } from "node:url";
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { RuntimeErrorStore } from "./runtime-error-store.js";
 
 type Command =
@@ -43,7 +44,20 @@ export function main(argv = process.argv.slice(2)): void {
   emit({ ok: true, command: command.name, changed, snapshot: store.snapshot() });
 }
 
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+function isDirectExecution(): boolean {
+  if (!process.argv[1]) return false;
+  try {
+    const invoked = realpathSync(process.argv[1]);
+    const modulePath = realpathSync(fileURLToPath(import.meta.url));
+    return process.platform === "win32"
+      ? invoked.toLowerCase() === modulePath.toLowerCase()
+      : invoked === modulePath;
+  } catch {
+    return false;
+  }
+}
+
+if (isDirectExecution()) {
   try {
     main();
   } catch {

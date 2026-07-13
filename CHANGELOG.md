@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.2] - release candidate (pending)
+
 ### Added
 - `diagnostics`: a read-only, machine-readable factory diagnostic that reports
   package version, MCP call readiness, a privacy-safe PTY-list summary, and
@@ -23,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   persisted input is exact-validated with fingerprint recomputation; locks bind
   PID/start identity/token; permissions are revalidated; and typed ownership
   prevents lower PTY failures from being counted again as launcher failures.
+- Release candidate only: collection is disabled by default and the local store
+  performs no network I/O. Publication, tag, CI, registry registration, and
+  registry-install verification are pending.
+
+### Fixed
+- `aiterm-runtime-errors` now recognizes npm's POSIX bin symlink as its direct
+  entrypoint, preventing a successful empty response from packed/global installs.
 
 ## [0.12.1] - 2026-07-11
 
@@ -462,7 +471,8 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.12.2...HEAD
+[0.12.2]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.12.1...v0.12.2
 [0.10.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.8.0...v0.9.0

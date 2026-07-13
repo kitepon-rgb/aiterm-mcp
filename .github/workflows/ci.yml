@@ -44,10 +44,9 @@ jobs:
   # よって tmux に触れない純粋層のみを検証する（C9・plan の明示フォールバック）: core-pure（toWslPath・
   # utf8SafeEnd・stripControl・reduceOutput）／rtk（reducer 全般）／smoke（サーバ起動・stdout 衛生・10 ツール）。
   # WSL ブリッジ統合経路（ensureWinBridge・pipe-pane の /mnt/c 書込・settleWinLog・PTY 完了検出）は手動
-  # Windows 検証ゲートに残す（docs/archive/03_audit-sweep-2026-07.md）。continue-on-error: 緑安定後に needs へ昇格。
+  # Windows 検証ゲートに残す（docs/archive/03_audit-sweep-2026-07.md）。この純粋層はpublish必須gateとする。
   test-windows:
     runs-on: windows-latest
-    continue-on-error: true
     strategy:
       matrix:
         node: [20, 22]
@@ -60,10 +59,10 @@ jobs:
       - run: npm ci
       - run: npm run build
       - name: Test tmux-independent layer (pure functions / reducers / server smoke)
-        run: node --test test/core-pure.test.mjs test/rtk.test.mjs test/smoke.test.mjs
+        run: node --test test/core-pure.test.mjs test/rtk.test.mjs test/smoke.test.mjs test/runtime-error-store.test.mjs
 
   publish:
-    needs: [test, test-macos]
+    needs: [test, test-macos, test-windows]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:

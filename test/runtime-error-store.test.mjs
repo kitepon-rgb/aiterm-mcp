@@ -13,6 +13,7 @@ import {
   runtimeErrorStoreDiagnostic,
   validateRuntimeObservation,
   windowsPrivateDaclCommand,
+  windowsPrivateDaclVerifyCommand,
 } from "../dist/runtime-error-store.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -400,6 +401,8 @@ test("Windows native の canonical config/state path と current SID only DACL c
   assert.match(command.args.at(-3), /IdentityReference\.Value -ne \$sid\.Value/);
   assert.match(command.args.at(-3), /GetOwner\(\[Security\.Principal\.SecurityIdentifier\]\)/);
   assert.match(command.args.at(-3), /FileSystemRights.*FullControl/);
+  const verify = windowsPrivateDaclVerifyCommand("D:\\Local\\dotagents\\factory-reporter\\config.json", "file");
+  assert.equal(verify.command, "powershell.exe"); assert.match(verify.args.at(-3), /Get-Acl/); assert.doesNotMatch(verify.args.at(-3), /Set-Acl/);
 });
 
 test("aiterm-runtime-errors CLI は snapshot/ack を JSON で公開し network を使わない", () => {
@@ -427,6 +430,15 @@ test("aiterm-runtime-errors CLI は snapshot/ack を JSON で公開し network �
     body = JSON.parse(result.stdout);
     assert.equal(body.ok, true);
     assert.equal(body.snapshot.acknowledged_cursor, 0);
+    if (process.platform !== "win32") {
+      const npmBinLink = path.join(root, "aiterm-runtime-errors");
+      fs.symlinkSync(entry, npmBinLink);
+      result = spawnSync(process.execPath, [npmBinLink, "snapshot"], { env, encoding: "utf8" });
+      assert.equal(result.status, 0, result.stderr);
+      body = JSON.parse(result.stdout);
+      assert.equal(body.ok, true);
+      assert.equal(body.command, "snapshot");
+    }
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
