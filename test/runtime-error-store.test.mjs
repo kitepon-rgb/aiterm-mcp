@@ -379,12 +379,14 @@ test("retention は acknowledged resolved record だけ compact し、unacked �
   } finally { f.cleanup(); }
 });
 
-test("POSIX store は private mode + atomic replacement、store failure wrapper は固定 stderr", () => {
+test("store は owner-private + atomic replacement、store failure wrapper は固定 stderr", () => {
   const f = fixture();
   try {
     f.store.record({ code: "AITERM.PTY_DEPENDENCY_UNAVAILABLE" });
-    assert.equal(fs.statSync(path.dirname(f.storePath)).mode & 0o777, 0o700);
-    assert.equal(fs.statSync(f.storePath).mode & 0o777, 0o600);
+    if (process.platform !== "win32") {
+      assert.equal(fs.statSync(path.dirname(f.storePath)).mode & 0o777, 0o700);
+      assert.equal(fs.statSync(f.storePath).mode & 0o777, 0o600);
+    }
     assert.deepEqual(fs.readdirSync(path.dirname(f.storePath)).sort(), [
       path.basename(f.storePath), `${path.basename(f.storePath)}.lock-queue`,
     ].sort());
