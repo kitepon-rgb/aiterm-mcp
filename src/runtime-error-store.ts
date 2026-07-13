@@ -134,7 +134,7 @@ export function defaultRuntimeErrorPaths(options: {
 
 const WINDOWS_DACL_VERIFY_SCRIPT = String.raw`
 $ErrorActionPreference='Stop'
-$target=$args[0]; $kind=$args[1]
+$target=$env:AITERMMCP_ACL_PATH; $kind=$env:AITERMMCP_ACL_KIND
 $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User
 $check=if($kind -eq 'directory'){[IO.Directory]::GetAccessControl($target)}else{[IO.File]::GetAccessControl($target)}
 $ownerSid=$check.GetOwner([Security.Principal.SecurityIdentifier]).Value
@@ -143,7 +143,7 @@ if($ownerSid -ne $sid.Value -or $rules.Count -ne 1 -or $rules[0].IdentityReferen
 `;
 const WINDOWS_DACL_SCRIPT = String.raw`
 $ErrorActionPreference='Stop'
-$target=$args[0]; $kind=$args[1]
+$target=$env:AITERMMCP_ACL_PATH; $kind=$env:AITERMMCP_ACL_KIND
 $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User
 if($kind -eq 'directory'){$acl=New-Object Security.AccessControl.DirectorySecurity;$inherit=[Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'}else{$acl=New-Object Security.AccessControl.FileSecurity;$inherit=[Security.AccessControl.InheritanceFlags]::None}
 $acl.SetOwner($sid); $acl.SetAccessRuleProtection($true,$false)
@@ -152,15 +152,20 @@ $acl.AddAccessRule($rule); if($kind -eq 'directory'){[IO.Directory]::SetAccessCo
 ` + WINDOWS_DACL_VERIFY_SCRIPT;
 
 export function windowsPrivateDaclCommand(target: string, kind: "directory" | "file" = "directory"):
-  { command: string; args: string[] } {
+  { command: string; args: string[]; env: NodeJS.ProcessEnv } {
   return {
     command: "powershell.exe",
-    args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", WINDOWS_DACL_SCRIPT, target, kind],
+    args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", WINDOWS_DACL_SCRIPT],
+    env: { ...process.env, AITERMMCP_ACL_PATH: target, AITERMMCP_ACL_KIND: kind },
   };
 }
 export function windowsPrivateDaclVerifyCommand(target: string, kind: "directory" | "file" = "file"):
-  { command: string; args: string[] } {
-  return { command: "powershell.exe", args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", WINDOWS_DACL_VERIFY_SCRIPT, target, kind] };
+  { command: string; args: string[]; env: NodeJS.ProcessEnv } {
+  return {
+    command: "powershell.exe",
+    args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", WINDOWS_DACL_VERIFY_SCRIPT],
+    env: { ...process.env, AITERMMCP_ACL_PATH: target, AITERMMCP_ACL_KIND: kind },
+  };
 }
 
 function expectedHostProfile(platform: NodeJS.Platform): "server" | "mac" | "wsl" | "windows-native" {
@@ -179,7 +184,7 @@ function readBoundedFile(file: string, maxBytes: number, platform: NodeJS.Platfo
   if (platform === "win32") {
     const before = fs.lstatSync(file);
     if (!before.isFile() || before.isSymbolicLink() || before.size > maxBytes) throw new Error("file shape/size が不正です");
-    if (requirePrivate) { const command = windowsPrivateDaclVerifyCommand(file); const verified = spawnSync(command.command, command.args, { encoding: "utf8", windowsHide: true, timeout: 5000, maxBuffer: 16 * 1024 }); if (verified.error || verified.status !== 0) throw new Error("file DACL が不正です"); }
+    if (requirePrivate) { const command = windowsPrivateDaclVerifyCommand(file); const verified = spawnSync(command.command, command.args, { encoding: "utf8", windowsHide: true, timeout: 5000, maxBuffer: 16 * 1024, env: command.env }); if (verified.error || verified.status !== 0) throw new Error("file DACL が不正です"); }
     const fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK); try { const after = fs.fstatSync(fd); if (before.dev !== after.dev || before.ino !== after.ino || after.size > maxBytes) throw new Error("file が read 中に置換されました"); return fs.readFileSync(fd, "utf8"); } finally { fs.closeSync(fd); }
   }
   const before = fs.lstatSync(file);
@@ -364,7 +369,7 @@ export class RuntimeErrorStore {
   private applyWindowsDacl(target: string, kind: "directory" | "file"): void {
     const command = windowsPrivateDaclCommand(target, kind);
     const result = spawnSync(command.command, command.args, {
-      encoding: "utf8", windowsHide: true, timeout: this.windowsAclTimeoutMs, maxBuffer: 16 * 1024,
+      encoding: "utf8", windowsHide: true, timeout: this.windowsAclTimeoutMs, maxBuffer: 16 * 1024, env: command.env,
     });
     if (result.error || result.status !== 0) throw new Error("Windows private DACL の適用/readback に失敗しました");
   }
