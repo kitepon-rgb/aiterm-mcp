@@ -650,7 +650,12 @@ test("openAgent composer agent_done: vendor=composer の metadata を作る", { 
         assert.ok(metaFile);
         const meta = JSON.parse(fs.readFileSync(path.join(agentStateDir(), metaFile), "utf8"));
         assert.equal(meta.kind, "composer");
-        const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
+        const out = await core.readOutput(sid, {
+          wait: true,
+          until: "<arg>grok-composer-2.5-fast</arg>",
+          timeout: 5,
+          raw: true,
+        });
         assert.match(out, /--no-auto-update/, `composer managed command: ${out}`);
         assert.match(out, /--no-alt-screen/, `composer managed no-alt-screen: ${out}`);
         assert.match(out, /--verbatim/, `composer managed verbatim: ${out}`);
