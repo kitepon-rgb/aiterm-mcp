@@ -294,6 +294,8 @@ When an agent's answer is longer than the `wait:"agent_done"` screen tail (pane 
 
 Before sending, `pty_send` blocks destructive commands (`rm -rf /`, `mkfs`, `dd of=/dev/…`, `DROP TABLE`, …) — pass `force: true` to override — and sanitizes ESC / bracketed-paste terminators. `pty_read` neutralizes control characters in what it returns by default (`raw: true` returns the bytes verbatim). This is a **tripwire, not a sandbox** (see [Known constraints](#known-constraints-by-design-not-bugs)).
 
+Each `pty_send` accepts at most 64 KiB of UTF-8 text. Sends to the same session are serialized across aiterm processes so chunks cannot interleave. On macOS, text is pasted through tmux in UTF-8-safe 256-byte chunks to avoid the platform PTY truncation observed with long input; Linux and WSL use one bounded paste. If a later chunk fails, aiterm reports the partial-send state and does not press Enter automatically. A lock left by a terminated sender fails closed before sending; close and recreate that session (or use `pty_kill_all` when every session is disposable) to clean it up safely.
+
 ## A human can watch
 
 Sessions live on a shared tmux socket. The `tmux -S … attach -t <id>` line printed by `pty_open` (and by each agent launcher) lets a human attach to the same terminal and intervene (`Ctrl-b d` to detach) — including watching a launched Codex/Grok/Composer session run and taking the keyboard from your AI mid-task. On native Windows the printed line is the WSL form — `wsl tmux -S … attach -t <id>` — since the session lives inside WSL.

@@ -75,6 +75,12 @@ const LINE_HEAD_CHARS = 1200;
 const LINE_TAIL_CHARS = 600;
 const DEDUP_MIN_RUN = 3; // 同一行がこれ以上連続したら 1 行＋件数に畳む
 const MAX_FULL_BYTES = 8 * 1024 * 1024; // full/range 読取で一度にメモリへ載せる上限（B7）
+const MAX_SEND_BYTES = 64 * 1024;
+// macOSのPTY入力queueは、tmuxが長文を1回で流すと後半を落とすことがある。
+// UTF-8境界を守って小さいtmux client roundtripに分け、各回にserver event loopがPTYへdrainできる境界を作る。
+const PTY_PASTE_CHUNK_BYTES = process.platform === "darwin" ? 256 : MAX_SEND_BYTES;
+const SESSION_SEND_LOCK_WAIT_MS = 10_000;
+const SESSION_SEND_LOCK_POLL_MS = 25;
 
 // 安全: send 前に弾く破壊的コマンド（外部システム境界の防御）
 const DESTRUCTIVE: RegExp[] = [
@@ -288,6 +294,31 @@ function pasteBufferSupportsNoSanitizeFlag(): boolean {
   return /\[-[^\]]*S[^\]]*\]/.test(usage);
 }
 
+function splitPtyText(text: string): string[] {
+  const chunks: string[] = [];
+  let chunk = "";
+  let chunkBytes = 0;
+  for (const codePoint of text) {
+    const bytes = Buffer.byteLength(codePoint, "utf8");
+    if (chunk && chunkBytes + bytes > PTY_PASTE_CHUNK_BYTES) {
+      chunks.push(chunk);
+      chunk = "";
+      chunkBytes = 0;
+    }
+    chunk += codePoint;
+    chunkBytes += bytes;
+  }
+  if (chunk) chunks.push(chunk);
+  return chunks;
+}
+
+function assertSendTextSize(text: string, context = "送信文字列"): void {
+  const bytes = Buffer.byteLength(text, "utf8");
+  if (bytes > MAX_SEND_BYTES) {
+    throw new AitermError(`${context}が${MAX_SEND_BYTES} bytesを超えています（${bytes} bytes）`, 2);
+  }
+}
+
 // session 名はファイルパス（logpath 等）と pipe-pane の /bin/sh 文字列へ流れる。英数 _ - のみ・64字に
 // 限定し、パストラバーサル（../）とシェルインジェクション（' でのクオート破り・$・; 等）を全入口で断つ。
 function assertSessionName(name: string): void {
@@ -436,6 +467,10 @@ function lastcmdpath(name: string): string {
 // mark:true 送信中フラグ。存在すれば waitCompletion が sentinel 完了検出（MARK_DONE_RE）を有効化する。
 function markpath(name: string): string {
   return path.join(SOCKDIR, name + ".mark");
+}
+function sendLockPath(name: string): string {
+  assertSessionName(name);
+  return path.join(SOCKDIR, name + ".send.lock");
 }
 
 function readOffset(name: string): number {
@@ -868,53 +903,80 @@ export function send(name: string, text: string, o: SendOpts = {}): string {
       );
     }
   }
-  writeLastcmd(name, text); // read rtk の reducer 分類用（書換/mark 前の素のコマンド）
-  if (o.rtk) text = rtkRewrite(text);
-  if (o.rtk && !o.force) assertNotDestructive(text, 3, "rtk 変換後: ");
-  if (o.mark) {
-    // 実出力は rc=<数字>、この行のエコーは rc=%d(リテラル)。MARK_DONE_RE は数字アンカーで後者に免疫。
-    text = text + `; printf '\\n<<<AITERM_DONE rc=%d>>>\\n' "$?"`;
-    try {
-      fs.writeFileSync(markpath(name), "1"); // waitCompletion に sentinel 完了検出を有効化させる
-    } catch {
-      /* noop（フラグ書けなくても until/quiescence 経路は生きる） */
+  assertSendTextSize(text);
+  const releaseSendLock = acquireSessionSendFileLock(name);
+  try {
+    writeLastcmd(name, text); // read rtk の reducer 分類用（書換/mark 前の素のコマンド）
+    if (o.rtk) text = rtkRewrite(text);
+    if (o.rtk && !o.force) assertNotDestructive(text, 3, "rtk 変換後: ");
+    if (o.mark) text = text + `; printf '\\n<<<AITERM_DONE rc=%d>>>\\n' "$?"`;
+    assertSendTextSize(text, o.rtk || o.mark ? "変換後の送信文字列" : "送信文字列");
+    if (o.mark) {
+      try {
+        fs.writeFileSync(markpath(name), "1"); // waitCompletion に sentinel 完了検出を有効化させる
+      } catch {
+        /* noop（フラグ書けなくても until/quiescence 経路は生きる） */
+      }
+    } else {
+      // 非 mark 送信は、未消化の古い mark 完了待ちを無効化する（前コマンドの sentinel を待ち続けない）。
+      try {
+        fs.unlinkSync(markpath(name));
+      } catch {
+        /* noop */
+      }
     }
-  } else {
-    // 非 mark 送信は、未消化の古い mark 完了待ちを無効化する（前コマンドの sentinel を待ち続けない）。
-    try {
-      fs.unlinkSync(markpath(name));
-    } catch {
-      /* noop */
+    // `send-keys -l`と単発`paste-buffer`は、長文をPTY入力queueへ一度に流し、macOS CIで
+    // 途中以降が欠落しても tmux 自体は code=0 を返した。macOSだけUTF-8を壊さない256byte以下に分け、
+    // Linux/WSLは一括のままとする。全chunk＋Enterはsession単位のcross-process lock内で直列化する。
+    const pasteSupportsNoSanitize = pasteBufferSupportsNoSanitizeFlag();
+    const chunks = splitPtyText(text);
+    const bufferBase = `aiterm-${process.pid}-${randomBytes(8).toString("hex")}`;
+    for (let i = 0; i < chunks.length; i += 1) {
+      const bufferName = `${bufferBase}-${i}`;
+      const partial =
+        i > 0
+          ? " 先行chunkはPTYに入力済みでEnterは未送信です。再送前に入力を確認・消去してください。"
+          : "";
+      const loaded = tmuxWithInput(chunks[i], "load-buffer", "-b", bufferName, "-");
+      if (loaded.code !== 0) {
+        tmuxCleanup("delete-buffer", "-b", bufferName);
+        throw new AitermError(
+          `tmux bufferへの送信準備に失敗しました` +
+            `（chunk ${i + 1}/${chunks.length}）: ${loaded.stderr.trim() || `code=${loaded.code}`}.${partial}`,
+          2,
+        );
+      }
+      // -r: LF→CR 置換を無効化。-Sは対応新版だけでvis(3)制御文字変換を無効化する。
+      // send 自身の raw/sanitize 契約だけを真実とし、tmux 側で黙って再変換させない。
+      const pasteArgs = ["paste-buffer", "-d", "-r"];
+      if (pasteSupportsNoSanitize) pasteArgs.push("-S");
+      pasteArgs.push("-b", bufferName, "-t", name);
+      const pasted = tmux(...pasteArgs);
+      if (pasted.code !== 0) {
+        // paste 失敗時は -d で消えないbufferを明示的に掃除する。元エラーを優先する。
+        tmuxCleanup("delete-buffer", "-b", bufferName);
+        throw new AitermError(
+          `tmux bufferのPTY送信に失敗しました` +
+            `（chunk ${i + 1}/${chunks.length}）: ${pasted.stderr.trim() || `code=${pasted.code}`}.${partial}`,
+          2,
+        );
+      }
     }
-  }
-  // `send-keys -l` は長いagent起動commandをPTY入力queueへ一度に流し、macOS CIで
-  // 途中以降が欠落しても tmux 自体は code=0 を返した。stdinから名前付きbufferへ読み、
-  // paste-buffer で送る。buffer名をprocess/callごとに分け、別プロセスの並行sendと衝突させない。
-  const bufferName = `aiterm-${process.pid}-${randomBytes(8).toString("hex")}`;
-  const pasteSupportsNoSanitize = pasteBufferSupportsNoSanitizeFlag();
-  const loaded = tmuxWithInput(text, "load-buffer", "-b", bufferName, "-");
-  if (loaded.code !== 0) {
-    throw new AitermError(`tmux bufferへの送信準備に失敗しました: ${loaded.stderr.trim() || `code=${loaded.code}`}`, 2);
-  }
-  // -r: LF→CR 置換を無効化。-Sは対応新版だけでvis(3)制御文字変換を無効化する。
-  // send 自身の raw/sanitize 契約だけを真実とし、tmux 側で黙って再変換させない。
-  const pasteArgs = ["paste-buffer", "-d", "-r"];
-  if (pasteSupportsNoSanitize) pasteArgs.push("-S");
-  pasteArgs.push("-b", bufferName, "-t", name);
-  const pasted = tmux(...pasteArgs);
-  if (pasted.code !== 0) {
-    // paste 失敗時は -d で消えないbufferを明示的に掃除する。元エラーを優先する。
-    tmuxCleanup("delete-buffer", "-b", bufferName);
-    throw new AitermError(`tmux bufferのPTY送信に失敗しました: ${pasted.stderr.trim() || `code=${pasted.code}`}`, 2);
-  }
-  if (enter) {
-    const entered = tmux("send-keys", "-t", name, "Enter");
-    if (entered.code !== 0) {
-      throw new AitermError(`tmuxへEnterを送れませんでした: ${entered.stderr.trim() || `code=${entered.code}`}`, 2);
+    if (enter) {
+      const entered = tmux("send-keys", "-t", name, "Enter");
+      if (entered.code !== 0) {
+        throw new AitermError(
+          `文字列はPTYに入力済みですがtmuxへEnterを送れませんでした: ` +
+            `${entered.stderr.trim() || `code=${entered.code}`}。再送前に入力を確認・消去してください`,
+          2,
+        );
+      }
     }
+    // コードポイント数で数える（JS の .length は UTF-16 単位で絵文字等がズレる。Python は len()=コードポイント）。
+    return `sent ${[...text].length} chars to ${name}` + (enter ? " (+Enter)" : "");
+  } finally {
+    releaseSendLock();
   }
-  // コードポイント数で数える（JS の .length は UTF-16 単位で絵文字等がズレる。Python は len()=コードポイント）。
-  return `sent ${[...text].length} chars to ${name}` + (enter ? " (+Enter)" : "");
 }
 
 export function sendKey(name: string, key: string): string {
@@ -1140,8 +1202,18 @@ function closeSessionInternal(name: string, observeDependency = true): string {
       );
     }
   }
+  {
+    const sending = liveSendLocks(name);
+    if (sending.length > 0) {
+      const d = sending[0];
+      throw new AitermError(
+        `session '${name}' は別プロセス${d.pid != null ? `（pid ${d.pid}）` : ""}の送信中のため close できません`,
+        2,
+      );
+    }
+  }
   (observeDependency ? tmux : tmuxCleanup)("kill-session", "-t", name);
-  for (const p of [logpath(name), offsetpath(name), lastcmdpath(name), markpath(name)]) {
+  for (const p of [logpath(name), offsetpath(name), lastcmdpath(name), markpath(name), sendLockPath(name)]) {
     try {
       fs.unlinkSync(p);
     } catch {
@@ -1171,11 +1243,18 @@ export function killAll(): string {
       throw new AitermError(`agent_done 待機中の session があるため killAll できません: ${list}`, 2);
     }
   }
+  {
+    const sending = liveSendLocks(null);
+    if (sending.length > 0) {
+      const list = sending.map((d) => `${d.session}${d.pid != null ? `(pid ${d.pid})` : ""}`).join(",");
+      throw new AitermError(`送信中の session があるため killAll できません: ${list}`, 2);
+    }
+  }
   tmux("kill-server");
-  // B9: SOCKDIR 内の .log/.offset/.lastcmd/.mark 残骸も掃除する（残すと B5 の stale-log 復活の温床）。
+  // B9: SOCKDIR 内の .log/.offset/.lastcmd/.mark/.send.lock 残骸も掃除する。
   try {
     for (const f of fs.readdirSync(SOCKDIR)) {
-      if (/\.(log|offset|lastcmd|mark)$/.test(f)) {
+      if (/\.(log|offset|lastcmd|mark)$/.test(f) || f.endsWith(".send.lock")) {
         try {
           fs.unlinkSync(path.join(SOCKDIR, f));
         } catch {
@@ -1702,10 +1781,94 @@ function probeWaitLock(p: string): WaitLockProbe {
 function unlinkStaleWaitLock(p: string): void {
   try {
     const st = fs.lstatSync(p);
-    if (st.isFile() && !st.isSymbolicLink() && st.uid === currentUid()) fs.unlinkSync(p);
+    const uid = typeof process.getuid === "function" ? process.getuid() : null;
+    if (st.isFile() && !st.isSymbolicLink() && (uid == null || st.uid === uid)) fs.unlinkSync(p);
   } catch {
     /* noop */
   }
+}
+
+function liveSendLocks(name: string | null): Array<{ session: string; pid: number | null; at: string | null }> {
+  let files: string[];
+  try {
+    files = fs.readdirSync(SOCKDIR);
+  } catch {
+    return [];
+  }
+  const out: Array<{ session: string; pid: number | null; at: string | null }> = [];
+  for (const f of files) {
+    if (!f.endsWith(".send.lock")) continue;
+    const session = f.slice(0, -".send.lock".length);
+    if (name != null && session !== name) continue;
+    const p = path.join(SOCKDIR, f);
+    const probe = probeWaitLock(p);
+    if (probe.live) out.push({ session, pid: probe.pid, at: probe.at });
+    // dead send lockはここでunlinkしない。probe後に別processが同pathへ新しいlive lockを作る
+    // ABAが起きると、そのlive lockを消して二重owner化できる。close/killAllがsessionを止めた後に掃除する。
+  }
+  return out;
+}
+
+function acquireSessionSendFileLock(name: string): () => void {
+  const p = sendLockPath(name);
+  const token = randomBytes(16).toString("hex");
+  const nofollow = (fs.constants as Record<string, number>).O_NOFOLLOW ?? 0;
+  const deadline = Date.now() + SESSION_SEND_LOCK_WAIT_MS;
+  let fd: number | null = null;
+  let lastProbe: WaitLockProbe = { pid: null, at: null, live: true };
+  while (fd == null) {
+    try {
+      fd = fs.openSync(p, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY | nofollow, 0o600);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+      lastProbe = probeWaitLock(p);
+      if (!lastProbe.live) {
+        const detail = lastProbe.pid != null ? `pid ${lastProbe.pid}` : "owner不明";
+        throw new AitermError(
+          `session '${name}' に前回送信のlock残骸があります（${detail}）。` +
+            `自動回収は並行送信の混線を招くため行いません。pty_closeでsessionを閉じてから再作成するか、` +
+            `不要な全sessionをpty_kill_allで停止して残骸を掃除してください`,
+          2,
+        );
+      }
+      if (Date.now() >= deadline) {
+        const detail = lastProbe.pid != null ? `pid ${lastProbe.pid}` : "owner不明";
+        throw new AitermError(
+          `session '${name}' は別プロセスの送信中です（${detail}）。${SESSION_SEND_LOCK_WAIT_MS}ms待ってもlockを取得できませんでした`,
+          2,
+        );
+      }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, SESSION_SEND_LOCK_POLL_MS);
+    }
+  }
+  try {
+    fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, at: new Date().toISOString(), token }) + "\n", "utf8");
+  } catch (error) {
+    try {
+      fs.closeSync(fd);
+    } catch {
+      /* noop */
+    }
+    // pathを再確認せずunlinkすると、外部置換後のlockを消し得る。書込失敗は残骸としてfail closedし、
+    // close/killAllのsession停止後cleanupへ委ねる。
+    throw error;
+  }
+  fs.closeSync(fd);
+  try {
+    fs.chmodSync(p, 0o600);
+  } catch {
+    /* Windows等でmode強制できなくてもOS user temp境界とO_EXCLは維持される */
+  }
+  return () => {
+    try {
+      const st = fs.lstatSync(p);
+      if (!st.isFile() || st.isSymbolicLink()) return;
+      const current = JSON.parse(fs.readFileSync(p, "utf8").split("\n", 1)[0]) as { token?: unknown };
+      if (current.token === token) fs.unlinkSync(p);
+    } catch {
+      /* 別ownerのlockや置換済みpathは消さない */
+    }
+  };
 }
 
 // close/killAll 用: 生きた別プロセス待機の wait lock を列挙する（stale 残骸は数えない）。

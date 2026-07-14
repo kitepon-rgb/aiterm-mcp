@@ -59,10 +59,15 @@ diagnostics、固定エラー、agent一覧・完了suffixには公開しない�
   - [x] 現在のdefault正本がcanonical通常file・single-link・current UID・owner-only・JSON object・安全な祖先であり、下記4回の実行が同じ正本で再認証なしに成立することを値非表示で確認した。
 - [x] 隔離installした0.12.3 MCPから実GrokとComposerを各連続2回起動し、4/4で期待token・`agent_done`・再認証要求なし・session closeを確認する。
 - [x] 独立refuterでauth/metadata/versionとruntime typed分類を反証し、修正後にP0/P1が残らないことを確認する。
-- [x] macOS CIで再現した長いagent起動commandの途中欠落を修正する。`send-keys -l`
+- [ ] macOS CIで再現した長いagent起動commandの途中欠落を修正する。`send-keys -l`
   の偽成功を廃し、tmux buffer経由の完全送信と6,000文字の実PTY回帰を固定する。
   tmux 3.4/3.7bの一次sourceで制御文字契約を確定し、BEL/ESC/DEL/tab/LFの9byte回帰も追加。
-  独立refuter P0/P1なし、ローカル237/237とtgz隔離MCP smoke（10 tools・diagnostics 0.12.3）はgreen。
+  単発pbuffer版は独立refuter P0/P1なし・ローカル237/237とtgz隔離MCP smokeはgreenだったが、
+  CI `29298524378` のmacOS Node 20で6,000文字回帰が再度欠落したためreopen。分割pasteで再検証する。
+  分割版の初回反証ではstale send lockを8 processが同時回収すると二重owner化するABAを実機再現。
+  自動回収を棄却し、送信前fail-closed＋session停止後cleanupへ修正して再反証する。
+  修正後は旧8-process条件で8/8送信前失敗・PTY出力0 byte・close後復旧を確認し、独立refuter P0/P1なし。
+  ローカル240/240、長文＋並行送信10連続、tgz隔離MCP smoke（10 tools・diagnostics 0.12.3）はgreen。
 - [ ] 上記修正後にLinux/macOS/Windowsの全CIをgreenにし、公開ゲートを再開する。
 - [ ] patch release・npm・MCP Registry・BugHub/dotagents台帳を同期する（publish/tag/pushはH承認後）。
 

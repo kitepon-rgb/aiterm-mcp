@@ -15,11 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   longer symlink auth/lock files that Grok's atomic replacement can detach from
   the real credential store; refresh and browser approval now persist to the
   normal credential without weakening hook/config isolation.
-- PTY text delivery now loads a uniquely named tmux buffer through stdin and
-  pastes it into the pane, preventing long agent launch commands from being
-  silently truncated on macOS. Runtime capability discovery preserves exact
-  control bytes and line feeds across both older tmux (without `paste-buffer
-  -S`) and newer tmux (where `-S` disables the new `vis(3)` conversion).
+- PTY text delivery now loads uniquely named tmux buffers through stdin. macOS
+  uses UTF-8-safe 256-byte paste chunks to avoid the observed long-input PTY
+  truncation, while Linux and WSL keep a single bounded paste. Per-session
+  cross-process locks prevent concurrent sends from interleaving, inputs above
+  64 KiB fail before any bytes are sent, and partial failures never press Enter
+  automatically. A stale send lock fails closed until the session is stopped,
+  avoiding unsafe automatic-recovery ABA races. Runtime capability discovery preserves exact control bytes
+  and line feeds across older tmux (without `paste-buffer -S`) and newer tmux
+  (where `-S` disables the new `vis(3)` conversion).
 - Runtime error-store contention no longer misclassifies ordinary hostile
   error text as a replaced lock entry; only typed disappearance/replacement
   races are skipped, while malformed ownership/mode/link state still fails

@@ -3,7 +3,7 @@
 // 破壊コマンドは「遮断＝送信前に throw」のため一切実行されない。force/相対/サニタイズ確認は enter:false で打鍵のみ→C-u で消す。
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -46,6 +46,28 @@ async function waitForForeground(name, cmd, timeoutMs = 3000) {
     await new Promise((r) => setTimeout(r, 50));
   }
   return false;
+}
+
+function runConcurrentSender(session, char, count) {
+  const coreUrl = new URL("../dist/core.js", import.meta.url).href;
+  const script =
+    `import * as core from ${JSON.stringify(coreUrl)};` +
+    `core.send(process.argv[2], process.argv[1].repeat(Number(process.argv[3])), ` +
+    `{ raw: true, force: true, enter: false });`;
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ["--input-type=module", "-e", script, char, session, String(count)], {
+      env: process.env,
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    let stderr = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("error", reject);
+    child.on("exit", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`sender ${char} exit=${code}: ${stderr}`));
+    });
+  });
 }
 
 // ---------------------------------------------------------------- 破壊ゲート（10 正規表現を網羅・遮断＝未送信）
@@ -151,10 +173,75 @@ test("send: 6,000文字の入力を途中欠落させずPTYへ送る", { skip },
   core.openSession(session);
   try {
     const marker = "<<<AITERM_LONG_INPUT len=6000>>>";
-    const command = `v=${"x".repeat(6000)}; printf '\\n<<<AITERM_LONG_INPUT len=%s>>>\\n' "\${#v}"`;
+    // 256byte境界直後に3byte文字を置き、chunk分割がUTF-8を壊さないことも同時に固定する。
+    const value = `${"x".repeat(255)}あ${"x".repeat(5744)}`;
+    const command = `v=${value}; printf '\\n<<<AITERM_LONG_INPUT len=%s>>>\\n' "\${#v}"`;
     core.send(session, command, { force: true });
     const out = await core.readOutput(session, { wait: true, until: marker, timeout: 5, raw: true });
     assert.ok(out.includes(marker), "長いcommandの末尾まで実行される");
+  } finally {
+    core.closeSession(session);
+  }
+});
+
+test("send: 別processの同一session送信をchunk単位で混線させない", { skip }, async () => {
+  const session = "selftest_send_lock";
+  const outputPath = path.join(process.env.TMPDIR, "send-lock-output.bin");
+  core.openSession(session);
+  try {
+    const ready = "<<<AITERM_SEND_LOCK_READY>>>";
+    const done = "<<<AITERM_SEND_LOCK_DONE>>>";
+    core.send(
+      session,
+      `stty raw -echo; printf '<<<AITERM_SEND_LOCK_%s>>>\\n' READY; ` +
+        `dd bs=1 count=12000 of='${outputPath}' 2>/dev/null; stty sane; ` +
+        `printf '<<<AITERM_SEND_LOCK_%s>>>\\n' DONE`,
+      { force: true },
+    );
+    await core.readOutput(session, { wait: true, until: ready, timeout: 5, raw: true });
+    await Promise.all([runConcurrentSender(session, "A", 6000), runConcurrentSender(session, "B", 6000)]);
+    await core.readOutput(session, { wait: true, until: done, timeout: 5, raw: true });
+    const actual = fs.readFileSync(outputPath, "utf8");
+    const ab = `${"A".repeat(6000)}${"B".repeat(6000)}`;
+    const ba = `${"B".repeat(6000)}${"A".repeat(6000)}`;
+    assert.ok(actual === ab || actual === ba, "send全体が直列化され、2つの文字列が混線しない");
+  } finally {
+    try { core.closeSession(session); } catch {}
+    fs.rmSync(outputPath, { force: true });
+  }
+});
+
+test("send: 64KiB超の入力はchunk生成前にfail-loud", { skip }, () => {
+  assert.throws(
+    () => core.send(SESS, "x".repeat(64 * 1024 + 1), { force: true, enter: false }),
+    (e) => e.code === 2 && /65536 bytes/.test(e.message) && /65537 bytes/.test(e.message),
+  );
+});
+
+test("send: stale send lockを並行自動回収せずfail-closedし、close後に復旧する", { skip }, async () => {
+  const session = "selftest_stale_send_lock";
+  const lockPath = path.join(SOCKDIR, `${session}.send.lock`);
+  core.openSession(session);
+  try {
+    fs.writeFileSync(
+      lockPath,
+      JSON.stringify({ pid: 2147483647, at: "2000-01-01T00:00:00.000Z", token: "stale" }) + "\n",
+      { mode: 0o600 },
+    );
+    const attempts = await Promise.allSettled(
+      Array.from({ length: 8 }, (_, i) => runConcurrentSender(session, String.fromCharCode(65 + i), 6000)),
+    );
+    assert.ok(attempts.every((r) => r.status === "rejected"), "全senderが送信前にfail-closedする");
+    assert.ok(fs.existsSync(lockPath), "stale pathを並行reclaimerがunlinkしない");
+  } finally {
+    core.closeSession(session);
+  }
+  assert.ok(!fs.existsSync(lockPath), "session停止後のcloseがstale lockを掃除する");
+  core.openSession(session);
+  try {
+    const r = core.send(session, "STALE_LOCK_CLOSED_AND_REOPENED", { force: true, enter: false });
+    assert.match(r, /sent 30 chars/);
+    core.sendKey(session, "C-u");
   } finally {
     core.closeSession(session);
   }

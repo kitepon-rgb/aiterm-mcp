@@ -105,7 +105,9 @@ server.registerTool(
       "agent_done:true で起動した Codex/Grok/Composer セッションは wait:'agent_done' で Stop hook まで待てる。",
     inputSchema: {
       session_id: z.string(),
-      text: z.string().describe("送る文字列（コマンド）"),
+      text: z
+        .string()
+        .describe("送る文字列（コマンド）。UTF-8で最大64KiB"),
       enter: z.boolean().default(true).describe("末尾で Enter を送る"),
       wait: z
         .enum(["none", "agent_done"])
