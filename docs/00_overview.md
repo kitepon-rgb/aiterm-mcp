@@ -12,7 +12,6 @@
 - [11_audit-2026-07-11.md](11_audit-2026-07-11.md) - v0.11.0 全域監査＋実動作確認の確定指摘（チェックボックス＝修正 TODO 兼用）・棄却台帳・残余検証点。
 - [12_agent-transcript-read-plan.md](12_agent-transcript-read-plan.md) - `pty_read(agent_transcript:true)` で長い TUI 回答を vendor transcript から回収する設計（B5・実装済み）。
 - [13_native-factory-diagnostics-plan.md](13_native-factory-diagnostics-plan.md) - factory 向け read-only diagnostics の公開契約・privacy 境界・検証 TODO。
-- [14_grok-auth-path-plan.md](14_grok-auth-path-plan.md) - managed `GROK_HOME` の隔離を保ったまま、Grok公式 `GROK_AUTH_PATH` でOAuth更新を通常認証正本へ永続化する修正計画。
 
 ## 決定記録
 

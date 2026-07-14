@@ -70,7 +70,11 @@ diagnostics、固定エラー、agent一覧・完了suffixには公開しない�
   ローカル240/240、長文＋並行送信10連続、tgz隔離MCP smoke（10 tools・diagnostics 0.12.3）はgreen。
 - [x] 上記修正後にLinux/macOS/Windowsの全CIをgreenにし、公開ゲートを再開する。
   main CI `29299928719` でLinux 18/20/22・macOS 18/20/22・Windows純粋層20/22が全green。
-- [ ] patch release・npm・MCP Registry・BugHub/dotagents台帳を同期する（publish/tag/pushはH承認後）。
+- [x] patch release・npm・MCP Registry・BugHub/dotagents台帳を同期する（publish/tag/pushはH承認後）。
+  `v0.12.3`（`52264c3`）をtag CI `29300067245`のTrusted Publishingでnpmへ公開し、
+  GitHub Release、MCP Registry workflow `29300266525`、Registry `isLatest=true`を確認した。
+  公開npm packageからMCP 10 toolsとGrok/Composer実`agent_done`・closeを確認し、Mac正規CLIを0.12.3へ更新。
+  dotagents v1 reporterの送信後、BugHub `mac-kite/aiterm-mcp`が0.12.3・installed・compatible、outbox 0・ACK failure 0であることをreadbackした。
 
 ## 非目標
 
