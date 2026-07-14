@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.3] - 2026-07-14
+
+### Fixed
+- Grok/Composer `agent_done` launches now pass the validated canonical OAuth
+  file through vendor-owned `GROK_AUTH_PATH`. The per-launch isolated homes no
+  longer symlink auth/lock files that Grok's atomic replacement can detach from
+  the real credential store; refresh and browser approval now persist to the
+  normal credential without weakening hook/config isolation.
+- PTY text delivery now loads a uniquely named tmux buffer through stdin and
+  pastes it into the pane, preventing long agent launch commands from being
+  silently truncated on macOS. Runtime capability discovery preserves exact
+  control bytes and line feeds across both older tmux (without `paste-buffer
+  -S`) and newer tmux (where `-S` disables the new `vis(3)` conversion).
+- Runtime error-store contention no longer misclassifies ordinary hostile
+  error text as a replaced lock entry; only typed disappearance/replacement
+  races are skipped, while malformed ownership/mode/link state still fails
+  loudly.
+
 ## [0.12.2] - 2026-07-13
 
 ### Added

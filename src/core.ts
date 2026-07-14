@@ -219,17 +219,22 @@ function resolveTmux(observe = true): string {
   ptyDependencyError(tmuxMissingMessage(), observe);
 }
 
-function tmuxCommand(observe: boolean, ...args: string[]): { code: number; stdout: string; stderr: string } {
+function tmuxCommandWithInput(
+  observe: boolean,
+  input: string | undefined,
+  ...args: string[]
+): { code: number; stdout: string; stderr: string } {
   // maxBuffer は既定 1MiB。capture-pane（大きなスクロールバック）や多セッションの list-sessions で
   // 頭打ちになり stdout が切れる/空になる。Python の subprocess.run は無制限だったので 64MiB へ広げる。
   // Windows は同じ tmux を WSL 経由（-e でログインシェル非経由＝$ 展開やクオート崩れを防ぐ）で叩く。
   let r;
+  const spawnOpts = { encoding: "utf8" as const, maxBuffer: 64 * 1024 * 1024, input };
   if (isWin) {
     ensureWinBridge(observe);
-    r = spawnSync("wsl.exe", ["-e", "tmux", "-S", SOCK, ...args], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    r = spawnSync("wsl.exe", ["-e", "tmux", "-S", SOCK, ...args], spawnOpts);
   } else {
     // resolveTmux() は tmux を解決できなければ明確な AitermError を投げる（POSIX 版の事前確認）。
-    r = spawnSync(resolveTmux(observe), ["-S", SOCK, ...args], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    r = spawnSync(resolveTmux(observe), ["-S", SOCK, ...args], spawnOpts);
   }
   // ENOBUFS（出力が 64MiB 超）を「code=1 の失敗」へ握り潰すと部分/空 stdout を正常扱いしてしまう。区別して投げる。
   // EXPECTED-FAILURE: 外部システム境界（tmux 出力過大）
@@ -245,8 +250,15 @@ function tmuxCommand(observe: boolean, ...args: string[]): { code: number; stdou
   return { code: r.status ?? 1, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
 
+function tmuxCommand(observe: boolean, ...args: string[]): { code: number; stdout: string; stderr: string } {
+  return tmuxCommandWithInput(observe, undefined, ...args);
+}
+
 function tmux(...args: string[]): { code: number; stdout: string; stderr: string } {
   return tmuxCommand(true, ...args);
+}
+function tmuxWithInput(input: string, ...args: string[]): { code: number; stdout: string; stderr: string } {
+  return tmuxCommandWithInput(true, input, ...args);
 }
 function tmuxCleanup(...args: string[]): { code: number; stdout: string; stderr: string } {
   return tmuxCommand(false, ...args);
@@ -259,6 +271,21 @@ function sessionExists(name: string): boolean {
 function paneCurrentCommand(name: string): string {
   const r = tmux("display-message", "-p", "-t", name, "#{pane_current_command}");
   return r.code === 0 ? r.stdout.trim() : "";
+}
+
+function pasteBufferSupportsNoSanitizeFlag(): boolean {
+  const listed = tmux("list-commands");
+  if (listed.code !== 0) {
+    throw new AitermError(
+      `tmux paste-buffer 能力の確認に失敗しました: ${listed.stderr.trim() || `code=${listed.code}`}`,
+      2,
+    );
+  }
+  const usage = listed.stdout.split("\n").find((line) => line.startsWith("paste-buffer "));
+  if (!usage) throw new AitermError("tmux list-commands にpaste-bufferがありません", 2);
+  // tmux 3.4は制御文字を無変換でpasteし、-S自体が無い。3.7は既定でvis(3)変換し、
+  // -Sが無変換を選ぶ。version文字比較で推測せず、実際のcommand usageにflagがあるかを見る。
+  return /\[-[^\]]*S[^\]]*\]/.test(usage);
 }
 
 // session 名はファイルパス（logpath 等）と pipe-pane の /bin/sh 文字列へ流れる。英数 _ - のみ・64字に
@@ -860,8 +887,32 @@ export function send(name: string, text: string, o: SendOpts = {}): string {
       /* noop */
     }
   }
-  tmux("send-keys", "-t", name, "-l", "--", text);
-  if (enter) tmux("send-keys", "-t", name, "Enter");
+  // `send-keys -l` は長いagent起動commandをPTY入力queueへ一度に流し、macOS CIで
+  // 途中以降が欠落しても tmux 自体は code=0 を返した。stdinから名前付きbufferへ読み、
+  // paste-buffer で送る。buffer名をprocess/callごとに分け、別プロセスの並行sendと衝突させない。
+  const bufferName = `aiterm-${process.pid}-${randomBytes(8).toString("hex")}`;
+  const pasteSupportsNoSanitize = pasteBufferSupportsNoSanitizeFlag();
+  const loaded = tmuxWithInput(text, "load-buffer", "-b", bufferName, "-");
+  if (loaded.code !== 0) {
+    throw new AitermError(`tmux bufferへの送信準備に失敗しました: ${loaded.stderr.trim() || `code=${loaded.code}`}`, 2);
+  }
+  // -r: LF→CR 置換を無効化。-Sは対応新版だけでvis(3)制御文字変換を無効化する。
+  // send 自身の raw/sanitize 契約だけを真実とし、tmux 側で黙って再変換させない。
+  const pasteArgs = ["paste-buffer", "-d", "-r"];
+  if (pasteSupportsNoSanitize) pasteArgs.push("-S");
+  pasteArgs.push("-b", bufferName, "-t", name);
+  const pasted = tmux(...pasteArgs);
+  if (pasted.code !== 0) {
+    // paste 失敗時は -d で消えないbufferを明示的に掃除する。元エラーを優先する。
+    tmuxCleanup("delete-buffer", "-b", bufferName);
+    throw new AitermError(`tmux bufferのPTY送信に失敗しました: ${pasted.stderr.trim() || `code=${pasted.code}`}`, 2);
+  }
+  if (enter) {
+    const entered = tmux("send-keys", "-t", name, "Enter");
+    if (entered.code !== 0) {
+      throw new AitermError(`tmuxへEnterを送れませんでした: ${entered.stderr.trim() || `code=${entered.code}`}`, 2);
+    }
+  }
   // コードポイント数で数える（JS の .length は UTF-16 単位で絵文字等がズレる。Python は len()=コードポイント）。
   return `sent ${[...text].length} chars to ${name}` + (enter ? " (+Enter)" : "");
 }

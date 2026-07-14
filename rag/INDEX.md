@@ -273,3 +273,8 @@ AIターミナル直接操作プロジェクトの調査一次資料。`rag/sour
 - [XTerm – Bracketed Paste Mode](sources/safety/xterm-bracketed-paste-spec.md) — xterm公式によるブラケットペーストモードの仕様・歴史・採用状況。ESC[?2004h で有効化し、貼り付けたテキストを ESC[200~ … ESC[201~ で囲む。allowPasteControls による制御文字フィルタにも言及。
   - 出典: <https://invisible-island.net/xterm/xterm-paste64.html> (spec, 16092 chars)
   - 効きどころ: PTYへ「貼り付け相当」のテキストを送る際、ブラケットペーストの開始/終了マーカーと、その保護が制御文字混入には無力である(=送る前に我々がサニタイズ責任を持つ)という設計上の前提を一次仕様で確定できる。
+
+## tmux runtime contract — 2件
+
+- [tmux 3.4 `paste-buffer` source](sources/tmux/tmux-3.4-paste-buffer-source.md) — `-S`非対応、`-r`でLFを保持し、buffer本文は無変換でpaneへ書く一次source抜粋。
+- [tmux 3.7b `paste-buffer` source](sources/tmux/tmux-3.7b-paste-buffer-source.md) — 既定は`vis(3)`変換、`-S`で無変換、`-r`でLFを保持する一次source抜粋。

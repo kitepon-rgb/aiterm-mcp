@@ -146,6 +146,46 @@ test("サニタイズ: raw=true は素通し", { skip }, () => {
   core.sendKey(SESS, "C-u");
 });
 
+test("send: 6,000文字の入力を途中欠落させずPTYへ送る", { skip }, async () => {
+  const session = "selftest_long_input";
+  core.openSession(session);
+  try {
+    const marker = "<<<AITERM_LONG_INPUT len=6000>>>";
+    const command = `v=${"x".repeat(6000)}; printf '\\n<<<AITERM_LONG_INPUT len=%s>>>\\n' "\${#v}"`;
+    core.send(session, command, { force: true });
+    const out = await core.readOutput(session, { wait: true, until: marker, timeout: 5, raw: true });
+    assert.ok(out.includes(marker), "長いcommandの末尾まで実行される");
+  } finally {
+    core.closeSession(session);
+  }
+});
+
+test("send raw: 制御文字とtabをtmux側で再変換しない", { skip }, async () => {
+  const session = "selftest_raw_bytes";
+  core.openSession(session);
+  try {
+    const ready = "<<<AITERM_RAW_READY>>>";
+    core.send(
+      session,
+      `stty raw -echo; printf '<<<AITERM_RAW_%s>>>\\n' READY; dd bs=1 count=9 2>/dev/null | od -An -tx1; stty sane`,
+      { force: true },
+    );
+    await core.readOutput(session, { wait: true, until: ready, timeout: 5, raw: true });
+    core.send(session, "A\x07B\x1bC\x7fD\t\n", { raw: true, force: true, enter: false });
+    const expected = /41\s+07\s+42\s+1b\s+43\s+7f\s+44\s+09\s+0a/;
+    const out = await core.readOutput(session, {
+      wait: true,
+      until: "09\\s+0a",
+      untilRegex: true,
+      timeout: 5,
+      raw: true,
+    });
+    assert.match(out, expected, `raw payload 9byteが無変換でPTYへ届く: ${JSON.stringify(out)}`);
+  } finally {
+    core.closeSession(session);
+  }
+});
+
 // ---------------------------------------------------------------- sendKey
 test("sendKey: 別名→tmux キー名・戻り値", { skip }, () => {
   assert.equal(core.sendKey(SESS, "C-c"), `sent key C-c to ${SESS}`);
