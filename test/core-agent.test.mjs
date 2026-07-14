@@ -42,7 +42,9 @@ function makeFakeCodexHome() {
 }
 
 function makeFakeGrokHome() {
-  const dir = fs.mkdtempSync(path.join(process.env.TMPDIR, "fake-grok-home-"));
+  // macOS の /var は /private/var への symlink。auth の canonical path 契約を検証する fixture
+  // だけ実パス下に置き、tmux socket 用 TMPDIR は短い従来値のまま保つ。
+  const dir = fs.mkdtempSync(path.join(fs.realpathSync(process.env.TMPDIR), "fake-grok-home-"));
   fs.writeFileSync(path.join(dir, "auth.json"), "{}\n", { mode: 0o600 });
   fs.writeFileSync(path.join(dir, "config.toml"), "[cli]\nauto_update = true\n", { mode: 0o600 });
   return dir;
@@ -370,7 +372,7 @@ test("openAgent codex agent_done: managed CODEX_HOME と Stop hook を組み立�
   });
 });
 
-test("openAgent grok agent_done: isolated HOME と managed GROK_HOME/Stop hook/OAuth lock を組み立てる", { skip: skipAgentDone }, async () => {
+test("openAgent grok agent_done: isolated HOME と managed GROK_HOME/Stop hook/GROK_AUTH_PATH を組み立てる", { skip: skipAgentDone }, async () => {
   const savedBin = process.env.GROK_BIN;
   process.env.GROK_BIN = "/bin/echo";
   try {
@@ -389,9 +391,14 @@ test("openAgent grok agent_done: isolated HOME と managed GROK_HOME/Stop hook/O
         assert.equal(meta.kind, "grok");
         assert.equal(meta.hook_route, "managed_grok_home");
         assert.ok(fs.existsSync(meta.event_file), "event file を作る");
-        assert.equal(fs.readlinkSync(path.join(meta.grok_home, "auth.json")), path.join(fakeHome, "auth.json"));
-        assert.equal(fs.readlinkSync(path.join(meta.grok_home, "auth.json.lock")), path.join(fakeHome, "auth.json.lock"));
-        assert.ok(fs.statSync(path.join(fakeHome, "auth.json.lock")).isFile(), "real Grok home 側に lock を作る");
+        assert.equal(meta.grok_auth_path, path.join(fakeHome, "auth.json"));
+        assert.equal(fs.existsSync(path.join(meta.grok_home, "auth.json")), false);
+        assert.equal(fs.existsSync(path.join(meta.grok_home, "auth.json.lock")), false);
+        const replacement = path.join(fakeHome, "auth.replacement");
+        fs.writeFileSync(replacement, '{"rotated":true}\n', { mode: 0o600 });
+        fs.renameSync(replacement, meta.grok_auth_path);
+        assert.match(fs.readFileSync(meta.grok_auth_path, "utf8"), /rotated/);
+        assert.equal(fs.existsSync(path.join(meta.grok_home, "auth.json")), false, "atomic replace後もmanaged credentialを作らない");
         assert.ok(fs.existsSync(path.join(meta.home)), "fake HOME を作る");
         assert.equal(fs.readlinkSync(path.join(meta.home, ".grok")), meta.grok_home);
         assert.match(fs.readFileSync(path.join(meta.grok_home, "config.toml"), "utf8"), /auto_update = false/);
@@ -400,6 +407,7 @@ test("openAgent grok agent_done: isolated HOME と managed GROK_HOME/Stop hook/O
         assert.match(hooks.hooks.Stop[0].hooks[0].command, /grok-stop-hook\.js/);
 
         const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
+        assert.match(out, /GROK_AUTH_PATH=/, `grok auth canonical path is passed: ${out}`);
         assert.match(out, /--no-auto-update/, `grok managed command: ${out}`);
         assert.match(out, /--no-alt-screen/, `grok managed no-alt-screen: ${out}`);
         assert.match(out, /--verbatim/, `grok managed verbatim: ${out}`);
@@ -439,19 +447,146 @@ test("openAgent grok agent_done: OAuth auth 不在は session 残骸ゼロで拒
   }
 });
 
-test("openAgent grok agent_done: auth lock hard link は拒否し、リンク先 mode を変えない", { skip: skipAgentDone }, async () => {
+test("openAgent grok agent_done: GROK_AUTH_PATH と default auth の負系を session 前に固定する", { skip: skipAgentDone }, async () => {
+  const savedBin = process.env.GROK_BIN;
+  const savedPath = process.env.GROK_AUTH_PATH;
+  const savedKey = process.env.XAI_API_KEY;
+  process.env.GROK_BIN = "/bin/echo";
+  try {
+    await withFakeGrokHome(async (home) => {
+      const auth = path.join(home, "auth.json");
+      const before = agentStateFiles();
+      const reject = (name, setup) => {
+        setup();
+        assert.throws(() => core.openAgent("grok", { agent_done: true }), (e) => e.code === 2, name);
+        assert.deepEqual(agentStateFiles(), before, `${name}: stateを残さない`);
+      };
+      reject("empty", () => { process.env.GROK_AUTH_PATH = ""; });
+      reject("relative", () => { process.env.GROK_AUTH_PATH = "relative.json"; });
+      reject("missing explicit despite key", () => { process.env.GROK_AUTH_PATH = path.join(home, "missing"); process.env.XAI_API_KEY = "test"; });
+      delete process.env.GROK_AUTH_PATH; delete process.env.XAI_API_KEY;
+      fs.rmSync(auth); fs.symlinkSync(path.join(home, "config.toml"), auth);
+      reject("default symlink", () => undefined);
+      fs.rmSync(auth); fs.writeFileSync(auth, "{}\n", { mode: 0o644 });
+      reject("loose mode", () => undefined);
+      fs.chmodSync(auth, 0o600); fs.writeFileSync(auth, "x".repeat(64 * 1024 + 1), { mode: 0o600 });
+      reject("oversize", () => undefined);
+      fs.writeFileSync(auth, "not-json", { mode: 0o600 });
+      reject("invalid json", () => undefined);
+    });
+    await withGrokHomeWithoutAuth(async () => {
+      delete process.env.GROK_AUTH_PATH; process.env.XAI_API_KEY = "test";
+      const [sid] = core.openAgent("grok", { agent_done: true });
+      try {
+        const meta = readAgentMeta(sid);
+        assert.equal(meta.grok_auth_path, null);
+        const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
+        assert.doesNotMatch(out, /GROK_AUTH_PATH=/);
+      } finally { core.closeSession(sid); }
+    });
+  } finally {
+    if (savedBin === undefined) delete process.env.GROK_BIN; else process.env.GROK_BIN = savedBin;
+    if (savedPath === undefined) delete process.env.GROK_AUTH_PATH; else process.env.GROK_AUTH_PATH = savedPath;
+    if (savedKey === undefined) delete process.env.XAI_API_KEY; else process.env.XAI_API_KEY = savedKey;
+  }
+});
+
+test("openAgent grok/composer agent_done: auth の中間symlinkと緩い祖先を session 前に拒否する", { skip: skipAgentDone }, () => {
+  const savedBin = process.env.GROK_BIN;
+  const savedPath = process.env.GROK_AUTH_PATH;
+  const root = fs.mkdtempSync(path.join(fs.realpathSync(process.env.TMPDIR), "grok-auth-ancestor-"));
+  const realParent = path.join(root, "real-parent");
+  const symlinkParent = path.join(root, "symlink-parent");
+  const writableParent = path.join(root, "writable-parent");
+  process.env.GROK_BIN = "/bin/echo";
+  try {
+    fs.mkdirSync(realParent, { mode: 0o700 });
+    fs.writeFileSync(path.join(realParent, "auth.json"), "{}\n", { mode: 0o600 });
+    fs.symlinkSync(realParent, symlinkParent);
+    fs.mkdirSync(writableParent, { mode: 0o720 });
+    fs.chmodSync(writableParent, 0o720);
+    fs.writeFileSync(path.join(writableParent, "auth.json"), "{}\n", { mode: 0o600 });
+    const before = agentStateFiles();
+    const rejectForBoth = (name, authPath) => {
+      process.env.GROK_AUTH_PATH = authPath;
+      for (const kind of ["grok", "composer"]) {
+        assert.throws(() => core.openAgent(kind, { agent_done: true }), (e) => e.code === 2, `${name}: ${kind}`);
+        assert.deepEqual(agentStateFiles(), before, `${name}: ${kind} は state を残さない`);
+      }
+    };
+    rejectForBoth("intermediate symlink", path.join(symlinkParent, "auth.json"));
+    rejectForBoth("group writable ancestor", path.join(writableParent, "auth.json"));
+  } finally {
+    if (savedBin === undefined) delete process.env.GROK_BIN; else process.env.GROK_BIN = savedBin;
+    if (savedPath === undefined) delete process.env.GROK_AUTH_PATH; else process.env.GROK_AUTH_PATH = savedPath;
+    fs.chmodSync(writableParent, 0o700);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("openAgent grok agent_done: relative GROK_HOMEでも親cwd基準の絶対auth正本を子へ渡す", { skip: skipAgentDone }, async () => {
+  const savedBin = process.env.GROK_BIN;
+  const savedHome = process.env.GROK_HOME;
+  const home = makeFakeGrokHome();
+  const childCwd = fs.mkdtempSync(path.join(process.env.TMPDIR, "grok-child-cwd-"));
+  process.env.GROK_BIN = "/bin/echo";
+  process.env.GROK_HOME = path.relative(process.cwd(), home);
+  try {
+    const [sid] = core.openAgent("grok", { agent_done: true, cwd: childCwd });
+    try {
+      const meta = readAgentMeta(sid);
+      assert.equal(meta.grok_auth_path, path.resolve(home, "auth.json"));
+      const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
+      assert.match(out.replace(/[\r\n ]/g, ""), /GROK_AUTH_PATH=/, "tmux画面折返しを除いて絶対auth envを確認する");
+    } finally { core.closeSession(sid); }
+  } finally {
+    if (savedBin === undefined) delete process.env.GROK_BIN; else process.env.GROK_BIN = savedBin;
+    if (savedHome === undefined) delete process.env.GROK_HOME; else process.env.GROK_HOME = savedHome;
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(childCwd, { recursive: true, force: true });
+  }
+});
+
+test("openAgent grok agent_done: FIFO auth と不存在GROK_HOMEを session 前に扱う", { skip: skipAgentDone }, async () => {
+  const savedBin = process.env.GROK_BIN; const savedHome = process.env.GROK_HOME; const savedPath = process.env.GROK_AUTH_PATH; const savedKey = process.env.XAI_API_KEY;
+  const root = fs.mkdtempSync(path.join(fs.realpathSync(process.env.TMPDIR), "grok-auth-fifo-"));
+  const fifo = path.join(root, "auth.json"); const auth = path.join(root, "explicit-auth.json");
+  process.env.GROK_BIN = "/bin/echo";
+  try {
+    assert.equal(spawnSync("mkfifo", [fifo]).status, 0);
+    process.env.GROK_HOME = root; delete process.env.GROK_AUTH_PATH; delete process.env.XAI_API_KEY;
+    const before = agentStateFiles(); const started = Date.now();
+    assert.throws(() => core.openAgent("grok", { agent_done: true }), (e) => e.code === 2);
+    assert.ok(Date.now() - started < 1_000); assert.deepEqual(agentStateFiles(), before);
+    const missingHome = path.join(root, "missing-home");
+    process.env.GROK_HOME = missingHome; process.env.XAI_API_KEY = "test";
+    let opened = core.openAgent("grok", { agent_done: true })[0]; core.closeSession(opened);
+    fs.writeFileSync(auth, "{}\n", { mode: 0o600 });
+    delete process.env.XAI_API_KEY; process.env.GROK_AUTH_PATH = auth;
+    opened = core.openAgent("grok", { agent_done: true })[0]; core.closeSession(opened);
+  } finally {
+    if (savedBin === undefined) delete process.env.GROK_BIN; else process.env.GROK_BIN = savedBin;
+    if (savedHome === undefined) delete process.env.GROK_HOME; else process.env.GROK_HOME = savedHome;
+    if (savedPath === undefined) delete process.env.GROK_AUTH_PATH; else process.env.GROK_AUTH_PATH = savedPath;
+    if (savedKey === undefined) delete process.env.XAI_API_KEY; else process.env.XAI_API_KEY = savedKey;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("openAgent grok agent_done: auth 正本 hard link は session 前に拒否する", { skip: skipAgentDone }, async () => {
   const savedBin = process.env.GROK_BIN;
   process.env.GROK_BIN = "/bin/echo";
   try {
     await withFakeGrokHome(async (fakeHome) => {
-      const victim = path.join(fakeHome, "victim-lock-target");
-      const lock = path.join(fakeHome, "auth.json.lock");
-      fs.writeFileSync(victim, "lock\n", { mode: 0o644 });
-      fs.linkSync(victim, lock);
+      const victim = path.join(fakeHome, "victim-auth-target");
+      const auth = path.join(fakeHome, "auth.json");
+      fs.writeFileSync(victim, "{}\n", { mode: 0o600 });
+      fs.rmSync(auth);
+      fs.linkSync(victim, auth);
       const beforeMode = fs.statSync(victim).mode & 0o777;
       assert.throws(
         () => core.openAgent("grok", { agent_done: true, prompt: "Reply READY." }),
-        (e) => e.code === 2 && /hard link/.test(e.message),
+        (e) => e.code === 2 && /安全検証/.test(e.message),
       );
       assert.equal(fs.statSync(victim).mode & 0o777, beforeMode, "hard link 先の mode を変えてはいけない");
     });
@@ -507,24 +642,21 @@ test("openAgent codex agent_done: cleanup は managed home の symlink 先 auth/
   });
 });
 
-test("openAgent grok agent_done: cleanup は managed home の symlink 先 auth/lock/config を変えない", { skip: skipAgentDone }, async () => {
+test("openAgent grok agent_done: cleanup は managed credential を作らず通常 auth/config を変えない", { skip: skipAgentDone }, async () => {
   const savedBin = process.env.GROK_BIN;
   process.env.GROK_BIN = "/bin/echo";
   try {
     await withFakeGrokHome(async (fakeHome) => {
       const authPath = path.join(fakeHome, "auth.json");
-      const lockPath = path.join(fakeHome, "auth.json.lock");
       const configPath = path.join(fakeHome, "config.toml");
       const authBefore = fileSnapshot(authPath);
       const configBefore = fileSnapshot(configPath);
       const [sid] = core.openAgent("grok", { agent_done: true });
       const meta = readAgentMeta(sid);
-      const lockBefore = fileSnapshot(lockPath);
-      assert.ok(fs.lstatSync(path.join(meta.grok_home, "auth.json")).isSymbolicLink());
-      assert.ok(fs.lstatSync(path.join(meta.grok_home, "auth.json.lock")).isSymbolicLink());
+      assert.equal(fs.existsSync(path.join(meta.grok_home, "auth.json")), false);
+      assert.equal(fs.existsSync(path.join(meta.grok_home, "auth.json.lock")), false);
       core.closeSession(sid);
       assert.deepEqual(fileSnapshot(authPath), authBefore, "cleanup が Grok auth.json の実体を変えた");
-      assert.deepEqual(fileSnapshot(lockPath), lockBefore, "cleanup が Grok auth.json.lock の実体を変えた");
       assert.deepEqual(fileSnapshot(configPath), configBefore, "cleanup が通常 Grok config.toml の実体を変えた");
       assert.equal(fs.existsSync(meta.grok_home), false, "managed GROK_HOME が cleanup されていない");
       assert.equal(fs.existsSync(meta.home), false, "fake HOME が cleanup されていない");

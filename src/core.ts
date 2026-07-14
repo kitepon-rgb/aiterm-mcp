@@ -64,6 +64,7 @@ const AGENT_METADATA_NEGATIVE_CACHE_TTL_MS = 2_000;
 const AGENT_TUI_READY_TIMEOUT_MS = 30_000;
 const AGENT_TUI_READY_POLL_MS = 500;
 const AGENT_TUI_READY_LINES = 45;
+const GROK_AUTH_MAX_BYTES = 64 * 1024;
 
 // 出力削減（RTK の CAP 思想を移植）
 const MAX_LINES_BEFORE_ELIDE = 60;
@@ -1176,6 +1177,7 @@ interface AgentMetadata {
   codex_home?: string;
   grok_home?: string;
   home?: string;
+  grok_auth_path?: string | null;
 }
 
 interface AgentDoneEvent {
@@ -1466,61 +1468,45 @@ function createManagedCodexHome(
 }
 
 function realGrokHome(): string {
-  return process.env.GROK_HOME || path.join(process.env.HOME ?? os.homedir(), ".grok");
+  return path.resolve(process.env.GROK_HOME || path.join(process.env.HOME ?? os.homedir(), ".grok"));
 }
 
-function validateGrokAuthLock(lockPath: string): void {
-  let st: fs.Stats;
+function resolveAndValidateGrokAuth(srcHome: string): string | null {
+  const inheritedSet = Object.prototype.hasOwnProperty.call(process.env, "GROK_AUTH_PATH");
+  const inherited = process.env.GROK_AUTH_PATH;
+  if (inheritedSet && (!inherited || !path.isAbsolute(inherited))) throw new AitermError("GROK_AUTH_PATH は空でない絶対パスで指定してください", 2);
+  const authPath = inherited ?? path.join(srcHome, "auth.json");
+  let fd: number | undefined;
   try {
-    st = fs.lstatSync(lockPath);
+    fd = fs.openSync(authPath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+    const st = fs.fstatSync(fd);
+    if (!st.isFile() || st.nlink !== 1 || st.uid !== currentUid() || (st.mode & 0o077) !== 0 || st.size > GROK_AUTH_MAX_BYTES) {
+      throw new AitermError("Grok 認証正本の安全検証に失敗しました", 2);
+    }
+    const value: unknown = JSON.parse(fs.readFileSync(fd, "utf8"));
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new AitermError("Grok 認証正本のJSONが不正です", 2);
+    // auth file 自体は O_NOFOLLOW で開いているが、中間 directory の symlink は辿り得る。
+    // vendor に渡す正本を path swap の入口にしないため、字句正規化した絶対 path と realpath を
+    // 一致させ、canonical な祖先も root まで検証する。same-UID race の排他は vendor lock の責務。
+    const lexicalPath = path.resolve(authPath);
+    const canonicalPath = fs.realpathSync(authPath);
+    if (lexicalPath !== canonicalPath) throw new AitermError("Grok 認証正本の path に symlink を含められません", 2);
+    for (let dir = path.dirname(canonicalPath); ; dir = path.dirname(dir)) {
+      const dirSt = fs.lstatSync(dir);
+      if (!dirSt.isDirectory() || dirSt.isSymbolicLink() || (dirSt.uid !== currentUid() && dirSt.uid !== 0) || (dirSt.mode & 0o022) !== 0) {
+        throw new AitermError("Grok 認証正本の祖先 directory が安全ではありません", 2);
+      }
+      const parent = path.dirname(dir);
+      if (parent === dir) break;
+    }
+    return canonicalPath;
   } catch (e) {
-    throw e;
+    if ((e as NodeJS.ErrnoException).code === "ENOENT" && !inheritedSet && process.env.XAI_API_KEY) return null;
+    if (e instanceof AitermError) throw e;
+    throw new AitermError((e as NodeJS.ErrnoException).code === "ENOENT" ? "Grok 認証正本が見つかりません。先に grok login が必要です" : "Grok 認証正本を安全に開けません", 2);
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
   }
-  if (st.isSymbolicLink()) throw new AitermError(`Grok auth lock が symlink です: ${lockPath}`, 2);
-  if (!st.isFile()) throw new AitermError(`Grok auth lock が通常ファイルではありません: ${lockPath}`, 2);
-  if (st.nlink !== 1) throw new AitermError(`Grok auth lock が hard link です: ${lockPath}`, 2);
-  try {
-    fs.chmodSync(lockPath, 0o600);
-  } catch {
-    /* lock file permission tightening is best-effort */
-  }
-}
-
-function ensureGrokAuthLock(srcHome: string): string {
-  const lockPath = path.join(srcHome, "auth.json.lock");
-  try {
-    validateGrokAuthLock(lockPath);
-    return lockPath;
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
-  }
-  try {
-    createEmpty0600NoFollow(lockPath);
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
-  }
-  validateGrokAuthLock(lockPath);
-  return lockPath;
-}
-
-function linkGrokOauthFiles(srcHome: string, grokHome: string): void {
-  const srcAuth = path.join(srcHome, "auth.json");
-  let authExists = false;
-  try {
-    const authSt = fs.statSync(srcAuth);
-    if (!authSt.isFile()) throw new AitermError(`Grok auth.json が通常ファイルではありません: ${srcAuth}`, 2);
-    authExists = true;
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
-  }
-  if (!authExists) {
-    if (process.env.XAI_API_KEY) return;
-    throw new AitermError(`Grok auth.json が見つかりません。先に grok login が必要です: ${srcHome}`, 2);
-  }
-
-  const srcLock = ensureGrokAuthLock(srcHome);
-  fs.symlinkSync(srcAuth, path.join(grokHome, "auth.json"));
-  fs.symlinkSync(srcLock, path.join(grokHome, "auth.json.lock"));
 }
 
 function writeManagedGrokConfig(grokHome: string): void {
@@ -1550,16 +1536,7 @@ function writeManagedGrokConfig(grokHome: string): void {
   ].join("\n"));
 }
 
-function createManagedGrokHome(name: string, launchId: string): { grokHome: string; home: string } {
-  const srcHome = realGrokHome();
-  let srcSt: fs.Stats;
-  try {
-    srcSt = fs.statSync(srcHome);
-  } catch {
-    throw new AitermError(`Grok home が見つかりません: ${srcHome}`, 2);
-  }
-  if (!srcSt.isDirectory()) throw new AitermError(`Grok home が directory ではありません: ${srcHome}`, 2);
-
+function createManagedGrokHome(name: string, launchId: string, authPath: string | null): { grokHome: string; home: string; authPath: string | null } {
   const grokHome = agentManagedGrokHomePath(name, launchId);
   const fakeHome = agentManagedGrokUserHomePath(name, launchId);
   fs.mkdirSync(grokHome, { recursive: false, mode: 0o700 });
@@ -1567,9 +1544,6 @@ function createManagedGrokHome(name: string, launchId: string): { grokHome: stri
   fs.chmodSync(grokHome, 0o700);
   fs.chmodSync(fakeHome, 0o700);
   fs.symlinkSync(grokHome, path.join(fakeHome, ".grok"));
-  // OAuth refresh token rotation は auth.json だけでなく vendor lock と同じ実体を共有させる。
-  // per-launch GROK_HOME 隔離は維持し、通常 Grok home の hook/config/session は読ませない。
-  linkGrokOauthFiles(srcHome, grokHome);
 
   const hookScript = grokHookScriptPath();
   if (!fs.existsSync(hookScript)) {
@@ -1594,7 +1568,7 @@ function createManagedGrokHome(name: string, launchId: string): { grokHome: stri
 
   // Grok 0.2.87 は compat false でも ~/.claude/plugins の hook file を拾う。HOME を一時化して
   // plugin/hook source を完全に 0 にする。実 HOME は必要なら hook/agent 側で参照できるよう env で渡す。
-  return { grokHome, home: fakeHome };
+  return { grokHome, home: fakeHome, authPath };
 }
 
 function writeAgentMetadata(meta: AgentMetadata): void {
@@ -1768,11 +1742,12 @@ function createGrokAgentMetadata(
   name: string,
   cwd: string | null,
   initialPrompt: InitialPromptState,
+  authPath: string | null,
 ): AgentMetadata {
   const launchId = randomBytes(16).toString("hex");
   const eventFile = agentEventPath(name, launchId);
   createEmpty0600NoFollow(eventFile);
-  const managed = createManagedGrokHome(name, launchId);
+  const managed = createManagedGrokHome(name, launchId, authPath);
   const meta: AgentMetadata = {
     kind,
     aiterm_session: name,
@@ -1786,6 +1761,7 @@ function createGrokAgentMetadata(
     node_platform: process.platform,
     grok_home: managed.grokHome,
     home: managed.home,
+    grok_auth_path: managed.authPath,
   };
   writeAgentMetadata(meta);
   return meta;
@@ -1849,6 +1825,10 @@ function loadAgentMetadata(name: string): AgentMetadata {
   if (m.hook_route !== "managed_grok_home" || m.grok_home !== expectedGrokHome || m.home !== expectedHome) {
     throw new AitermError("agent metadata の path が現在の secure state root と一致しません", 2);
   }
+  const expectedAuthPath = resolveAndValidateGrokAuth(realGrokHome());
+  if ((typeof m.grok_auth_path === "string" ? m.grok_auth_path : null) !== expectedAuthPath) {
+    throw new AitermError("agent metadata の認証正本が現在の設定と一致しません", 2);
+  }
   return {
     kind: m.kind,
     aiterm_session: name,
@@ -1862,6 +1842,7 @@ function loadAgentMetadata(name: string): AgentMetadata {
     node_platform: process.platform,
     grok_home: expectedGrokHome,
     home: expectedHome,
+    grok_auth_path: expectedAuthPath,
   };
 }
 
@@ -2643,6 +2624,7 @@ function agentEnvPrefix(meta: AgentMetadata | null, sid: string): string {
   return [
     `HOME=${shq(meta.home ?? "")}`,
     `GROK_HOME=${shq(meta.grok_home ?? "")}`,
+    ...(meta.grok_auth_path ? [`GROK_AUTH_PATH=${shq(meta.grok_auth_path)}`] : []),
     "GROK_DISABLE_AUTOUPDATER=1",
     "GROK_CLAUDE_HOOKS_ENABLED=false",
     "GROK_CURSOR_HOOKS_ENABLED=false",
@@ -2782,6 +2764,7 @@ export function openAgent(
   // でしか確認できない（CI 非対象。docs/03_audit-sweep-2026-07.md 参照）。
   const binForCmd = isWin ? toWslPath(bin) : bin;
   const cwdForCmd = cwd && isWin ? toWslPath(cwd) : cwd;
+  const grokAuthPath = agentDone && kind !== "codex" ? resolveAndValidateGrokAuth(realGrokHome()) : null;
 
   const [sid, hint] = openSession(opts.session_name ?? null, "bash");
   let launchNote = "";
@@ -2789,7 +2772,7 @@ export function openAgent(
     const meta = agentDone
       ? kind === "codex"
         ? createCodexAgentMetadata(sid, cwd, opts.prompt ? "pending" : "none", { model, effort })
-        : createGrokAgentMetadata(kind, sid, cwd, opts.prompt ? "pending" : "none")
+        : createGrokAgentMetadata(kind, sid, cwd, opts.prompt ? "pending" : "none", grokAuthPath)
       : null;
     if (meta) agentMetadataNegativeCache.delete(sid);
     launchNote = buildAgentLaunchNote(kind, model, effort, meta);

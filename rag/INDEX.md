@@ -118,9 +118,11 @@ AIターミナル直接操作プロジェクトの調査一次資料。`rag/sour
 - [expect(1) man page (Don Libes)](sources/completion-detection/expect-man-page.md) — Don LibesによるExpect公式man。expect/spawn/sendとglob/-re/-exパターン、timeoutやprompt照合の挙動。
   - 出典: <https://www.tcl-lang.org/man/expect5.31/expect.1.html> (man, 76740 chars)
   - 効きどころ: prompt正規表現待ち受けの原典。pexpectが模した照合セマンティクスとtimeout設計の権威ソース。
-- [Grok/Composer agent_done implementation probe](sources/completion-detection/grok-agent-done-implementation-probe-2026-07-07.md) — aiterm-mcp に Grok/Composer 用 managed GROK_HOME + fake HOME + Stop hook wrapper を実装し、追加敵対的検証で GROK_HOME 全体共有案を棄却、OAuth auth.json/auth.json.lock だけを通常 Grok home と共有する実装に修正した。grok login 後に Grok/Composer TUI smoke、通常 headless 並行 smoke、同一cwdのCodex/Grok/Composer並列agent_done smoke、MCP tools/call smoke、TUI ready gate 実装、起動直後即送信 smokeが通り、v0.9.1 finalization 後の回帰は168件成功した。
+- [Grok/Composer agent_done implementation probe](sources/completion-detection/grok-agent-done-implementation-probe-2026-07-07.md) — aiterm-mcp に Grok/Composer 用 managed GROK_HOME + fake HOME + Stop hook wrapper を実装し、追加敵対的検証で GROK_HOME 全体共有案を棄却、OAuth auth.json/auth.json.lockだけを通常Grok homeと共有する実装に修正した（0.9.1当時）。この方式は2026-07-14に廃止し、現在は`GROK_AUTH_PATH`で通常正本を渡す。grok login 後に Grok/Composer TUI smoke、通常 headless 並行 smoke、同一cwdのCodex/Grok/Composer並列agent_done smoke、MCP tools/call smoke、TUI ready gate 実装、起動直後即送信 smokeが通り、v0.9.1 finalization 後の回帰は168件成功した。
+
+- [Grok auth-path atomic-replace correction](briefs/agent-cli-done-detection.md) — 2026-07-14 の実機probeでmanaged auth symlinkがatomic replaceにより切断されることを確認。managed isolationを維持し、公式`GROK_AUTH_PATH`へ検証済み通常auth正本を渡し、lock/copy-backをvendorへ委ねる契約へ更新した。
   - 出典: <local:aiterm-mcp-grok-agent-done-implementation-2026-07-07> (local_probe, 6416 chars)
-  - 効きどころ: Grok/Composer の TUI hook route 実装状況、OAuth credential/lock 共有の採用理由、実 TUI smoke、TUI ready gate、agent_done 負系/race/security/schema/root-symlink 回帰を固定する。
+  - 効きどころ: Grok/Composer の TUI hook route 実装状況、0.9.1当時のOAuth credential/lock共有と2026-07-14の廃止理由、実 TUI smoke、TUI ready gate、agent_done 負系/race/security/schema/root-symlink 回帰を固定する。
 - [Grok agent stdio ACP as persistent structured agent protocol](sources/completion-detection/grok-agent-stdio-acp.md) — Grok の `grok agent stdio` は JSON-RPC/ACP で永続agent processを操作する。docs上は `session/prompt` response をターン完了境界として扱えるが、実装スパイクは未実施。
   - 出典: <local:~/.grok/docs/user-guide/15-agent-mode.md> (local_vendor_docs, 2699 chars)
   - 効きどころ: GrokをTUIではなく構造化プロトコルで永続操作する長期候補。PTY画面スクレイピングやHook設置を避けられる可能性はあるが、現時点では docs 確認のみ。

@@ -1,7 +1,7 @@
 # AI CLI done 検知 設計・実装ノート
 
 更新日: 2026-07-09
-状態: Codex/Grok/Composer の `*_agent(agent_done:true)` -> `pty_send(wait:"agent_done")` 実 smoke は成功。2026-07-07 の追加敵対的検証で、Grok の `GROK_HOME` 全体を aiterm 永続共有にする案は hook/config/session 汚染リスクが大きいため棄却し、per-launch isolated `GROK_HOME` を維持したまま OAuth `auth.json` と `auth.json.lock` だけを通常 Grok home と共有する方針へ修正した。v0.9.1 で Codex managed `CODEX_HOME` は `auth.json` だけを symlink し、`config.toml` は private copy、その他の通常 `~/.codex` エントリは共有しない allowlist に修正した。`grok login` 後に Grok TUI・Composer TUI・通常 headless `grok -p` の並行 smoke も通過し、login 再要求なしを確認した。同一 cwd で Codex/Grok/Composer を並列起動しても event は混線せず、普通PTYの Python REPL smoke も通過。さらに 2026-07-07 に `node dist/index.js` を実起動し、JSON-RPC `tools/call` 経由で `codex_agent` / `grok_agent` / `composer_agent` + `pty_send(wait:"agent_done")` と普通PTY Python REPL が通ることを確認した。リリース前 smoke で「起動直後に送ると vendor TUI の入力受付前に文字が落ち、hook が来ず `agent_timeout` になる」ケースを再現したため、未 bind の初回 `pty_send(wait:"agent_done")` に vendor TUI ready gate を追加し、未 ready なら送信前エラーにする実装へ修正した。ready gate 実装後は明示的な `pty_read` ready 待ちなしの起動直後即送信 smoke も通過した。CI 系の agent_done 負系/race/security/schema テストは、古い event、初回 prompt done、TUI ready gate、同時 wait、即時 event、`launch_id`/`vendor_session_id` 不一致、bind 後の vendor_session_id 欠落、bind 前 vendor_session_id 混在、初回 prompt pending、partial/malformed/oversized JSONL、done 後 offset consume、wait file lock、wait 中 close/killAll 拒否、hook no-env、存在しない `XDG_RUNTIME_DIR` fallback、path injection、hard link 拒否、secure root、core cleanup root symlink no-follow、緩い state root での stale metadata cleanup、screen settle、MCP schema、managed home cleanup、release metadata version sync まで追加済み。`npm test` は 177/177 pass。
+状態: Codex/Grok/Composer の `*_agent(agent_done:true)` -> `pty_send(wait:"agent_done")` 実 smoke は成功。2026-07-07 の追加敵対的検証で、Grok の `GROK_HOME` 全体を aiterm 永続共有にする案は hook/config/session 汚染リスクが大きいため棄却し、per-launch isolated `GROK_HOME`を維持したままOAuth `auth.json`と`auth.json.lock`だけを通常Grok homeと共有する方針へ修正した（0.9.1当時）。2026-07-14にこのsymlink共有は廃止し、現在は検証済み通常auth正本を`GROK_AUTH_PATH`でvendorへ渡す。v0.9.1 で Codex managed `CODEX_HOME` は `auth.json` だけを symlink し、`config.toml` は private copy、その他の通常 `~/.codex` エントリは共有しない allowlist に修正した。`grok login` 後に Grok TUI・Composer TUI・通常 headless `grok -p` の並行 smoke も通過し、login 再要求なしを確認した。同一 cwd で Codex/Grok/Composer を並列起動しても event は混線せず、普通PTYの Python REPL smoke も通過。さらに 2026-07-07 に `node dist/index.js` を実起動し、JSON-RPC `tools/call` 経由で `codex_agent` / `grok_agent` / `composer_agent` + `pty_send(wait:"agent_done")` と普通PTY Python REPL が通ることを確認した。リリース前 smoke で「起動直後に送ると vendor TUI の入力受付前に文字が落ち、hook が来ず `agent_timeout` になる」ケースを再現したため、未 bind の初回 `pty_send(wait:"agent_done")` に vendor TUI ready gate を追加し、未 ready なら送信前エラーにする実装へ修正した。ready gate 実装後は明示的な `pty_read` ready 待ちなしの起動直後即送信 smoke も通過した。CI 系の agent_done 負系/race/security/schema テストは、古い event、初回 prompt done、TUI ready gate、同時 wait、即時 event、`launch_id`/`vendor_session_id` 不一致、bind 後の vendor_session_id 欠落、bind 前 vendor_session_id 混在、初回 prompt pending、partial/malformed/oversized JSONL、done 後 offset consume、wait file lock、wait 中 close/killAll 拒否、hook no-env、存在しない `XDG_RUNTIME_DIR` fallback、path injection、hard link 拒否、secure root、core cleanup root symlink no-follow、緩い state root での stale metadata cleanup、screen settle、MCP schema、managed home cleanup、release metadata version sync まで追加済み。`npm test` は 177/177 pass。
 
 2026-07-09 追補: `codex_agent` launcher の起動時 `prompt` に `wait:"agent_done"` を追加した。これは `codex_run` 復活ではなく、永続 TUI session を残したまま「初回 prompt だけ」を TUI ready 後に送信し、その初回ターンの Stop hook を待つ convenience route。`wait:"agent_done"` は `prompt` と `agent_done:true` が必須で、暗黙に managed hook を有効化しない。起動時 prompt は shell command line に載せず、TUI ready 後に送るため、複数行日本語 prompt で shell continuation 表示を読ませる経路を避ける。TUI ready 前にログイン画面などで止まる場合は prompt を送らず `initial_prompt=not_sent` を返し、session を調査可能なまま残す。起動時 prompt が `pending`/`sent` の間は通常 `pty_send` を拒否し、後続入力の混入を防ぐ。通常 `pty_read` には agent 補助 metadata（`agent_event_seen` / `completion_attribution=none` / `initial_prompt` など）を出すが、stale Stop hook を通常 read の `is_complete=True` には昇格しない。Codex は単一行・長い日本語・複数行日本語の実 initial prompt wait smoke を通過。Grok/Composer の同 route は現在の環境で OAuth browser approval 画面に止まり、prompt 未送信の `initial_prompt=not_sent` を確認したため、公開 schema には出さず、ログイン承認後の再 smoke を別フェーズに残す。`npm test` は 177/177 pass。
 
@@ -26,7 +26,7 @@ Codex / Grok Build(Grok) / Grok Build(Composer) の対話 TUI を永続PTYで扱
 - Codex TUI は literal text 投入直後の Enter を取り落とすことがある。`wait:"agent_done"` 経路では text と submit Enter を分離し、短い delay を挟む。
 - Grok Build(Grok) / Grok Build(Composer) の TUI Stop hook は実測で発火した。payload は同型だが model id は入らないため、aiterm 側の `kind` metadata で区別する。
 - `CODEX_HOME` / `GROK_HOME` の temporary home + auth symlink だけでは採用不可。Codex は `auth.json` symlink + `config.toml` copy + aiterm-owned `hooks.json` の allowlist route を採用し、通常 home のその他 state/cache/session entry は managed home へ symlink しない。
-- Grok/Composer は `GROK_HOME` 全体共有ではなく、per-launch isolated `GROK_HOME` と fake `HOME` を維持する。共有対象は OAuth credential と lock file に限定し、通常 `grok` CLI と同じ `auth.json` / `auth.json.lock` を見る形にする。
+- Grok/Composer は `GROK_HOME` 全体共有ではなく、per-launch isolated `GROK_HOME` と fake `HOME` を維持する。0.9.1当時は共有対象をOAuth credentialとlock fileに限定したが、2026-07-14にそのsymlink共有も廃止した。現在は通常`grok` CLIと同じ検証済みauth正本を`GROK_AUTH_PATH`でvendorへ渡す。
 
 根拠資料:
 
@@ -43,7 +43,7 @@ Codex / Grok Build(Grok) / Grok Build(Composer) の対話 TUI を永続PTYで扱
 - Codex: `codex exec --json`、直接 TUI、aiterm `openAgent` 相当の tmux 経路で Stop hook 発火を実測済み。hook trust / project trust の条件も実測済み。
 - Codex: 既存 Stop hook 同居時の continuation は実測で危険確定。co-located hook を許す設計では初回 Stop を final done と扱えない。
 - Codex: 2026-07-07 実装 smoke で、`Reply exactly OK and nothing else.` に対し `OK` と `is_complete=True via agent_done vendor=codex` を実測済み。
-- Grok: headless `-p --output-format streaming-json`、headless Stop hook、TUI Stop hook を実測済み。managed `GROK_HOME` + fake `HOME/.grok -> GROK_HOME` route で hook/plugin 混入を抑え、OAuth `auth.json` / `auth.json.lock` を通常 Grok home と共有する実装で実 TUI smoke まで通過。
+- Grok: headless `-p --output-format streaming-json`、headless Stop hook、TUI Stop hook を実測済み。managed `GROK_HOME` + fake `HOME/.grok -> GROK_HOME` route で hook/plugin 混入を抑え、OAuth `auth.json`/`auth.json.lock`を通常Grok homeと共有する0.9.1実装で実TUI smokeまで通過したが、2026-07-14に廃止し、現在は`GROK_AUTH_PATH`正本経路へ置換した。
 - Composer: TUI Stop hook は実測済み。実装は Grok payload + `kind:"composer"` metadata で通し、実 TUI smoke も通過。
 - Grok ACP: vendor docs 確認のみ。実装スパイク未実施。
 
@@ -286,7 +286,7 @@ MVP の方針:
 - Phase 0 の結果、候補Bの素朴な temporary home は落とす。
 - Codex は managed isolated `CODEX_HOME` で Stop chain を aiterm が単独所有する route を採用済み。通常 home の `hooks.json` は触らない。
 - Codex の単純 append bridge は continuation 誤doneを起こし得るため禁止のまま。
-- Grok/Composer は TUI Stop hook 自体は通った。hook/plugin 混入は fake `HOME` + per-launch managed `GROK_HOME` で抑制する。OAuth は通常 Grok home の `auth.json` と `auth.json.lock` をセットで共有し、`auth.json` だけを symlink して lock を分裂させる実装は禁止する。
+- Grok/Composer は TUI Stop hook 自体は通った。hook/plugin 混入は fake `HOME` + per-launch managed `GROK_HOME` で抑制する。OAuthは0.9.1当時、通常Grok homeの`auth.json`と`auth.json.lock`をセットで共有した。2026-07-14にこの方式を廃止し、現在は`GROK_AUTH_PATH`で通常正本を渡し、managed homeへauth/lockを置かない。
 - どの TUI hook route も通らない場合は、TUI bridge 実装へ進まず、structured run / ACP レーンへ方針転換を検討する。
 
 ### 4.5 turn wait
@@ -362,7 +362,7 @@ Phase 1 の前に通したブロッカー。
 - [x] Codex: hook trust と project trust は別であることを Phase 0 RAG に記録済み。止まる経路は hook event 欠落 -> `agent_timeout` で成功扱いしない。
 - [x] Grok: `--no-auto-update` 相当を TUI 起動経路へ確実に入れ、通常 `~/.grok` が更新されない条件を確認する。
 - [x] Grok: Claude/Cursor compat user hooks と plugin hooks を無効化できる条件を確定する（fake `HOME` + managed `GROK_HOME` + `HOME/.grok` symlink）。
-- [x] temporary home cleanup が symlink を辿らず、auth / lock / config の実体を変えないことを単体テストで固定する。
+- [x] temporary home cleanupがsymlinkを辿らずauth/lock/config実体を変えない旧回帰を0.9.1で固定した。2026-07-14以降はmanaged homeにauth/lockを置かず、通常auth/configを変えない回帰へ置換した。
 - [x] 安全 route が残ったため structured route への凍結条件は発火しない。Codex/Grok/Composer managed TUI hook route を採用済み。
 
 ### Phase 1: Codex 最小縦断
@@ -394,9 +394,9 @@ Phase 0 の TUI Stop hook 実測と Phase 0.1 の isolation route は通った�
 - [x] Composer を Grok CLI payload + `kind:"composer"` として扱うテストを追加する。
 - [x] Grok/Composer の `vendor_session_id` bind を実装する。
 - [x] compat hook 混入の抑制または明示的な既知リスク表示を実装する。
-- [x] Grok OAuth: per-launch isolated `GROK_HOME` は維持し、通常 Grok home の `auth.json` と `auth.json.lock` をセットで共有する。`auth.json` だけを symlink する旧経路は撤去する。
-- [x] Grok OAuth: `auth.json.lock` が無い場合は通常 Grok home 側に 0600 の通常ファイルとして作る。既存 lock が symlink / directory なら明示エラーにする。
-- [x] Grok OAuth: 複数 aiterm Grok/Composer session と通常 `grok` CLI が同じ credential/lock を見る前提を docs/RAG に明記する。
+- [x] Grok OAuth（0.9.1当時）: per-launch isolated `GROK_HOME`を維持し、通常Grok homeの`auth.json`と`auth.json.lock`をセットで共有した。この方式は2026-07-14に廃止し、`GROK_AUTH_PATH`正本経路へ置換済み。
+- [x] Grok OAuth（0.9.1当時）: `auth.json.lock`を通常Grok home側に作成・検証した。このaiterm所有処理は2026-07-14に廃止し、lockはvendorへ委ねた。
+- [x] Grok OAuth: 複数aiterm Grok/Composer sessionと通常`grok` CLIは、2026-07-14以降`GROK_AUTH_PATH`が指す同じ正本とvendor lockを見る。
 - [x] Grok/Composer の実 TUI smoke を `grok login` 後に再実行し、docs/RAG に還流する。
 - [x] Grok TUI・Composer TUI・通常 headless `grok -p` の並行 smoke を実行し、login 再要求なしを確認する。
 
@@ -428,8 +428,8 @@ managed home route 採用により、MVP では user-level hook setup 導線を�
 - [x] `wait:"agent_done" + enter:false` は送信前エラー。
 - [x] fake agent metadata + fake event file で `sendAndWaitAgentDone` が done を拾う。
 - [x] fake Grok event で `sendAndWaitAgentDone` が `vendor=grok` suffix を返す。
-- [x] Grok/Composer managed home が `auth.json` と `auth.json.lock` を同じ通常 Grok home へ symlink する。
-- [x] Grok/Composer managed home が `auth.json` だけを symlink しないことを固定する。
+- [x] Grok/Composer managed homeが`auth.json`と`auth.json.lock`を通常Grok homeへsymlinkしたのは0.9.1当時。2026-07-14に廃止し、現在managed homeにcredentialを置かない。
+- [x] Grok/Composer managed homeへ`auth.json`だけをsymlinkしない旧回帰は0.9.1当時。2026-07-14以降はauth/lock双方を置かない回帰へ置換した。
 - [x] Grok/Composer managed home は fake `HOME/.grok -> per-launch GROK_HOME` を維持し、通常 `~/.grok/hooks` や compat plugin を直接読ませない。
 - [x] Grok OAuth auth 不在時は session 作成後でも残骸を閉じ、明示エラーを返す。
 - [x] 送信前に存在する古い done event を拾わない。
@@ -463,7 +463,7 @@ vendor CLI と認証が必要なので CI 必須にはしないが、採用前�
 - [x] hook が無い/壊れている時に送信前エラーまたは `agent_timeout` で明示失敗する。hook no-env / symlink拒否 / malformed JSONL / event欠落 timeout をテスト済み。
 - [x] `pty_send(wait:"none")` 後に従来通り `pty_read` できる。
 - [x] REPL は従来挙動から変わらないことを実 smoke 済み。2026-07-07 に MCP `tools/call` 経由でも Python REPL の `print(sum(range(10))) -> 45` を確認した。SSH/docker は専用コードパスを持たず通常PTY内のテキスト入力なので、外部環境依存の手動 smoke は docs/04 の完了条件から外す。
-- [x] temporary / managed home 採用時、auth / lock / config の実体を cleanup が変えないことを単体テストで固定。plugin / trust 差分は Phase 0 RAG に記録し、managed route の設計前提として扱う。
+- [x] temporary/managed home採用時にcleanupがauth/lock/config実体を変えない旧回帰を0.9.1で固定。2026-07-14以降はmanaged credential非生成と通常auth/config不変へ置換。plugin / trust 差分は Phase 0 RAG に記録し、managed route の設計前提として扱う。
 
 ## 7. 敵対的検証で採用した指摘
 
@@ -473,7 +473,7 @@ vendor CLI と認証が必要なので CI 必須にはしないが、採用前�
 - path injection: event file path を env で渡すと任意ファイル追記になる。wrapper が安全な path を再構成する。
 - user-level hook: 暗黙 merge は既存設定と trust を壊す。MVP の第一候補から外す。
 - Codex Stop continuation: sibling Stop hook が `decision:"block"` でターン継続できるため、単純な Stop 到着を最終 done と断言しない。
-- Grok/Composer TUI: Stop hook 発火は実測済み。auto-update と Claude/Cursor compat hook/plugin 混入は fake `HOME` + per-launch managed `GROK_HOME` + `--no-auto-update` で抑制し、OAuth credential/lock だけ通常 Grok home と共有する形で実装対象に広げた。
+- Grok/Composer TUI: Stop hook 発火は実測済み。auto-update と Claude/Cursor compat hook/plugin 混入は fake `HOME` + per-launch managed `GROK_HOME` + `--no-auto-update` で抑制し、OAuth credential/lockだけ通常Grok homeと共有する形で実装対象に広げた（0.9.1当時）。2026-07-14にこの共有は廃止し、`GROK_AUTH_PATH`正本経路へ置換した。
 - API互換: `raw` の意味を返り値 raw に流用しない。`wait:"auto"` はMVPで出さない。
 - `core.send`: async化せず、待機 wrapper を分ける。
 - screen settle: 連続一致だけでは古い安定画面を返し得る。minimum delay / log安定 / 不安定suffix / fake test を入れる。
@@ -502,3 +502,4 @@ vendor CLI と認証が必要なので CI 必須にはしないが、採用前�
 - [x] stale event / concurrent send / launch_id / vendor_session_id / partial JSONL / malformed JSONL / done後 offset の回帰テストがある。
 - [x] path injection / hook merge 破壊 / secure root 負系の回帰テストがある。hook merge は user-level setup 棄却により非適用、path injection と secure root は hook wrapper テストで固定。
 - [x] README / docs / ADR / RAG が同期されている。
+- [x] 2026-07-14: Grok OAuth はmanaged homeのauth/lock symlink共有を廃止し、検証済み正本を`GROK_AUTH_PATH`でvendorへ渡す。managed auth生成、aiterm lock、copy-backは禁止する。
