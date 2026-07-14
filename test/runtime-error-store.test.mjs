@@ -222,6 +222,93 @@ test("bakery ticket queue は dead owner の固有ticketだけを回収する", 
   } finally { f.cleanup(); }
 });
 
+function runLockLstatSubprocess(f, target, patch) {
+  const script = `
+    import fs from "node:fs";
+    import { syncBuiltinESMExports } from "node:module";
+    const input = ${JSON.stringify({ target, patch, storeUrl: STORE_URL, options: {
+      configPath: f.configPath, storePath: f.storePath, platform: f.platform, arch: process.arch, productVersion: "0.12.1-test",
+    } })};
+    const originalLstat = fs.lstatSync;
+    let calls = 0;
+    fs.lstatSync = (candidate, ...args) => {
+      if (candidate !== input.target) return originalLstat(candidate, ...args);
+      calls += 1;
+      const stat = originalLstat(candidate, ...args);
+      if (input.patch === "vanish") {
+        fs.unlinkSync(candidate);
+        stat.nlink = 0;
+      } else {
+        Object.assign(stat, input.patch);
+      }
+      return stat;
+    };
+    syncBuiltinESMExports();
+    const { RuntimeErrorStore } = await import(input.storeUrl);
+    const store = new RuntimeErrorStore(input.options);
+    try {
+      const result = store.record({ code: "AITERM.PERSISTENCE_WRITE_FAILED" });
+      const snapshot = store.snapshot();
+      const record = snapshot.records.find((item) => item.error_code === "AITERM.PERSISTENCE_WRITE_FAILED");
+      console.log(JSON.stringify({ calls, result, exists: fs.existsSync(input.target), occurrence_count: record?.occurrence_count ?? null }));
+    } catch (error) {
+      console.log(JSON.stringify({ calls, error: error instanceof Error ? error.message : String(error) }));
+    }
+  `;
+  const child = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" });
+  assert.equal(child.status, 0, child.stderr);
+  return JSON.parse(child.stdout);
+}
+
+test("lock queue は choosing/ticket とも snapshot 後の nlink=0 正当unlinkを置換として skip する", {
+  skip: process.platform === "win32" ? "POSIX lstat 専用" : undefined,
+}, () => {
+  for (const [kind, token] of [["choosing", "b".repeat(32)], ["ticket", "c".repeat(32)]]) {
+    const f = fixture();
+    try {
+      f.store.record({ code: "AITERM.PTY_DEPENDENCY_UNAVAILABLE" });
+      const queue = `${f.storePath}.lock-queue`;
+      const target = path.join(queue, kind === "choosing" ? `choosing-${token}.json` : `0000000000000000-${token}.ticket`);
+      fs.writeFileSync(target, JSON.stringify({ pid: 99999999, start_id: "dead:start", token }) + "\n", { mode: 0o600 });
+      const result = runLockLstatSubprocess(f, target, "vanish");
+      assert.deepEqual(result, { calls: 1, result: true, exists: false, occurrence_count: 1 }, kind);
+    } finally { f.cleanup(); }
+  }
+});
+
+test("lock queue の nlink>2・owner・mode 不正は公開注入点なしでも pre-open 検証で拒否する", {
+  skip: process.platform === "win32" ? "POSIX lstat 専用" : undefined,
+}, () => {
+  for (const [name, patch] of [["nlink>2", { nlink: 3 }], ["owner", { uid: process.getuid() + 1 }], ["mode", { mode: 0o100644 }]]) {
+    const f = fixture();
+    try {
+      f.store.record({ code: "AITERM.PTY_DEPENDENCY_UNAVAILABLE" });
+      const queue = `${f.storePath}.lock-queue`;
+      const target = path.join(queue, `0000000000000000-${"d".repeat(32)}.ticket`);
+      fs.writeFileSync(target, JSON.stringify({ pid: 99999999, start_id: "dead:start", token: "d".repeat(32) }) + "\n", { mode: 0o600 });
+      const result = runLockLstatSubprocess(f, target, patch);
+      assert.equal(result.calls, 1, name);
+      assert.match(result.error, /lock が不正/, name);
+    } finally { f.cleanup(); }
+  }
+});
+
+test("lock queue 本文の置換フレーズは choosing/ticket とも typed disappearance と誤分類せず残す", {
+  skip: process.platform === "win32" ? "POSIX lstat 専用" : undefined,
+}, () => {
+  for (const [kind, token] of [["choosing", "e".repeat(32)], ["ticket", "f".repeat(32)]]) {
+    const f = fixture();
+    try {
+      f.store.record({ code: "AITERM.PTY_DEPENDENCY_UNAVAILABLE" });
+      const queue = `${f.storePath}.lock-queue`;
+      const target = path.join(queue, kind === "choosing" ? `choosing-${token}.json` : `0000000000000000-${token}.ticket`);
+      fs.writeFileSync(target, "置換されました", { mode: 0o600 });
+      assert.throws(() => f.store.record({ code: "AITERM.PERSISTENCE_WRITE_FAILED" }), undefined, kind);
+      assert.equal(fs.existsSync(target), true, `${kind}: 改竄 entry を skip/削除してはいけない`);
+    } finally { f.cleanup(); }
+  }
+});
+
 test("20 process の同時観測をbakery ticket queueで全件保持する", {
   skip: process.platform === "win32" ? "bakery排他はPOSIX matrix、Windowsはnative DACL/store試験で固定" : undefined,
 }, async () => {

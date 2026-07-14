@@ -92,6 +92,11 @@ const DIAGNOSTIC_KEYS = ["status", "collection", "record_count", "unacknowledged
 const ARCHES = new Set(["x64", "arm64", "arm", "ia32"]);
 
 const EMPTY_STATE = (): StoreState => ({ schema_version: STORE_SCHEMA, cursor: 0, acknowledged_cursor: 0, records: [] });
+// readLock と queue scan の内部だけで使う。entry 本文など外部入力の Error message で
+// disappearance を判定しないため、公開せず型そのものを識別子にする。
+class LockDisappearedOrReplacedError extends Error {
+  constructor() { super("runtime error store lock が消滅または置換されました"); }
+}
 function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -410,6 +415,9 @@ export class RuntimeErrorStore {
       text = readBoundedFile(lock, 4096, this.platform, false);
     } else {
       const before = fs.lstatSync(lock);
+      // APFS の高競合では readdir snapshot 後、正当に unlink 済みの entry が pre-open
+      // lstat で nlink=0 と観測される。これは置換／消滅として caller の既存 skip 経路へ渡す。
+      if (before.nlink === 0) throw new LockDisappearedOrReplacedError();
       if (!before.isFile() || before.isSymbolicLink() || before.nlink < 1 || before.nlink > 2
         || before.uid !== process.getuid!() || (before.mode & 0o777) !== 0o600 || before.size > 4096) {
         throw new Error("runtime error store lock が不正です");
@@ -417,9 +425,8 @@ export class RuntimeErrorStore {
       const fd = fs.openSync(lock, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK | (fs.constants.O_NOFOLLOW ?? 0));
       try {
         const after = fs.fstatSync(fd);
-        if (before.dev !== after.dev || before.ino !== after.ino || after.nlink < 1 || after.nlink > 2) {
-          throw new Error("runtime error store lock が置換されました");
-        }
+        if (before.dev !== after.dev || before.ino !== after.ino || after.nlink === 0) throw new LockDisappearedOrReplacedError();
+        if (after.nlink < 1 || after.nlink > 2) throw new Error("runtime error store lock が不正です");
         text = fs.readFileSync(fd, "utf8");
       } finally { fs.closeSync(fd); }
     }
@@ -492,8 +499,7 @@ export class RuntimeErrorStore {
           let current: { pid: number; start_id: string; token: string };
           try { current = this.readLock(currentPath); }
           catch (error) {
-            if ((error as NodeJS.ErrnoException).code === "ENOENT"
-              || (error instanceof Error && error.message.includes("置換されました"))) continue;
+            if ((error as NodeJS.ErrnoException).code === "ENOENT" || error instanceof LockDisappearedOrReplacedError) continue;
             throw error;
           }
           if (name !== `choosing-${current.token}.json`) throw new Error("runtime error choosing entry が不正です");
@@ -518,8 +524,7 @@ export class RuntimeErrorStore {
           let current: { pid: number; start_id: string; token: string };
           try { current = this.readLock(currentPath); }
           catch (error) {
-            if ((error as NodeJS.ErrnoException).code === "ENOENT"
-              || (error instanceof Error && error.message.includes("置換されました"))) continue;
+            if ((error as NodeJS.ErrnoException).code === "ENOENT" || error instanceof LockDisappearedOrReplacedError) continue;
             throw error;
           }
           if (!name.endsWith(`-${current.token}.ticket`)) throw new Error("runtime error lock ticket が不正です");

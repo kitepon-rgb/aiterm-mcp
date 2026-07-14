@@ -1,6 +1,6 @@
 # BugHub runtime error store plan
 
-Status: complete; v0.12.2 published 2026-07-13
+Status: fixed locally 2026-07-14; v0.12.3 release pending (v0.12.2 published 2026-07-13)
 
 This plan is aiterm-mcp's implementation TODO for a product-owned local runtime
 error projection. MCP stdout remains JSON-RPC-only and the existing PTY/session
@@ -40,6 +40,22 @@ state contract is unchanged.
   being reclassified by a vendor owner or counted again during cleanup.
 
 ## TODO
+
+- [x] Root-cause the macOS high-contention failure: after a `readdir` snapshot,
+      a validly unlinked queue entry can be observed with `nlink=0` at pre-open
+      `lstat`. Classify only that observation as disappearance/replacement;
+      do not add retries or weaken owner/mode/symlink checks.
+- [x] Add deterministic subprocess `lstat` regressions for both `choosing` and
+      `ticket` entries, and the smallest fix so both existing queue scans skip
+      that disappearance/replacement path.
+- [x] Replace message-substring skip classification with a private typed error
+      used only for proven disappearance/replacement. A malformed queue body
+      containing the Japanese replacement phrase remains fail-loud for both
+      `choosing` and `ticket` entries.
+- [x] Run repeated contention, the full suite, and packaged MCP smoke after
+      the typed classification fix.
+- [x] Run repeated contention, the full suite, and pack/install smoke
+      independently from the Grok auth-path change.
 
 - [x] Add disabled/missing/malformed config characterization tests.
 - [x] Add privacy, aggregation, and duplicate-layer negative fixtures.
