@@ -1493,7 +1493,17 @@ function resolveAndValidateGrokAuth(srcHome: string): string | null {
     if (lexicalPath !== canonicalPath) throw new AitermError("Grok 認証正本の path に symlink を含められません", 2);
     for (let dir = path.dirname(canonicalPath); ; dir = path.dirname(dir)) {
       const dirSt = fs.lstatSync(dir);
-      if (!dirSt.isDirectory() || dirSt.isSymbolicLink() || (dirSt.uid !== currentUid() && dirSt.uid !== 0) || (dirSt.mode & 0o022) !== 0) {
+      // /tmp のような root 所有 + sticky の共有 directory は、本人所有の private な
+      // 直下 directory を他 UID が rename/unlink できないため許可する。sticky 無しの
+      // group/other writable 祖先は path swap が可能なので従来どおり拒否する。
+      const writableByOthers = (dirSt.mode & 0o022) !== 0;
+      const protectedSharedRoot = dirSt.uid === 0 && (dirSt.mode & 0o1000) !== 0;
+      if (
+        !dirSt.isDirectory()
+        || dirSt.isSymbolicLink()
+        || (dirSt.uid !== currentUid() && dirSt.uid !== 0)
+        || (writableByOthers && !protectedSharedRoot)
+      ) {
         throw new AitermError("Grok 認証正本の祖先 directory が安全ではありません", 2);
       }
       const parent = path.dirname(dir);

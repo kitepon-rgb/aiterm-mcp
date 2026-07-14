@@ -18,6 +18,15 @@ const hasTmux =
 // claude.sock への接続が "File name too long" で落ちる——実測）。
 process.env.TMPDIR = fs.mkdtempSync(path.join(os.tmpdir(), "aiterm-agt-"));
 process.env.XDG_RUNTIME_DIR = process.env.TMPDIR;
+const argvPrinterBin = path.join(process.env.TMPDIR, "print-argv.sh");
+if (process.platform !== "win32") {
+  fs.writeFileSync(
+    argvPrinterBin,
+    "#!/bin/sh\nfor arg do\n  printf '<arg>%s</arg>\\n' \"$arg\"\ndone\n",
+    { mode: 0o700 },
+  );
+  fs.chmodSync(argvPrinterBin, 0o700);
+}
 // 実 CLI を起動せず openAgent の配管だけ検証する偽 bin。resolveAgentBin は存在検証する（A3）ため、
 // 実在するパスにする必要がある。POSIX は /bin/echo（起動コマンドを echo で可視化できる）、native
 // Windows には /bin/echo が無いので node 自身（必ず存在）を使う——echo 出力を読む grok/composer/codex
@@ -524,6 +533,37 @@ test("openAgent grok/composer agent_done: auth の中間symlinkと緩い祖先�
   }
 });
 
+test("openAgent grok/composer agent_done: root所有sticky共有祖先のprivate authを許可する", { skip: skipAgentDone }, (t) => {
+  const savedBin = process.env.GROK_BIN;
+  const savedPath = process.env.GROK_AUTH_PATH;
+  const sharedTmp = fs.realpathSync("/tmp");
+  const sharedSt = fs.lstatSync(sharedTmp);
+  if (sharedSt.uid !== 0 || (sharedSt.mode & 0o1000) === 0 || (sharedSt.mode & 0o022) === 0) {
+    t.skip("root所有 + sticky + writable の共有 /tmp ではない");
+    return;
+  }
+  const root = fs.mkdtempSync(path.join(sharedTmp, "grok-auth-sticky-"));
+  const authPath = path.join(root, "auth.json");
+  process.env.GROK_BIN = "/bin/echo";
+  try {
+    fs.chmodSync(root, 0o700);
+    fs.writeFileSync(authPath, "{}\n", { mode: 0o600 });
+    process.env.GROK_AUTH_PATH = authPath;
+    for (const kind of ["grok", "composer"]) {
+      const [sid] = core.openAgent(kind, { agent_done: true });
+      try {
+        assert.equal(readAgentMeta(sid).grok_auth_path, authPath);
+      } finally {
+        core.closeSession(sid);
+      }
+    }
+  } finally {
+    if (savedBin === undefined) delete process.env.GROK_BIN; else process.env.GROK_BIN = savedBin;
+    if (savedPath === undefined) delete process.env.GROK_AUTH_PATH; else process.env.GROK_AUTH_PATH = savedPath;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("openAgent grok agent_done: relative GROK_HOMEでも親cwd基準の絶対auth正本を子へ渡す", { skip: skipAgentDone }, async () => {
   const savedBin = process.env.GROK_BIN;
   const savedHome = process.env.GROK_HOME;
@@ -598,7 +638,7 @@ test("openAgent grok agent_done: auth 正本 hard link は session 前に拒否�
 
 test("openAgent composer agent_done: vendor=composer の metadata を作る", { skip: skipAgentDone }, async () => {
   const savedBin = process.env.GROK_BIN;
-  process.env.GROK_BIN = "/bin/echo";
+  process.env.GROK_BIN = argvPrinterBin;
   try {
     await withFakeGrokHome(async () => {
       const [sid] = core.openAgent("composer", {
@@ -614,7 +654,8 @@ test("openAgent composer agent_done: vendor=composer の metadata を作る", { 
         assert.match(out, /--no-auto-update/, `composer managed command: ${out}`);
         assert.match(out, /--no-alt-screen/, `composer managed no-alt-screen: ${out}`);
         assert.match(out, /--verbatim/, `composer managed verbatim: ${out}`);
-        assert.match(out, /--model grok-composer-2\.5-fast/, `composer managed model: ${out}`);
+        assert.match(out, /<arg>--model<\/arg>/, `composer model flag argv: ${out}`);
+        assert.match(out, /<arg>grok-composer-2\.5-fast<\/arg>/, `composer model value argv: ${out}`);
         assert.doesNotMatch(out, /--effort/, `composer managed effort: ${out}`);
       } finally {
         core.closeSession(sid);

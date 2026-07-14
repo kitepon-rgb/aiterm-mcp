@@ -31,7 +31,8 @@ diagnostics、固定エラー、agent一覧・完了suffixには公開しない�
    `auth.json` / `auth.json.lock` の symlink も copy も作らない。
 4. 正本は起動前に owner、通常ファイル、symlink/hardlink 不可、size 上限、JSON object、
    owner-only mode を検証する。さらに字句正規化した絶対 path と realpath の一致（中間 symlink 不可）と、
-   canonical な祖先 directory chain の実ディレクトリ・current uid/root 所有・group/other 非書込みを検証する。
+   canonical な祖先 directory chain の実ディレクトリ・current uid/root 所有を検証する。group/other
+   writable は原則拒否し、Unix標準の一時領域を安全に使えるよう root 所有 + sticky bit の共有祖先だけは許可する。
    秘密フィールドの値は一切出さず、auth pathは前項のprivate境界に限定する。
 5. lock の生成・取得・refresh 競合・atomic write は Grok Build 自身へ委ねる。aiterm は
    credential を解析して優劣判定したり、終了時に copy-back したりしない。
@@ -49,9 +50,10 @@ diagnostics、固定エラー、agent一覧・完了suffixには公開しない�
 - [x] managed home に auth/lock を置かず、子プロセスへ `GROK_AUTH_PATH` を渡す実装へ変更する。
 - [x] atomic replace を模した偽 Grok で、更新先が正本だけになり managed home に credential が残らないことを固定する。
 - [x] auth 不在、symlink、hardlink、緩い mode、oversize、不正 JSON、相対 `GROK_AUTH_PATH` を session 前に拒否する。
+- [x] root 所有 + sticky bit の共有一時領域配下にある本人所有private authは許可し、stickyなしのgroup/other writable祖先は拒否する回帰を固定する。
 - [x] Grok/Composer は同じ正本 path と vendor lock 契約を使い、aiterm 独自 copy-back が無い実装へ統一する。
 - [x] README、CLAUDE、design plan、ADR、RAG の旧「auth/lock symlink 共有」記述を新契約へ同期する（歴史記述は0.9.1当時・2026-07-14廃止を同じ段落で明記）。
-- [x] `npm test`（233/233）、`git diff --check`、公開 package の隔離 install smokeをgreenにし、tgzからMCP 0.12.3・10 tools・diagnostics 0.12.3を確認する。
+- [x] `npm test`（235/235）、`git diff --check`、公開 package の隔離 install smokeをgreenにし、tgzからMCP 0.12.3・10 tools・diagnostics 0.12.3を確認する。
 - [x] 現在の承認済み managed credential を秘密非表示・backup付きで正本へ一度だけ収容する。既存記録の収容前backup/scope確認に加え、収容後のdefault正本を0.12.3実行で独立再検証した。
   - [x] 収容前に旧正本・lock・承認済み候補を owner-only tar（0600）へ退避し、scope/identity一致・候補が古くないことを値非表示で確認した。
   - [x] 現在のdefault正本がcanonical通常file・single-link・current UID・owner-only・JSON object・安全な祖先であり、下記4回の実行が同じ正本で再認証なしに成立することを値非表示で確認した。
