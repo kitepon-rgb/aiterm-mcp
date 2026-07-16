@@ -395,6 +395,12 @@ function registerAgentTool(
           .describe("managed Stop hook を有効化し、pty_send(wait:'agent_done') を使えるようにする"),
         ...initialPromptWaitSchema,
       },
+      outputSchema: {
+        schema: z.literal("aiterm.agent-launch-result.v1"),
+        provider: z.literal(kind),
+        session_id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+        managed_completion: z.boolean(),
+      },
     },
     async ({ prompt, model, reasoning_effort, cwd, session_name, agent_done, wait, timeout, screen, lines }: any) => {
       try {
@@ -410,7 +416,16 @@ function registerAgentTool(
           screen,
           lines,
         });
-        return ok(`session_id: ${sid}\n${hint}`);
+        const structured = {
+          schema: "aiterm.agent-launch-result.v1" as const,
+          provider: kind,
+          session_id: sid,
+          managed_completion: agent_done ?? false,
+        };
+        return {
+          content: [{ type: "text" as const, text: `session_id: ${sid}\n${hint}` }],
+          structuredContent: structured,
+        };
       } catch (e) {
         return fail(e);
       }

@@ -43,6 +43,11 @@ protocol／transcript読取、Observer／Throughline／Mailboxロジックの内
 - [x] `claude_turn`のissue／recover／unknown／exact result、tool output schema、既存対話回帰をfocused 5 passed、
   related 126 passedで閉じる。親反証でrecoverへの暗黙timeout注入を棄却し、最終HEADで両gateを再確認した。
   受入証拠は[ADR 0009](adr/0009-claude-operation-structured-caller-gate-acceptance.md)。live Claude、publish、端末更新は行わない。
+- [x] [ADR 0010](adr/0010-agent-launch-structured-receipt.md)どおり、Observerが人間向けtextを解析せず
+  永続session handleを取得できる`aiterm.agent-launch-result.v1` structured receiptをlauncherへ追加する。
+  既存text contentは互換維持し、Claude fixtureの実MCP call、tool output schema、既存launcher回帰をfocused／related
+  gateで閉じた（focused 4 passed、related 94 passed）。受入証拠は
+  [ADR 0011](adr/0011-agent-launch-structured-receipt-acceptance.md)。
 - [ ] 実Claude model requestを使うlive H smokeは、operation相関gateの完了後、目的・影響・rollbackの承認を得て
   初回／follow-up各一turnで
   実施し、認証再要求、Stop、結果回収、session closeを確認する。

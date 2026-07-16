@@ -133,6 +133,18 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 12 ツール公�
     codexAgent.inputSchema.properties.lines.anyOf?.some((v) => v.type === "integer"),
     "codex_agent lines schema",
   );
+  for (const [name, provider] of [
+    ["claude_agent", "claude"],
+    ["codex_agent", "codex"],
+    ["grok_agent", "grok"],
+    ["composer_agent", "composer"],
+  ]) {
+    const tool = toolsResp.result.tools.find((entry) => entry.name === name);
+    assert.equal(tool.outputSchema.properties.schema.const, "aiterm.agent-launch-result.v1", `${name} launch result schema`);
+    assert.equal(tool.outputSchema.properties.provider.const, provider, `${name} provider固定`);
+    assert.equal(tool.outputSchema.properties.session_id.pattern, "^[A-Za-z0-9_-]{1,64}$", `${name} session ID schema`);
+    assert.equal(tool.outputSchema.properties.managed_completion.type, "boolean", `${name} managed completion schema`);
+  }
   for (const name of ["grok_agent", "composer_agent"]) {
     const tool = toolsResp.result.tools.find((t) => t.name === name);
     assert.ok(

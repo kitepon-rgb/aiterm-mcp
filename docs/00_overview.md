@@ -21,6 +21,8 @@
 - [adr/0003-claude-agent-launcher-contract.md](adr/0003-claude-agent-launcher-contract.md) - Claudeを`-p`反復でなく永続対話PTYへ追加する契約。
 - [adr/0008-claude-operation-structured-caller-surface.md](adr/0008-claude-operation-structured-caller-surface.md) - durable caller向けにClaude operationのstatusとexact resultを構造化する契約。
 - [adr/0009-claude-operation-structured-caller-gate-acceptance.md](adr/0009-claude-operation-structured-caller-gate-acceptance.md) - 構造化callerのfocused／related gateと親反証を固定する受入記録。
+- [adr/0010-agent-launch-structured-receipt.md](adr/0010-agent-launch-structured-receipt.md) - durable callerが表示textを解析せずlauncher session handleを得る構造化receipt契約。
+- [adr/0011-agent-launch-structured-receipt-acceptance.md](adr/0011-agent-launch-structured-receipt-acceptance.md) - launcher構造化receiptの実MCP fixtureと関連gateを固定する受入記録。
 
 ## 運用メモ
 

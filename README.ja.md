@@ -52,7 +52,7 @@ pty_read(id, { wait: true })       → 削減済みの出力を読む（完了�
 
 ### 2. その端末の中に他のコーディングエージェントを起動する — オーケストレーションの旗艦
 
-同じ primitive が別エージェントの TUI を宿す。4 つの起動ツールが、Claude/Codex/Grok/Composer の対話 TUI を新しい永続端末の中に起動し、`session_id` を返す。以後は同じ `pty_read` / `pty_send` で継続操作する。`agent_done:true` なら Stop hook でターン完了を待てる。managed Claudeでは全turnに`wait:"agent_done"`を必須とする。durable machine callerは`claude_turn({ action:"issue"|"recover", session_id, operation_id, ... })`を使い、人間向けerror文字列を解析せず`accepted`／`pending`／`completed`／`unknown`を判定できる。recoveryは再送せず、検証済み完了だけがexact `raw_output`を持つ。通常の`pty_send`／`pty_read`は対話callerと人間向けに維持する。`C-c`後もmarkerを保持し、Stopが来なければsessionをcloseする。`claude_agent` と `codex_agent` は、TUI ready 後に初回 `prompt` を送り `wait:"agent_done"` で待つ入口も公開する。Codex/Grok/Composer の live smoke は成功済み。Claude実モデルの初回／follow-up smokeは明示承認待ちであり、まだ成功扱いしない。
+同じ primitive が別エージェントの TUI を宿す。4 つの起動ツールが、Claude/Codex/Grok/Composer の対話 TUI を新しい永続端末の中に起動し、`session_id` を返す。既存の人間向けtextに加えて`aiterm.agent-launch-result.v1` structured receiptも返すため、durable callerは表示文字列を解析せずsession handleを取得できる。以後は同じ `pty_read` / `pty_send` で継続操作する。`agent_done:true` なら Stop hook でターン完了を待てる。managed Claudeでは全turnに`wait:"agent_done"`を必須とする。durable machine callerは`claude_turn({ action:"issue"|"recover", session_id, operation_id, ... })`を使い、人間向けerror文字列を解析せず`accepted`／`pending`／`completed`／`unknown`を判定できる。recoveryは再送せず、検証済み完了だけがexact `raw_output`を持つ。通常の`pty_send`／`pty_read`は対話callerと人間向けに維持する。`C-c`後もmarkerを保持し、Stopが来なければsessionをcloseする。`claude_agent` と `codex_agent` は、TUI ready 後に初回 `prompt` を送り `wait:"agent_done"` で待つ入口も公開する。Codex/Grok/Composer の live smoke は成功済み。Claude実モデルの初回／follow-up smokeは明示承認待ちであり、まだ成功扱いしない。
 
 ```text
 codex_agent({ session_name: "codex1", cwd: "/repo", agent_done: true,
