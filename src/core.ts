@@ -1393,6 +1393,16 @@ interface ClaudeOperationMarker {
   operationId: string | null;
 }
 
+export interface ClaudeOperationResult {
+  schema: "aiterm.claude-operation-result.v1";
+  action: "issue" | "recover";
+  status: "accepted" | "pending" | "completed" | "unknown";
+  session_id: string;
+  operation_id: string;
+  raw_output: string | null;
+  reason: "operation_not_found" | "result_unknown" | null;
+}
+
 interface AgentDoneParseResult {
   event: AgentDoneEvent | null;
   malformed: boolean;
@@ -1927,6 +1937,28 @@ function managedClaudeOperation(name: string): ClaudeOperationMarker | null | un
   }
   if (meta.kind !== "claude") return undefined;
   return readClaudeOperationMarker(meta);
+}
+
+function hasClaudeDispatchReceipt(meta: AgentMetadata, operationId: string): boolean {
+  const file = agentClaudeDispatchReceiptPath(meta.aiterm_session, meta.launch_id, operationId);
+  let st: fs.Stats;
+  try {
+    st = fs.lstatSync(file);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw new AitermError(`Claude dispatch receiptを確認できません: ${(error as Error).message}`, 2);
+  }
+  if (
+    !st.isFile() ||
+    st.isSymbolicLink() ||
+    st.uid !== currentUid() ||
+    st.nlink !== 1 ||
+    (st.mode & 0o077) !== 0 ||
+    st.size !== 0
+  ) {
+    throw new AitermError("Claude dispatch receiptの安全検証に失敗しました", 2);
+  }
+  return true;
 }
 
 function normalizeInitialPromptState(v: unknown): InitialPromptState {
@@ -2492,6 +2524,31 @@ function latestAgentDoneEvent(meta: AgentMetadata, expectedOperationId: string |
   return latest;
 }
 
+function completedClaudeOperationEvent(meta: AgentMetadata, operationId: string): AgentDoneEvent | null {
+  const size = safeStatSize(meta.event_file);
+  if (size === 0) return null;
+  if (size > AGENT_EVENT_MAX_BYTES) {
+    throw new AitermError("agent event file が大きすぎるためClaude operationを安全に回収できません", 2);
+  }
+  const text = readFileRange(meta.event_file, 0, size).toString("utf8");
+  const lines = text.split("\n");
+  const tail = lines.pop() ?? "";
+  if (tail.length > 0) throw new AitermError("Claude operation event fileに未完結lineがあります", 2);
+  let match: AgentDoneEvent | null = null;
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    if (Buffer.byteLength(line, "utf8") > 64 * 1024) {
+      throw new AitermError("Claude operation event lineが上限を超えています", 2);
+    }
+    const parsed = parseAgentDoneEvent(line, meta);
+    if (parsed.malformed) throw new AitermError("Claude operation eventが不正です", 2);
+    if (!parsed.event || parsed.event.operation_id !== operationId) continue;
+    if (match !== null) throw new AitermError("Claude operation completion eventが重複しています", 2);
+    match = parsed.event;
+  }
+  return match;
+}
+
 function recoverAgentVendorSession(meta: AgentMetadata): void {
   if (meta.vendor_session_id) return;
   const size = safeStatSize(meta.event_file);
@@ -2570,6 +2627,54 @@ function readTranscriptLines(file: string): string[] {
   }
 }
 
+function readClaudeResultText(
+  meta: AgentMetadata,
+  done: AgentDoneEvent,
+  operationId: string | null,
+): string {
+  if (meta.kind !== "claude" || !meta.result_file || !done.result_digest || done.result_bytes == null) {
+    transcriptUnavailable();
+  }
+  let st: fs.Stats;
+  try {
+    st = fs.lstatSync(meta.result_file);
+  } catch {
+    transcriptUnavailable();
+  }
+  if (
+    !st.isFile() ||
+    st.isSymbolicLink() ||
+    st.uid !== currentUid() ||
+    st.nlink !== 1 ||
+    (st.mode & 0o077) !== 0 ||
+    st.size > CLAUDE_RESULT_MAX_BYTES + 4096
+  ) {
+    throw new AitermError("Claude result file の安全検証に失敗しました", 2);
+  }
+  let result: any;
+  try {
+    result = JSON.parse(fs.readFileSync(meta.result_file, "utf8"));
+  } catch {
+    throw new AitermError("Claude result file を読めません", 2);
+  }
+  const keys = result && typeof result === "object" && !Array.isArray(result) ? Object.keys(result).sort() : [];
+  if (
+    keys.join(",") !== "operation_id,result_bytes,result_digest,schema,text,vendor_session_id" ||
+    result.schema !== "aiterm.claude-turn-result.v2" ||
+    result.operation_id !== done.operation_id ||
+    (operationId !== null && result.operation_id !== operationId) ||
+    result.vendor_session_id !== meta.vendor_session_id ||
+    result.result_digest !== done.result_digest ||
+    result.result_bytes !== done.result_bytes ||
+    typeof result.text !== "string" ||
+    Buffer.byteLength(result.text, "utf8") !== done.result_bytes ||
+    createHash("sha256").update(result.text, "utf8").digest("hex") !== done.result_digest
+  ) {
+    throw new AitermError("Claude result file が完了eventと一致しません", 2);
+  }
+  return result.text;
+}
+
 /** agent vendor の構造化 transcript から直近完了ターンの最終回答を読む。 */
 export async function readAgentTranscript(
   name: string,
@@ -2605,45 +2710,8 @@ export async function readAgentTranscript(
   let text = "";
 
   if (meta.kind === "claude") {
-    if (!meta.result_file || !done?.result_digest || done.result_bytes == null) transcriptUnavailable();
-    let st: fs.Stats;
-    try {
-      st = fs.lstatSync(meta.result_file);
-    } catch {
-      transcriptUnavailable();
-    }
-    if (
-      !st.isFile() ||
-      st.isSymbolicLink() ||
-      st.uid !== currentUid() ||
-      st.nlink !== 1 ||
-      (st.mode & 0o077) !== 0 ||
-      st.size > CLAUDE_RESULT_MAX_BYTES + 4096
-    ) {
-      throw new AitermError("Claude result file の安全検証に失敗しました", 2);
-    }
-    let result: any;
-    try {
-      result = JSON.parse(fs.readFileSync(meta.result_file, "utf8"));
-    } catch {
-      throw new AitermError("Claude result file を読めません", 2);
-    }
-    const keys = result && typeof result === "object" && !Array.isArray(result) ? Object.keys(result).sort() : [];
-    if (
-      keys.join(",") !== "operation_id,result_bytes,result_digest,schema,text,vendor_session_id" ||
-      result.schema !== "aiterm.claude-turn-result.v2" ||
-      result.operation_id !== done.operation_id ||
-      (operationId !== null && result.operation_id !== operationId) ||
-      result.vendor_session_id !== meta.vendor_session_id ||
-      result.result_digest !== done.result_digest ||
-      result.result_bytes !== done.result_bytes ||
-      typeof result.text !== "string" ||
-      Buffer.byteLength(result.text, "utf8") !== done.result_bytes ||
-      createHash("sha256").update(result.text, "utf8").digest("hex") !== done.result_digest
-    ) {
-      throw new AitermError("Claude result file が完了eventと一致しません", 2);
-    }
-    text = result.text;
+    if (!done) transcriptUnavailable();
+    text = readClaudeResultText(meta, done, operationId);
   } else if (meta.kind === "codex") {
     if (!meta.codex_home) transcriptUnavailable();
     const transcript = findLatestCodexTranscript(meta.codex_home, meta.vendor_session_id);
@@ -3145,6 +3213,87 @@ export async function sendAndWaitAgentDone(name: string, text: string, o: AgentD
     agentWaitLocks.delete(name);
     releaseFileLock();
   }
+}
+
+export async function runClaudeOperation({
+  session_id: name,
+  action,
+  operation_id: operationIdInput,
+  text,
+  timeout,
+}: {
+  session_id: string;
+  action: "issue" | "recover";
+  operation_id: string;
+  text?: string | null;
+  timeout?: number;
+}): Promise<ClaudeOperationResult> {
+  assertSessionName(name);
+  if (action !== "issue" && action !== "recover") {
+    throw new AitermError('action は "issue" または "recover" を指定してください', 2);
+  }
+  const operationId = validateOperationId(operationIdInput);
+  const meta = loadAgentMetadata(name);
+  if (meta.kind !== "claude") throw new AitermError("claude_turnはmanaged Claude agent sessionだけで使用できます", 2);
+
+  if (action === "issue") {
+    if (typeof text !== "string" || text.length === 0) {
+      throw new AitermError("claude_turn issueには空でないtextが必要です", 2);
+    }
+    const waitTimeout = timeout ?? DEFAULT_AGENT_DONE_TIMEOUT;
+    if (!Number.isFinite(waitTimeout) || waitTimeout < 0 || waitTimeout > 3600) {
+      throw new AitermError("claude_turn timeoutは0〜3600秒で指定してください", 2);
+    }
+    await sendAndWaitAgentDone(name, text, {
+      operation_id: operationId,
+      timeout: waitTimeout,
+      screen: false,
+      lines: 0,
+    });
+  } else {
+    if (text != null) throw new AitermError("claude_turn recoverにtextは指定できません", 2);
+    if (timeout != null) throw new AitermError("claude_turn recoverにtimeoutは指定できません", 2);
+  }
+
+  const inspected = inspectClaudeOperation(meta, operationId, action);
+  if (action === "issue" && inspected.status === "pending") {
+    return { ...inspected, status: "accepted" };
+  }
+  return inspected;
+}
+
+function inspectClaudeOperation(
+  meta: AgentMetadata,
+  operationId: string,
+  action: "issue" | "recover",
+): ClaudeOperationResult {
+  const base = {
+    schema: "aiterm.claude-operation-result.v1" as const,
+    action,
+    session_id: meta.aiterm_session,
+    operation_id: operationId,
+  };
+  const active = readClaudeOperationMarker(meta);
+  if (active) {
+    if (active.operationId !== operationId) {
+      throw new AitermError(
+        `${active.operationId ? `別のoperation ${active.operationId}` : "operation_idなしのClaude turn"} が未解決です`,
+        2,
+      );
+    }
+    return { ...base, status: "pending", raw_output: null, reason: null };
+  }
+  if (!hasClaudeDispatchReceipt(meta, operationId)) {
+    return { ...base, status: "unknown", raw_output: null, reason: "operation_not_found" };
+  }
+  const done = completedClaudeOperationEvent(meta, operationId);
+  if (!done) return { ...base, status: "unknown", raw_output: null, reason: "result_unknown" };
+  if (!meta.vendor_session_id && done.vendor_session_id) {
+    bindAgentVendorSession(meta, done);
+    writeAgentMetadata(meta);
+  }
+  const rawOutput = readClaudeResultText(meta, done, operationId);
+  return { ...base, status: "completed", raw_output: rawOutput, reason: null };
 }
 
 // ── 対話型エージェント起動（Claude / Codex / Grok Build(Grok) / Grok Build(Composer)）──────

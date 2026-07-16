@@ -9,12 +9,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > 公開commit `239e7e4`、tag CI `29245251184`、npm `latest`、tag / GitHub Release、MCP Registry workflow `29245462227`、registry由来隔離installから10-tool MCP diagnosticsとruntime snapshotまで確認済み。
 
 > **現在の未公開source（2026-07-16）**: `claude_agent`を追加し、PTY 6＋対話launcher 4
->（Claude/Codex/Grok/Composer）＋diagnostics 1＝計11ツール。Claudeは`claude -p`反復ではなく、
+>（Claude/Codex/Grok/Composer）＋diagnostics 1＋構造化Claude caller 1＝計12ツール。Claudeは`claude -p`反復ではなく、
 > 利用者がattachできる同じClaude Code TUI sessionへ初回／follow-upを送る。launch専用settingsの
 > Stop hookが本文なしeventとowner-only bounded resultを分離し、timeout後もprompt再送なしで同じ
 > sessionから回収する。durable callerの`operation_id`を送信→Stop event/result→回収へ相関し、古い結果の
-> 誤帰属、同一ID再送、未解決operation中の別ID送信を拒否する訂正gateも受入済み。関連122/122、
+> 誤帰属、同一ID再送、未解決operation中の別ID送信を拒否する訂正gateも受入済み。`claude_turn`は
+> `issue`／`recover`を構造化statusへ固定し、完了時だけexact raw resultを返す。operation相関の関連122/122、
 > full regression 262/262、独立反証の最終判定はP0/P1/P2残存なし（ADR 0006）。
+> 構造化caller gateはfocused 5/5、related 126/126。親反証でrecoverへの暗黙timeout注入を除去済み
+>（ADR 0009）。
 > operation相関を含まない既公開0.12.3との誤認を防ぐため、現sourceは0.13.0へminor bump済み（ADR 0007）。
 > release／publish／端末更新は未実施。
 > 実Claude model requestのlive smokeは明示承認待ち。
@@ -28,7 +31,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 履歴メモ: v0.4.1 は発見性メタ/README 刷新のリリース、v0.7.0 は対話エージェント起動3ツール追加、v0.9.0 は `agent_done` 公開、v0.9.1 は Codex managed home allowlist hardening、v0.10.0 は Codex launcher 初回 prompt wait 公開、v0.11.0 はモデル整合（`model` 引数・`grok-4.5` 既定・effort 実態合わせ）公開、v0.12.0 は全域監査の確定修正（stale wait lock 回収・close/killAll のプロセス間ガード・出力削減の行内キャップ・UTF-8 先頭境界・pytest 証拠ガード・破壊ゲートの `--`／rtk 変換後・line_range 逆転エラー・pty_list agent 列・codex managed config 可視化）＋新機能 `pty_read(agent_transcript:true)`（長い TUI 回答を vendor transcript から回収）公開、v0.12.1 は監査 C 節の hardening 全消化（stop hook short-write ガード・agent events の 64KB tail 読み・非 agent read の negative-cache）。詳細な版別差分は `CHANGELOG.md` と `docs/archive/` を参照する。
 
-- **実装は Node/TS**（要件: Node>=18 + tmux）。`src/index.ts`（`@modelcontextprotocol/sdk` で 11 ツール公開〔PTY 6＋エージェント起動 4＋read-only diagnostics 1〕・stdio）/ `src/core.ts`（tmux 制御・出力削減・完了検出・安全ガード・Claude/Codex/Grok/Composer対話launcher・rtk委譲。**stdout に出さない**＝通信を汚さない）/ `src/claude-stop-hook.ts`（Claude Stop result分離）/ `src/runtime-error-store.ts`（explicit opt-in・固定 allowlist aggregate・strict validation・child orchestration）/ `src/runtime-error-worker.ts`（bounded isolation）/ `src/runtime-errors-cli.ts`（factory snapshot/ack）/ `src/rtk.ts`（コマンド別 reducer）。`npm run build` → `dist/`。`package.json` の bin は `aiterm-mcp` と `aiterm-runtime-errors`。
+- **実装は Node/TS**（要件: Node>=18 + tmux）。`src/index.ts`（`@modelcontextprotocol/sdk` で 12 ツール公開〔PTY 6＋エージェント起動 4＋read-only diagnostics 1＋構造化Claude caller 1〕・stdio）/ `src/core.ts`（tmux 制御・出力削減・完了検出・安全ガード・Claude/Codex/Grok/Composer対話launcher・Claude operation issue/recover・rtk委譲。**stdout に出さない**＝通信を汚さない）/ `src/claude-stop-hook.ts`（Claude Stop result分離）/ `src/runtime-error-store.ts`（explicit opt-in・固定 allowlist aggregate・strict validation・child orchestration）/ `src/runtime-error-worker.ts`（bounded isolation）/ `src/runtime-errors-cli.ts`（factory snapshot/ack）/ `src/rtk.ts`（コマンド別 reducer）。`npm run build` → `dist/`。`package.json` の bin は `aiterm-mcp` と `aiterm-runtime-errors`。
 - 削減と完了検出: `read` 既定で制御除去・反復圧縮・head+tail＋復元ヒント・メタ併記。`read rtk:true` は直前コマンド別の自前 reducer、`send rtk:true` は rtk バイナリへ委譲（rtk 不在は素通し）。完了検出は dead / `until` / quiescence(出力静止∧シェル復帰) / nested(ネスト中∧until無しで出力静止→確証不能ゆえ未確定で早期返却) / timeout。SSH/docker はツール化せず `send "ssh ..."` で入る（ネスト）。tmux 常駐ゆえプロセスをまたいで永続し、人は戻り値の `tmux -S … attach` で覗ける。
 - 出力削減の自前移植 `src/rtk.ts`（要件C: rtk ファイル非複製・自作。**pytest は rtk 0.42.0 と一致**。ただし `FAILED` 要約行の理由は可読性優先で全文保持＝意図的に rtk と相違／grep／git status・log／簡易フィルタ）。
 - `docs/00_overview.md` — docs の入口。正典級文書と ADR の地図。

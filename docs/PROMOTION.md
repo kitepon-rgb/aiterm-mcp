@@ -193,7 +193,7 @@ on the SSH-persistence wedge, not "another tmux MCP".
    every command after rides the same authenticated session. SSH, docker, REPLs
    are just text you send in, not separate tools.
 3. Reads come back token-reduced (git/grep/pytest reducers), with a 4-layer
-   "is the command done?" detector. `npx -y aiterm-mcp`, 11 tools, MIT,
+   "is the command done?" detector. `npx -y aiterm-mcp`, 12 tools, MIT,
    Linux/WSL2/macOS/Windows. [demo gif]
 4. Repo + one-line Claude Code install 👇 https://github.com/kitepon-rgb/aiterm-mcp
 

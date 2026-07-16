@@ -279,6 +279,13 @@ function invokeClaudeStopHook(meta, text, vendorSessionId = "claude-stop-fixture
   });
 }
 
+function claudeDispatchReceiptPath(meta, operationId) {
+  return path.join(
+    agentStateDir(),
+    `${meta.aiterm_session}.${meta.launch_id}.${operationId.slice("sha256:".length)}.claude-dispatch`,
+  );
+}
+
 function appendClaudeDoneWhenLogContains(sid, needle, text, overrides = {}) {
   const timer = setInterval(() => {
     try {
@@ -1068,6 +1075,136 @@ test("sendAndWaitAgentDone: Claude operation_idをmarker・完了suffix・timeou
     const recovered = await core.readAgentTranscript(sid, { operation_id: operationId });
     assert.match(recovered, /late operation answer/);
     assert.match(recovered, new RegExp(`operation_id=${operationId}`));
+  } finally {
+    core.closeSession(sid);
+  }
+});
+
+test("runClaudeOperation: timeoutしたissueはaccepted、同じoperationだけをpendingからexact resultへ回収する", { skip: skipAgentDone }, async () => {
+  const [sid] = core.openAgent("claude", { agent_done: true });
+  const operationId = `sha256:${"b".repeat(64)}`;
+  try {
+    const meta = readAgentMeta(sid);
+    await markFakeAgentReady(sid, "claude");
+
+    assert.deepEqual(
+      await core.runClaudeOperation({
+        session_id: sid,
+        action: "issue",
+        operation_id: operationId,
+        text: "STRUCTURED_TIMEOUT_PROMPT",
+        timeout: 0,
+      }),
+      {
+        schema: "aiterm.claude-operation-result.v1", action: "issue", status: "accepted",
+        session_id: sid, operation_id: operationId, raw_output: null, reason: null,
+      },
+    );
+    assert.deepEqual(
+      await core.runClaudeOperation({ session_id: sid, action: "recover", operation_id: operationId }),
+      {
+        schema: "aiterm.claude-operation-result.v1", action: "recover", status: "pending",
+        session_id: sid, operation_id: operationId, raw_output: null, reason: null,
+      },
+    );
+    assert.match(fs.readFileSync(sessionLogPath(sid), "utf8"), /STRUCTURED_TIMEOUT_PROMPT/);
+
+    const hook = invokeClaudeStopHook(meta, "structured exact raw output", "structured-caller-session");
+    assert.equal(hook.status, 0, hook.stderr);
+    assert.equal(hook.stderr, "");
+    assert.deepEqual(
+      await core.runClaudeOperation({ session_id: sid, action: "recover", operation_id: operationId }),
+      {
+        schema: "aiterm.claude-operation-result.v1",
+        action: "recover",
+        status: "completed",
+        session_id: sid,
+        operation_id: operationId,
+        raw_output: "structured exact raw output",
+        reason: null,
+      },
+    );
+  } finally {
+    core.closeSession(sid);
+  }
+});
+
+test("runClaudeOperation: 未dispatchとreceiptだけのoperationをunknown理由別に固定する", { skip: skipAgentDone }, async () => {
+  const [sid] = core.openAgent("claude", { agent_done: true });
+  const undispatched = `sha256:${"0".repeat(64)}`;
+  const receiptOnly = `sha256:${"f".repeat(64)}`;
+  try {
+    const meta = readAgentMeta(sid);
+    await assert.rejects(
+      () => core.runClaudeOperation({
+        session_id: sid,
+        action: "recover",
+        operation_id: undispatched,
+        timeout: 1,
+      }),
+      /recoverにtimeoutは指定できません/,
+    );
+    assert.deepEqual(
+      await core.runClaudeOperation({ session_id: sid, action: "recover", operation_id: undispatched }),
+      {
+        schema: "aiterm.claude-operation-result.v1",
+        action: "recover",
+        status: "unknown",
+        session_id: sid,
+        operation_id: undispatched,
+        raw_output: null,
+        reason: "operation_not_found",
+      },
+    );
+    fs.writeFileSync(claudeDispatchReceiptPath(meta, receiptOnly), "", { mode: 0o600 });
+    assert.deepEqual(
+      await core.runClaudeOperation({ session_id: sid, action: "recover", operation_id: receiptOnly }),
+      {
+        schema: "aiterm.claude-operation-result.v1",
+        action: "recover",
+        status: "unknown",
+        session_id: sid,
+        operation_id: receiptOnly,
+        raw_output: null,
+        reason: "result_unknown",
+      },
+    );
+  } finally {
+    core.closeSession(sid);
+  }
+});
+
+test("runClaudeOperation: 別active operationとmalformed markerをstructured結果へ降格しない", { skip: skipAgentDone }, async () => {
+  const [sid] = core.openAgent("claude", { agent_done: true });
+  const active = `sha256:${"6".repeat(64)}`;
+  const other = `sha256:${"7".repeat(64)}`;
+  try {
+    const meta = readAgentMeta(sid);
+    await markFakeAgentReady(sid, "claude");
+    await core.runClaudeOperation({
+      session_id: sid,
+      action: "issue",
+      operation_id: active,
+      text: "ACTIVE_OPERATION",
+      timeout: 0,
+    });
+    await assert.rejects(
+      () => core.runClaudeOperation({
+        session_id: sid,
+        action: "issue",
+        operation_id: other,
+        text: "MUST_NOT_INTERLEAVE",
+        timeout: 0,
+      }),
+      /別のoperation|未解決/,
+    );
+
+    const marker = path.join(path.dirname(meta.result_file), `${sid}.${meta.launch_id}.claude-operation.json`);
+    fs.writeFileSync(marker, "{malformed\n", { mode: 0o600 });
+    await assert.rejects(
+      () => core.runClaudeOperation({ session_id: sid, action: "recover", operation_id: active }),
+      /marker.*(?:不正|読めません)|JSON/,
+    );
   } finally {
     core.closeSession(sid);
   }

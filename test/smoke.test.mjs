@@ -1,5 +1,5 @@
 // smoke: 実際に `node dist/index.js` を起動し、initialize + tools/list を stdin にパイプ。
-// 検証: stdout は改行区切り JSON-RPC のみ（診断混入なし）／11 ツールが公開されている。
+// 検証: stdout は改行区切り JSON-RPC のみ（診断混入なし）／12 ツールが公開されている。
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -25,7 +25,7 @@ test("smoke: 公開versionはpackage・lock・server manifestで一致する", (
   assert.equal(server.packages?.[0]?.version, PACKAGE.version);
 });
 
-test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 11 ツール公開", async () => {
+test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 12 ツール公開", async () => {
   const tmpdir = fs.mkdtempSync(path.join(os.tmpdir(), "aiterm-diagnostics-"));
   const child = spawn(process.execPath, [ENTRY], {
     stdio: ["pipe", "pipe", "pipe"],
@@ -78,6 +78,7 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 11 ツール公�
   const names = (toolsResp.result?.tools ?? []).map((t) => t.name).sort();
   assert.deepEqual(names, [
     "claude_agent",
+    "claude_turn",
     "codex_agent",
     "composer_agent",
     "diagnostics",
@@ -107,6 +108,22 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 11 ツール公�
   assert.equal(claudeAgent.inputSchema.properties.agent_done.type, "boolean", "claude_agent agent_done schema");
   assert.deepEqual(claudeAgent.inputSchema.properties.wait.enum, ["none", "agent_done"], "claude_agent wait schema");
   assert.equal(claudeAgent.inputSchema.properties.timeout.type, "number", "claude_agent timeout schema");
+  const claudeTurn = toolsResp.result.tools.find((t) => t.name === "claude_turn");
+  assert.equal(claudeTurn.inputSchema.properties.session_id.type, "string", "claude_turn session_id schema");
+  assert.deepEqual(claudeTurn.inputSchema.properties.action.enum, ["issue", "recover"], "claude_turn action schema");
+  assert.equal(claudeTurn.inputSchema.properties.operation_id.pattern, "^sha256:[0-9a-f]{64}$", "claude_turn operation_id schema");
+  assert.equal(claudeTurn.inputSchema.properties.text.type, "string", "claude_turn issue text schema");
+  assert.equal(claudeTurn.inputSchema.properties.timeout.type, "number", "claude_turn issue timeout schema");
+  assert.equal(claudeTurn.inputSchema.properties.timeout.default, undefined, "recoverへtimeout既定値を注入しない");
+  assert.ok(claudeTurn.outputSchema, "claude_turn output schemaを公開する");
+  assert.equal(claudeTurn.outputSchema.properties.schema.const, "aiterm.claude-operation-result.v1", "claude_turn result schema");
+  assert.deepEqual([...claudeTurn.outputSchema.properties.status.enum].sort(), ["accepted", "completed", "pending", "unknown"], "claude_turn status schema");
+  assert.deepEqual(
+    claudeTurn.outputSchema.properties.reason.anyOf.flatMap((entry) => entry.enum ?? []).sort(),
+    ["operation_not_found", "result_unknown"],
+    "claude_turn unknown reason schema",
+  );
+  assert.ok(claudeTurn.outputSchema.properties.raw_output.anyOf.some((entry) => entry.type === "string"), "claude_turn completed raw_output schema");
   assert.equal(codexAgent.inputSchema.properties.agent_done.type, "boolean", "codex_agent agent_done schema");
   assert.deepEqual(codexAgent.inputSchema.properties.wait.enum, ["none", "agent_done"], "codex_agent wait schema");
   assert.equal(codexAgent.inputSchema.properties.wait.default, "none", "codex_agent wait default");

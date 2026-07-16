@@ -37,6 +37,12 @@ protocol／transcript読取、Observer／Throughline／Mailboxロジックの内
   `package.json`／lock／`server.json`／MCP initialize／diagnosticsのversion一致をfocused smokeで固定する。
   build＋focused smokeは3 passed、0 failed、0 skipped。受入証拠は
   [ADR 0007](adr/0007-claude-operation-public-version-boundary.md)。release／publish／端末更新は別H承認まで行わない。
+- [x] [ADR 0008](adr/0008-claude-operation-structured-caller-surface.md)どおり、durable callerが
+  pendingと破損／identity不一致を人間向けerror文字列の解析なしで区別できる構造化`claude_turn` toolを追加する。
+  既存`pty_send`／`pty_read`の対話契約は維持し、Observer固有ロジックは入れない。
+- [x] `claude_turn`のissue／recover／unknown／exact result、tool output schema、既存対話回帰をfocused 5 passed、
+  related 126 passedで閉じる。親反証でrecoverへの暗黙timeout注入を棄却し、最終HEADで両gateを再確認した。
+  受入証拠は[ADR 0009](adr/0009-claude-operation-structured-caller-gate-acceptance.md)。live Claude、publish、端末更新は行わない。
 - [ ] 実Claude model requestを使うlive H smokeは、operation相関gateの完了後、目的・影響・rollbackの承認を得て
   初回／follow-up各一turnで
   実施し、認証再要求、Stop、結果回収、session closeを確認する。

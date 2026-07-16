@@ -22,7 +22,7 @@
 
 **言葉でなく実測で:** このリポジトリ自身の 203 テストで、`pty_read` はコンテキストに載るトークンを生ログの **約 7.1 分の 1** に減らす。しかも pass/fail の判定は畳んでも残る。→ [組み込みシェルツールとの使い分け](#組み込みシェルツールとの使い分け)
 
-11 ツール: 6 つの **PTY ツール**（`pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list`）で 1 本の永続端末を開き・操作し・読む。加えて 4 つの **エージェント起動ツール**（`claude_agent` / `codex_agent` / `grok_agent` / `composer_agent`）が、別のコーディングエージェントの TUI を新しい端末の中に起動し、`diagnostics` が安全な factory readiness を返す。バックエンドは **tmux** なので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
+12 ツール: 6 つの **PTY ツール**（`pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list`）で 1 本の永続端末を開き・操作し・読む。加えて 4 つの **エージェント起動ツール**（`claude_agent` / `codex_agent` / `grok_agent` / `composer_agent`）が別のコーディングエージェントの TUI を新しい端末の中に起動し、`claude_turn`がdurable caller向けの構造化issue／recoveryを、`diagnostics`が安全なfactory readinessを返す。バックエンドは **tmux** なので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
 
 **v0.12.2 は release candidate（公開待ち）です。** factory diagnostics と local
 runtime-error store は canonical dotagents config の `collection.enabled: true` が明示された
@@ -52,7 +52,7 @@ pty_read(id, { wait: true })       → 削減済みの出力を読む（完了�
 
 ### 2. その端末の中に他のコーディングエージェントを起動する — オーケストレーションの旗艦
 
-同じ primitive が別エージェントの TUI を宿す。4 つの起動ツールが、Claude/Codex/Grok/Composer の対話 TUI を新しい永続端末の中に起動し、`session_id` を返す。以後は同じ `pty_read` / `pty_send` で継続操作する。`agent_done:true` なら Stop hook でターン完了を待てる。managed Claudeでは全turnに`wait:"agent_done"`を必須とする。durable callerは`operation_id: "sha256:<64 lowercase hex>"`を送信と回収へ同じ値で渡し、IDなしturnも匿名active markerで直列化する。現在turnのStopがmarkerを消費するまで次turnも結果公開も行わない。`C-c`後もmarkerを保持し、Stopが来なければsessionをcloseする。`claude_agent` と `codex_agent` は、TUI ready 後に初回 `prompt` を送り `wait:"agent_done"` で待つ入口も公開する。Codex/Grok/Composer の live smoke は成功済み。Claude実モデルの初回／follow-up smokeは明示承認待ちであり、まだ成功扱いしない。
+同じ primitive が別エージェントの TUI を宿す。4 つの起動ツールが、Claude/Codex/Grok/Composer の対話 TUI を新しい永続端末の中に起動し、`session_id` を返す。以後は同じ `pty_read` / `pty_send` で継続操作する。`agent_done:true` なら Stop hook でターン完了を待てる。managed Claudeでは全turnに`wait:"agent_done"`を必須とする。durable machine callerは`claude_turn({ action:"issue"|"recover", session_id, operation_id, ... })`を使い、人間向けerror文字列を解析せず`accepted`／`pending`／`completed`／`unknown`を判定できる。recoveryは再送せず、検証済み完了だけがexact `raw_output`を持つ。通常の`pty_send`／`pty_read`は対話callerと人間向けに維持する。`C-c`後もmarkerを保持し、Stopが来なければsessionをcloseする。`claude_agent` と `codex_agent` は、TUI ready 後に初回 `prompt` を送り `wait:"agent_done"` で待つ入口も公開する。Codex/Grok/Composer の live smoke は成功済み。Claude実モデルの初回／follow-up smokeは明示承認待ちであり、まだ成功扱いしない。
 
 ```text
 codex_agent({ session_name: "codex1", cwd: "/repo", agent_done: true,
@@ -135,7 +135,7 @@ claude mcp add --scope user --transport stdio aiterm -- npx -y aiterm-mcp
 Claude Code を再起動して、接続を確認:
 
 ```bash
-/mcp        # aiterm が connected・11 ツール公開、と出る
+/mcp        # aiterm が connected・12 ツール公開、と出る
 ```
 
 最初のセッション——4 回の呼び出しで、1 個の永続端末:
@@ -173,7 +173,7 @@ MCP クライアントが aiterm を stdio 越しにプログラムから駆動�
 
 ```mermaid
 flowchart LR
-    AI["AI / MCP client<br/>(the orchestrator)"] -->|"pty_send · claude_agent · codex_agent<br/>grok_agent · composer_agent · diagnostics"| S["aiterm-mcp<br/>stdio MCP · 11 tools"]
+    AI["AI / MCP client<br/>(the orchestrator)"] -->|"pty_send · claude_agent · claude_turn · codex_agent<br/>grok_agent · composer_agent · diagnostics"| S["aiterm-mcp<br/>stdio MCP · 12 tools"]
     S -->|"pty_read<br/>token-reduced"| AI
     S -->|"tmux send-keys<br/>capture-pane"| P["persistent PTYs<br/>tmux · survive restarts"]
     P -->|"ssh · docker · repl"| R["nested<br/>remote · container · REPL"]
@@ -254,6 +254,7 @@ aiterm は同じ核心の洞察——端末を出会いの場にする——を�
 | `pty_key` | 制御キーを送る | `session_id`, `key`（`C-c`/`Enter`/`Up`…） |
 | `pty_close` | セッションを閉じる | `session_id` |
 | `pty_list` | セッション一覧 | （なし） |
+| `claude_turn` | 相関済みmanaged Claude operationを送信または回収 | `action`, `session_id`, `operation_id`, `text?`, `timeout?` |
 | `diagnostics` | 機械可読 JSON による read-only factory readiness | （なし） |
 
 `diagnostics` は PTY やエージェントを起動しない。パッケージ版、MCP 呼出 readiness、read-only な PTY 一覧要約、bounded runtime-error-store status、任意 vendor launcher の可用性だけを返す。path・環境値・認証情報・コマンド本文・PTY 出力・raw log は意図的に返さない。通常未設定の任意依存は `not_applicable`、安全に確定できない状態は `unverified` と表す。
@@ -277,7 +278,7 @@ consumer は `aiterm-runtime-errors snapshot` を読み、durable ingestion 後�
 
 対応するCLI（`claude` / `codex` / `grok`）の導入・認証が必要。解決順は`CLAUDE_BIN` / `CODEX_BIN` / `GROK_BIN`、既定path、`PATH`。前提違反はsession作成前に明示失敗する。Claude/Codexは初回prompt完了待ちを公開し、4 launcherすべてが対応環境で同じfollow-up `pty_send(wait:"agent_done")`契約を使う。Claudeはisolated managed settingsとhook-captured resultを使い、private transcriptへ依存しない。既存3 vendorのlive smokeはgreen、Claude実モデルsmokeは承認待ちでありfixture成功と混同しない。
 
-エージェントの回答が `wait:"agent_done"` の画面 tailより長ければ、`pty_read({ agent_transcript:true })`で再promptなしに全文回収する。Claudeはmanaged Stop hookがowner-only resultへ保存した本文をdigest/byte数で検証して返し、private transcriptを読まない。durable callerは`pty_send(wait:"agent_done", operation_id:...)`と`pty_read(agent_transcript:true, operation_id:...)`へ同じIDを渡す。不一致・未完了は明示エラーになり、timeout後の同一ID再送も送信前に拒否する。IDなしturnも匿名markerで直列化するため、現在Stop待ちの間に古い回答を返さない。CodexはStop hookの`turn_id`で構造化transcriptへjoinし、Grok/Composerは最後の実user行より後ろのassistant行を採る。不在・非agent・抽出不能は明示エラー。
+エージェントの回答が `wait:"agent_done"` の画面 tailより長ければ、対話callerは`pty_read({ agent_transcript:true })`で再promptなしに全文回収する。Claudeはmanaged Stop hookがowner-only resultへ保存した本文をdigest/byte数で検証して返し、private transcriptを読まない。durable machine callerは`claude_turn`を使う。`issue`は一度だけ送信し、`recover`は決して再送せず、`pending`を破損やidentity不一致と区別する。検証済みの`completed`だけがexact `raw_output`を持ち、`unknown`は未dispatchと帰属不能を区別する。不一致・破損は成功statusへ丸めずtool errorのままにする。IDなしの対話turnも匿名markerで直列化するため、現在Stop待ちの間に古い回答を返さない。CodexはStop hookの`turn_id`で構造化transcriptへjoinし、Grok/Composerは最後の実user行より後ろのassistant行を採る。不在・非agent・抽出不能は明示エラー。
 
 ### 完了検出（5 層）
 

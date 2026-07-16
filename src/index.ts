@@ -303,6 +303,48 @@ server.registerTool(
   },
 );
 
+server.registerTool(
+  "claude_turn",
+  {
+    description:
+      "managed Claude sessionのdurable operationを構造化issue／recoverするmachine-caller専用面。" +
+      "pending／unknown／completedを人間向けerror文字列の解析なしで返し、Observer固有ロジックは持たない。",
+    inputSchema: {
+      action: z.enum(["issue", "recover"]),
+      session_id: z.string(),
+      operation_id: z.string().regex(/^sha256:[0-9a-f]{64}$/),
+      text: z.string().optional().describe("issueだけに指定するbounded turn本文"),
+      timeout: z.number().min(0).max(3600).optional().describe("issueだけに指定するStop待ち秒数"),
+    },
+    outputSchema: {
+      schema: z.literal("aiterm.claude-operation-result.v1"),
+      action: z.enum(["issue", "recover"]),
+      status: z.enum(["accepted", "pending", "completed", "unknown"]),
+      session_id: z.string(),
+      operation_id: z.string().regex(/^sha256:[0-9a-f]{64}$/),
+      raw_output: z.string().nullable(),
+      reason: z.enum(["operation_not_found", "result_unknown"]).nullable(),
+    },
+  },
+  async ({ action, session_id, operation_id, text, timeout }) => {
+    try {
+      const result = await core.runClaudeOperation({
+        action,
+        session_id,
+        operation_id,
+        text: text ?? undefined,
+        timeout,
+      });
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(result) }],
+        structuredContent: { ...result },
+      };
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
 // 対話型エージェント起動ツール（モデルごとに1つ＝ツール名/説明でどのモデルか一目で分かる）。
 // いずれも永続端末に TUI を起動し session_id を返す。以後 pty_read/pty_send で対話操作する。
 const agentModelDesc = (kind: "claude" | "codex" | "grok" | "composer") =>
