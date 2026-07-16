@@ -140,12 +140,14 @@ test("agent_done screen settle: 上限まで一致しなければ unstable", asy
 });
 
 // ---------------------------------------------------------------- agent_done TUI ready gate
-test("agent_done ready gate: Codex/Grok/Composer の入力欄を判定する", () => {
+test("agent_done ready gate: Claude/Codex/Grok/Composer の入力欄を判定する", () => {
+  assert.equal(core.__testIsAgentTuiReady("claude", "Claude Code v2.1.211\n❯ "), true);
   assert.equal(core.__testIsAgentTuiReady("codex", "╭─╮\n│ >_ OpenAI Codex │\n› "), true);
   assert.equal(core.__testIsAgentTuiReady("grok", "Grok Build  0.2.87 Beta\n  │ ❯"), true);
   assert.equal(core.__testIsAgentTuiReady("composer", "Grok Build  0.2.87 Beta\n  │ ❯"), true);
   assert.equal(core.__testIsAgentTuiReady("codex", "OpenAI Codex\n◦ Starting MCP servers"), false);
   assert.equal(core.__testIsAgentTuiReady("grok", "Grok Build\nChangelog"), false);
+  assert.equal(core.__testIsAgentTuiReady("claude", "Claude Code\nConnecting…"), false);
 });
 
 test("agent_done ready gate: ready になるまで polling し、timeout なら false", async () => {

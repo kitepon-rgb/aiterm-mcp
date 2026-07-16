@@ -1,5 +1,8 @@
 # 0002. 対話エージェント起動ツール（Codex / Grok / Composer）
 
+> 2026-07-16追補: Claudeの追加契約は[ADR 0003](0003-claude-agent-launcher-contract.md)を正とする。
+> 本文の3 launcher／tool countはADR 0002採用時の履歴であり、現行sourceはagent launcher 4、全11 toolsである。
+
 ## Context
 
 ADR 0001 で「セッション種別（SSH / docker / REPL）ごとにツールを分岐させず、1個の PTY へ送る通常テキストとして扱う」と決めた。一方で、外部コーディングエージェント（Codex CLI・Grok Build）の対話 TUI を永続端末の中で起動して駆動したい需要が出た。
@@ -31,3 +34,4 @@ ADR 0001 で「セッション種別（SSH / docker / REPL）ごとにツール�
 - 2026-07-14 改訂: Grok/Composer はcredential/lockもmanaged homeへ共有しない。隔離homeを維持したまま、検証済み通常auth正本を`GROK_AUTH_PATH`でvendorへ渡す。lock/atomic replace/copy-backはvendor責務である。
 - `pty_send(wait:"agent_done")` は普通PTY・`mark:true`・`rtk:true`・`enter:false` では送信前エラーにする。done はタスク成功ではなく turn 終了として表示する。
 - `codex_agent` の起動時 `prompt + wait:"agent_done"` は session 作成後に TUI ready を待つため、prompt なし launcher より戻りが遅い。ready にならない場合でも失敗を隠さず、prompt 未送信の session を残して利用者が `pty_read(screen:true)` で確認できるようにする。
+- ClaudeはADR 0003により同じ永続PTYモデルへ追加する。`claude -p`の反復は対話launcherの代替にしない。

@@ -5,6 +5,7 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -32,6 +33,7 @@ if (process.platform !== "win32") {
 // Windows には /bin/echo が無いので node 自身（必ず存在）を使う——echo 出力を読む grok/composer/codex
 // 組立テストは { skip }（tmux 必須）で native Windows では走らないため、可視化不要な bin で足りる。
 process.env.CODEX_BIN = process.platform === "win32" ? process.execPath : "/bin/echo";
+process.env.CLAUDE_BIN = process.platform === "win32" ? process.execPath : "/bin/echo";
 const core = await import("../dist/core.js");
 const skip = hasTmux ? undefined : "tmux 未インストール";
 const skipAgentDone = hasTmux && typeof process.getuid === "function" ? undefined : "tmux または POSIX getuid が無い";
@@ -171,6 +173,23 @@ function makeFakeCodexTuiBin() {
   return bin;
 }
 
+function makeFakeClaudeTuiBin() {
+  const bin = path.join(process.env.TMPDIR, `fake-claude-tui-${Date.now().toString(36)}.sh`);
+  fs.writeFileSync(
+    bin,
+    [
+      "#!/bin/sh",
+      "printf 'Claude Code\\n❯ ready\\n'",
+      "while IFS= read -r line; do",
+      "  printf '%s\\n' \"$line\"",
+      "done",
+      "",
+    ].join("\n"),
+    { mode: 0o700 },
+  );
+  return bin;
+}
+
 function appendAgentDoneWhenLogContains(sid, needle, events) {
   const timer = setInterval(() => {
     try {
@@ -211,8 +230,42 @@ function scheduleAgentDone(meta, overrides = {}, delay = 200) {
   setTimeout(() => appendAgentDone(meta, overrides), delay);
 }
 
+function writeClaudeDone(meta, text, overrides = {}) {
+  const vendorSessionId = overrides.vendor_session_id ?? "claude-session-test";
+  const digest = createHash("sha256").update(text, "utf8").digest("hex");
+  const bytes = Buffer.byteLength(text, "utf8");
+  fs.writeFileSync(meta.result_file, JSON.stringify({
+    schema: "aiterm.claude-turn-result.v1",
+    vendor_session_id: vendorSessionId,
+    result_digest: digest,
+    result_bytes: bytes,
+    text,
+  }) + "\n", { mode: 0o600 });
+  appendAgentDone(meta, {
+    vendor_session_id: vendorSessionId,
+    turn_id: null,
+    result_digest: digest,
+    result_bytes: bytes,
+    ...overrides,
+  });
+}
+
+function appendClaudeDoneWhenLogContains(sid, needle, text, overrides = {}) {
+  const timer = setInterval(() => {
+    try {
+      if (!fs.readFileSync(sessionLogPath(sid), "utf8").includes(needle)) return;
+      writeClaudeDone(readAgentMeta(sid), text, overrides);
+      clearInterval(timer);
+    } catch {
+      /* session/log may not exist yet */
+    }
+  }, 50);
+  return () => clearInterval(timer);
+}
+
 async function markFakeAgentReady(sid, kind = "codex") {
-  const marker = kind === "codex" ? "OpenAI Codex\n› ready\n" : "Grok Build\n❯ ready\n";
+  const marker =
+    kind === "codex" ? "OpenAI Codex\n› ready\n" : kind === "claude" ? "Claude Code\n❯ ready\n" : "Grok Build\n❯ ready\n";
   core.send(sid, `printf '${marker.replace(/'/g, "'\\''").replace(/\n/g, "\\n")}'`, {
     force: true,
     raw: true,
@@ -379,6 +432,34 @@ test("openAgent codex agent_done: managed CODEX_HOME と Stop hook を組み立�
       core.closeSession(sid);
     }
   });
+});
+
+test("openAgent claude agent_done: isolated settings、Stop hook、result pathを組み立てる", { skip: skipAgentDone }, async () => {
+  const [sid, hint] = core.openAgent("claude", {
+    model: "claude-sonnet-4-6",
+    reasoning_effort: "high",
+    agent_done: true,
+  });
+  try {
+    assert.match(hint, /Claude Code/);
+    assert.match(hint, /agent_done 待機が有効/);
+    const meta = readAgentMeta(sid);
+    assert.equal(meta.kind, "claude");
+    assert.equal(meta.hook_route, "managed_claude_settings");
+    assert.ok(fs.existsSync(meta.event_file));
+    assert.ok(fs.existsSync(meta.result_file));
+    const settings = JSON.parse(fs.readFileSync(meta.claude_settings, "utf8"));
+    assert.deepEqual(Object.keys(settings), ["hooks"]);
+    assert.match(settings.hooks.Stop[0].hooks[0].command, /claude-stop-hook\.js/);
+    const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
+    assert.match(out, /--setting-sources\s+(?:''\s+)?--settings/);
+    assert.match(out, /--settings/);
+    assert.match(out, /--model\s+claude-sonnet-4-6/);
+    assert.match(out, /--effort\s+high/);
+    assert.doesNotMatch(out, /\s-p(?:\s|$)/, "headless print modeへ落とさない");
+  } finally {
+    core.closeSession(sid);
+  }
 });
 
 test("openAgent grok agent_done: isolated HOME と managed GROK_HOME/Stop hook/GROK_AUTH_PATH を組み立てる", { skip: skipAgentDone }, async () => {
@@ -842,6 +923,64 @@ test("sendAndWaitAgentDone: Grok vendor event も待って suffix に vendor=gro
   }
 });
 
+test("sendAndWaitAgentDone: Claudeの同一PTY follow-upをStop resultと相関して回収する", { skip: skipAgentDone }, async () => {
+  const [sid] = core.openAgent("claude", { agent_done: true });
+  try {
+    const meta = readAgentMeta(sid);
+    await markFakeAgentReady(sid, "claude");
+    const p = core.sendAndWaitAgentDone(sid, "CLAUDE_FOLLOWUP_PROMPT", { timeout: 3, screen: false });
+    setTimeout(() => writeClaudeDone(meta, "Claude follow-up answer", {
+      vendor_session_id: "claude-followup-session",
+    }), 200);
+    const out = await p;
+    assert.match(out, /CLAUDE_FOLLOWUP_PROMPT/);
+    assert.match(out, /is_complete=True via agent_done vendor=claude vendor_session_id=claude-followup-session/);
+    const transcript = await core.readAgentTranscript(sid);
+    assert.match(transcript, /Claude follow-up answer/);
+    assert.match(transcript, /agent_transcript vendor=claude turn_id=unknown/);
+  } finally {
+    core.closeSession(sid);
+  }
+});
+
+test("sendAndWaitAgentDone: Claude timeout後は再送せず後着resultを同一sessionから回収する", { skip: skipAgentDone }, async () => {
+  const [sid] = core.openAgent("claude", { agent_done: true });
+  try {
+    const meta = readAgentMeta(sid);
+    await markFakeAgentReady(sid, "claude");
+    const out = await core.sendAndWaitAgentDone(sid, "CLAUDE_TIMEOUT_PROMPT", { timeout: 0, screen: false });
+    assert.match(out, /is_complete=False via agent_timeout vendor=claude/);
+    assert.match(core.listSessions(), new RegExp(`(^|\\n)${sid}\\t`), "timeout後も同じsessionを残す");
+
+    writeClaudeDone(meta, "Claude late answer", {
+      vendor_session_id: "claude-late-session",
+    });
+    const transcript = await core.readAgentTranscript(sid);
+    assert.match(transcript, /Claude late answer/);
+    assert.equal(readAgentMeta(sid).vendor_session_id, "claude-late-session");
+  } finally {
+    core.closeSession(sid);
+  }
+});
+
+test("sendAndWaitAgentDone: Claudeは未bindでもvendor_session_id欠落・空eventを完了扱いしない", { skip: skipAgentDone }, async () => {
+  const [sid] = core.openAgent("claude", { agent_done: true });
+  try {
+    const meta = readAgentMeta(sid);
+    await markFakeAgentReady(sid, "claude");
+    const pending = core.sendAndWaitAgentDone(sid, "CLAUDE_INVALID_VENDOR_SESSION", { timeout: 1, screen: false });
+    setTimeout(() => {
+      writeClaudeDone(meta, "missing vendor session", { vendor_session_id: undefined });
+      writeClaudeDone(meta, "empty vendor session", { vendor_session_id: "" });
+    }, 200);
+    const out = await pending;
+    assert.match(out, /is_complete=False via agent_timeout vendor=claude malformed_events=2/);
+    assert.equal(readAgentMeta(sid).vendor_session_id, null);
+  } finally {
+    core.closeSession(sid);
+  }
+});
+
 test("sendAndWaitAgentDone: 起動時 prompt が未完了なら follow-up を送信前に拒否する", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const [sid] = core.openAgent("codex", { agent_done: true, prompt: "Reply READY." });
@@ -934,6 +1073,44 @@ test("openAgentWithInitialPrompt: prompt を shell argv に載せず初回 agent
   } finally {
     if (savedBin === undefined) delete process.env.CODEX_BIN;
     else process.env.CODEX_BIN = savedBin;
+    fs.rmSync(fakeBin, { force: true });
+  }
+});
+
+test("openAgentWithInitialPrompt: Claude初回promptを対話PTYへ送りStop resultまで待つ", { skip: skipAgentDone }, async () => {
+  const savedBin = process.env.CLAUDE_BIN;
+  const fakeBin = makeFakeClaudeTuiBin();
+  process.env.CLAUDE_BIN = fakeBin;
+  const sid = `claude_initial_${Date.now().toString(36)}`;
+  const marker = "AITERM_CLAUDE_INITIAL_OK";
+  const stop = appendClaudeDoneWhenLogContains(sid, marker, "Claude initial answer", {
+    vendor_session_id: "claude-initial-session",
+  });
+  try {
+    const [actualSid, out] = await core.openAgentWithInitialPrompt("claude", {
+      session_name: sid,
+      prompt: `日本語の初回promptです。\n${marker}`,
+      agent_done: true,
+      wait: "agent_done",
+      timeout: 5,
+      screen: false,
+    });
+    assert.equal(actualSid, sid);
+    assert.match(out, new RegExp(marker));
+    assert.match(out, /is_complete=True via agent_done vendor=claude vendor_session_id=claude-initial-session/);
+    const meta = readAgentMeta(sid);
+    assert.equal(meta.initial_prompt, "done");
+    assert.equal(meta.vendor_session_id, "claude-initial-session");
+    assert.match(await core.readAgentTranscript(sid), /Claude initial answer/);
+  } finally {
+    stop();
+    try {
+      core.closeSession(sid);
+    } catch {
+      /* noop */
+    }
+    if (savedBin === undefined) delete process.env.CLAUDE_BIN;
+    else process.env.CLAUDE_BIN = savedBin;
     fs.rmSync(fakeBin, { force: true });
   }
 });
@@ -1702,6 +1879,48 @@ test("readAgentTranscript: Codex の単一 output_text を直近完了 turn か�
       core.closeSession(sid);
     }
   });
+});
+
+test("readAgentTranscript: Claudeはprivate transcriptでなくhook-captured resultを検証して返す", { skip: skipAgentDone }, async () => {
+  const [sid] = core.openAgent("claude", { agent_done: true });
+  try {
+    const meta = readAgentMeta(sid);
+    const vendorSessionId = "claude-session-result-1";
+    const text = "一つの永続Claude sessionが維持した助言";
+    const digest = createHash("sha256").update(text, "utf8").digest("hex");
+    meta.vendor_session_id = vendorSessionId;
+    writeAgentMeta(sid, meta);
+    fs.writeFileSync(meta.result_file, JSON.stringify({
+      schema: "aiterm.claude-turn-result.v1",
+      vendor_session_id: vendorSessionId,
+      result_digest: digest,
+      result_bytes: Buffer.byteLength(text, "utf8"),
+      text,
+    }) + "\n", { mode: 0o600 });
+    fs.appendFileSync(meta.event_file, JSON.stringify({
+      type: "agent_done",
+      vendor: "claude",
+      aiterm_session: sid,
+      launch_id: meta.launch_id,
+      vendor_session_id: vendorSessionId,
+      turn_id: null,
+      reason: "Stop",
+      done_status: "turn_done",
+      result_digest: digest,
+      result_bytes: Buffer.byteLength(text, "utf8"),
+      at: new Date().toISOString(),
+    }) + "\n");
+    const out = await core.readAgentTranscript(sid);
+    assert.match(out, new RegExp(text));
+    assert.match(out, /agent_transcript vendor=claude turn_id=unknown/);
+
+    const forged = JSON.parse(fs.readFileSync(meta.result_file, "utf8"));
+    forged.text = "別の本文";
+    fs.writeFileSync(meta.result_file, JSON.stringify(forged) + "\n", { mode: 0o600 });
+    await assert.rejects(() => core.readAgentTranscript(sid), /完了eventと一致しません/);
+  } finally {
+    core.closeSession(sid);
+  }
 });
 
 test("readAgentTranscript: Codex の複数 assistant block を join し lines は末尾へ絞る", { skip: skipAgentDone }, async () => {

@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const HOOK = path.join(HERE, "..", "dist", "codex-stop-hook.js");
 const GROK_HOOK = path.join(HERE, "..", "dist", "grok-stop-hook.js");
+const CLAUDE_HOOK = path.join(HERE, "..", "dist", "claude-stop-hook.js");
 const skip = typeof process.getuid === "function" ? undefined : "POSIX getuid が無い";
 
 function baseHookEnv(tmp) {
@@ -43,6 +44,17 @@ function spawnCodexHook(tmp, env, payload = {}) {
 
 function spawnGrokHook(tmp, env, payload = {}) {
   return spawnSync(process.execPath, [GROK_HOOK], {
+    input: JSON.stringify(payload),
+    encoding: "utf8",
+    env: {
+      ...baseHookEnv(tmp),
+      ...env,
+    },
+  });
+}
+
+function spawnClaudeHook(tmp, env, payload = {}) {
+  return spawnSync(process.execPath, [CLAUDE_HOOK], {
     input: JSON.stringify(payload),
     encoding: "utf8",
     env: {
@@ -126,6 +138,107 @@ test("grok-stop-hook: Stop payload を agent_done event に正規化する", { s
   }
 });
 
+test("claude-stop-hook: Stop payload本文をowner-only resultへ分離しeventを相関する", { skip }, () => {
+  const { tmp, agents } = makeHookState("aiterm-claude-hook-");
+  const session = "claudehook";
+  const launchId = "abcdef0123456789abcdef0123456789";
+  const message = "継続中の同じClaude sessionからの助言";
+  const r = spawnClaudeHook(tmp, {
+    AITERM_AGENT_KIND: "claude",
+    AITERM_SESSION_ID: session,
+    AITERM_AGENT_LAUNCH_ID: launchId,
+  }, {
+    session_id: "claude-session-1",
+    hook_event_name: "Stop",
+    stop_hook_active: false,
+    last_assistant_message: message,
+  });
+
+  try {
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout, "", "Claude hook stdoutを汚さない");
+    assert.equal(r.stderr, "");
+    const eventFile = path.join(agents, `${session}.${launchId}.events.jsonl`);
+    const event = JSON.parse(fs.readFileSync(eventFile, "utf8").trim());
+    assert.equal(event.vendor, "claude");
+    assert.equal(event.vendor_session_id, "claude-session-1");
+    assert.equal(event.turn_id, null);
+    assert.equal(event.done_status, "turn_done");
+    assert.equal(Object.hasOwn(event, "last_assistant_message"), false, "eventへ本文を混ぜない");
+    assert.match(event.result_digest, /^[0-9a-f]{64}$/);
+    assert.equal(event.result_bytes, Buffer.byteLength(message, "utf8"));
+    const resultFile = path.join(agents, `${session}.${launchId}.claude-result.json`);
+    const result = JSON.parse(fs.readFileSync(resultFile, "utf8"));
+    assert.deepEqual(result, {
+      schema: "aiterm.claude-turn-result.v1",
+      vendor_session_id: "claude-session-1",
+      result_digest: event.result_digest,
+      result_bytes: Buffer.byteLength(message, "utf8"),
+      text: message,
+    });
+    assert.equal(fs.statSync(resultFile).mode & 0o077, 0);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("claude-stop-hook: 不完全payloadと上限超過本文を完了eventへ昇格しない", { skip }, () => {
+  for (const [label, payload, expected] of [
+    ["missing-result", { session_id: "claude-session-1", hook_event_name: "Stop" }, /last_assistant_message/],
+    [
+      "oversized-result",
+      { session_id: "claude-session-1", hook_event_name: "Stop", last_assistant_message: "x".repeat(4 * 1024 * 1024 + 1) },
+      /bytesを超えています/,
+    ],
+  ]) {
+    const { tmp, agents } = makeHookState(`aiterm-claude-${label}-`);
+    const session = `claude_${label.replaceAll("-", "_")}`;
+    const launchId = "01230123012301230123012301230123";
+    try {
+      const r = spawnClaudeHook(tmp, {
+        AITERM_AGENT_KIND: "claude",
+        AITERM_SESSION_ID: session,
+        AITERM_AGENT_LAUNCH_ID: launchId,
+      }, payload);
+      assert.equal(r.status, 0);
+      assert.equal(r.stdout, "");
+      assert.match(r.stderr, expected);
+      assert.equal(fs.existsSync(path.join(agents, `${session}.${launchId}.events.jsonl`)), false);
+      assert.equal(fs.existsSync(path.join(agents, `${session}.${launchId}.claude-result.json`)), false);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+});
+
+test("claude-stop-hook: 既存result symlinkを辿らず原子的に置換する", { skip }, () => {
+  const { tmp, agents } = makeHookState("aiterm-claude-result-link-");
+  const session = "clauderesultlink";
+  const launchId = "45674567456745674567456745674567";
+  const resultFile = path.join(agents, `${session}.${launchId}.claude-result.json`);
+  const victim = path.join(tmp, "victim.txt");
+  fs.writeFileSync(victim, "unchanged", { mode: 0o600 });
+  fs.symlinkSync(victim, resultFile);
+  try {
+    const r = spawnClaudeHook(tmp, {
+      AITERM_AGENT_KIND: "claude",
+      AITERM_SESSION_ID: session,
+      AITERM_AGENT_LAUNCH_ID: launchId,
+    }, {
+      session_id: "claude-session-link",
+      hook_event_name: "Stop",
+      last_assistant_message: "safe result",
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stderr, "");
+    assert.equal(fs.readFileSync(victim, "utf8"), "unchanged");
+    assert.equal(fs.lstatSync(resultFile).isSymbolicLink(), false);
+    assert.equal(JSON.parse(fs.readFileSync(resultFile, "utf8")).text, "safe result");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test("agent stop hooks: aiterm env が全く無ければ state に触らず no-op", { skip }, () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "aiterm-hook-noenv-"));
   try {
@@ -138,6 +251,10 @@ test("agent stop hooks: aiterm env が全く無ければ state に触らず no-o
     assert.equal(grok.status, 0, grok.stderr);
     assert.equal(grok.stdout, "");
     assert.equal(grok.stderr, "");
+    const claude = spawnClaudeHook(tmp, {}, { hook_event_name: "Stop", last_assistant_message: "secret" });
+    assert.equal(claude.status, 0, claude.stderr);
+    assert.equal(claude.stdout, "");
+    assert.equal(claude.stderr, "");
     assert.equal(fs.existsSync(path.join(tmp, `aiterm-mcp-${process.getuid()}`)), false);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });

@@ -27,6 +27,6 @@
 
 ## 非目標
 
-- PTY、Codex/Grok/Composer、または新規プロセスを起動して診断しない。
+- PTY、Claude/Codex/Grok/Composer、または新規プロセスを起動して診断しない。
 - 既存の 9 ツールの入力・出力・エラー契約は変更しない。
 - runtime error store、telemetry、vendor 認証検証を導入しない。

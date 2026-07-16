@@ -21,9 +21,10 @@
   },
   "pty_list_fields": ["access", "status", "session_count"],
   "runtime_error_store_fields": ["status", "collection", "record_count", "unacknowledged_count"],
-  "vendor_keys": ["codex", "grok"],
+  "vendor_keys": ["claude", "codex", "grok"],
   "vendor_fields": ["status", "optional", "required_for"],
   "vendor_required_for": {
+    "claude": ["claude_agent"],
     "codex": ["codex_agent"],
     "grok": ["grok_agent", "composer_agent"]
   }

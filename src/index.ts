@@ -39,6 +39,7 @@ function fail(e: unknown): ToolResult {
  */
 async function factoryDiagnostics(): Promise<string> {
   const ptyList = core.readOnlyPtyListDiagnostic();
+  const claude = core.vendorLauncherDiagnostic("claude");
   const codex = core.vendorLauncherDiagnostic("codex");
   const grok = core.vendorLauncherDiagnostic("grok");
   const runtimeErrors = await runtimeErrorStoreDiagnostic();
@@ -51,6 +52,11 @@ async function factoryDiagnostics(): Promise<string> {
     pty_list: { access: "read_only", ...ptyList },
     runtime_error_store: runtimeErrors,
     vendor_dependencies: {
+      claude: {
+        status: claude,
+        optional: true,
+        required_for: ["claude_agent"],
+      },
       codex: {
         status: codex,
         optional: true,
@@ -102,7 +108,7 @@ server.registerTool(
   {
     description:
       "セッションへテキスト(コマンド)を送る。通常は送信だけ行い、出力は pty_read で取得する。" +
-      "agent_done:true で起動した Codex/Grok/Composer セッションは wait:'agent_done' で Stop hook まで待てる。",
+      "agent_done:true で起動した Claude/Codex/Grok/Composer セッションは wait:'agent_done' で Stop hook まで待てる。",
     inputSchema: {
       session_id: z.string(),
       text: z
@@ -161,7 +167,7 @@ server.registerTool(
     description:
       "セッションの出力をトークン削減して読む（既定は前回読取位置からの増分）。" +
       "削減: 制御文字除去 / 反復圧縮 / head+tail 折りたたみ＋復元ヒント＋メタ併記。" +
-      "agent_transcript:true は agent session の直近完了ターンの最終 assistant メッセージを vendor transcript から平文で返す。" +
+      "agent_transcript:true は agent session の直近完了ターンの最終 assistant メッセージを公開されたvendor記録から平文で返す。" +
       "長い回答が screen tail で切れた時の回収用。",
     inputSchema: {
       session_id: z.string(),
@@ -187,7 +193,7 @@ server.registerTool(
       agent_transcript: z
         .boolean()
         .default(false)
-        .describe("agent session の直近完了ターンの最終 assistant メッセージを vendor transcript から平文で返す。長い回答が screen tail で切れた時の回収用"),
+        .describe("agent session の直近完了ターンの最終 assistant メッセージを返す。Claudeはmanaged Stop hook result、他vendorはtranscriptを使う。長い回答がscreen tailで切れた時の回収用"),
     },
   },
   async ({ session_id, wait, until, until_regex, timeout, screen, full, lines, line_range, raw, rtk, agent_transcript }) => {
@@ -282,25 +288,28 @@ server.registerTool(
 
 // 対話型エージェント起動ツール（モデルごとに1つ＝ツール名/説明でどのモデルか一目で分かる）。
 // いずれも永続端末に TUI を起動し session_id を返す。以後 pty_read/pty_send で対話操作する。
-const agentModelDesc = (kind: "codex" | "grok" | "composer") =>
-  kind === "codex"
+const agentModelDesc = (kind: "claude" | "codex" | "grok" | "composer") =>
+  kind === "claude"
+    ? "起動モデル（例: claude-sonnet-4-6）。省略時はClaude CLI既定"
+    : kind === "codex"
     ? "起動モデル（例: gpt-5.6-sol / gpt-5.6-terra / gpt-5.6-luna）。省略時は端末 config／CLI 既定を継承" +
       "（端末側のピンがそのまま効く。実効値は起動応答に明示される）"
     : `起動モデル。省略時は ${kind === "grok" ? "grok-4.5" : "grok-composer-2.5-fast"}`;
-const agentEffortDesc = (grokLike: boolean) =>
-  grokLike
+const agentEffortDesc = (kind: "claude" | "codex" | "grok" | "composer") =>
+  kind === "claude"
+    ? "Claude Code reasoning effort。low/medium/high/xhigh/max。省略時はCLI既定"
+    : kind === "grok" || kind === "composer"
     ? "指定不可（grok CLI の --effort は headless 専用で、対話 TUI では警告の上無視される。" +
       "composer は effort 自体非対応）。指定すると起動前にエラーを返す"
     : "reasoning effort（思考レベル）。low/medium/high/xhigh/max/ultra（CLI 版依存）。" +
       "ultra は max 推論＋proactive 自動委譲 ON＝使用量急増注意（明示要求時のみ）。省略時は端末 config／CLI 既定。";
 function registerAgentTool(
   toolName: string,
-  kind: "codex" | "grok" | "composer",
+  kind: "claude" | "codex" | "grok" | "composer",
   desc: string,
-  grokLike: boolean,
 ): void {
   const initialPromptWaitSchema: Record<string, z.ZodTypeAny> = {};
-  if (kind === "codex") {
+  if (kind === "codex" || kind === "claude") {
     initialPromptWaitSchema.wait = z
       .enum(["none", "agent_done"])
       .default("none")
@@ -318,7 +327,7 @@ function registerAgentTool(
         model: z.string().nullish().describe(agentModelDesc(kind)),
         // grok/composer の effort は対話 TUI で無効（headless 専用）＝core 側が起動前に明示エラーで拒否。
         // codex は CLI 側の値集合が版で変わるため縛らない（core 側も同方針）。
-        reasoning_effort: z.string().nullish().describe(agentEffortDesc(grokLike)),
+        reasoning_effort: z.string().nullish().describe(agentEffortDesc(kind)),
         cwd: z.string().nullish().describe("作業ディレクトリ（対象リポのルート等・任意）"),
         session_name: z.string().nullish().describe("セッション名（省略で自動採番）"),
         agent_done: z
@@ -351,26 +360,30 @@ function registerAgentTool(
 }
 
 registerAgentTool(
+  "claude_agent",
+  "claude",
+  "【Claude Code (Anthropic)】の対話エージェントTUIを永続端末に起動する。`claude -p`ではなく、" +
+    "同じ利用者可視sessionへpty_sendで継続入力する。agent_done:trueではisolated settingsのmanaged Stop hookで完了と結果を回収する。",
+);
+
+registerAgentTool(
   "codex_agent",
   "codex",
   "【Codex (OpenAI)】の対話エージェント TUI を永続端末に起動する。実装・レビュー・調査を対話で回す。" +
     "起動後は pty_read で画面を読み pty_send で操作する。model / reasoning_effort を引数で指定可" +
     "（省略時は端末 config／CLI 既定を継承。実効値は起動応答に明示）。",
-  false,
 );
 registerAgentTool(
   "grok_agent",
   "grok",
   "【Grok Build の Grok モデル (既定 grok-4.5)】の対話エージェント TUI を永続端末に起動する。" +
     "起動後は pty_read/pty_send で対話操作。model を引数で指定可。reasoning_effort は対話 TUI 非対応（指定はエラー）。",
-  true,
 );
 registerAgentTool(
   "composer_agent",
   "composer",
   "【Grok Build の Composer モデル (既定 grok-composer-2.5-fast)】の対話エージェント TUI を永続端末に起動する。" +
     "起動後は pty_read/pty_send で対話操作。model を引数で指定可。reasoning_effort は非対応（指定はエラー）。",
-  true,
 );
 
 async function main(): Promise<void> {

@@ -49,7 +49,7 @@ const NON_POSIX_MARK_SHELLS = new Set(["fish", "csh", "tcsh"]);
 // send の printf 書式（`rc=%d`）と対で保守すること。
 const MARK_DONE_RE = /<<<AITERM_DONE rc=[0-9]+>>>/;
 const LAUNCH_ID_RE = /^[0-9a-f]{32}$/;
-type AgentKind = "codex" | "grok" | "composer";
+type AgentKind = "claude" | "codex" | "grok" | "composer";
 type InitialPromptState = "none" | "not_sent" | "sent" | "pending" | "done" | "failed";
 
 const AGENT_DONE_POLL_MS = 100;
@@ -65,6 +65,7 @@ const AGENT_TUI_READY_TIMEOUT_MS = 30_000;
 const AGENT_TUI_READY_POLL_MS = 500;
 const AGENT_TUI_READY_LINES = 45;
 const GROK_AUTH_MAX_BYTES = 64 * 1024;
+const CLAUDE_RESULT_MAX_BYTES = 4 * 1024 * 1024;
 
 // 出力削減（RTK の CAP 思想を移植）
 const MAX_LINES_BEFORE_ELIDE = 60;
@@ -396,6 +397,18 @@ function agentWaitLockPath(name: string, launchId: string): string {
   return path.join(agentsDir(), `${name}.${launchId}.wait.lock`);
 }
 
+function agentManagedClaudeSettingsPath(name: string, launchId: string): string {
+  assertSessionName(name);
+  if (!LAUNCH_ID_RE.test(launchId)) throw new AitermError(`launch_id が不正です: ${launchId}`, 2);
+  return path.join(agentsDir(), `${name}.${launchId}.claude-settings.json`);
+}
+
+function agentClaudeResultPath(name: string, launchId: string): string {
+  assertSessionName(name);
+  if (!LAUNCH_ID_RE.test(launchId)) throw new AitermError(`launch_id が不正です: ${launchId}`, 2);
+  return path.join(agentsDir(), `${name}.${launchId}.claude-result.json`);
+}
+
 function agentManagedCodexHomePath(name: string, launchId: string): string {
   assertSessionName(name);
   if (!LAUNCH_ID_RE.test(launchId)) throw new AitermError(`launch_id が不正です: ${launchId}`, 2);
@@ -442,7 +455,13 @@ function cleanupAgentState(name: string): void {
       if (!f.startsWith(prefix)) continue;
       const p = path.join(dir, f);
       try {
-        if (f.endsWith(".agent.json") || f.endsWith(".events.jsonl") || f.endsWith(".wait.lock")) fs.unlinkSync(p);
+        if (
+          f.endsWith(".agent.json") ||
+          f.endsWith(".events.jsonl") ||
+          f.endsWith(".wait.lock") ||
+          f.endsWith(".claude-settings.json") ||
+          f.endsWith(".claude-result.json")
+        ) fs.unlinkSync(p);
         else if (f.endsWith(".codex-home") || f.endsWith(".grok-home") || f.endsWith(".home")) {
           fs.rmSync(p, { recursive: true, force: true });
         }
@@ -1273,6 +1292,8 @@ export function killAll(): string {
           f.endsWith(".agent.json") ||
           f.endsWith(".events.jsonl") ||
           f.endsWith(".wait.lock") ||
+          f.endsWith(".claude-settings.json") ||
+          f.endsWith(".claude-result.json") ||
           f.endsWith(".codex-home") ||
           f.endsWith(".grok-home") ||
           f.endsWith(".home")
@@ -1302,9 +1323,11 @@ interface AgentMetadata {
   cwd: string | null;
   vendor_session_id: string | null;
   initial_prompt: InitialPromptState;
-  hook_route: "managed_codex_home" | "managed_grok_home";
+  hook_route: "managed_claude_settings" | "managed_codex_home" | "managed_grok_home";
   node_platform: NodeJS.Platform;
   codex_home?: string;
+  claude_settings?: string;
+  result_file?: string;
   grok_home?: string;
   home?: string;
   grok_auth_path?: string | null;
@@ -1320,6 +1343,8 @@ interface AgentDoneEvent {
   reason: string;
   done_status: "turn_done";
   stop_hook_active?: boolean;
+  result_digest?: string;
+  result_bytes?: number;
   at: string;
 }
 
@@ -1371,6 +1396,10 @@ function codexHookScriptPath(): string {
 
 function grokHookScriptPath(): string {
   return path.join(path.dirname(fileURLToPath(import.meta.url)), "grok-stop-hook.js");
+}
+
+function claudeHookScriptPath(): string {
+  return path.join(path.dirname(fileURLToPath(import.meta.url)), "claude-stop-hook.js");
 }
 
 function safeStatSize(p: string): number {
@@ -1595,6 +1624,30 @@ function createManagedCodexHome(
     },
   });
   return managedHome;
+}
+
+function createManagedClaudeSettings(name: string, launchId: string): string {
+  const hookScript = claudeHookScriptPath();
+  if (!fs.existsSync(hookScript)) {
+    throw new AitermError(`Claude Stop hook wrapper が見つかりません。npm run build を実行してください: ${hookScript}`, 2);
+  }
+  const settings = agentManagedClaudeSettingsPath(name, launchId);
+  writeJson0600(settings, {
+    hooks: {
+      Stop: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command: `${shq(process.execPath)} ${shq(hookScript)}`,
+              timeout: 10,
+            },
+          ],
+        },
+      ],
+    },
+  });
+  return settings;
 }
 
 function realGrokHome(): string {
@@ -1934,6 +1987,35 @@ function acquireAgentWaitFileLock(meta: AgentMetadata): () => void {
   };
 }
 
+function createClaudeAgentMetadata(
+  name: string,
+  cwd: string | null,
+  initialPrompt: InitialPromptState,
+): AgentMetadata {
+  const launchId = randomBytes(16).toString("hex");
+  const eventFile = agentEventPath(name, launchId);
+  const resultFile = agentClaudeResultPath(name, launchId);
+  createEmpty0600NoFollow(eventFile);
+  createEmpty0600NoFollow(resultFile);
+  const claudeSettings = createManagedClaudeSettings(name, launchId);
+  const meta: AgentMetadata = {
+    kind: "claude",
+    aiterm_session: name,
+    launch_id: launchId,
+    event_file: eventFile,
+    created_at: new Date().toISOString(),
+    cwd,
+    vendor_session_id: null,
+    initial_prompt: initialPrompt,
+    hook_route: "managed_claude_settings",
+    node_platform: process.platform,
+    claude_settings: claudeSettings,
+    result_file: resultFile,
+  };
+  writeAgentMetadata(meta);
+  return meta;
+}
+
 function createCodexAgentMetadata(
   name: string,
   cwd: string | null,
@@ -2014,7 +2096,7 @@ function loadAgentMetadata(name: string): AgentMetadata {
   }
   const m = raw as Partial<AgentMetadata>;
   if (
-    (m.kind !== "codex" && m.kind !== "grok" && m.kind !== "composer") ||
+    (m.kind !== "claude" && m.kind !== "codex" && m.kind !== "grok" && m.kind !== "composer") ||
     m.aiterm_session !== name ||
     typeof m.launch_id !== "string" ||
     !LAUNCH_ID_RE.test(m.launch_id)
@@ -2024,6 +2106,31 @@ function loadAgentMetadata(name: string): AgentMetadata {
   const expectedEvent = agentEventPath(name, m.launch_id);
   if (m.event_file !== expectedEvent) {
     throw new AitermError("agent metadata の path が現在の secure state root と一致しません", 2);
+  }
+  if (m.kind === "claude") {
+    const expectedSettings = agentManagedClaudeSettingsPath(name, m.launch_id);
+    const expectedResult = agentClaudeResultPath(name, m.launch_id);
+    if (
+      m.hook_route !== "managed_claude_settings" ||
+      m.claude_settings !== expectedSettings ||
+      m.result_file !== expectedResult
+    ) {
+      throw new AitermError("agent metadata の path が現在の secure state root と一致しません", 2);
+    }
+    return {
+      kind: "claude",
+      aiterm_session: name,
+      launch_id: m.launch_id,
+      event_file: expectedEvent,
+      created_at: typeof m.created_at === "string" ? m.created_at : "",
+      cwd: typeof m.cwd === "string" ? m.cwd : null,
+      vendor_session_id: typeof m.vendor_session_id === "string" ? m.vendor_session_id : null,
+      initial_prompt: normalizeInitialPromptState(m.initial_prompt),
+      hook_route: "managed_claude_settings",
+      node_platform: process.platform,
+      claude_settings: expectedSettings,
+      result_file: expectedResult,
+    };
   }
   if (m.kind === "codex") {
     const expectedHome = agentManagedCodexHomePath(name, m.launch_id);
@@ -2090,6 +2197,18 @@ function parseAgentDoneEvent(line: string, meta: AgentMetadata): AgentDoneParseR
   if (meta.vendor_session_id && ev.vendor_session_id !== meta.vendor_session_id) {
     return { event: null, malformed: false };
   }
+  if (
+    meta.kind === "claude" &&
+    (typeof ev.vendor_session_id !== "string" ||
+      !ev.vendor_session_id ||
+      typeof ev.result_digest !== "string" ||
+      !/^[0-9a-f]{64}$/.test(ev.result_digest) ||
+      !Number.isInteger(ev.result_bytes) ||
+      (ev.result_bytes as number) < 0 ||
+      (ev.result_bytes as number) > CLAUDE_RESULT_MAX_BYTES)
+  ) {
+    return { event: null, malformed: true };
+  }
   return {
     event: {
       type: "agent_done",
@@ -2101,6 +2220,8 @@ function parseAgentDoneEvent(line: string, meta: AgentMetadata): AgentDoneParseR
       reason: typeof ev.reason === "string" ? ev.reason : "Stop",
       done_status: "turn_done",
       stop_hook_active: !!ev.stop_hook_active,
+      result_digest: typeof ev.result_digest === "string" && /^[0-9a-f]{64}$/.test(ev.result_digest) ? ev.result_digest : undefined,
+      result_bytes: Number.isInteger(ev.result_bytes) && (ev.result_bytes as number) >= 0 ? ev.result_bytes : undefined,
       at: typeof ev.at === "string" ? ev.at : new Date().toISOString(),
     },
     malformed: false,
@@ -2201,6 +2322,31 @@ function latestAgentDoneEvent(meta: AgentMetadata): AgentDoneEvent | null {
   return latest;
 }
 
+function recoverAgentVendorSession(meta: AgentMetadata): void {
+  if (meta.vendor_session_id) return;
+  const size = safeStatSize(meta.event_file);
+  if (size === 0) return;
+  if (size > AGENT_EVENT_MAX_BYTES) {
+    throw new AitermError(
+      "agent event file が大きすぎるため timeout 後のsessionを安全に回収できません。該当セッションを閉じて起動し直してください。",
+      2,
+    );
+  }
+  const text = readFileRange(meta.event_file, 0, size).toString("utf8");
+  const lines = text.split("\n");
+  lines.pop(); // hook は newline 完結eventだけを確定済みとして扱う。
+  const scanned = scanAgentDoneLines(lines, meta);
+  if (scanned.ambiguousVendorSession) {
+    throw new AitermError(
+      "agent event file に複数の vendor_session_id が混在しています。該当セッションを閉じて起動し直してください。",
+      2,
+    );
+  }
+  if (!scanned.event?.vendor_session_id) return;
+  bindAgentVendorSession(meta, scanned.event);
+  writeAgentMetadata(meta);
+}
+
 function findLatestCodexTranscript(codexHome: string, vendorSessionId: string): string | null {
   const sessionsDir = path.join(codexHome, "sessions");
   let latestFile: string | null = null;
@@ -2260,6 +2406,9 @@ export async function readAgentTranscript(
   o: { lines?: number | null } = {},
 ): Promise<string> {
   const meta = loadAgentMetadata(name);
+  // wait timeout は「失敗」ではなく状態不明。後着した同一launchの完了eventから
+  // vendor session をbindし、promptを再送せず結果だけ回収できるようにする。
+  recoverAgentVendorSession(meta);
   if (!meta.vendor_session_id) {
     throw new AitermError(
       `agent session '${name}' はまだターンが完了していません。agent_done 完了後に再取得してください。`,
@@ -2271,7 +2420,45 @@ export async function readAgentTranscript(
   const turnId = done?.turn_id ?? null;
   let text = "";
 
-  if (meta.kind === "codex") {
+  if (meta.kind === "claude") {
+    if (!meta.result_file || !done?.result_digest || done.result_bytes == null) transcriptUnavailable();
+    let st: fs.Stats;
+    try {
+      st = fs.lstatSync(meta.result_file);
+    } catch {
+      transcriptUnavailable();
+    }
+    if (
+      !st.isFile() ||
+      st.isSymbolicLink() ||
+      st.uid !== currentUid() ||
+      st.nlink !== 1 ||
+      (st.mode & 0o077) !== 0 ||
+      st.size > CLAUDE_RESULT_MAX_BYTES + 4096
+    ) {
+      throw new AitermError("Claude result file の安全検証に失敗しました", 2);
+    }
+    let result: any;
+    try {
+      result = JSON.parse(fs.readFileSync(meta.result_file, "utf8"));
+    } catch {
+      throw new AitermError("Claude result file を読めません", 2);
+    }
+    const keys = result && typeof result === "object" && !Array.isArray(result) ? Object.keys(result).sort() : [];
+    if (
+      keys.join(",") !== "result_bytes,result_digest,schema,text,vendor_session_id" ||
+      result.schema !== "aiterm.claude-turn-result.v1" ||
+      result.vendor_session_id !== meta.vendor_session_id ||
+      result.result_digest !== done.result_digest ||
+      result.result_bytes !== done.result_bytes ||
+      typeof result.text !== "string" ||
+      Buffer.byteLength(result.text, "utf8") !== done.result_bytes ||
+      createHash("sha256").update(result.text, "utf8").digest("hex") !== done.result_digest
+    ) {
+      throw new AitermError("Claude result file が完了eventと一致しません", 2);
+    }
+    text = result.text;
+  } else if (meta.kind === "codex") {
     if (!meta.codex_home) transcriptUnavailable();
     const transcript = findLatestCodexTranscript(meta.codex_home, meta.vendor_session_id);
     if (!transcript) transcriptUnavailable();
@@ -2460,6 +2647,9 @@ function agentDoneSuffix(wait: AgentDoneWaitResult, vendor: AgentKind): string {
 }
 
 function isAgentTuiReady(kind: AgentKind, screen: string): boolean {
+  if (kind === "claude") {
+    return screen.includes("Claude Code") && /(^|\n)\s*❯/.test(screen);
+  }
   if (kind === "codex") {
     return screen.includes("OpenAI Codex") && /(^|\n)\s*[›>]/.test(screen);
   }
@@ -2744,14 +2934,16 @@ export async function sendAndWaitAgentDone(name: string, text: string, o: AgentD
   }
 }
 
-// ── 対話型エージェント起動（Codex / Grok Build(Grok) / Grok Build(Composer)）──────
+// ── 対話型エージェント起動（Claude / Codex / Grok Build(Grok) / Grok Build(Composer)）──────
 // aiterm の永続端末に、指定モデルの対話エージェント TUI を起動する。以後は pty_read で画面を
 // 読み、pty_send で操作する＝aiterm の対話パラダイムそのもの。モデルはツールごとに固定し、
 // reasoning effort は引数で渡す。CLI 未導入環境は明示エラー（動くフリをしない）。
 function resolveAgentBin(kind: AgentKind): string | null {
   const home = process.env.HOME ?? os.homedir();
   const [envVar, rel, name] =
-    kind === "codex"
+    kind === "claude"
+      ? ["CLAUDE_BIN", [".local", "bin", "claude"], "claude"]
+      : kind === "codex"
       ? ["CODEX_BIN", [".local", "bin", "codex"], "codex"]
       : ["GROK_BIN", [".grok", "bin", "grok"], "grok"];
   const fromEnv = process.env[envVar as string];
@@ -2806,6 +2998,7 @@ const GROK_MODEL_DEFAULTS: Record<"grok" | "composer", string> = {
   grok: "grok-4.5",
   composer: "grok-composer-2.5-fast",
 };
+const CLAUDE_EFFORTS = new Set(["low", "medium", "high", "xhigh", "max"]);
 
 function buildAgentCmd(
   kind: AgentKind,
@@ -2816,7 +3009,13 @@ function buildAgentCmd(
   meta: AgentMetadata | null = null,
 ): string {
   const parts: string[] = [shq(bin)];
-  if (kind === "codex") {
+  if (kind === "claude") {
+    if (meta?.kind === "claude") {
+      parts.push("--setting-sources", shq(""), "--settings", shq(meta.claude_settings ?? ""));
+    }
+    if (model) parts.push("--model", shq(model));
+    if (effort) parts.push("--effort", shq(effort));
+  } else if (kind === "codex") {
     if (meta?.kind === "codex") parts.push("--dangerously-bypass-hook-trust");
     // model/effort は CLI 引数で明示（config 継承より優先）。agent_done 時は managed home 側
     // config.toml も同値で上書き済み（applyCodexConfigOverrides）。
@@ -2842,6 +3041,9 @@ function agentEnvPrefix(meta: AgentMetadata | null, sid: string): string {
     `AITERM_AGENT_SESSION_ID=${shq(sid)}`,
     `AITERM_AGENT_LAUNCH_ID=${shq(meta.launch_id)}`,
   ];
+  if (meta.kind === "claude") {
+    return common.join(" ") + " ";
+  }
   if (meta.kind === "codex") {
     return [`CODEX_HOME=${shq(meta.codex_home ?? "")}`, ...common].join(" ") + " ";
   }
@@ -2866,7 +3068,9 @@ function agentEnvPrefix(meta: AgentMetadata | null, sid: string): string {
 }
 
 function agentLabel(kind: AgentKind): string {
-  return kind === "composer"
+  return kind === "claude"
+    ? "Claude Code"
+    : kind === "composer"
     ? "Grok Build(Composer)"
     : kind === "grok"
       ? "Grok Build(Grok)"
@@ -2882,6 +3086,9 @@ function buildAgentLaunchNote(
   effort: string | null,
   meta: AgentMetadata | null,
 ): string {
+  if (kind === "claude") {
+    return `起動設定: model=${model ?? "CLI既定"} effort=${effort ?? "CLI既定"}。`;
+  }
   if (kind !== "codex") {
     return (
       `起動設定: model=${model ?? GROK_MODEL_DEFAULTS[kind]}（${model ? "引数" : "ツール既定"}）。` +
@@ -2931,6 +3138,9 @@ export function openAgent(
     if (!model) throw new AitermError("model が空文字です（省略するか有効なモデル名を指定してください）", 2);
   }
   const effort = opts.reasoning_effort ?? null;
+  if (effort && kind === "claude" && !CLAUDE_EFFORTS.has(effort)) {
+    throw new AitermError("Claude Code の reasoning_effort は low/medium/high/xhigh/max のいずれかです", 2);
+  }
   // grok CLI の --effort は headless（grok -p）専用で、対話 TUI では警告の上無視される。
   // 黙って no-op の引数を受けない＝起動前に明示エラーで拒否する（codex は CLI 側の値集合が
   // 版で変わるため縛らず送信まで通す）。
@@ -2957,7 +3167,7 @@ export function openAgent(
     ownTelemetryFailure("AITERM.VENDOR_LAUNCHER_FAILED", error, 2);
   }
   if (!bin) {
-    const where = kind === "codex" ? "~/.local/bin/codex" : "~/.grok/bin/grok";
+    const where = kind === "claude" ? "~/.local/bin/claude" : kind === "codex" ? "~/.local/bin/codex" : "~/.grok/bin/grok";
     ownTelemetryFailure("AITERM.VENDOR_LAUNCHER_FAILED", new AitermError(`${label} の CLI が見つかりません（${where} か PATH が必要）`, 2), 2);
   }
   // cwd 検証（session を作る前に。cd 失敗はシェル内で静かに死に「起動した」と偽成功を返すため）。
@@ -2988,13 +3198,15 @@ export function openAgent(
   // でしか確認できない（CI 非対象。docs/03_audit-sweep-2026-07.md 参照）。
   const binForCmd = isWin ? toWslPath(bin) : bin;
   const cwdForCmd = cwd && isWin ? toWslPath(cwd) : cwd;
-  const grokAuthPath = agentDone && kind !== "codex" ? resolveAndValidateGrokAuth(realGrokHome()) : null;
+  const grokAuthPath = agentDone && (kind === "grok" || kind === "composer") ? resolveAndValidateGrokAuth(realGrokHome()) : null;
 
   const [sid, hint] = openSession(opts.session_name ?? null, "bash");
   let launchNote = "";
   try {
     const meta = agentDone
-      ? kind === "codex"
+      ? kind === "claude"
+        ? createClaudeAgentMetadata(sid, cwd, opts.prompt ? "pending" : "none")
+        : kind === "codex"
         ? createCodexAgentMetadata(sid, cwd, opts.prompt ? "pending" : "none", { model, effort })
         : createGrokAgentMetadata(kind, sid, cwd, opts.prompt ? "pending" : "none", grokAuthPath)
       : null;
@@ -3020,7 +3232,7 @@ export function openAgent(
   return [
     sid,
     `${label} を session ${sid} で起動した。${launchNote}${agentDone ? "agent_done 待機が有効。" : ""}` +
-      `${agentDone && kind !== "codex" ? " hook 汚染防止のため Grok 実行中は一時 HOME を使う。" : ""}\n${hint}\n` +
+      `${agentDone && (kind === "grok" || kind === "composer") ? " hook 汚染防止のため Grok 実行中は一時 HOME を使う。" : ""}\n${hint}\n` +
       `TUI の描画には数秒かかる。少し置いてから pty_read(${sid}, screen:true) で画面を読み、` +
       `pty_send(${sid}, "...") で入力・pty_key(${sid}, "Enter"/"Up"/"C-c" 等) で操作する（対話）。` +
       `起動直後に増分 pty_read すると空/半描画になり得るので screen:true を使う。`,
@@ -3072,7 +3284,7 @@ export async function openAgentWithInitialPrompt(
   if (!prompt) {
     return openAgent(kind, opts);
   }
-  if (kind !== "codex") {
+  if (kind !== "codex" && kind !== "claude") {
     if (waitMode === "agent_done") {
       throw new AitermError(
         `${agentLabel(kind)} の起動時 prompt wait は未対応です。` +

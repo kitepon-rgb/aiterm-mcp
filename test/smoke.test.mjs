@@ -1,5 +1,5 @@
 // smoke: 実際に `node dist/index.js` を起動し、initialize + tools/list を stdin にパイプ。
-// 検証: stdout は改行区切り JSON-RPC のみ（診断混入なし）／10 ツールが公開されている。
+// 検証: stdout は改行区切り JSON-RPC のみ（診断混入なし）／11 ツールが公開されている。
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -15,7 +15,7 @@ const DIAGNOSTICS_FIXTURE = JSON.parse(
 );
 const PACKAGE = JSON.parse(fs.readFileSync(path.join(HERE, "..", "package.json"), "utf8"));
 
-test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 10 ツール公開", async () => {
+test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 11 ツール公開", async () => {
   const tmpdir = fs.mkdtempSync(path.join(os.tmpdir(), "aiterm-diagnostics-"));
   const child = spawn(process.execPath, [ENTRY], {
     stdio: ["pipe", "pipe", "pipe"],
@@ -67,6 +67,7 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 10 ツール公�
   assert.equal(responses.get(1)?.result?.serverInfo?.version, PACKAGE.version, "initialize version");
   const names = (toolsResp.result?.tools ?? []).map((t) => t.name).sort();
   assert.deepEqual(names, [
+    "claude_agent",
     "codex_agent",
     "composer_agent",
     "diagnostics",
@@ -89,6 +90,11 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 10 ツール公�
     codexAgent.inputSchema.properties.model.anyOf?.some((v) => v.type === "string"),
     "codex_agent model schema",
   );
+  const claudeAgent = toolsResp.result.tools.find((t) => t.name === "claude_agent");
+  assert.ok(claudeAgent.inputSchema.properties.model.anyOf?.some((v) => v.type === "string"), "claude_agent model schema");
+  assert.equal(claudeAgent.inputSchema.properties.agent_done.type, "boolean", "claude_agent agent_done schema");
+  assert.deepEqual(claudeAgent.inputSchema.properties.wait.enum, ["none", "agent_done"], "claude_agent wait schema");
+  assert.equal(claudeAgent.inputSchema.properties.timeout.type, "number", "claude_agent timeout schema");
   assert.equal(codexAgent.inputSchema.properties.agent_done.type, "boolean", "codex_agent agent_done schema");
   assert.deepEqual(codexAgent.inputSchema.properties.wait.enum, ["none", "agent_done"], "codex_agent wait schema");
   assert.equal(codexAgent.inputSchema.properties.wait.default, "none", "codex_agent wait default");
