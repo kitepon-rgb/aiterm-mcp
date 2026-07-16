@@ -64,6 +64,16 @@ protocol／transcript読取、Observer／Throughline／Mailboxロジックの内
   公開前の`0.14.0`候補内補正とし、focused 6/6、related 96/96、full 269/269を各一度通した。
   publish／端末更新／live Claudeは行わない。設計・受入証拠は
   [ADR 0013](adr/0013-claude-agent-exact-launch-replay.md)を正とする。
+- [x] **Observer queue 19e実機欠陥 — Claude ready stabilization:** 実Claude parentとmanaged Observerの
+  両方で、`Claude Code`＋入力欄が一瞬描画された直後の初回promptが消失し、transcript／Stop eventなしで
+  ready画面へ戻ることを再現した。別processから同じ公開`pty_send`で送ったEnterなしprobeは表示／消去でき、
+  10秒連続ready後のparent promptは自然Stopまで成立したため、PTY送信やhookでなく単発ready判定が原因である。
+  初回prompt前だけvendor readyを複数poll連続で確認し、途中で非readyへ戻ればstreakをリセットする。
+  timeoutまで安定しなければ文字列を送らず明示失敗する。Claudeだけのprivate回避にせず既存4 vendor共通gateを
+  hardeningした。pure 21/21、focused agent 4/4、related 113/113、build、新規ADR lint、diff checkはgreen。
+  実managed Claude再Hは次項のlive Hとして独立に判定する
+  既存plan 04／15の全体lintは今回外のMD013 baselineで赤のためgreenへ数えない
+  （[ADR 0014](adr/0014-agent-tui-ready-stabilization.md)）。
 - [ ] 実Claude model requestを使うlive H smokeは、operation相関gateの完了後、目的・影響・rollbackの承認を得て
   初回／follow-up各一turnで
   実施し、認証再要求、Stop、結果回収、session closeを確認する。

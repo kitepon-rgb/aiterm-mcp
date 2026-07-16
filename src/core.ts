@@ -64,6 +64,7 @@ const AGENT_EVENT_TAIL_BYTES = 64 * 1024;
 const AGENT_METADATA_NEGATIVE_CACHE_TTL_MS = 2_000;
 const AGENT_TUI_READY_TIMEOUT_MS = 30_000;
 const AGENT_TUI_READY_POLL_MS = 500;
+const AGENT_TUI_READY_STABLE_SAMPLES = 11;
 const AGENT_TUI_READY_LINES = 45;
 const GROK_AUTH_MAX_BYTES = 64 * 1024;
 const CLAUDE_RESULT_MAX_BYTES = 4 * 1024 * 1024;
@@ -1464,6 +1465,7 @@ type AgentLauncherWait = "none" | "agent_done";
 const DEFAULT_AGENT_DONE_TIMEOUT = 600;
 const agentWaitLocks = new Set<string>();
 const agentMetadataNegativeCache = new Map<string, number>();
+let agentTuiReadyStableSamplesTestOverride: number | null = null;
 
 function normalizeAgentLauncherWait(v: unknown): AgentLauncherWait {
   if (v == null || v === "none") return "none";
@@ -2962,17 +2964,25 @@ async function waitAgentTuiReadyImpl(
   opts: {
     timeoutMs?: number;
     pollMs?: number;
+    stableSamples?: number;
   } = {},
 ): Promise<AgentTuiReadyWaitResult> {
   const timeoutMs = opts.timeoutMs ?? AGENT_TUI_READY_TIMEOUT_MS;
   const pollMs = opts.pollMs ?? AGENT_TUI_READY_POLL_MS;
+  const stableSamples = opts.stableSamples ?? agentTuiReadyStableSamplesTestOverride ?? AGENT_TUI_READY_STABLE_SAMPLES;
   const deadline = performance.now() + timeoutMs;
   let samples = 0;
+  let readyStreak = 0;
   let lastScreen = "";
   for (;;) {
     lastScreen = sample();
     samples++;
-    if (isAgentTuiReady(kind, lastScreen)) return { ready: true, samples, lastScreen };
+    if (isAgentTuiReady(kind, lastScreen)) {
+      readyStreak++;
+      if (readyStreak >= stableSamples) return { ready: true, samples, lastScreen };
+    } else {
+      readyStreak = 0;
+    }
     if (performance.now() >= deadline) return { ready: false, samples, lastScreen };
     await sleepFn(pollMs);
   }
@@ -3071,7 +3081,7 @@ export function __testIsAgentTuiReady(kind: AgentKind, screen: string): boolean 
 export async function __testWaitAgentTuiReady(
   kind: AgentKind,
   samples: string[],
-  opts: { timeoutMs?: number; pollMs?: number } = {},
+  opts: { timeoutMs?: number; pollMs?: number; stableSamples?: number } = {},
 ): Promise<AgentTuiReadyWaitResult & { sleeps: number[] }> {
   if (samples.length === 0) throw new AitermError("agent ready test samples が空です", 2);
   let i = 0;
@@ -3085,6 +3095,13 @@ export async function __testWaitAgentTuiReady(
     opts,
   );
   return { ...result, sleeps };
+}
+
+export function __testSetAgentTuiReadyStableSamples(value: number | null): void {
+  if (value !== null && (!Number.isInteger(value) || value < 1 || value > 1000)) {
+    throw new AitermError("test ready stable samplesが不正です", 2);
+  }
+  agentTuiReadyStableSamplesTestOverride = value;
 }
 
 export interface AgentDoneSendOpts extends SendOpts {

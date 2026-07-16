@@ -35,6 +35,7 @@ if (process.platform !== "win32") {
 process.env.CODEX_BIN = process.platform === "win32" ? process.execPath : "/bin/echo";
 process.env.CLAUDE_BIN = process.platform === "win32" ? process.execPath : "/bin/echo";
 const core = await import("../dist/core.js");
+core.__testSetAgentTuiReadyStableSamples(1);
 const skip = hasTmux ? undefined : "tmux 未インストール";
 const skipAgentDone = hasTmux && typeof process.getuid === "function" ? undefined : "tmux または POSIX getuid が無い";
 const agentStateDir = () => path.join(process.env.TMPDIR, `aiterm-mcp-${process.getuid()}`, "agents");
@@ -320,6 +321,7 @@ function fileSnapshot(p) {
 }
 
 after(() => {
+  core.__testSetAgentTuiReadyStableSamples(null);
   if (hasTmux) {
     try {
       core.killAll();

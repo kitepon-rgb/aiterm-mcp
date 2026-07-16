@@ -150,15 +150,15 @@ test("agent_done ready gate: Claude/Codex/Grok/Composer の入力欄を判定す
   assert.equal(core.__testIsAgentTuiReady("claude", "Claude Code\nConnecting…"), false);
 });
 
-test("agent_done ready gate: ready になるまで polling し、timeout なら false", async () => {
+test("agent_done ready gate: ready が連続安定するまで polling し、timeout なら false", async () => {
   const ok = await core.__testWaitAgentTuiReady(
     "codex",
-    ["OpenAI Codex\n◦ Starting MCP servers", "OpenAI Codex\n› "],
-    { timeoutMs: 100, pollMs: 10 },
+    ["OpenAI Codex\n◦ Starting MCP servers", "OpenAI Codex\n› ", "OpenAI Codex\n› "],
+    { timeoutMs: 100, pollMs: 10, stableSamples: 2 },
   );
   assert.equal(ok.ready, true);
-  assert.equal(ok.samples, 2);
-  assert.deepEqual(ok.sleeps, [10]);
+  assert.equal(ok.samples, 3);
+  assert.deepEqual(ok.sleeps, [10, 10]);
 
   const bad = await core.__testWaitAgentTuiReady("grok", ["Grok Build\nChangelog"], {
     timeoutMs: 0,
@@ -167,6 +167,34 @@ test("agent_done ready gate: ready になるまで polling し、timeout なら 
   assert.equal(bad.ready, false);
   assert.equal(bad.samples, 1);
   assert.deepEqual(bad.sleeps, []);
+});
+
+test("agent_done ready gate: 一瞬のready後に再初期化したらstreakをリセットする", async () => {
+  const result = await core.__testWaitAgentTuiReady(
+    "claude",
+    [
+      "Claude Code\n❯ ",
+      "Claude Code\nConnecting…",
+      "Claude Code\n❯ ",
+      "Claude Code\n❯ ",
+      "Claude Code\n❯ ",
+    ],
+    { timeoutMs: 100, pollMs: 10, stableSamples: 3 },
+  );
+  assert.equal(result.ready, true);
+  assert.equal(result.samples, 5);
+  assert.deepEqual(result.sleeps, [10, 10, 10, 10]);
+});
+
+test("agent_done ready gate: production既定は11回連続readyを要求する", async () => {
+  const ready = "Claude Code\n❯ ";
+  const result = await core.__testWaitAgentTuiReady("claude", Array(11).fill(ready), {
+    timeoutMs: 100,
+    pollMs: 0,
+  });
+  assert.equal(result.ready, true);
+  assert.equal(result.samples, 11);
+  assert.equal(result.sleeps.length, 10);
 });
 
 // ---------------------------------------------------------------- toWslPath（Windows 橋渡しのパス変換）

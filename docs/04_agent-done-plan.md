@@ -8,6 +8,11 @@
 継続利用し、managed Stop hookのbounded resultから初回／follow-up／timeout後回収を行う。fixture gateは
 green、実Claude model requestのlive Hだけ未実施。
 
+2026-07-16 queue 19e追補: 実Claudeでは入力欄の一瞬の描画だけでreadyを確定すると、startup再描画に
+初回promptが消されるraceを再現した。[ADR 0014](adr/0014-agent-tui-ready-stabilization.md)どおり、初回prompt
+前はvendor共通readyを複数poll連続で確認し、途中の非readyでstreakをリセットする。単発regex一致を
+送信許可にしない。
+
 2026-07-09 追補: `codex_agent` launcher の起動時 `prompt` に `wait:"agent_done"` を追加した。これは `codex_run` 復活ではなく、永続 TUI session を残したまま「初回 prompt だけ」を TUI ready 後に送信し、その初回ターンの Stop hook を待つ convenience route。`wait:"agent_done"` は `prompt` と `agent_done:true` が必須で、暗黙に managed hook を有効化しない。起動時 prompt は shell command line に載せず、TUI ready 後に送るため、複数行日本語 prompt で shell continuation 表示を読ませる経路を避ける。TUI ready 前にログイン画面などで止まる場合は prompt を送らず `initial_prompt=not_sent` を返し、session を調査可能なまま残す。起動時 prompt が `pending`/`sent` の間は通常 `pty_send` を拒否し、後続入力の混入を防ぐ。通常 `pty_read` には agent 補助 metadata（`agent_event_seen` / `completion_attribution=none` / `initial_prompt` など）を出すが、stale Stop hook を通常 read の `is_complete=True` には昇格しない。Codex は単一行・長い日本語・複数行日本語の実 initial prompt wait smoke を通過。Grok/Composer の同 route は現在の環境で OAuth browser approval 画面に止まり、prompt 未送信の `initial_prompt=not_sent` を確認したため、公開 schema には出さず、ログイン承認後の再 smoke を別フェーズに残す。`npm test` は 177/177 pass。
 
 この文書は実装計画として開始したが、`v0.9.1` 公開後は `agent_done` の設計判断・敵対的検証・実測結果の正本ノートとして保持する。完了済みチェックリストそのものは履歴として読む。
