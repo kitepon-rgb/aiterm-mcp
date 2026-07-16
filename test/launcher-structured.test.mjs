@@ -76,6 +76,27 @@ test("claude_agent: text contentを維持しClaude managed launch receiptをstru
     })}\n`);
     const closed = await waitForResponse(child, () => responseFor(stdout, 3), () => stdout, () => stderr);
     assert.equal(closed.result.isError, undefined, JSON.stringify(closed.result));
+    assert.equal(closed.result.content?.[0]?.text, `closed ${sessionId}`, "既存text contentを維持する");
+    assert.deepEqual(closed.result.structuredContent, {
+      schema: "aiterm.pty-close-result.v1",
+      session_id: sessionId,
+      outcome: "closed",
+    });
+
+    child.stdin.write(`${JSON.stringify({
+      jsonrpc: "2.0",
+      id: 4,
+      method: "tools/call",
+      params: { name: "pty_close", arguments: { session_id: sessionId } },
+    })}\n`);
+    const retried = await waitForResponse(child, () => responseFor(stdout, 4), () => stdout, () => stderr);
+    assert.equal(retried.result.isError, undefined, JSON.stringify(retried.result));
+    assert.equal(retried.result.content?.[0]?.text, `closed ${sessionId}`, "retryでも既存text contentを維持する");
+    assert.deepEqual(retried.result.structuredContent, {
+      schema: "aiterm.pty-close-result.v1",
+      session_id: sessionId,
+      outcome: "already_closed",
+    });
   } finally {
     child.kill();
     await onceExit(child);

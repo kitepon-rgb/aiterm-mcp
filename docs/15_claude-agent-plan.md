@@ -48,6 +48,13 @@ protocol／transcript読取、Observer／Throughline／Mailboxロジックの内
   既存text contentは互換維持し、Claude fixtureの実MCP call、tool output schema、既存launcher回帰をfocused／related
   gateで閉じた（focused 4 passed、related 94 passed）。受入証拠は
   [ADR 0011](adr/0011-agent-launch-structured-receipt-acceptance.md)。
+- [x] **Observer queue 19d-d割込 — `pty_close` exact recovery:** Observerのgeneration rollback／rebind統合で、
+  現行`pty_close`が人間向けtextだけを返し、MCP response loss後に「close済み／未実行」をmachine callerが
+  exact回収できないことを再現した。既存のidempotent cleanupを維持したまま、`closed | already_closed`を持つ
+  structured receiptとtool output schemaを追加し、同じsession IDへのretryだけでterminalを確定可能にする。
+  公開machine契約追加は`0.14.0`へ分離し、focused／related gate、独立commitで閉じる。Observer／Throughline／
+  Mailbox意味論は入れず、publish／端末更新／live Claudeは行わない。実装・受入証拠は
+  [ADR 0012](adr/0012-pty-close-exact-recovery-acceptance.md)。
 - [ ] 実Claude model requestを使うlive H smokeは、operation相関gateの完了後、目的・影響・rollbackの承認を得て
   初回／follow-up各一turnで
   実施し、認証再要求、Stop、結果回収、session closeを確認する。

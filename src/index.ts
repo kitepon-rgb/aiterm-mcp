@@ -276,12 +276,23 @@ server.registerTool(
 server.registerTool(
   "pty_close",
   {
-    description: "セッションを閉じ、ログ／読取位置を破棄する。",
+    description:
+      "セッションを閉じ、ログ／読取位置を破棄する。同じsession_idへの再試行は安全で、" +
+      "closed／already_closedのstructured receiptを返す。",
     inputSchema: { session_id: z.string() },
+    outputSchema: {
+      schema: z.literal("aiterm.pty-close-result.v1"),
+      session_id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+      outcome: z.enum(["closed", "already_closed"]),
+    },
   },
   async ({ session_id }) => {
     try {
-      return ok(core.closeSession(session_id));
+      const result = core.closeSessionResult(session_id);
+      return {
+        content: [{ type: "text" as const, text: `closed ${session_id}` }],
+        structuredContent: { ...result },
+      };
     } catch (e) {
       return fail(e);
     }

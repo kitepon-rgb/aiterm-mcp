@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   PTY model as the other agent launchers. Managed turns correlate a durable
   caller operation ID through dispatch, Stop result, timeout recovery, and
   transcript read without re-sending the prompt.
+- `pty_close` now returns an `aiterm.pty-close-result.v1` structured receipt
+  with `closed` or `already_closed`. Retrying the same session ID after an MCP
+  response loss therefore recovers the terminal close outcome exactly.
 
 ## [0.12.3] - 2026-07-14
 

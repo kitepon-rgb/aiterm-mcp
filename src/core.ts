@@ -1285,6 +1285,30 @@ export function closeSession(name: string): string {
   return closeSessionInternal(name, true);
 }
 
+export type PtyCloseResult = {
+  schema: "aiterm.pty-close-result.v1";
+  session_id: string;
+  outcome: "closed" | "already_closed";
+};
+
+/**
+ * Durable caller向けのclose receipt。
+ *
+ * closeSessionInternalのidempotent cleanupは維持し、呼出時点でtmux sessionが
+ * 存在したかだけを固定語彙で返す。MCP response loss後も同じsession IDで再試行すれば
+ * already_closedとなり、close完了を文字列解析なしで確定できる。
+ */
+export function closeSessionResult(name: string): PtyCloseResult {
+  assertSessionName(name);
+  const existed = sessionExists(name);
+  closeSessionInternal(name, true);
+  return {
+    schema: "aiterm.pty-close-result.v1",
+    session_id: name,
+    outcome: existed ? "closed" : "already_closed",
+  };
+}
+
 export function killAll(): string {
   if (agentWaitLocks.size > 0) {
     throw new AitermError(

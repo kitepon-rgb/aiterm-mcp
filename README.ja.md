@@ -147,6 +147,9 @@ pty_read("t1", { wait: true })      → "hello"   （トークン削減・完了
 pty_close("t1")                     → 端末を解放
 ```
 
+`pty_close` は冪等で、`closed` / `already_closed` のstructured receiptを返す。
+MCP応答を失ったdurable callerも同じ`session_id`への再試行だけでclose結果を確定できる。
+
 これだけ。`t1` の端末は本物で永続——`ssh`・`docker exec`・REPL・起動したエージェントの TUI は、そこに住む「もの」に過ぎない。代わりにワーカーのエージェントを起動するのも 1 コール: `codex_agent()` が返す `session_id` を、同じ `pty_read` / `pty_send` で操作する。
 
 **グローバル導入や別クライアントが良い場合は:**
@@ -252,7 +255,7 @@ aiterm は同じ核心の洞察——端末を出会いの場にする——を�
 | `pty_send` | テキスト(コマンド)を送る | `session_id`, `text`, `enter=true`, `wait`, `timeout`, `screen`, `lines`, `operation_id`, `mark`, `force`, `rtk`, `raw` |
 | `pty_read` | 出力を削減して読む（既定は増分） | `session_id`, `wait`, `until`, `until_regex`, `timeout`, `screen`, `full`, `lines`, `line_range`, `raw`, `rtk`, `agent_transcript`, `operation_id` |
 | `pty_key` | 制御キーを送る | `session_id`, `key`（`C-c`/`Enter`/`Up`…） |
-| `pty_close` | セッションを閉じる | `session_id` |
+| `pty_close` | 冪等に閉じ、`closed` / `already_closed`を返す | `session_id` |
 | `pty_list` | セッション一覧 | （なし） |
 | `claude_turn` | 相関済みmanaged Claude operationを送信または回収 | `action`, `session_id`, `operation_id`, `text?`, `timeout?` |
 | `diagnostics` | 機械可読 JSON による read-only factory readiness | （なし） |

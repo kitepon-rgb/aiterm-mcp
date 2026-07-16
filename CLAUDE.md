@@ -20,7 +20,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 >（ADR 0009）。
 > launcherは既存text互換に加え、session handleを文字列解析なしで得る`aiterm.agent-launch-result.v1`
 > structured receiptを公開する。focused 4/4、related 94/94で受入済み（ADR 0011）。
-> operation相関を含まない既公開0.12.3との誤認を防ぐため、現sourceは0.13.0へminor bump済み（ADR 0007）。
+> operation相関とstructured close receiptを含まない既公開0.12.3との誤認を防ぐため、現sourceは0.14.0へminor bump済み（ADR 0007・0012）。
 > release／publish／端末更新は未実施。
 > 実Claude model requestのlive smokeは明示承認待ち。
 > 下記の10-tool記述とtest件数は公開済みreleaseの履歴であり、現sourceの公開面ではない。

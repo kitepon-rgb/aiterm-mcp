@@ -148,6 +148,9 @@ pty_read("t1", { wait: true })      → "hello"   (token-reduced, completion det
 pty_close("t1")                     → terminal released
 ```
 
+`pty_close` is idempotent and returns a structured `closed` / `already_closed`
+receipt, so durable callers can retry the same `session_id` after losing the MCP response.
+
 That's it. The terminal in `t1` is real and persistent — `ssh`, `docker exec`, a REPL, or a launched agent's TUI are just things that live inside it. To launch a worker agent instead, one call does it: `codex_agent()` returns a `session_id` you drive with the same `pty_read` / `pty_send`.
 
 **Prefer a global install, or a different client?**
@@ -255,7 +258,7 @@ On top of that sits a productized layer a raw tmux bridge doesn't have: **token-
 | `pty_send` | Send text (a command) | `session_id`, `text`, `enter=true`, `wait`, `timeout`, `screen`, `lines`, `operation_id`, `mark`, `force`, `rtk`, `raw` |
 | `pty_read` | Read output, token-reduced (incremental by default) | `session_id`, `wait`, `until`, `until_regex`, `timeout`, `screen`, `full`, `lines`, `line_range`, `raw`, `rtk`, `agent_transcript`, `operation_id` |
 | `pty_key` | Send a control key | `session_id`, `key` (`C-c`/`Enter`/`Up`…) |
-| `pty_close` | Close a session | `session_id` |
+| `pty_close` | Close idempotently; return `closed` / `already_closed` | `session_id` |
 | `pty_list` | List sessions (agent rows carry `agent=<kind>` metadata) | (none) |
 | `claude_turn` | Issue or recover one correlated managed-Claude operation | `action`, `session_id`, `operation_id`, `text?`, `timeout?` |
 | `diagnostics` | Read-only factory readiness as machine-readable JSON | (none) |

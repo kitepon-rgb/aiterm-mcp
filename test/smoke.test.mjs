@@ -18,7 +18,7 @@ const PACKAGE = JSON.parse(fs.readFileSync(path.join(HERE, "..", "package.json")
 test("smoke: 公開versionはpackage・lock・server manifestで一致する", () => {
   const lock = JSON.parse(fs.readFileSync(path.join(HERE, "..", "package-lock.json"), "utf8"));
   const server = JSON.parse(fs.readFileSync(path.join(HERE, "..", "server.json"), "utf8"));
-  assert.equal(PACKAGE.version, "0.13.0", "operation相関付き公開面は既公開0.12.3と区別する");
+  assert.equal(PACKAGE.version, "0.14.0", "structured close receipt付き公開面は0.13.0と区別する");
   assert.equal(lock.version, PACKAGE.version);
   assert.equal(lock.packages?.[""]?.version, PACKAGE.version);
   assert.equal(server.version, PACKAGE.version);
@@ -98,6 +98,10 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 12 ツール公�
   assert.equal(ptyRead.inputSchema.properties.agent_transcript.type, "boolean", "pty_read agent_transcript schema");
   assert.equal(ptyRead.inputSchema.properties.agent_transcript.default, false, "pty_read agent_transcript default");
   assert.ok(ptyRead.inputSchema.properties.operation_id.anyOf?.some((v) => v.type === "string"));
+  const ptyClose = toolsResp.result.tools.find((t) => t.name === "pty_close");
+  assert.equal(ptyClose.outputSchema.properties.schema.const, "aiterm.pty-close-result.v1", "pty_close result schema");
+  assert.equal(ptyClose.outputSchema.properties.session_id.pattern, "^[A-Za-z0-9_-]{1,64}$", "pty_close session ID schema");
+  assert.deepEqual(ptyClose.outputSchema.properties.outcome.enum, ["closed", "already_closed"], "pty_close outcome schema");
   const codexAgent = toolsResp.result.tools.find((t) => t.name === "codex_agent");
   assert.ok(
     codexAgent.inputSchema.properties.model.anyOf?.some((v) => v.type === "string"),
