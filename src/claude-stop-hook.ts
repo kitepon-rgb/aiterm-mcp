@@ -6,6 +6,7 @@ import { createHash, randomBytes } from "node:crypto";
 
 const LAUNCH_ID_RE = /^[0-9a-f]{32}$/;
 const SESSION_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const OPERATION_ID_RE = /^sha256:[0-9a-f]{64}$/;
 const MAX_STDIN_BYTES = 8 * 1024 * 1024;
 const MAX_RESULT_BYTES = 4 * 1024 * 1024;
 
@@ -117,6 +118,66 @@ function appendEvent(file: string, event: unknown): void {
   }
 }
 
+interface OperationMarker {
+  operationId: string | null;
+  dev: number;
+  ino: number;
+}
+
+function readOperationMarker(file: string): OperationMarker | null {
+  const nofollow = (fs.constants as Record<string, number>).O_NOFOLLOW ?? 0;
+  let fd: number;
+  try {
+    fd = fs.openSync(file, fs.constants.O_RDONLY | nofollow);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    fail(`operation markerを安全に開けません: ${file}`);
+  }
+  try {
+    const st = fs.fstatSync(fd!);
+    if (!st.isFile() || st.uid !== uid() || st.nlink !== 1 || (st.mode & 0o077) !== 0 || st.size > 1024) {
+      fail(`operation markerが安全ではありません: ${file}`);
+    }
+    const body = fs.readFileSync(fd!, "utf8");
+    const value = JSON.parse(body) as Record<string, unknown>;
+    const keys = value && typeof value === "object" && !Array.isArray(value) ? Object.keys(value).sort() : [];
+    if (
+      keys.join(",") !== "operation_id,schema" ||
+      value.schema !== "aiterm.claude-operation-marker.v1" ||
+      (value.operation_id !== null &&
+        (typeof value.operation_id !== "string" || !OPERATION_ID_RE.test(value.operation_id)))
+    ) {
+      fail("operation markerのschemaまたはoperation_idが不正です");
+    }
+    return { operationId: value.operation_id as string | null, dev: st.dev, ino: st.ino };
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
+  } finally {
+    fs.closeSync(fd!);
+  }
+}
+
+function consumeOperationMarker(file: string, marker: OperationMarker): void {
+  let st: fs.Stats;
+  try {
+    st = fs.lstatSync(file);
+  } catch {
+    fail("operation markerが完了記録中に消失しました");
+  }
+  if (
+    !st!.isFile() ||
+    st!.isSymbolicLink() ||
+    st!.uid !== uid() ||
+    st!.nlink !== 1 ||
+    (st!.mode & 0o077) !== 0 ||
+    st!.dev !== marker.dev ||
+    st!.ino !== marker.ino
+  ) {
+    fail("operation markerが完了記録中に置換されました");
+  }
+  fs.unlinkSync(file);
+}
+
 async function main(): Promise<void> {
   if (!hasAitermEnv()) noop();
   const kind = process.env.AITERM_AGENT_KIND;
@@ -143,9 +204,13 @@ async function main(): Promise<void> {
   const agents = secureAgentsDir();
   const resultFile = path.join(agents, `${session}.${launchId}.claude-result.json`);
   const eventFile = path.join(agents, `${session}.${launchId}.events.jsonl`);
+  const operationFile = path.join(agents, `${session}.${launchId}.claude-operation.json`);
+  const operationMarker = readOperationMarker(operationFile);
+  const operationId = operationMarker?.operationId ?? null;
 
   writeResult(resultFile, {
-    schema: "aiterm.claude-turn-result.v1",
+    schema: "aiterm.claude-turn-result.v2",
+    operation_id: operationId,
     vendor_session_id: payload.session_id,
     result_digest: resultDigest,
     result_bytes: resultBytes,
@@ -158,6 +223,7 @@ async function main(): Promise<void> {
     launch_id: launchId,
     vendor_session_id: payload.session_id,
     turn_id: null,
+    operation_id: operationId,
     reason: "Stop",
     done_status: "turn_done",
     stop_hook_active: !!payload.stop_hook_active,
@@ -165,6 +231,7 @@ async function main(): Promise<void> {
     result_bytes: resultBytes,
     at: new Date().toISOString(),
   });
+  if (operationMarker) consumeOperationMarker(operationFile, operationMarker);
 }
 
 main().catch((error) => fail(error instanceof Error ? error.message : String(error)));

@@ -49,6 +49,7 @@ const NON_POSIX_MARK_SHELLS = new Set(["fish", "csh", "tcsh"]);
 // send の printf 書式（`rc=%d`）と対で保守すること。
 const MARK_DONE_RE = /<<<AITERM_DONE rc=[0-9]+>>>/;
 const LAUNCH_ID_RE = /^[0-9a-f]{32}$/;
+const OPERATION_ID_RE = /^sha256:[0-9a-f]{64}$/;
 type AgentKind = "claude" | "codex" | "grok" | "composer";
 type InitialPromptState = "none" | "not_sent" | "sent" | "pending" | "done" | "failed";
 
@@ -409,6 +410,19 @@ function agentClaudeResultPath(name: string, launchId: string): string {
   return path.join(agentsDir(), `${name}.${launchId}.claude-result.json`);
 }
 
+function agentClaudeOperationPath(name: string, launchId: string): string {
+  assertSessionName(name);
+  if (!LAUNCH_ID_RE.test(launchId)) throw new AitermError(`launch_id が不正です: ${launchId}`, 2);
+  return path.join(agentsDir(), `${name}.${launchId}.claude-operation.json`);
+}
+
+function agentClaudeDispatchReceiptPath(name: string, launchId: string, operationId: string): string {
+  assertSessionName(name);
+  if (!LAUNCH_ID_RE.test(launchId)) throw new AitermError(`launch_id が不正です: ${launchId}`, 2);
+  const validated = validateOperationId(operationId);
+  return path.join(agentsDir(), `${name}.${launchId}.${validated.slice("sha256:".length)}.claude-dispatch`);
+}
+
 function agentManagedCodexHomePath(name: string, launchId: string): string {
   assertSessionName(name);
   if (!LAUNCH_ID_RE.test(launchId)) throw new AitermError(`launch_id が不正です: ${launchId}`, 2);
@@ -460,7 +474,9 @@ function cleanupAgentState(name: string): void {
           f.endsWith(".events.jsonl") ||
           f.endsWith(".wait.lock") ||
           f.endsWith(".claude-settings.json") ||
-          f.endsWith(".claude-result.json")
+          f.endsWith(".claude-result.json") ||
+          f.endsWith(".claude-operation.json") ||
+          f.endsWith(".claude-dispatch")
         ) fs.unlinkSync(p);
         else if (f.endsWith(".codex-home") || f.endsWith(".grok-home") || f.endsWith(".home")) {
           fs.rmSync(p, { recursive: true, force: true });
@@ -899,6 +915,15 @@ export interface SendOpts {
   force?: boolean;
   rtk?: boolean;
   raw?: boolean;
+  /** agent operation markerを保つ内部送信境界。MCPの公開引数にはしない。 */
+  preserveAgentOperation?: boolean;
+}
+
+function prepareSendText(text: string, o: Pick<SendOpts, "raw" | "force">): string {
+  if (!o.raw) text = text.replace(PASTE_MARKERS_RE, "").replace(ANSI_RE, "").replace(CTRL_RE, "");
+  if (!o.force) assertNotDestructive(text, 3);
+  assertSendTextSize(text);
+  return text;
 }
 
 export function send(name: string, text: string, o: SendOpts = {}): string {
@@ -906,10 +931,7 @@ export function send(name: string, text: string, o: SendOpts = {}): string {
   const enter = o.enter ?? true;
   if (!sessionExists(name)) throw new AitermError(`session '${name}' が無い（open してください）`, 2);
   assertInitialPromptNotPendingForSend(name, !!o.force);
-  if (!o.raw) {
-    text = text.replace(PASTE_MARKERS_RE, "").replace(ANSI_RE, "").replace(CTRL_RE, "");
-  }
-  if (!o.force) assertNotDestructive(text, 3);
+  text = prepareSendText(text, o);
   if (o.mark) {
     // mark の sentinel は POSIX シェル構文。前面が fish/csh/tcsh 等の非 POSIX 対話シェルだと "$?" が
     // 壊れて sentinel が成立しない。黙って壊れた完了検出を作らず、明示エラーで until を促す（B8）。
@@ -922,9 +944,18 @@ export function send(name: string, text: string, o: SendOpts = {}): string {
       );
     }
   }
-  assertSendTextSize(text);
   const releaseSendLock = acquireSessionSendFileLock(name);
   try {
+    // managed Claudeの通常送信は、lastcmd/mark/PTYのどれにも触れる前に拒否する。
+    // 拒否した呼び出しが古いmarkを消したり偽のmarkを残すと、後続readが存在しない
+    // sentinelを待つため、公開上の拒否は副作用ゼロでなければならない。
+    if (!o.preserveAgentOperation && managedClaudeOperation(name) !== undefined) {
+      throw new AitermError(
+        "managed Claude agent sessionへの通常送信はturn境界を失うため拒否します。" +
+          'pty_send(wait:"agent_done")を使うか、通常対話へ切り替えるならsessionをcloseしてagent_done:falseで起動し直してください。',
+        2,
+      );
+    }
     writeLastcmd(name, text); // read rtk の reducer 分類用（書換/mark 前の素のコマンド）
     if (o.rtk) text = rtkRewrite(text);
     if (o.rtk && !o.force) assertNotDestructive(text, 3, "rtk 変換後: ");
@@ -998,10 +1029,17 @@ export function send(name: string, text: string, o: SendOpts = {}): string {
   }
 }
 
-export function sendKey(name: string, key: string): string {
+export function sendKey(name: string, key: string, o: { preserveAgentOperation?: boolean } = {}): string {
   assertSessionName(name);
   if (!sessionExists(name)) throw new AitermError(`session '${name}' が無い`, 2);
   const k = KEYMAP[key.toLowerCase()] ?? key;
+  if (!o.preserveAgentOperation && managedClaudeOperation(name) !== undefined && k !== "C-c") {
+    throw new AitermError(
+      "managed Claude agent sessionではturn相関を壊さないC-cだけをpty_keyで送れます。" +
+        "他の対話操作はpty_send(wait:\"agent_done\")、終了はpty_closeを使ってください。",
+      2,
+    );
+  }
   tmux("send-keys", "-t", name, k);
   return `sent key ${k} to ${name}`;
 }
@@ -1294,6 +1332,8 @@ export function killAll(): string {
           f.endsWith(".wait.lock") ||
           f.endsWith(".claude-settings.json") ||
           f.endsWith(".claude-result.json") ||
+          f.endsWith(".claude-operation.json") ||
+          f.endsWith(".claude-dispatch") ||
           f.endsWith(".codex-home") ||
           f.endsWith(".grok-home") ||
           f.endsWith(".home")
@@ -1340,12 +1380,17 @@ interface AgentDoneEvent {
   launch_id: string;
   vendor_session_id: string | null;
   turn_id: string | null;
+  operation_id: string | null;
   reason: string;
   done_status: "turn_done";
   stop_hook_active?: boolean;
   result_digest?: string;
   result_bytes?: number;
   at: string;
+}
+
+interface ClaudeOperationMarker {
+  operationId: string | null;
 }
 
 interface AgentDoneParseResult {
@@ -1766,6 +1811,122 @@ function createManagedGrokHome(name: string, launchId: string, authPath: string 
 
 function writeAgentMetadata(meta: AgentMetadata): void {
   writeJson0600(agentMetadataPath(meta.aiterm_session, meta.launch_id), meta);
+}
+
+function validateOperationId(operationId: unknown): string {
+  if (typeof operationId !== "string" || !OPERATION_ID_RE.test(operationId)) {
+    throw new AitermError("operation_id は sha256:<64 lowercase hex> で指定してください", 2);
+  }
+  return operationId;
+}
+
+function writeClaudeOperationMarker(meta: AgentMetadata, operationId: string | null): void {
+  if (meta.kind !== "claude") throw new AitermError("operation_id はClaude agent sessionだけで使用できます", 2);
+  writeJson0600(agentClaudeOperationPath(meta.aiterm_session, meta.launch_id), {
+    schema: "aiterm.claude-operation-marker.v1",
+    operation_id: operationId === null ? null : validateOperationId(operationId),
+  });
+}
+
+function readClaudeOperationMarker(meta: AgentMetadata): ClaudeOperationMarker | null {
+  if (meta.kind !== "claude") return null;
+  const file = agentClaudeOperationPath(meta.aiterm_session, meta.launch_id);
+  const nofollow = (fs.constants as Record<string, number>).O_NOFOLLOW ?? 0;
+  let fd: number;
+  try {
+    fd = fs.openSync(file, fs.constants.O_RDONLY | nofollow);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw new AitermError(`Claude operation markerを確認できません: ${(error as Error).message}`, 2);
+  }
+  try {
+    const st = fs.fstatSync(fd);
+    if (!st.isFile() || st.uid !== currentUid() || st.nlink !== 1 || (st.mode & 0o077) !== 0 || st.size > 1024) {
+      throw new AitermError("Claude operation markerの安全検証に失敗しました", 2);
+    }
+    let value: any;
+    try {
+      value = JSON.parse(fs.readFileSync(fd, "utf8"));
+    } catch {
+      throw new AitermError("Claude operation markerを読めません", 2);
+    }
+    const keys = value && typeof value === "object" && !Array.isArray(value) ? Object.keys(value).sort() : [];
+    if (
+      keys.join(",") !== "operation_id,schema" ||
+      value.schema !== "aiterm.claude-operation-marker.v1" ||
+      (value.operation_id !== null &&
+        (typeof value.operation_id !== "string" || !OPERATION_ID_RE.test(value.operation_id)))
+    ) {
+      throw new AitermError("Claude operation markerが不正です", 2);
+    }
+    return { operationId: value.operation_id };
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function reserveClaudeOperation(meta: AgentMetadata, operationId: string): void {
+  const validated = validateOperationId(operationId);
+  const active = readClaudeOperationMarker(meta);
+  if (active?.operationId === validated) {
+    throw new AitermError(
+      `operation ${validated} は既にdispatch済みです。再送しません。pty_read(agent_transcript:true, operation_id:...)で回収してください。`,
+      2,
+    );
+  }
+  if (active) {
+    throw new AitermError(
+      `${active.operationId ? `別のoperation ${active.operationId}` : "operation_idなしのClaude turn"} が未解決です。` +
+        "Stop結果を回収するか、C-c後もStopが来なければsessionをcloseしてから次のoperationを送ってください。",
+      2,
+    );
+  }
+  const receipt = agentClaudeDispatchReceiptPath(meta.aiterm_session, meta.launch_id, validated);
+  try {
+    createEmpty0600NoFollow(receipt);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    let st: fs.Stats;
+    try {
+      st = fs.lstatSync(receipt);
+    } catch {
+      throw new AitermError("Claude dispatch receiptを確認できません", 2);
+    }
+    if (!st.isFile() || st.isSymbolicLink() || st.uid !== currentUid() || st.nlink !== 1 || (st.mode & 0o077) !== 0) {
+      throw new AitermError("Claude dispatch receiptの安全検証に失敗しました", 2);
+    }
+    throw new AitermError(`operation ${validated} は既にdispatch済みです。再送しません。`, 2);
+  }
+  try {
+    writeClaudeOperationMarker(meta, validated);
+  } catch (error) {
+    try { fs.unlinkSync(receipt); } catch { /* marker未作成時のrollback失敗は元エラーを優先 */ }
+    throw error;
+  }
+}
+
+function reserveAnonymousClaudeTurn(meta: AgentMetadata): void {
+  const active = readClaudeOperationMarker(meta);
+  if (active) {
+    throw new AitermError(
+      `${active.operationId ? `operation ${active.operationId}` : "operation_idなしのClaude turn"} が未解決です。` +
+        "Stop結果を回収するかsessionをcloseするまで次のturnを送れません。",
+      2,
+    );
+  }
+  writeClaudeOperationMarker(meta, null);
+}
+
+function managedClaudeOperation(name: string): ClaudeOperationMarker | null | undefined {
+  let meta: AgentMetadata;
+  try {
+    meta = loadAgentMetadata(name);
+  } catch (error) {
+    if (error instanceof AitermError && error.message.includes("agent_done 管理セッションではありません")) return undefined;
+    throw error;
+  }
+  if (meta.kind !== "claude") return undefined;
+  return readClaudeOperationMarker(meta);
 }
 
 function normalizeInitialPromptState(v: unknown): InitialPromptState {
@@ -2201,6 +2362,8 @@ function parseAgentDoneEvent(line: string, meta: AgentMetadata): AgentDoneParseR
     meta.kind === "claude" &&
     (typeof ev.vendor_session_id !== "string" ||
       !ev.vendor_session_id ||
+      (ev.operation_id != null &&
+        (typeof ev.operation_id !== "string" || !OPERATION_ID_RE.test(ev.operation_id))) ||
       typeof ev.result_digest !== "string" ||
       !/^[0-9a-f]{64}$/.test(ev.result_digest) ||
       !Number.isInteger(ev.result_bytes) ||
@@ -2217,6 +2380,8 @@ function parseAgentDoneEvent(line: string, meta: AgentMetadata): AgentDoneParseR
       launch_id: meta.launch_id,
       vendor_session_id: typeof ev.vendor_session_id === "string" ? ev.vendor_session_id : null,
       turn_id: typeof ev.turn_id === "string" ? ev.turn_id : null,
+      operation_id:
+        typeof ev.operation_id === "string" && OPERATION_ID_RE.test(ev.operation_id) ? ev.operation_id : null,
       reason: typeof ev.reason === "string" ? ev.reason : "Stop",
       done_status: "turn_done",
       stop_hook_active: !!ev.stop_hook_active,
@@ -2228,7 +2393,11 @@ function parseAgentDoneEvent(line: string, meta: AgentMetadata): AgentDoneParseR
   };
 }
 
-function scanAgentDoneLines(lines: string[], meta: AgentMetadata): AgentDoneScanResult {
+function scanAgentDoneLines(
+  lines: string[],
+  meta: AgentMetadata,
+  expectedOperationId: string | null = null,
+): AgentDoneScanResult {
   let malformedEvents = 0;
   let candidate: AgentDoneEvent | null = null;
   for (const line of lines) {
@@ -2244,6 +2413,7 @@ function scanAgentDoneLines(lines: string[], meta: AgentMetadata): AgentDoneScan
     }
     const ev = parsed.event;
     if (!ev) continue;
+    if (expectedOperationId && ev.operation_id !== expectedOperationId) continue;
     if (meta.vendor_session_id) return { event: ev, malformedEvents, ambiguousVendorSession: false };
     if (
       candidate?.vendor_session_id &&
@@ -2303,7 +2473,7 @@ function tryLoadAgentMetadata(name: string): AgentMetadata | null {
   }
 }
 
-function latestAgentDoneEvent(meta: AgentMetadata): AgentDoneEvent | null {
+function latestAgentDoneEvent(meta: AgentMetadata, expectedOperationId: string | null = null): AgentDoneEvent | null {
   const size = safeStatSize(meta.event_file);
   if (size === 0) return null;
   const isTailRead = size > AGENT_EVENT_TAIL_BYTES;
@@ -2317,7 +2487,7 @@ function latestAgentDoneEvent(meta: AgentMetadata): AgentDoneEvent | null {
   for (const line of text.split("\n")) {
     if (!line.trim() || Buffer.byteLength(line, "utf8") > 64 * 1024) continue;
     const parsed = parseAgentDoneEvent(line, meta);
-    if (parsed.event) latest = parsed.event;
+    if (parsed.event && (!expectedOperationId || parsed.event.operation_id === expectedOperationId)) latest = parsed.event;
   }
   return latest;
 }
@@ -2403,9 +2573,20 @@ function readTranscriptLines(file: string): string[] {
 /** agent vendor の構造化 transcript から直近完了ターンの最終回答を読む。 */
 export async function readAgentTranscript(
   name: string,
-  o: { lines?: number | null } = {},
+  o: { lines?: number | null; operation_id?: string | null } = {},
 ): Promise<string> {
   const meta = loadAgentMetadata(name);
+  const operationId = o.operation_id == null ? null : validateOperationId(o.operation_id);
+  if (operationId && meta.kind !== "claude") {
+    throw new AitermError("operation_id付き回収はClaude agent sessionだけで使用できます", 2);
+  }
+  if (meta.kind === "claude") {
+    const active = readClaudeOperationMarker(meta);
+    if (active) {
+      const label = active.operationId ? `operation ${active.operationId}` : "operation_idなしのClaude turn";
+      throw new AitermError(`${label} はまだ完了していません。Stop完了後に同じsessionから再取得してください。`, 2);
+    }
+  }
   // wait timeout は「失敗」ではなく状態不明。後着した同一launchの完了eventから
   // vendor session をbindし、promptを再送せず結果だけ回収できるようにする。
   recoverAgentVendorSession(meta);
@@ -2416,7 +2597,10 @@ export async function readAgentTranscript(
     );
   }
 
-  const done = latestAgentDoneEvent(meta);
+  const done = latestAgentDoneEvent(meta, operationId);
+  if (operationId && !done) {
+    throw new AitermError(`operation ${operationId} はまだ完了していません。同じoperation_idで後から再取得してください。`, 2);
+  }
   const turnId = done?.turn_id ?? null;
   let text = "";
 
@@ -2446,8 +2630,10 @@ export async function readAgentTranscript(
     }
     const keys = result && typeof result === "object" && !Array.isArray(result) ? Object.keys(result).sort() : [];
     if (
-      keys.join(",") !== "result_bytes,result_digest,schema,text,vendor_session_id" ||
-      result.schema !== "aiterm.claude-turn-result.v1" ||
+      keys.join(",") !== "operation_id,result_bytes,result_digest,schema,text,vendor_session_id" ||
+      result.schema !== "aiterm.claude-turn-result.v2" ||
+      result.operation_id !== done.operation_id ||
+      (operationId !== null && result.operation_id !== operationId) ||
       result.vendor_session_id !== meta.vendor_session_id ||
       result.result_digest !== done.result_digest ||
       result.result_bytes !== done.result_bytes ||
@@ -2535,8 +2721,9 @@ export async function readAgentTranscript(
     "agent_transcript",
     `vendor=${meta.kind}`,
     `turn_id=${turnId ?? "unknown"}`,
+    done?.operation_id ? `operation_id=${done.operation_id}` : null,
     `raw_chars=${rawChars}`,
-  ].join(" ");
+  ].filter(Boolean).join(" ");
   return `${body}\n${outputMeta} [${transcriptMeta}]`;
 }
 
@@ -2594,6 +2781,7 @@ async function waitAgentDoneEvent(
   meta: AgentMetadata,
   startOffset: number,
   timeout: number,
+  expectedOperationId: string | null = null,
 ): Promise<AgentDoneWaitResult> {
   const deadline = performance.now() + timeout * 1000;
   let cursor = startOffset;
@@ -2613,7 +2801,7 @@ async function waitAgentDoneEvent(
       cursor = size;
       const parts = carry.split("\n");
       carry = parts.pop() ?? "";
-      const scanned = scanAgentDoneLines(parts, meta);
+      const scanned = scanAgentDoneLines(parts, meta, expectedOperationId);
       malformedEvents += scanned.malformedEvents;
       if (scanned.ambiguousVendorSession) {
         throw new AitermError("agent event file に複数の vendor_session_id が混在しています。該当セッションを閉じて起動し直してください。", 2);
@@ -2629,11 +2817,16 @@ async function waitAgentDoneEvent(
   }
 }
 
-function agentDoneSuffix(wait: AgentDoneWaitResult, vendor: AgentKind): string {
+function agentDoneSuffix(
+  wait: AgentDoneWaitResult,
+  vendor: AgentKind,
+  operationId: string | null = null,
+): string {
   const ev = wait.event;
   if (!ev) {
     const malformed = wait.malformedEvents ? ` malformed_events=${wait.malformedEvents}` : "";
-    return ` [is_complete=False via agent_timeout vendor=${vendor}${malformed}]`;
+    const operation = operationId ? ` operation_id=${operationId}` : "";
+    return ` [is_complete=False via agent_timeout vendor=${vendor}${operation}${malformed}]`;
   }
   const bits = [
     "is_complete=True",
@@ -2641,6 +2834,7 @@ function agentDoneSuffix(wait: AgentDoneWaitResult, vendor: AgentKind): string {
     `vendor=${ev.vendor}`,
     ev.turn_id ? `turn_id=${ev.turn_id}` : null,
     ev.vendor_session_id ? `vendor_session_id=${ev.vendor_session_id}` : null,
+    ev.operation_id ? `operation_id=${ev.operation_id}` : null,
     `done_status=${ev.done_status}`,
   ].filter(Boolean);
   return ` [${bits.join(" ")}]`;
@@ -2793,6 +2987,7 @@ export interface AgentDoneSendOpts extends SendOpts {
   ready_timeout?: number;
   screen?: boolean;
   lines?: number | null;
+  operation_id?: string | null;
 }
 
 export interface InitialAgentPromptOpts {
@@ -2810,9 +3005,10 @@ async function sendAgentPromptText(name: string, text: string): Promise<void> {
     raw: false,
     mark: false,
     rtk: false,
+    preserveAgentOperation: true,
   });
   await sleep(AGENT_SUBMIT_DELAY_MS);
-  sendKey(name, "Enter");
+  sendKey(name, "Enter", { preserveAgentOperation: true });
 }
 
 export async function sendInitialAgentPrompt(
@@ -2848,6 +3044,10 @@ export async function sendInitialAgentPrompt(
     }
     const startOffset = safeStatSize(meta.event_file);
     try {
+      if (meta.kind === "claude") {
+        prepareSendText(text, { raw: false, force: true });
+        reserveAnonymousClaudeTurn(meta);
+      }
       await sendAgentPromptText(name, text);
       setInitialPromptState(meta, "pending");
     } catch (e) {
@@ -2888,6 +3088,10 @@ export async function sendAndWaitAgentDone(name: string, text: string, o: AgentD
   if (o.mark) throw new AitermError('wait:"agent_done" と mark:true は併用できません', 2);
   if (o.rtk) throw new AitermError('wait:"agent_done" と rtk:true は併用できません', 2);
   const meta = loadAgentMetadata(name);
+  const operationId = o.operation_id == null ? null : validateOperationId(o.operation_id);
+  if (operationId && meta.kind !== "claude") {
+    throw new AitermError("operation_id はClaude agent sessionだけで使用できます", 2);
+  }
   if (agentWaitLocks.has(name)) throw new AitermError(`agent session '${name}' は別の agent_done 待機中です`, 2);
   const releaseFileLock = acquireAgentWaitFileLock(meta);
 
@@ -2907,17 +3111,26 @@ export async function sendAndWaitAgentDone(name: string, text: string, o: AgentD
       }
     }
     const startOffset = safeStatSize(meta.event_file);
+    if (meta.kind === "claude") {
+      // durable／anonymousを分岐する前に同じsend preflightを通す。拒否されるpromptの
+      // receipt／active markerだけを残して、来ないStopを待つ状態を作らない。
+      prepareSendText(text, { raw: o.raw, force: o.force });
+      if (operationId) {
+        reserveClaudeOperation(meta, operationId);
+      } else reserveAnonymousClaudeTurn(meta);
+    }
     send(name, text, {
       enter: false,
       force: o.force,
       raw: o.raw,
       mark: false,
       rtk: false,
+      preserveAgentOperation: meta.kind === "claude",
     });
     // Codex TUI は literal text 投入直後の Enter を取り落とすことがある。agent 経路だけ submit を分離する。
     await sleep(AGENT_SUBMIT_DELAY_MS);
-    sendKey(name, "Enter");
-    const wait = await waitAgentDoneEvent(meta, startOffset, timeout);
+    sendKey(name, "Enter", { preserveAgentOperation: meta.kind === "claude" });
+    const wait = await waitAgentDoneEvent(meta, startOffset, timeout, operationId);
     const settled = wait.event
       ? await settleAgentDoneScreen(name, o.lines ?? 0)
       : { unstable: false, samples: 0 };
@@ -2927,7 +3140,7 @@ export async function sendAndWaitAgentDone(name: string, text: string, o: AgentD
       timeout: 0,
     });
     writeOffset(name, safeStatSize(logpath(name)));
-    return out + agentDoneSuffix(wait, meta.kind) + (settled.unstable ? " [agent_done_but_screen_unstable]" : "");
+    return out + agentDoneSuffix(wait, meta.kind, operationId) + (settled.unstable ? " [agent_done_but_screen_unstable]" : "");
   } finally {
     agentWaitLocks.delete(name);
     releaseFileLock();
@@ -3218,7 +3431,14 @@ export function openAgent(
     // force:true で送る。起動骨格は `bin '...'` の固定形で、prompt/cwd/effort は shq でクオート済みの
     // 引数＝シェルは決して破壊コマンドとして実行しない。破壊ゲート（生シェルコマンド想定）を prompt に
     // 掛けるのは純誤検知で、`codex 'rm -rf / を説明して'` 等の正当な起動を塞いでしまう（A4）。
-    send(sid, full, { enter: true, mark: false, force: true, rtk: false, raw: true });
+    send(sid, full, {
+      enter: true,
+      mark: false,
+      force: true,
+      rtk: false,
+      raw: true,
+      preserveAgentOperation: meta?.kind === "claude",
+    });
   } catch (e) {
     const failure = telemetryOwnedFailure("AITERM.VENDOR_LAUNCHER_FAILED", e);
     // 起動コマンドを投入できなかった session は空のまま残る＝残骸を作らない。片付けてから元エラーを伝える。
@@ -3229,12 +3449,18 @@ export function openAgent(
     }
     throw failure;
   }
+  const driveHint =
+    agentDone && kind === "claude"
+      ? `TUI の描画には数秒かかる。少し置いてから pty_read(${sid}, screen:true) で画面を読み、` +
+        `turnはpty_send(${sid}, "...", wait:"agent_done")で送る。中断はpty_key(${sid}, "C-c")、` +
+        `Stopが来ない場合の解除はpty_close(${sid})を使う。`
+      : `TUI の描画には数秒かかる。少し置いてから pty_read(${sid}, screen:true) で画面を読み、` +
+        `pty_send(${sid}, "...") で入力・pty_key(${sid}, "Enter"/"Up"/"C-c" 等) で操作する（対話）。`;
   return [
     sid,
     `${label} を session ${sid} で起動した。${launchNote}${agentDone ? "agent_done 待機が有効。" : ""}` +
       `${agentDone && (kind === "grok" || kind === "composer") ? " hook 汚染防止のため Grok 実行中は一時 HOME を使う。" : ""}\n${hint}\n` +
-      `TUI の描画には数秒かかる。少し置いてから pty_read(${sid}, screen:true) で画面を読み、` +
-      `pty_send(${sid}, "...") で入力・pty_key(${sid}, "Enter"/"Up"/"C-c" 等) で操作する（対話）。` +
+      driveHint +
       `起動直後に増分 pty_read すると空/半描画になり得るので screen:true を使う。`,
   ];
 }

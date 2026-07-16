@@ -108,7 +108,8 @@ server.registerTool(
   {
     description:
       "セッションへテキスト(コマンド)を送る。通常は送信だけ行い、出力は pty_read で取得する。" +
-      "agent_done:true で起動した Claude/Codex/Grok/Composer セッションは wait:'agent_done' で Stop hook まで待てる。",
+      "agent_done:true で起動した Claude/Codex/Grok/Composer セッションは wait:'agent_done' で Stop hook まで待てる。" +
+      "managed Claude sessionはturn相関のためwait:'agent_done'を必須とし、通常送信を拒否する。",
     inputSchema: {
       session_id: z.string(),
       text: z
@@ -118,10 +119,15 @@ server.registerTool(
       wait: z
         .enum(["none", "agent_done"])
         .default("none")
-        .describe("none=従来通り送信のみ。agent_done=agent Stop hook まで待って最終画面を返す"),
+        .describe("none=従来通り送信のみ（managed Claudeでは拒否）。agent_done=agent Stop hook まで待って最終画面を返す"),
       timeout: z.number().default(600).describe("wait:'agent_done' の最大待ち秒数"),
       screen: z.boolean().default(true).describe("wait:'agent_done' の返り値を描画済みスクリーンにする"),
       lines: z.number().int().nullish().describe("wait:'agent_done' で返す末尾 N 行"),
+      operation_id: z
+        .string()
+        .regex(/^sha256:[0-9a-f]{64}$/)
+        .nullish()
+        .describe("Claudeのdurable caller operation ID。wait:'agent_done'時だけ指定し、timeout後の同一結果回収へ使う"),
       mark: z
         .boolean()
         .default(false)
@@ -138,7 +144,7 @@ server.registerTool(
       raw: z.boolean().default(false).describe("送信前サニタイズを無効化"),
     },
   },
-  async ({ session_id, text, enter, wait, timeout, screen, lines, mark, force, rtk, raw }) => {
+  async ({ session_id, text, enter, wait, timeout, screen, lines, operation_id, mark, force, rtk, raw }) => {
     try {
       if (wait === "agent_done") {
         return ok(
@@ -151,9 +157,11 @@ server.registerTool(
             timeout,
             screen,
             lines: lines ?? null,
+            operation_id: operation_id ?? null,
           }),
         );
       }
+      if (operation_id != null) throw new Error("operation_idはwait:'agent_done'時だけ指定できます");
       return ok(core.send(session_id, text, { enter, mark, force, rtk, raw }));
     } catch (e) {
       return fail(e);
@@ -194,16 +202,25 @@ server.registerTool(
         .boolean()
         .default(false)
         .describe("agent session の直近完了ターンの最終 assistant メッセージを返す。Claudeはmanaged Stop hook result、他vendorはtranscriptを使う。長い回答がscreen tailで切れた時の回収用"),
+      operation_id: z
+        .string()
+        .regex(/^sha256:[0-9a-f]{64}$/)
+        .nullish()
+        .describe("Claude operationの期待ID。agent_transcript:true時だけ指定し、古い別operationの結果を拒否する"),
     },
   },
-  async ({ session_id, wait, until, until_regex, timeout, screen, full, lines, line_range, raw, rtk, agent_transcript }) => {
+  async ({ session_id, wait, until, until_regex, timeout, screen, full, lines, line_range, raw, rtk, agent_transcript, operation_id }) => {
     try {
       if (agent_transcript) {
         if (screen || full || rtk || wait || line_range != null) {
           throw new Error("agent_transcript:true は screen / full / rtk / line_range / wait と併用できません。lines のみ指定できます。");
         }
-        return ok(await core.readAgentTranscript(session_id, { lines: lines ?? null }));
+        return ok(await core.readAgentTranscript(session_id, {
+          lines: lines ?? null,
+          operation_id: operation_id ?? null,
+        }));
       }
+      if (operation_id != null) throw new Error("operation_idはagent_transcript:true時だけ指定できます");
       let range: [number, number | null] | null = null;
       if (line_range) {
         const idx = line_range.indexOf(":");
@@ -241,7 +258,7 @@ server.registerTool(
 server.registerTool(
   "pty_key",
   {
-    description: "制御キーを送る（C-c, C-d, Enter, Tab, Up, Down... の別名に対応）。",
+    description: "制御キーを送る（C-c, C-d, Enter, Tab, Up, Down... の別名に対応）。managed Claude sessionではturn相関を守るためC-cだけを許可する。",
     inputSchema: {
       session_id: z.string(),
       key: z.string().describe('キー名（例 "C-c", "Enter", "Up"）'),

@@ -25,10 +25,21 @@ protocol／transcript読取、Observer／Throughline／Mailboxロジックの内
 - [x] TODO完了候補で関連agent testとstatic gateを一度通す（109 passed、0 failed、0 skipped）。
 - [x] Phase完了候補でfull regression（249 passed、0 failed、0 skipped）と独立反証を一度だけ行い、
   指摘2点を[ADR 0004](adr/0004-claude-agent-fixture-gate-acceptance.md)どおり閉じる。
-- [ ] 実Claude model requestを使うlive H smokeは、目的・影響・rollbackの承認後に初回／follow-up各一turnで
+- [x] [ADR 0005](adr/0005-claude-operation-correlated-recovery.md)どおりcaller `operation_id`を
+  `pty_send`→one-shot dispatch receipt／active marker→Claude Stop event／result→
+  `pty_read(agent_transcript:true)`へ通し、古い完了結果を新operationへ誤帰属せず、timeout後に再送なしで
+  同じoperationだけを回収する。IDなしturnも匿名active markerで直列化し、managed Claudeの通常sendを
+  `wait:"agent_done"`へ一本化する。
+- [x] operation相関のfocused fix（1 passed）、関連agent gate（122 passed）、Phase full regression
+  （262 passed）、独立反証（P0/P1/P2残存なし）を各一度通す。受入証拠は
+  [ADR 0006](adr/0006-claude-operation-correlation-gate-acceptance.md)へ固定し、独立commitでqueue 19c3を再受入する。
+- [ ] 実Claude model requestを使うlive H smokeは、operation相関gateの完了後、目的・影響・rollbackの承認を得て
+  初回／follow-up各一turnで
   実施し、認証再要求、Stop、結果回収、session closeを確認する。
 
-fixture gateの受入とlive Hの非昇格は[ADR 0004](adr/0004-claude-agent-fixture-gate-acceptance.md)を正とする。
+fixture gateの旧受入記録は[ADR 0004](adr/0004-claude-agent-fixture-gate-acceptance.md)、Observer統合前に必要な
+operation相関の設計は[ADR 0005](adr/0005-claude-operation-correlated-recovery.md)、その受入証拠は
+[ADR 0006](adr/0006-claude-operation-correlation-gate-acceptance.md)を正とする。
 
 ## Rollback
 

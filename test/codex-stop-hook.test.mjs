@@ -170,13 +170,108 @@ test("claude-stop-hook: Stop payload本文をowner-only resultへ分離しevent�
     const resultFile = path.join(agents, `${session}.${launchId}.claude-result.json`);
     const result = JSON.parse(fs.readFileSync(resultFile, "utf8"));
     assert.deepEqual(result, {
-      schema: "aiterm.claude-turn-result.v1",
+      schema: "aiterm.claude-turn-result.v2",
+      operation_id: null,
       vendor_session_id: "claude-session-1",
       result_digest: event.result_digest,
       result_bytes: Buffer.byteLength(message, "utf8"),
       text: message,
     });
     assert.equal(fs.statSync(resultFile).mode & 0o077, 0);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("claude-stop-hook: secure markerのoperation_idをresultとeventへ同一相関し消費する", { skip }, () => {
+  const { tmp, agents } = makeHookState("aiterm-claude-operation-");
+  const session = "claudeoperation";
+  const launchId = "11112222333344445555666677778888";
+  const operationId = `sha256:${"a".repeat(64)}`;
+  const markerFile = path.join(agents, `${session}.${launchId}.claude-operation.json`);
+  fs.writeFileSync(markerFile, JSON.stringify({
+    schema: "aiterm.claude-operation-marker.v1",
+    operation_id: operationId,
+  }) + "\n", { mode: 0o600 });
+  const r = spawnClaudeHook(tmp, {
+    AITERM_AGENT_KIND: "claude",
+    AITERM_SESSION_ID: session,
+    AITERM_AGENT_LAUNCH_ID: launchId,
+  }, {
+    session_id: "claude-session-operation",
+    hook_event_name: "Stop",
+    last_assistant_message: "operation-correlated answer",
+  });
+
+  try {
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stderr, "");
+    const event = JSON.parse(fs.readFileSync(path.join(agents, `${session}.${launchId}.events.jsonl`), "utf8").trim());
+    const result = JSON.parse(fs.readFileSync(path.join(agents, `${session}.${launchId}.claude-result.json`), "utf8"));
+    assert.equal(event.operation_id, operationId);
+    assert.equal(result.operation_id, operationId);
+    assert.equal(result.schema, "aiterm.claude-turn-result.v2");
+    assert.equal(fs.existsSync(markerFile), false, "完了記録後はmarkerを消費する");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("claude-stop-hook: malformed operation markerを帰属なし完了へ降格しない", { skip }, () => {
+  const { tmp, agents } = makeHookState("aiterm-claude-bad-operation-");
+  const session = "claudebadoperation";
+  const launchId = "99998888777766665555444433332222";
+  const markerFile = path.join(agents, `${session}.${launchId}.claude-operation.json`);
+  fs.writeFileSync(markerFile, JSON.stringify({
+    schema: "aiterm.claude-operation-marker.v1",
+    operation_id: "sha256:not-a-digest",
+  }) + "\n", { mode: 0o600 });
+  const r = spawnClaudeHook(tmp, {
+    AITERM_AGENT_KIND: "claude",
+    AITERM_SESSION_ID: session,
+    AITERM_AGENT_LAUNCH_ID: launchId,
+  }, {
+    session_id: "claude-session-bad-operation",
+    hook_event_name: "Stop",
+    last_assistant_message: "must not be attributed",
+  });
+
+  try {
+    assert.equal(r.status, 0);
+    assert.match(r.stderr, /operation marker/);
+    assert.equal(fs.existsSync(path.join(agents, `${session}.${launchId}.events.jsonl`)), false);
+    assert.equal(fs.existsSync(path.join(agents, `${session}.${launchId}.claude-result.json`)), false);
+    assert.equal(fs.existsSync(markerFile), true, "診断可能なままmarkerを残す");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("claude-stop-hook: operation marker symlinkを辿らない", { skip }, () => {
+  const { tmp, agents } = makeHookState("aiterm-claude-operation-link-");
+  const session = "claudeoperationlink";
+  const launchId = "aaaabbbbccccddddeeeeffff00001111";
+  const operationId = `sha256:${"b".repeat(64)}`;
+  const victim = path.join(tmp, "operation-victim.json");
+  fs.writeFileSync(victim, JSON.stringify({
+    schema: "aiterm.claude-operation-marker.v1",
+    operation_id: operationId,
+  }) + "\n", { mode: 0o600 });
+  fs.symlinkSync(victim, path.join(agents, `${session}.${launchId}.claude-operation.json`));
+  const r = spawnClaudeHook(tmp, {
+    AITERM_AGENT_KIND: "claude",
+    AITERM_SESSION_ID: session,
+    AITERM_AGENT_LAUNCH_ID: launchId,
+  }, {
+    session_id: "claude-session-operation-link",
+    hook_event_name: "Stop",
+    last_assistant_message: "must not follow symlink",
+  });
+  try {
+    assert.equal(r.status, 0);
+    assert.match(r.stderr, /operation marker/);
+    assert.equal(fs.existsSync(path.join(agents, `${session}.${launchId}.events.jsonl`)), false);
+    assert.equal(fs.existsSync(path.join(agents, `${session}.${launchId}.claude-result.json`)), false);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

@@ -231,11 +231,14 @@ function scheduleAgentDone(meta, overrides = {}, delay = 200) {
 }
 
 function writeClaudeDone(meta, text, overrides = {}) {
-  const vendorSessionId = overrides.vendor_session_id ?? "claude-session-test";
+  const { consume_marker: consumeMarker = true, ...eventOverrides } = overrides;
+  const vendorSessionId = eventOverrides.vendor_session_id ?? "claude-session-test";
+  const operationId = eventOverrides.operation_id ?? null;
   const digest = createHash("sha256").update(text, "utf8").digest("hex");
   const bytes = Buffer.byteLength(text, "utf8");
   fs.writeFileSync(meta.result_file, JSON.stringify({
-    schema: "aiterm.claude-turn-result.v1",
+    schema: "aiterm.claude-turn-result.v2",
+    operation_id: operationId,
     vendor_session_id: vendorSessionId,
     result_digest: digest,
     result_bytes: bytes,
@@ -246,7 +249,33 @@ function writeClaudeDone(meta, text, overrides = {}) {
     turn_id: null,
     result_digest: digest,
     result_bytes: bytes,
-    ...overrides,
+    operation_id: operationId,
+    ...eventOverrides,
+  });
+  if (consumeMarker) {
+    try {
+      fs.unlinkSync(path.join(path.dirname(meta.result_file), `${meta.aiterm_session}.${meta.launch_id}.claude-operation.json`));
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+  }
+}
+
+function invokeClaudeStopHook(meta, text, vendorSessionId = "claude-stop-fixture-session") {
+  return spawnSync(process.execPath, [path.join(process.cwd(), "dist", "claude-stop-hook.js")], {
+    input: JSON.stringify({
+      session_id: vendorSessionId,
+      hook_event_name: "Stop",
+      stop_hook_active: false,
+      last_assistant_message: text,
+    }),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      AITERM_AGENT_KIND: "claude",
+      AITERM_SESSION_ID: meta.aiterm_session,
+      AITERM_AGENT_LAUNCH_ID: meta.launch_id,
+    },
   });
 }
 
@@ -269,6 +298,7 @@ async function markFakeAgentReady(sid, kind = "codex") {
   core.send(sid, `printf '${marker.replace(/'/g, "'\\''").replace(/\n/g, "\\n")}'`, {
     force: true,
     raw: true,
+    preserveAgentOperation: true,
   });
   await core.readOutput(sid, { wait: true, until: "ready", timeout: 5, raw: true });
 }
@@ -821,6 +851,25 @@ test("killAll: agent state root symlink は辿って cleanup しない", { skip:
   }
 });
 
+test("killAll: Claude operation markerとdispatch receiptもcleanupする", { skip: skipAgentDone }, async () => {
+  const [sid] = core.openAgent("claude", { agent_done: true });
+  const operationId = `sha256:${"0".repeat(64)}`;
+  const meta = readAgentMeta(sid);
+  await markFakeAgentReady(sid, "claude");
+  await core.sendAndWaitAgentDone(sid, "CLAUDE_KILL_ALL_OPERATION", {
+    operation_id: operationId,
+    timeout: 0,
+    screen: false,
+  });
+  const dir = path.dirname(meta.result_file);
+  const before = fs.readdirSync(dir).filter((f) => f.startsWith(`${sid}.${meta.launch_id}.`));
+  assert.ok(before.some((f) => f.endsWith(".claude-operation.json")));
+  assert.ok(before.some((f) => f.endsWith(".claude-dispatch")));
+  core.killAll();
+  const after = fs.readdirSync(dir).filter((f) => f.startsWith(`${sid}.${meta.launch_id}.`));
+  assert.deepEqual(after, []);
+});
+
 test("openAgent agent_done: 緩い state root でも stale metadata を掃除してから再作成する", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const session = "loose_cleanup";
@@ -963,6 +1012,335 @@ test("sendAndWaitAgentDone: Claude timeout後は再送せず後着resultを同�
   }
 });
 
+test("Claude operation回収: 古いR1を新しいO2へ誤帰属せずO2だけを返す", { skip: skipAgentDone }, async () => {
+  const [sid] = core.openAgent("claude", { agent_done: true });
+  const operation1 = `sha256:${"1".repeat(64)}`;
+  const operation2 = `sha256:${"2".repeat(64)}`;
+  try {
+    const meta = readAgentMeta(sid);
+    meta.vendor_session_id = "claude-operation-session";
+    writeAgentMeta(sid, meta);
+    writeClaudeDone(meta, "old R1", {
+      vendor_session_id: "claude-operation-session",
+      operation_id: operation1,
+    });
+
+    await assert.rejects(
+      () => core.readAgentTranscript(sid, { operation_id: operation2 }),
+      /operation.*まだ完了していません|一致する.*operation/i,
+    );
+
+    writeClaudeDone(meta, "new R2", {
+      vendor_session_id: "claude-operation-session",
+      operation_id: operation2,
+    });
+    const out = await core.readAgentTranscript(sid, { operation_id: operation2 });
+    assert.match(out, /new R2/);
+    assert.doesNotMatch(out, /old R1/);
+    assert.match(out, new RegExp(`operation_id=${operation2}`));
+  } finally {
+    core.closeSession(sid);
+  }
+});
+
+test("sendAndWaitAgentDone: Claude operation_idをmarker・完了suffix・timeout後回収へ通す", { skip: skipAgentDone }, async () => {
+  const [sid] = core.openAgent("claude", { agent_done: true });
+  const operationId = `sha256:${"3".repeat(64)}`;
+  try {
+    const meta = readAgentMeta(sid);
+    await markFakeAgentReady(sid, "claude");
+    const pending = await core.sendAndWaitAgentDone(sid, "CLAUDE_OPERATION_TIMEOUT", {
+      operation_id: operationId,
+      timeout: 0,
+      screen: false,
+    });
+    assert.match(pending, new RegExp(`operation_id=${operationId}`));
+    const marker = JSON.parse(fs.readFileSync(
+      path.join(path.dirname(meta.result_file), `${sid}.${meta.launch_id}.claude-operation.json`),
+      "utf8",
+    ));
+    assert.equal(marker.operation_id, operationId);
+
+    writeClaudeDone(meta, "late operation answer", {
+      vendor_session_id: "claude-operation-timeout-session",
+      operation_id: operationId,
+    });
+    const recovered = await core.readAgentTranscript(sid, { operation_id: operationId });
+    assert.match(recovered, /late operation answer/);
+    assert.match(recovered, new RegExp(`operation_id=${operationId}`));
+  } finally {
+    core.closeSession(sid);
+  }
+});
+
+test("Claude operation E2E fixture: core dispatch markerを実Stop hookが消費し同じIDで回収する", { skip: skipAgentDone }, async () => {
+  const [sid] = core.openAgent("claude", { agent_done: true });
+  const operationId = `sha256:${"c".repeat(64)}`;
+  try {
+    const meta = readAgentMeta(sid);
+    await markFakeAgentReady(sid, "claude");
+    await core.sendAndWaitAgentDone(sid, "CLAUDE_OPERATION_E2E", {
+      operation_id: operationId,
+      timeout: 0,
+      screen: false,
+    });
+    const hook = invokeClaudeStopHook(meta, "hook-correlated E2E answer", "claude-operation-e2e-session");
+    assert.equal(hook.status, 0, hook.stderr);
+    assert.equal(hook.stderr, "");
+    const recovered = await core.readAgentTranscript(sid, { operation_id: operationId });
+    assert.match(recovered, /hook-correlated E2E answer/);
+    assert.match(recovered, new RegExp(`operation_id=${operationId}`));
+    await assert.rejects(
+      () => core.sendAndWaitAgentDone(sid, "CLAUDE_OPERATION_E2E_REPLAY", {
+        operation_id: operationId,
+        timeout: 0,
+      }),
+      /既にdispatch済み/,
+    );
+  } finally {
+    core.closeSession(sid);
+  }
+});
+
+test("sendAndWaitAgentDone: 別operationのStop eventを期待operationの完了にしない", { skip: skipAgentDone }, async () => {
+  const [sid] = core.openAgent("claude", { agent_done: true });
+  const expected = `sha256:${"4".repeat(64)}`;
+  const other = `sha256:${"5".repeat(64)}`;
+  try {
+    const meta = readAgentMeta(sid);
+    await markFakeAgentReady(sid, "claude");
+    const waiting = core.sendAndWaitAgentDone(sid, "CLAUDE_EXPECTED_OPERATION", {
+      operation_id: expected,
+      timeout: 1,
+      screen: false,
+    });
+    setTimeout(() => writeClaudeDone(meta, "wrong operation answer", {
+      vendor_session_id: "claude-other-operation-session",
+      operation_id: other,
+      consume_marker: false,
+    }), 200);
+    const out = await waiting;
+    assert.match(out, /is_complete=False via agent_timeout/);
+    assert.match(out, new RegExp(`operation_id=${expected}`));
+  } finally {
+    core.closeSession(sid);
+  }
+});
+
+test("Claude operation interrupt: active中の通常入力を拒否しC-c後もStopまでmarkerを保持する", { skip: skipAgentDone }, async () => {
+  const operationId = `sha256:${"6".repeat(64)}`;
+  const operation2 = `sha256:${"7".repeat(64)}`;
+  const [sid] = core.openAgent("claude", { agent_done: true });
+  try {
+    const meta = readAgentMeta(sid);
+    await markFakeAgentReady(sid, "claude");
+    await core.sendAndWaitAgentDone(sid, "CLAUDE_INTERRUPT_ACTIVE", {
+      operation_id: operationId,
+      timeout: 0,
+      screen: false,
+    });
+    const marker = path.join(path.dirname(meta.result_file), `${sid}.${meta.launch_id}.claude-operation.json`);
+    const tmuxStateDir = path.join(process.env.TMPDIR, "claude-tmux-sockets");
+    const markFile = path.join(tmuxStateDir, `${sid}.mark`);
+    const lastcmdFile = path.join(tmuxStateDir, `${sid}.lastcmd`);
+    assert.equal(fs.existsSync(marker), true);
+    fs.rmSync(markFile, { force: true });
+    fs.writeFileSync(lastcmdFile, "before-rejected-send");
+    assert.throws(
+      () => core.send(sid, "manual follow-up", { enter: false, force: true, mark: true }),
+      /managed Claude|active|未解決/,
+    );
+    assert.equal(fs.existsSync(markFile), false, "拒否したmark:trueは偽の完了待ちmarkerを作らない");
+    assert.equal(fs.readFileSync(lastcmdFile, "utf8"), "before-rejected-send", "拒否した送信はlastcmdも変えない");
+    fs.writeFileSync(markFile, "existing-mark");
+    assert.throws(
+      () => core.send(sid, "manual follow-up", { enter: false, force: true, mark: false }),
+      /managed Claude|active|未解決/,
+    );
+    assert.equal(fs.readFileSync(markFile, "utf8"), "existing-mark", "拒否したmark:falseは既存markerを消さない");
+    assert.throws(() => core.sendKey(sid, "Enter"), /C-c|active|未解決/);
+    assert.match(core.sendKey(sid, "C-c"), /sent key C-c/);
+    assert.equal(fs.existsSync(marker), true, "C-c直後も遅延Stopを元operationへ相関する");
+    await assert.rejects(
+      () => core.sendAndWaitAgentDone(sid, "MUST_WAIT_FOR_INTERRUPTED_STOP", {
+        operation_id: operation2,
+        timeout: 0,
+      }),
+      /未解決/,
+    );
+
+    const hook = invokeClaudeStopHook(meta, "interrupted operation result", "claude-interrupted-session");
+    assert.equal(hook.status, 0, hook.stderr);
+    assert.equal(hook.stderr, "");
+    assert.equal(fs.existsSync(marker), false);
+    const recovered = await core.readAgentTranscript(sid, { operation_id: operationId });
+    assert.match(recovered, /interrupted operation result/);
+    await core.sendAndWaitAgentDone(sid, "SAFE_AFTER_INTERRUPTED_STOP", {
+      operation_id: operation2,
+      timeout: 0,
+      screen: false,
+    });
+  } finally {
+    core.closeSession(sid);
+  }
+});
+
+test("Claude anonymous turn: timeout中はdurable operationを開始せず遅延Stopを匿名turnへ保持する", { skip: skipAgentDone }, async () => {
+  const operationId = `sha256:${"a".repeat(64)}`;
+  const [sid] = core.openAgent("claude", { agent_done: true });
+  try {
+    const meta = readAgentMeta(sid);
+    await markFakeAgentReady(sid, "claude");
+    meta.vendor_session_id = "claude-anonymous-session";
+    writeAgentMeta(sid, meta);
+    writeClaudeDone(meta, "old anonymous R1", {
+      vendor_session_id: "claude-anonymous-session",
+      consume_marker: false,
+    });
+    await core.sendAndWaitAgentDone(sid, "CLAUDE_ANONYMOUS_TIMEOUT", {
+      timeout: 0,
+      screen: false,
+    });
+    const marker = path.join(path.dirname(meta.result_file), `${sid}.${meta.launch_id}.claude-operation.json`);
+    assert.deepEqual(JSON.parse(fs.readFileSync(marker, "utf8")), {
+      schema: "aiterm.claude-operation-marker.v1",
+      operation_id: null,
+    });
+    await assert.rejects(
+      () => core.sendAndWaitAgentDone(sid, "MUST_NOT_OVERWRITE_ANONYMOUS", {
+        operation_id: operationId,
+        timeout: 0,
+      }),
+      /operation_idなし.*未解決/,
+    );
+    await assert.rejects(() => core.readAgentTranscript(sid), /operation_idなし.*まだ完了していません/);
+
+    const hook = invokeClaudeStopHook(meta, "anonymous late result", "claude-anonymous-session");
+    assert.equal(hook.status, 0, hook.stderr);
+    assert.equal(hook.stderr, "");
+    assert.equal(fs.existsSync(marker), false);
+    const anonymous = await core.readAgentTranscript(sid);
+    assert.match(anonymous, /anonymous late result/);
+    assert.doesNotMatch(anonymous, /operation_id=/);
+    await core.sendAndWaitAgentDone(sid, "SAFE_DURABLE_AFTER_ANONYMOUS_STOP", {
+      operation_id: operationId,
+      timeout: 0,
+      screen: false,
+    });
+  } finally {
+    core.closeSession(sid);
+  }
+});
+
+test("Claude operation_id: malformed値と非Claude sessionは送信前に拒否する", { skip: skipAgentDone }, async () => {
+  const [claude] = core.openAgent("claude", { agent_done: true });
+  try {
+    await assert.rejects(
+      () => core.sendAndWaitAgentDone(claude, "MUST_NOT_SEND", { operation_id: "bad", timeout: 0 }),
+      /sha256:<64 lowercase hex>/,
+    );
+    assert.doesNotMatch(fs.readFileSync(sessionLogPath(claude), "utf8"), /MUST_NOT_SEND/);
+  } finally {
+    core.closeSession(claude);
+  }
+
+  await withFakeCodexHome(async () => {
+    const [codex] = core.openAgent("codex", { agent_done: true });
+    try {
+      await assert.rejects(
+        () => core.sendAndWaitAgentDone(codex, "MUST_NOT_SEND_CODEX", {
+          operation_id: `sha256:${"f".repeat(64)}`,
+          timeout: 0,
+        }),
+        /Claude agent session/,
+      );
+      assert.doesNotMatch(fs.readFileSync(sessionLogPath(codex), "utf8"), /MUST_NOT_SEND_CODEX/);
+    } finally {
+      core.closeSession(codex);
+    }
+  });
+});
+
+test("Claude operation dispatch: timeout後の同一ID再送と未解決中の別ID送信を拒否する", { skip: skipAgentDone }, async () => {
+  const [sid] = core.openAgent("claude", { agent_done: true });
+  const operation1 = `sha256:${"8".repeat(64)}`;
+  const operation2 = `sha256:${"9".repeat(64)}`;
+  try {
+    await markFakeAgentReady(sid, "claude");
+    await core.sendAndWaitAgentDone(sid, "CLAUDE_DISPATCH_ONCE", {
+      operation_id: operation1,
+      timeout: 0,
+      screen: false,
+    });
+    const before = fs.readFileSync(sessionLogPath(sid), "utf8");
+    await assert.rejects(
+      () => core.sendAndWaitAgentDone(sid, "CLAUDE_MUST_NOT_RESEND", {
+        operation_id: operation1,
+        timeout: 0,
+        screen: false,
+      }),
+      /既にdispatch済み|再送しません/,
+    );
+    await assert.rejects(
+      () => core.sendAndWaitAgentDone(sid, "CLAUDE_MUST_NOT_INTERLEAVE", {
+        operation_id: operation2,
+        timeout: 0,
+        screen: false,
+      }),
+      /未解決|回収または手動中断/,
+    );
+    const after = fs.readFileSync(sessionLogPath(sid), "utf8");
+    assert.equal(after, before, "拒否したpromptはPTYへ一文字も送らない");
+  } finally {
+    core.closeSession(sid);
+  }
+});
+
+test("Claude operation dispatch: 送信前破壊ゲート失敗はreceiptを予約せずactive markerも保持する", { skip: skipAgentDone }, async () => {
+  const [sid] = core.openAgent("claude", { agent_done: true });
+  const operation1 = `sha256:${"d".repeat(64)}`;
+  const operation2 = `sha256:${"e".repeat(64)}`;
+  try {
+    const meta = readAgentMeta(sid);
+    await markFakeAgentReady(sid, "claude");
+    const marker = path.join(path.dirname(meta.result_file), `${sid}.${meta.launch_id}.claude-operation.json`);
+    await assert.rejects(
+      () => core.sendAndWaitAgentDone(sid, "rm -rf /", { timeout: 0, screen: false }),
+      /破壊的/,
+    );
+    assert.equal(fs.existsSync(marker), false, "匿名turnも送信前拒否ではmarkerを残さない");
+    await assert.rejects(
+      () => core.sendAndWaitAgentDone(sid, "rm -rf /", {
+        operation_id: operation1,
+        timeout: 0,
+        screen: false,
+      }),
+      /破壊的/,
+    );
+    await core.sendAndWaitAgentDone(sid, "SAFE_AFTER_PREFLIGHT_REJECT", {
+      operation_id: operation1,
+      timeout: 0,
+      screen: false,
+    });
+    assert.equal(JSON.parse(fs.readFileSync(marker, "utf8")).operation_id, operation1);
+
+    assert.throws(() => core.send(sid, "rm -rf /"), /破壊的/);
+    assert.equal(JSON.parse(fs.readFileSync(marker, "utf8")).operation_id, operation1, "拒否した通常sendはmarkerを消さない");
+
+    const hook = invokeClaudeStopHook(meta, "preflight operation result", "claude-preflight-session");
+    assert.equal(hook.status, 0, hook.stderr);
+    assert.equal(hook.stderr, "");
+    assert.equal(fs.existsSync(marker), false);
+    await core.sendAndWaitAgentDone(sid, "SAFE_NEW_OPERATION", {
+      operation_id: operation2,
+      timeout: 0,
+      screen: false,
+    });
+  } finally {
+    core.closeSession(sid);
+  }
+});
+
 test("sendAndWaitAgentDone: Claudeは未bindでもvendor_session_id欠落・空eventを完了扱いしない", { skip: skipAgentDone }, async () => {
   const [sid] = core.openAgent("claude", { agent_done: true });
   try {
@@ -970,8 +1348,8 @@ test("sendAndWaitAgentDone: Claudeは未bindでもvendor_session_id欠落・空e
     await markFakeAgentReady(sid, "claude");
     const pending = core.sendAndWaitAgentDone(sid, "CLAUDE_INVALID_VENDOR_SESSION", { timeout: 1, screen: false });
     setTimeout(() => {
-      writeClaudeDone(meta, "missing vendor session", { vendor_session_id: undefined });
-      writeClaudeDone(meta, "empty vendor session", { vendor_session_id: "" });
+      writeClaudeDone(meta, "missing vendor session", { vendor_session_id: undefined, consume_marker: false });
+      writeClaudeDone(meta, "empty vendor session", { vendor_session_id: "", consume_marker: false });
     }, 200);
     const out = await pending;
     assert.match(out, /is_complete=False via agent_timeout vendor=claude malformed_events=2/);
@@ -1891,7 +2269,8 @@ test("readAgentTranscript: Claudeはprivate transcriptでなくhook-captured res
     meta.vendor_session_id = vendorSessionId;
     writeAgentMeta(sid, meta);
     fs.writeFileSync(meta.result_file, JSON.stringify({
-      schema: "aiterm.claude-turn-result.v1",
+      schema: "aiterm.claude-turn-result.v2",
+      operation_id: null,
       vendor_session_id: vendorSessionId,
       result_digest: digest,
       result_bytes: Buffer.byteLength(text, "utf8"),

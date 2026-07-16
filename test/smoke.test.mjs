@@ -82,9 +82,11 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 11 ツール公�
   const ptySend = toolsResp.result.tools.find((t) => t.name === "pty_send");
   assert.deepEqual(ptySend.inputSchema.properties.wait.enum, ["none", "agent_done"]);
   assert.equal(ptySend.inputSchema.properties.wait.default, "none");
+  assert.ok(ptySend.inputSchema.properties.operation_id.anyOf?.some((v) => v.type === "string"));
   const ptyRead = toolsResp.result.tools.find((t) => t.name === "pty_read");
   assert.equal(ptyRead.inputSchema.properties.agent_transcript.type, "boolean", "pty_read agent_transcript schema");
   assert.equal(ptyRead.inputSchema.properties.agent_transcript.default, false, "pty_read agent_transcript default");
+  assert.ok(ptyRead.inputSchema.properties.operation_id.anyOf?.some((v) => v.type === "string"));
   const codexAgent = toolsResp.result.tools.find((t) => t.name === "codex_agent");
   assert.ok(
     codexAgent.inputSchema.properties.model.anyOf?.some((v) => v.type === "string"),

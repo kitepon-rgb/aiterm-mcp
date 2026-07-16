@@ -52,7 +52,7 @@ pty_read(id, { wait: true })       → 削減済みの出力を読む（完了�
 
 ### 2. その端末の中に他のコーディングエージェントを起動する — オーケストレーションの旗艦
 
-同じ primitive が別エージェントの TUI を宿す。4 つの起動ツールが、Claude/Codex/Grok/Composer の対話 TUI を新しい永続端末の中に起動し、`session_id` を返す。以後は同じ `pty_read` / `pty_send` で継続操作する。`agent_done:true` なら Stop hook でターン完了を待てる。`claude_agent` と `codex_agent` は、TUI ready 後に初回 `prompt` を送り `wait:"agent_done"` で待つ入口も公開する。Codex/Grok/Composer の live smoke は成功済み。Claude は fixture gate が green で、実モデルの初回／follow-up smoke は明示承認待ちであり、まだ成功扱いしない。
+同じ primitive が別エージェントの TUI を宿す。4 つの起動ツールが、Claude/Codex/Grok/Composer の対話 TUI を新しい永続端末の中に起動し、`session_id` を返す。以後は同じ `pty_read` / `pty_send` で継続操作する。`agent_done:true` なら Stop hook でターン完了を待てる。managed Claudeでは全turnに`wait:"agent_done"`を必須とする。durable callerは`operation_id: "sha256:<64 lowercase hex>"`を送信と回収へ同じ値で渡し、IDなしturnも匿名active markerで直列化する。現在turnのStopがmarkerを消費するまで次turnも結果公開も行わない。`C-c`後もmarkerを保持し、Stopが来なければsessionをcloseする。`claude_agent` と `codex_agent` は、TUI ready 後に初回 `prompt` を送り `wait:"agent_done"` で待つ入口も公開する。Codex/Grok/Composer の live smoke は成功済み。Claude実モデルの初回／follow-up smokeは明示承認待ちであり、まだ成功扱いしない。
 
 ```text
 codex_agent({ session_name: "codex1", cwd: "/repo", agent_done: true,
@@ -72,7 +72,7 @@ pty_send("codex1", "also fix the imports it broke", { wait: "agent_done" })
 | `grok_agent` | Grok Build（xAI、既定`grok-4.5`、`model?`で上書き） | `prompt?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `cwd?`, `session_name?`, `agent_done?` |
 | `composer_agent` | Grok Build（xAI、既定`grok-composer-2.5-fast`、`model?`で上書き） | `prompt?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `cwd?`, `session_name?`, `agent_done?` |
 
-各ベンダーの CLI が導入・認証済みであること（`claude_agent` は `claude`、`codex_agent` は `codex`、Grok 系は `grok`）。バイナリは `CLAUDE_BIN` / `CODEX_BIN` / `GROK_BIN`、各既定path、`PATH` の順で解決する。CLI不在・不正なmodel/effort・実在しない`cwd`はsession作成前に失敗し、残骸を残さない。Claudeの`agent_done:true`は通常settingsを継承しないlaunch専用settingsとStop hookを使い、本文なしeventとowner-only bounded resultを分離する。`pty_read({ agent_transcript:true })`はdigestとbyte数を検証したresultだけを返し、Claude private transcriptを読まない。timeoutは成功扱いせず同じsessionを残し、後着resultをprompt再送なしで回収できる。手動中断は`pty_key`（`C-c`）、終了は`pty_close`を使う。
+各ベンダーの CLI が導入・認証済みであること（`claude_agent` は `claude`、`codex_agent` は `codex`、Grok 系は `grok`）。バイナリは `CLAUDE_BIN` / `CODEX_BIN` / `GROK_BIN`、各既定path、`PATH` の順で解決する。CLI不在・不正なmodel/effort・実在しない`cwd`はsession作成前に失敗し、残骸を残さない。Claudeの`agent_done:true`は通常settingsを継承しないlaunch専用settingsとStop hookを使い、本文なしeventとowner-only bounded resultを分離する。`pty_read({ agent_transcript:true })`はdigestとbyte数を検証したresultだけを返し、Claude private transcriptを読まない。timeoutは成功扱いせず同じsessionを残し、後着resultをprompt再送なしで回収できる。managed Claudeでは通常`pty_send(wait:"none")`とC-c以外の`pty_key`を拒否する。自由なkey操作が必要なら`agent_done:false`で起動し、managed routeでは中断に`C-c`、解除に`pty_close`を使う。
 
 エージェント間の隠れたプロトコルは無い。起動したClaude/Codex/Grok/Composerは利用者がattachできるもう1本の永続sessionであり、MCPクライアントが通常のPTY操作で駆動する。
 
@@ -249,8 +249,8 @@ aiterm は同じ核心の洞察——端末を出会いの場にする——を�
 | ツール | 役割 | 主な引数 |
 | --- | --- | --- |
 | `pty_open` | 端末を 1 個握り `session_id` を返す | `name?`, `shell="bash"` |
-| `pty_send` | テキスト(コマンド)を送る | `session_id`, `text`, `enter=true`, `wait`, `timeout`, `screen`, `lines`, `mark`, `force`, `rtk`, `raw` |
-| `pty_read` | 出力を削減して読む（既定は増分） | `session_id`, `wait`, `until`, `until_regex`, `timeout`, `screen`, `full`, `lines`, `line_range`, `raw`, `rtk`, `agent_transcript` |
+| `pty_send` | テキスト(コマンド)を送る | `session_id`, `text`, `enter=true`, `wait`, `timeout`, `screen`, `lines`, `operation_id`, `mark`, `force`, `rtk`, `raw` |
+| `pty_read` | 出力を削減して読む（既定は増分） | `session_id`, `wait`, `until`, `until_regex`, `timeout`, `screen`, `full`, `lines`, `line_range`, `raw`, `rtk`, `agent_transcript`, `operation_id` |
 | `pty_key` | 制御キーを送る | `session_id`, `key`（`C-c`/`Enter`/`Up`…） |
 | `pty_close` | セッションを閉じる | `session_id` |
 | `pty_list` | セッション一覧 | （なし） |
@@ -277,7 +277,7 @@ consumer は `aiterm-runtime-errors snapshot` を読み、durable ingestion 後�
 
 対応するCLI（`claude` / `codex` / `grok`）の導入・認証が必要。解決順は`CLAUDE_BIN` / `CODEX_BIN` / `GROK_BIN`、既定path、`PATH`。前提違反はsession作成前に明示失敗する。Claude/Codexは初回prompt完了待ちを公開し、4 launcherすべてが対応環境で同じfollow-up `pty_send(wait:"agent_done")`契約を使う。Claudeはisolated managed settingsとhook-captured resultを使い、private transcriptへ依存しない。既存3 vendorのlive smokeはgreen、Claude実モデルsmokeは承認待ちでありfixture成功と混同しない。
 
-エージェントの回答が `wait:"agent_done"` の画面 tailより長ければ、`pty_read({ agent_transcript:true })`で再promptなしに全文回収する。Claudeはmanaged Stop hookがowner-only resultへ保存した本文をdigest/byte数で検証して返し、private transcriptを読まない。CodexはStop hookの`turn_id`で構造化transcriptへjoinし、Grok/Composerは最後の実user行より後ろのassistant行を採る。不在・非agent・抽出不能は明示エラー。
+エージェントの回答が `wait:"agent_done"` の画面 tailより長ければ、`pty_read({ agent_transcript:true })`で再promptなしに全文回収する。Claudeはmanaged Stop hookがowner-only resultへ保存した本文をdigest/byte数で検証して返し、private transcriptを読まない。durable callerは`pty_send(wait:"agent_done", operation_id:...)`と`pty_read(agent_transcript:true, operation_id:...)`へ同じIDを渡す。不一致・未完了は明示エラーになり、timeout後の同一ID再送も送信前に拒否する。IDなしturnも匿名markerで直列化するため、現在Stop待ちの間に古い回答を返さない。CodexはStop hookの`turn_id`で構造化transcriptへjoinし、Grok/Composerは最後の実user行より後ろのassistant行を採る。不在・非agent・抽出不能は明示エラー。
 
 ### 完了検出（5 層）
 
