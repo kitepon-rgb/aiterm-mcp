@@ -1,18 +1,18 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.kitepon-rgb/aiterm-mcp",
-  "description": "AI drives one persistent tmux-backed terminal over MCP; ssh, containers & agent TUIs nest in it.",
+  "description": "AI drives one persistent tmux-backed terminal over MCP; ssh, containers & Claude/Codex/Grok/Composer agent TUIs nest in it.",
   "repository": {
     "url": "https://github.com/kitepon-rgb/aiterm-mcp",
     "source": "github"
   },
-  "version": "0.12.3",
+  "version": "0.13.0",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "aiterm-mcp",
-      "version": "0.12.3",
+      "version": "0.13.0",
       "transport": {
         "type": "stdio"
       }

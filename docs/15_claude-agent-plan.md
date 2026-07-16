@@ -33,6 +33,10 @@ protocol／transcript読取、Observer／Throughline／Mailboxロジックの内
 - [x] operation相関のfocused fix（1 passed）、関連agent gate（122 passed）、Phase full regression
   （262 passed）、独立反証（P0/P1/P2残存なし）を各一度通す。受入証拠は
   [ADR 0006](adr/0006-claude-operation-correlation-gate-acceptance.md)へ固定し、独立commitでqueue 19c3を再受入する。
+- [x] 既公開`0.12.3`をoperation相関対応版と誤認しないよう、公開minorを`0.13.0`へ上げ、
+  `package.json`／lock／`server.json`／MCP initialize／diagnosticsのversion一致をfocused smokeで固定する。
+  build＋focused smokeは3 passed、0 failed、0 skipped。受入証拠は
+  [ADR 0007](adr/0007-claude-operation-public-version-boundary.md)。release／publish／端末更新は別H承認まで行わない。
 - [ ] 実Claude model requestを使うlive H smokeは、operation相関gateの完了後、目的・影響・rollbackの承認を得て
   初回／follow-up各一turnで
   実施し、認証再要求、Stop、結果回収、session closeを確認する。

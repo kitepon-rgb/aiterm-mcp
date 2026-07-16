@@ -15,6 +15,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > sessionから回収する。durable callerの`operation_id`を送信→Stop event/result→回収へ相関し、古い結果の
 > 誤帰属、同一ID再送、未解決operation中の別ID送信を拒否する訂正gateも受入済み。関連122/122、
 > full regression 262/262、独立反証の最終判定はP0/P1/P2残存なし（ADR 0006）。
+> operation相関を含まない既公開0.12.3との誤認を防ぐため、現sourceは0.13.0へminor bump済み（ADR 0007）。
+> release／publish／端末更新は未実施。
 > 実Claude model requestのlive smokeは明示承認待ち。
 > 下記の10-tool記述とtest件数は公開済みreleaseの履歴であり、現sourceの公開面ではない。
 

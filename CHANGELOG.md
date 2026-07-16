@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Interactive Claude Code sessions now use the same persistent, user-visible
+  PTY model as the other agent launchers. Managed turns correlate a durable
+  caller operation ID through dispatch, Stop result, timeout recovery, and
+  transcript read without re-sending the prompt.
+
 ## [0.12.3] - 2026-07-14
 
 ### Fixed

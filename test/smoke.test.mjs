@@ -15,6 +15,16 @@ const DIAGNOSTICS_FIXTURE = JSON.parse(
 );
 const PACKAGE = JSON.parse(fs.readFileSync(path.join(HERE, "..", "package.json"), "utf8"));
 
+test("smoke: 公開versionはpackage・lock・server manifestで一致する", () => {
+  const lock = JSON.parse(fs.readFileSync(path.join(HERE, "..", "package-lock.json"), "utf8"));
+  const server = JSON.parse(fs.readFileSync(path.join(HERE, "..", "server.json"), "utf8"));
+  assert.equal(PACKAGE.version, "0.13.0", "operation相関付き公開面は既公開0.12.3と区別する");
+  assert.equal(lock.version, PACKAGE.version);
+  assert.equal(lock.packages?.[""]?.version, PACKAGE.version);
+  assert.equal(server.version, PACKAGE.version);
+  assert.equal(server.packages?.[0]?.version, PACKAGE.version);
+});
+
 test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 11 ツール公開", async () => {
   const tmpdir = fs.mkdtempSync(path.join(os.tmpdir(), "aiterm-diagnostics-"));
   const child = spawn(process.execPath, [ENTRY], {
