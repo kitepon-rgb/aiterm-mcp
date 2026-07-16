@@ -388,6 +388,14 @@ function registerAgentTool(
     initialPromptWaitSchema.screen = z.boolean().default(true).describe("wait:'agent_done' の返り値を描画済みスクリーンにする");
     initialPromptWaitSchema.lines = z.number().int().nullish().describe("wait:'agent_done' で返す末尾 N 行");
   }
+  const correlatedLaunchSchema: Record<string, z.ZodTypeAny> = {};
+  if (kind === "claude") {
+    correlatedLaunchSchema.launch_operation_id = z
+      .string()
+      .regex(/^sha256:[0-9a-f]{64}$/)
+      .optional()
+      .describe("promptless managed launchのexact replay相関ID。session_nameとagent_done:trueが必須");
+  }
   server.registerTool(
     toolName,
     {
@@ -404,6 +412,7 @@ function registerAgentTool(
           .boolean()
           .default(false)
           .describe("managed Stop hook を有効化し、pty_send(wait:'agent_done') を使えるようにする"),
+        ...correlatedLaunchSchema,
         ...initialPromptWaitSchema,
       },
       outputSchema: {
@@ -413,7 +422,7 @@ function registerAgentTool(
         managed_completion: z.boolean(),
       },
     },
-    async ({ prompt, model, reasoning_effort, cwd, session_name, agent_done, wait, timeout, screen, lines }: any) => {
+    async ({ prompt, model, reasoning_effort, cwd, session_name, agent_done, launch_operation_id, wait, timeout, screen, lines }: any) => {
       try {
         const [sid, hint] = await core.openAgentWithInitialPrompt(kind, {
           prompt: prompt ?? undefined,
@@ -422,6 +431,7 @@ function registerAgentTool(
           cwd: cwd ?? undefined,
           session_name: session_name ?? undefined,
           agent_done: agent_done ?? false,
+          launch_operation_id: launch_operation_id ?? undefined,
           wait: wait ?? "none",
           timeout,
           screen,

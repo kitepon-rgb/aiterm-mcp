@@ -110,6 +110,7 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 12 ツール公�
   const claudeAgent = toolsResp.result.tools.find((t) => t.name === "claude_agent");
   assert.ok(claudeAgent.inputSchema.properties.model.anyOf?.some((v) => v.type === "string"), "claude_agent model schema");
   assert.equal(claudeAgent.inputSchema.properties.agent_done.type, "boolean", "claude_agent agent_done schema");
+  assert.equal(claudeAgent.inputSchema.properties.launch_operation_id.pattern, "^sha256:[0-9a-f]{64}$", "claude_agent launch replay schema");
   assert.deepEqual(claudeAgent.inputSchema.properties.wait.enum, ["none", "agent_done"], "claude_agent wait schema");
   assert.equal(claudeAgent.inputSchema.properties.timeout.type, "number", "claude_agent timeout schema");
   const claudeTurn = toolsResp.result.tools.find((t) => t.name === "claude_turn");

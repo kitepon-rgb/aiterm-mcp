@@ -499,6 +499,78 @@ test("openAgent claude agent_done: isolated settings、Stop hook、result path�
   }
 });
 
+test("openAgent claude: 相関済みlaunch replayは同じsession receiptを返しCLIを再送しない", { skip: skipAgentDone }, async () => {
+  const sid = `claude_launch_replay_${Date.now().toString(36)}`;
+  const operationId = `sha256:${"a".repeat(64)}`;
+  try {
+    const first = core.openAgent("claude", {
+      session_name: sid,
+      agent_done: true,
+      launch_operation_id: operationId,
+    });
+    assert.equal(first[0], sid);
+    await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
+    const before = fs.readFileSync(sessionLogPath(sid), "utf8");
+    const meta = readAgentMeta(sid);
+    assert.equal(meta.launch_operation_id, operationId);
+    assert.match(meta.launch_request_digest, /^sha256:[0-9a-f]{64}$/);
+
+    const replay = core.openAgent("claude", {
+      session_name: sid,
+      agent_done: true,
+      launch_operation_id: operationId,
+    });
+    assert.equal(replay[0], sid);
+    assert.match(replay[1], /CLIは再送していません/);
+    assert.equal(fs.readFileSync(sessionLogPath(sid), "utf8"), before, "replayでPTYへ起動commandを再送しない");
+
+    assert.throws(
+      () => core.openAgent("claude", {
+        session_name: sid,
+        agent_done: true,
+        launch_operation_id: `sha256:${"b".repeat(64)}`,
+      }),
+      /launch identityが一致しません/,
+    );
+    assert.throws(
+      () => core.openAgent("claude", {
+        session_name: sid,
+        model: "claude-sonnet-4-6",
+        agent_done: true,
+        launch_operation_id: operationId,
+      }),
+      /launch identityが一致しません/,
+    );
+  } finally {
+    try {
+      core.closeSession(sid);
+    } catch {
+      /* noop */
+    }
+  }
+});
+
+test("openAgent claude: launch_operation_idのpromptless managed条件を固定する", { skip: skipAgentDone }, async () => {
+  const operationId = `sha256:${"c".repeat(64)}`;
+  assert.throws(
+    () => core.openAgent("claude", { agent_done: true, launch_operation_id: operationId }),
+    /明示session_nameが必要/,
+  );
+  assert.throws(
+    () => core.openAgent("claude", { session_name: "launch_requires_managed", launch_operation_id: operationId }),
+    /agent_done:trueが必要/,
+  );
+  await assert.rejects(
+    core.openAgentWithInitialPrompt("claude", {
+      session_name: "launch_rejects_prompt",
+      prompt: "送信しない",
+      agent_done: true,
+      launch_operation_id: operationId,
+    }),
+    /promptなし・wait:"none"/,
+  );
+});
+
 test("openAgent grok agent_done: isolated HOME と managed GROK_HOME/Stop hook/GROK_AUTH_PATH を組み立てる", { skip: skipAgentDone }, async () => {
   const savedBin = process.env.GROK_BIN;
   process.env.GROK_BIN = "/bin/echo";

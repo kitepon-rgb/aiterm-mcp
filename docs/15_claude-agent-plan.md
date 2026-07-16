@@ -55,6 +55,15 @@ protocol／transcript読取、Observer／Throughline／Mailboxロジックの内
   公開machine契約追加は`0.14.0`へ分離し、focused／related gate、独立commitで閉じる。Observer／Throughline／
   Mailbox意味論は入れず、publish／端末更新／live Claudeは行わない。実装・受入証拠は
   [ADR 0012](adr/0012-pty-close-exact-recovery-acceptance.md)。
+- [x] **Observer queue 19d-d割込 — `claude_agent` exact launch replay:** Observerのlaunch response loss回収が、
+  session存在証拠ではない`claude_turn(recover)`の`operation_not_found`をspawn証拠へ誤用していた。
+  promptless managed Claude launchへcallerの`launch_operation_id`を追加し、session名・provider・相関ID・
+  launch引数digestが完全一致する同一要求だけを冪等replayとして同じstructured receiptへ回収する。
+  session不在なら一度だけ新規起動し、既存sessionのidentity／引数不一致は明示エラーにする。
+  `claude_turn`のturn意味論をlaunch recoveryへ流用せず、focused／related gate、独立commitで閉じる。
+  公開前の`0.14.0`候補内補正とし、focused 6/6、related 96/96、full 269/269を各一度通した。
+  publish／端末更新／live Claudeは行わない。設計・受入証拠は
+  [ADR 0013](adr/0013-claude-agent-exact-launch-replay.md)を正とする。
 - [ ] 実Claude model requestを使うlive H smokeは、operation相関gateの完了後、目的・影響・rollbackの承認を得て
   初回／follow-up各一turnで
   実施し、認証再要求、Stop、結果回収、session closeを確認する。

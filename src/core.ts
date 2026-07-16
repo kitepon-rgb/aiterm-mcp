@@ -1387,6 +1387,8 @@ interface AgentMetadata {
   cwd: string | null;
   vendor_session_id: string | null;
   initial_prompt: InitialPromptState;
+  launch_operation_id?: string | null;
+  launch_request_digest?: string | null;
   hook_route: "managed_claude_settings" | "managed_codex_home" | "managed_grok_home";
   node_platform: NodeJS.Platform;
   codex_home?: string;
@@ -2208,6 +2210,8 @@ function createClaudeAgentMetadata(
   name: string,
   cwd: string | null,
   initialPrompt: InitialPromptState,
+  launchOperationId: string | null,
+  launchRequestDigest: string | null,
 ): AgentMetadata {
   const launchId = randomBytes(16).toString("hex");
   const eventFile = agentEventPath(name, launchId);
@@ -2224,6 +2228,8 @@ function createClaudeAgentMetadata(
     cwd,
     vendor_session_id: null,
     initial_prompt: initialPrompt,
+    launch_operation_id: launchOperationId,
+    launch_request_digest: launchRequestDigest,
     hook_route: "managed_claude_settings",
     node_platform: process.platform,
     claude_settings: claudeSettings,
@@ -2327,10 +2333,15 @@ function loadAgentMetadata(name: string): AgentMetadata {
   if (m.kind === "claude") {
     const expectedSettings = agentManagedClaudeSettingsPath(name, m.launch_id);
     const expectedResult = agentClaudeResultPath(name, m.launch_id);
+    const launchOperationId = m.launch_operation_id ?? null;
+    const launchRequestDigest = m.launch_request_digest ?? null;
     if (
       m.hook_route !== "managed_claude_settings" ||
       m.claude_settings !== expectedSettings ||
-      m.result_file !== expectedResult
+      m.result_file !== expectedResult ||
+      ((launchOperationId === null) !== (launchRequestDigest === null)) ||
+      (launchOperationId !== null && !OPERATION_ID_RE.test(launchOperationId)) ||
+      (launchRequestDigest !== null && !OPERATION_ID_RE.test(launchRequestDigest))
     ) {
       throw new AitermError("agent metadata の path が現在の secure state root と一致しません", 2);
     }
@@ -2343,6 +2354,8 @@ function loadAgentMetadata(name: string): AgentMetadata {
       cwd: typeof m.cwd === "string" ? m.cwd : null,
       vendor_session_id: typeof m.vendor_session_id === "string" ? m.vendor_session_id : null,
       initial_prompt: normalizeInitialPromptState(m.initial_prompt),
+      launch_operation_id: launchOperationId,
+      launch_request_digest: launchRequestDigest,
       hook_route: "managed_claude_settings",
       node_platform: process.platform,
       claude_settings: expectedSettings,
@@ -3504,6 +3517,58 @@ function buildAgentLaunchNote(
   return summary ? `${launch}\n${summary}\n` : launch;
 }
 
+function claudeLaunchRequestDigest({
+  sessionName,
+  model,
+  effort,
+  cwd,
+  agentDone,
+}: {
+  sessionName: string;
+  model: string | null;
+  effort: string | null;
+  cwd: string | null;
+  agentDone: boolean;
+}): string {
+  const canonical = JSON.stringify({
+    schema: "aiterm.claude-agent-launch-request.v1",
+    provider: "claude",
+    session_name: sessionName,
+    model,
+    reasoning_effort: effort,
+    cwd,
+    managed_completion: agentDone,
+  });
+  return `sha256:${createHash("sha256").update(canonical, "utf8").digest("hex")}`;
+}
+
+function requireMatchingClaudeLaunch(name: string, operationId: string, requestDigest: string): AgentMetadata {
+  const meta = loadAgentMetadata(name);
+  if (meta.kind !== "claude") {
+    throw new AitermError(`session '${name}' は相関対象のClaude agent sessionではありません`, 2);
+  }
+  if (meta.launch_operation_id !== operationId || meta.launch_request_digest !== requestDigest) {
+    throw new AitermError(
+      `session '${name}' のClaude launch identityが一致しません。既存sessionをcloseするまで再利用できません`,
+      2,
+    );
+  }
+  return meta;
+}
+
+function existingAgentLaunchResult(
+  kind: AgentKind,
+  sid: string,
+  model: string | null,
+  effort: string | null,
+): [string, string] {
+  return [
+    sid,
+    `${agentLabel(kind)} の相関済みlaunchを既存session ${sid} から回収した。` +
+      `${buildAgentLaunchNote(kind, model, effort, null)}CLIは再送していません。\n${attachHint(sid)}`,
+  ];
+}
+
 export function openAgent(
   kind: AgentKind,
   opts: {
@@ -3513,6 +3578,7 @@ export function openAgent(
     cwd?: string | null;
     prompt?: string | null;
     agent_done?: boolean | null;
+    launch_operation_id?: string | null;
   } = {},
 ): [string, string] {
   const label = agentLabel(kind);
@@ -3546,6 +3612,24 @@ export function openAgent(
     );
   }
   const agentDone = !!opts.agent_done;
+  const launchOperationId = opts.launch_operation_id == null
+    ? null
+    : validateOperationId(opts.launch_operation_id);
+  if (launchOperationId !== null) {
+    if (kind !== "claude") {
+      throw new AitermError("launch_operation_idはClaude agentだけで指定できます", 2);
+    }
+    if (!opts.session_name) {
+      throw new AitermError("launch_operation_idには明示session_nameが必要です", 2);
+    }
+    assertSessionName(opts.session_name);
+    if (!agentDone) {
+      throw new AitermError("launch_operation_idにはagent_done:trueが必要です", 2);
+    }
+    if (opts.prompt != null) {
+      throw new AitermError("launch_operation_id付きlaunchにpromptは指定できません", 2);
+    }
+  }
   let bin: string | null;
   try {
     bin = resolveAgentBin(kind);
@@ -3577,6 +3661,19 @@ export function openAgent(
     }
     cwd = opts.cwd;
   }
+  const launchRequestDigest = launchOperationId === null
+    ? null
+    : claudeLaunchRequestDigest({
+        sessionName: opts.session_name as string,
+        model,
+        effort,
+        cwd,
+        agentDone,
+      });
+  if (launchOperationId !== null && sessionExists(opts.session_name as string)) {
+    requireMatchingClaudeLaunch(opts.session_name as string, launchOperationId, launchRequestDigest as string);
+    return existingAgentLaunchResult("claude", opts.session_name as string, model, effort);
+  }
   // Windows は起動コマンドが WSL 内 bash で走る（tmux ブリッジ）。bin/cwd を /mnt/c/... 形へ変換して
   // 渡す（ログの toWslPath と対称・A1）。前提: Windows 側に CLI を導入（resolveAgentBin が Windows
   // パスで解決）。toWslPath は session を作る前に呼ぶ＝変換失敗（非ドライブパス）で残骸 session を残さない。
@@ -3586,12 +3683,28 @@ export function openAgent(
   const cwdForCmd = cwd && isWin ? toWslPath(cwd) : cwd;
   const grokAuthPath = agentDone && (kind === "grok" || kind === "composer") ? resolveAndValidateGrokAuth(realGrokHome()) : null;
 
-  const [sid, hint] = openSession(opts.session_name ?? null, "bash");
+  let sid: string;
+  let hint: string;
+  try {
+    [sid, hint] = openSession(opts.session_name ?? null, "bash");
+  } catch (error) {
+    if (launchOperationId !== null && sessionExists(opts.session_name as string)) {
+      requireMatchingClaudeLaunch(opts.session_name as string, launchOperationId, launchRequestDigest as string);
+      return existingAgentLaunchResult("claude", opts.session_name as string, model, effort);
+    }
+    throw error;
+  }
   let launchNote = "";
   try {
     const meta = agentDone
       ? kind === "claude"
-        ? createClaudeAgentMetadata(sid, cwd, opts.prompt ? "pending" : "none")
+        ? createClaudeAgentMetadata(
+            sid,
+            cwd,
+            opts.prompt ? "pending" : "none",
+            launchOperationId,
+            launchRequestDigest,
+          )
         : kind === "codex"
         ? createCodexAgentMetadata(sid, cwd, opts.prompt ? "pending" : "none", { model, effort })
         : createGrokAgentMetadata(kind, sid, cwd, opts.prompt ? "pending" : "none", grokAuthPath)
@@ -3669,11 +3782,15 @@ export async function openAgentWithInitialPrompt(
     ready_timeout?: number | null;
     screen?: boolean | null;
     lines?: number | null;
+    launch_operation_id?: string | null;
   } = {},
 ): Promise<[string, string]> {
   const waitMode = normalizeAgentLauncherWait(opts.wait);
   const prompt = opts.prompt ?? null;
   const agentDone = !!opts.agent_done;
+  if (opts.launch_operation_id != null && (prompt !== null || waitMode !== "none")) {
+    throw new AitermError('launch_operation_idはpromptなし・wait:"none"のmanaged Claude launchだけで指定できます', 2);
+  }
   if (waitMode === "agent_done" && !prompt) {
     throw new AitermError('wait:"agent_done" は prompt 指定時だけ使えます', 2);
   }
@@ -3700,6 +3817,7 @@ export async function openAgentWithInitialPrompt(
     cwd: opts.cwd ?? null,
     prompt: null,
     agent_done: agentDone,
+    launch_operation_id: opts.launch_operation_id ?? null,
   });
   try {
     const initial = agentDone

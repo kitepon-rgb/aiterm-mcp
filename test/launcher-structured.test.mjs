@@ -44,6 +44,7 @@ test("claude_agent: text contentを維持しClaude managed launch receiptをstru
   child.stderr.on("data", (chunk) => { stderr += chunk; });
 
   const sessionId = `structured_claude_${Date.now().toString(36)}`;
+  const launchOperationId = `sha256:${"d".repeat(64)}`;
   try {
     child.stdin.write([
       { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "launcher-structured", version: "0" } } },
@@ -52,7 +53,7 @@ test("claude_agent: text contentを維持しClaude managed launch receiptをstru
         jsonrpc: "2.0",
         id: 2,
         method: "tools/call",
-        params: { name: "claude_agent", arguments: { session_name: sessionId, agent_done: true } },
+        params: { name: "claude_agent", arguments: { session_name: sessionId, agent_done: true, launch_operation_id: launchOperationId } },
       },
     ].map((message) => JSON.stringify(message)).join("\n") + "\n");
 
@@ -72,9 +73,20 @@ test("claude_agent: text contentを維持しClaude managed launch receiptをstru
       jsonrpc: "2.0",
       id: 3,
       method: "tools/call",
+      params: { name: "claude_agent", arguments: { session_name: sessionId, agent_done: true, launch_operation_id: launchOperationId } },
+    })}\n`);
+    const replay = await waitForResponse(child, () => responseFor(stdout, 3), () => stdout, () => stderr);
+    assert.equal(replay.result.isError, undefined, JSON.stringify(replay.result));
+    assert.deepEqual(replay.result.structuredContent, launch.result.structuredContent, "同じ相関launchを同じreceiptへ回収する");
+    assert.match(replay.result.content?.[0]?.text, /CLIは再送していません/);
+
+    child.stdin.write(`${JSON.stringify({
+      jsonrpc: "2.0",
+      id: 4,
+      method: "tools/call",
       params: { name: "pty_close", arguments: { session_id: sessionId } },
     })}\n`);
-    const closed = await waitForResponse(child, () => responseFor(stdout, 3), () => stdout, () => stderr);
+    const closed = await waitForResponse(child, () => responseFor(stdout, 4), () => stdout, () => stderr);
     assert.equal(closed.result.isError, undefined, JSON.stringify(closed.result));
     assert.equal(closed.result.content?.[0]?.text, `closed ${sessionId}`, "既存text contentを維持する");
     assert.deepEqual(closed.result.structuredContent, {
@@ -85,11 +97,11 @@ test("claude_agent: text contentを維持しClaude managed launch receiptをstru
 
     child.stdin.write(`${JSON.stringify({
       jsonrpc: "2.0",
-      id: 4,
+      id: 5,
       method: "tools/call",
       params: { name: "pty_close", arguments: { session_id: sessionId } },
     })}\n`);
-    const retried = await waitForResponse(child, () => responseFor(stdout, 4), () => stdout, () => stderr);
+    const retried = await waitForResponse(child, () => responseFor(stdout, 5), () => stdout, () => stderr);
     assert.equal(retried.result.isError, undefined, JSON.stringify(retried.result));
     assert.equal(retried.result.content?.[0]?.text, `closed ${sessionId}`, "retryでも既存text contentを維持する");
     assert.deepEqual(retried.result.structuredContent, {
