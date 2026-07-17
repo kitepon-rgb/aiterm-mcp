@@ -36,6 +36,12 @@ registration, and a registry-derived isolated install were verified.
 
 A lot of 2026's agent tooling is converging on orchestration: a lead model delegating a mechanical refactor to Codex, running Composer on a bulk edit while it reviews the diff, fanning one task across several agents to spare its own context window. All of those agents already live in a terminal. aiterm makes that terminal a first-class, MCP-native tool — so the model doing the orchestrating can **spawn and steer the others without a human wiring up panes.**
 
+## Built with Codex and GPT-5.6 for OpenAI Build Week 2026
+
+aiterm predates Build Week, so the event work is kept visible in dated commits. During the submission window (July 14–16, 2026), I extended it with safe serialized delivery for long PTY input, correlated operation IDs and bounded result recovery, machine-readable launch and idempotent close receipts, and a hardened readiness gate that prevents prompts from disappearing during TUI startup redraws. The public comparison from the pre-event release is [`v0.12.2...main`](https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.12.2...main).
+
+I used **Codex with GPT-5.6** as an engineering collaborator: it inspected the implementation, challenged the API and recovery contracts, generated focused regression cases, and helped verify race, security, timeout, and malformed-event paths. I reviewed the diffs and test evidence and retained the final product and architecture decisions. The result is a 262-test regression suite covering normal operation as well as failure and recovery behavior.
+
 ## Two ways to use it
 
 ### 1. Drive SSH, containers, and REPLs in one persistent terminal — the primitive
