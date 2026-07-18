@@ -2282,7 +2282,7 @@ function loadAgentMetadata(name: string): AgentMetadata {
     .filter((f) => f.startsWith(`${name}.`) && f.endsWith(".agent.json"));
   if (files.length === 0) {
     throw new AitermError(
-      `session '${name}' は agent_done 管理セッションではありません。codex_agent(agent_done:true) で起動してください。`,
+      `session '${name}' は agent_done 管理セッションではありません。claude_agent／codex_agent 等の launcher で起動してください（launcher は常に managed）。`,
       2,
     );
   }

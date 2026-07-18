@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- The `aiterm-wait` / agent-metadata "not a managed session" error still
+  suggested launching with `codex_agent(agent_done:true)` — an argument
+  removed in v0.16 (launchers are always managed). It now points to the
+  launchers themselves.
+
 ## [0.18.0] - 2026-07-18
 
 ### Added
