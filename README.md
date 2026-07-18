@@ -24,7 +24,8 @@
 
 Twelve tools: six **PTY tools** — `pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list` — to open, drive, and read one persistent terminal, four **agent launchers** — `claude_agent` / `codex_agent` / `grok_agent` / `composer_agent` — that each start another coding agent's TUI inside a fresh one, `claude_turn` for durable structured issue/recovery, and `diagnostics` for safe factory readiness. The backend is **tmux**, so sessions survive even if the MCP server or the AI client restarts.
 
-**v0.18.0 was published on 2026-07-18.** Field-failure hardening for agent
+**v0.18.1 was published on 2026-07-18** (v0.18.0 plus one stale-guidance
+message fix). Field-failure hardening for agent
 dispatch: every dispatch/launch receipt now carries a **submit-strand
 observation** `submit_residue` (a bounded screen poll that reports when the
 sent prompt is still sitting unsubmitted in the vendor TUI's composer —

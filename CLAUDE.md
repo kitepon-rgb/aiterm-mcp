@@ -15,7 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > ④submit座礁観測 `submit_residue`（additive nullable）: dispatch後、送信text正規化末尾32cpが「最後の入力欄マーカー行以降」に残存するかを有界ポーリング（最大~1.5s・成立時は~300msで早期確定）で観測し、`aiterm.pty-send-result.v1`／`aiterm.agent-launch-result.v1`／`aiterm.claude-operation-result.v1`(issue) へ載せる。true=座礁の強い疑い（警告文はscreen確認→Enter再submit/Escape破棄を案内・盲目Enter禁止）、false=残存観測せず（成立の保証ではない）、null=対象外/判定不能。観測のみでauto-retry・例外化はしない。
 > refuter反証（1st pass）: P0なし、P1 2件（復旧案内の--cursor欠落＝race再導入・claude_turn issueが観測を破棄する契約矛盾）を検出し還流済み。full regression 297/297（新規6件込み）。additive schema追加のため0.18.0へminor bump（package.json／package-lock／server.json同期）。
 > 公開証跡（2026-07-18）: 公開commit `1752196`、tag CI `29643046738` success（**test-windows含む全ジョブgreen**＝Windowsブロッキング化後の初通過）、npm latest=0.18.0、MCP Registry workflow `29643046586` success。隔離install（scratchpad）で version・bin 3種・12ツール・`submit_residue` schema 3面（pty_send／launcher／claude_turn）・`--cursor 0`案内・aiterm-wait エラー exit=1 を実機確認し、installed dist はローカル dist とバイト一致。
-> 公開後の後追い修理（main先行・未公開）: aiterm-wait の非管理セッションエラー文言に残っていた `codex_agent(agent_done:true)` （v0.16で撤去済みの引数）を launcher 案内へ置換（core.ts 1箇所・prefix「agent_done 管理セッションではありません」は内部match用に不変）。
+> **v0.18.1（2026-07-18公開）**: 0.18.0公開検証中に発見した stale 文言の取り残し1件（aiterm-wait の非管理セッションエラーが v0.16 で撤去済みの `codex_agent(agent_done:true)` を案内）を launcher 案内へ置換して patch 公開（prefix「agent_done 管理セッションではありません」は内部match用に不変）。公開証跡は本節末尾に追記する。
 >
 > **v0.17.0（2026-07-18公開）**: オーナー裁定「waitは廃止。引数を減らし使い方のパターンを減らす」による breaking 再設計（v0.16.0として内部確定）に、実運用フィードバック還流（aiterm-wait exit code=outcome連動・launch receiptのwait_command/event_cursor・完了受信手順の説明明記）を重ねて0.17.0で公開。
 > ①`pty_send` から wait/timeout/screen/lines/operation_id を撤去。agent session への send は自動で**非ブロック dispatch**になり

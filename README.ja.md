@@ -24,7 +24,7 @@
 
 12 ツール: 6 つの **PTY ツール**（`pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list`）で 1 本の永続端末を開き・操作し・読む。加えて 4 つの **エージェント起動ツール**（`claude_agent` / `codex_agent` / `grok_agent` / `composer_agent`）が別のコーディングエージェントの TUI を新しい端末の中に起動し、`claude_turn`がdurable caller向けの構造化issue／recoveryを、`diagnostics`が安全なfactory readinessを返す。バックエンドは **tmux** なので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
 
-**v0.18.0 を 2026-07-18 に公開。** 実運用障害の還流による agent dispatch の hardening:
+**v0.18.1 を 2026-07-18 に公開**（0.18.0＋stale案内文言の修理1件）。実運用障害の還流による agent dispatch の hardening:
 全 dispatch／launch receipt に **submit 座礁観測** `submit_residue` を追加
 （送信 prompt が vendor TUI の composer に未 submit のまま残存していないかを有界に観測して報告する。
 陽性証拠のみ・auto-retry なし）。agent への prompt paste は tmux **bracketed paste**（pane ごとの
