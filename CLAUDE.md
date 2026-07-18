@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > collectionはschema-exact canonical dotagents configの`collection.enabled`がJSON boolean `true`の時だけ有効で既定OFF、network送信は行わない。raw exception/stderr/stack/prompt/PTY/transcript/event/pathはAPIで拒否する。
 > 公開commit `239e7e4`、tag CI `29245251184`、npm `latest`、tag / GitHub Release、MCP Registry workflow `29245462227`、registry由来隔離installから10-tool MCP diagnosticsとruntime snapshotまで確認済み。
 
-> **現在の未公開source（2026-07-18・v0.16.0）**: オーナー裁定「waitは廃止。引数を減らし使い方のパターンを減らす」による breaking 再設計。
+> **v0.17.0（2026-07-18公開）**: オーナー裁定「waitは廃止。引数を減らし使い方のパターンを減らす」による breaking 再設計（v0.16.0として内部確定）に、実運用フィードバック還流（aiterm-wait exit code=outcome連動・launch receiptのwait_command/event_cursor・完了受信手順の説明明記）を重ねて0.17.0で公開。
 > ①`pty_send` から wait/timeout/screen/lines/operation_id を撤去。agent session への send は自動で**非ブロック dispatch**になり
 >（ready gate・submit 分離内蔵・即返り）、`aiterm.pty-send-result.v1`（mode: sent|agent_dispatch）で **event_cursor**（送信直前の
 > event file 境界）を返す。force:true は手動介入の素送信。②`claude_turn issue` は timeout 撤去・dispatch-only で即 accepted。

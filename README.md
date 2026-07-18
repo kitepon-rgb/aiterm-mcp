@@ -24,14 +24,16 @@
 
 Twelve tools: six **PTY tools** — `pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list` — to open, drive, and read one persistent terminal, four **agent launchers** — `claude_agent` / `codex_agent` / `grok_agent` / `composer_agent` — that each start another coding agent's TUI inside a fresh one, `claude_turn` for durable structured issue/recovery, and `diagnostics` for safe factory readiness. The backend is **tmux**, so sessions survive even if the MCP server or the AI client restarts.
 
-**v0.15.0 was published on 2026-07-18.** It brings the interactive agent
-launchers, durable `claude_turn` issue/recovery, machine-readable launch and
-idempotent close receipts, the hardened TUI readiness gate, and the new
-`aiterm-wait` completion-push binary to npm. Factory diagnostics and the local
-runtime-error store collect only when canonical dotagents config explicitly sets
-`collection.enabled: true`; collection is off by default and performs no network
-I/O. It ships via tag-triggered CI with npm provenance (OIDC Trusted Publishing);
-the GitHub Release re-registers the Official MCP Registry entry.
+**v0.17.0 was published on 2026-07-18.** A parent agent never blocks on aiterm:
+every send to an agent session is a non-blocking dispatch, completion is one
+universal `aiterm-wait` waiter whose exit codes mirror the receipt outcome
+(`0`=done / `3`=timeout, not finished / `4`=closed), and a launch with an
+initial prompt returns a ready-made `wait_command` in its structured receipt.
+Factory diagnostics and the local runtime-error store collect only when
+canonical dotagents config explicitly sets `collection.enabled: true`;
+collection is off by default and performs no network I/O. It ships via
+tag-triggered CI with npm provenance (OIDC Trusted Publishing); the GitHub
+Release re-registers the Official MCP Registry entry.
 
 **Status:** actively maintained · the newcomer here, betting on a different shape (see [vs. the alternatives](#vs-the-alternatives)) · runs on Linux · WSL2 · macOS · native Windows for the core PTY tools (managed completion is POSIX/WSL/macOS only for now) · MIT · see the [CHANGELOG](CHANGELOG.md).
 
@@ -303,7 +305,7 @@ When an agent's answer is longer than the on-screen tail (pane height ≈ 24 lin
 
 ### Completion push for parent agents (`aiterm-wait`)
 
-As of v0.16.0 a parent agent **never blocks** on aiterm — there is no wait parameter anywhere. The whole flow is dispatch + one universal waiter:
+As of v0.16 a parent agent **never blocks** on aiterm — there is no wait parameter anywhere (v0.17 makes the waiter's exit codes mirror its outcome). The whole flow is dispatch + one universal waiter:
 
 1. Launch the child (`claude_agent` / `codex_agent` / ...; every launch is managed). Send a turn with plain `pty_send` (or `claude_turn issue` for durable Claude operations). The call passes the TUI ready gate, submits, and returns immediately with an `event_cursor` in its structured receipt.
 2. Run `aiterm-wait --session <id> --cursor <event_cursor> [--operation sha256:<64hex>] [--timeout <sec>]` (a launch with an initial `prompt` returns this command ready-made as `wait_command` in its structured receipt). It observes the vendor Stop-hook completion event as a **pure reader** and exits with a one-line `aiterm.agent-wait-result.v1` receipt. **Exit ≠ done**: the receipt's `outcome` is authoritative, and the exit code mirrors it — `0` = `done`, `3` = `timeout` (the turn is **not** finished; default `--timeout` is 600 s), `4` = `closed`, `1` = error. On `timeout` just re-run the waiter with the same cursor. The `--cursor` boundary makes it start-order independent: no completion can slip past even if the waiter starts late.

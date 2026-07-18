@@ -24,10 +24,13 @@
 
 12 ツール: 6 つの **PTY ツール**（`pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list`）で 1 本の永続端末を開き・操作し・読む。加えて 4 つの **エージェント起動ツール**（`claude_agent` / `codex_agent` / `grok_agent` / `composer_agent`）が別のコーディングエージェントの TUI を新しい端末の中に起動し、`claude_turn`がdurable caller向けの構造化issue／recoveryを、`diagnostics`が安全なfactory readinessを返す。バックエンドは **tmux** なので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
 
-**v0.12.2 は release candidate（公開待ち）です。** factory diagnostics と local
+**v0.17.0 を 2026-07-18 に公開。** 親エージェントは aiterm 上で一切ブロックしない:
+agent session への send は常に非ブロック dispatch になり、完了待ちは `aiterm-wait` 一本
+（exit code が receipt の outcome を映す: 0=done / 3=timeout=未完了 / 4=closed）、初回 prompt 付き
+launch は structured receipt にコピペ可能な `wait_command` を含む。factory diagnostics と local
 runtime-error store は canonical dotagents config の `collection.enabled: true` が明示された
-場合だけ収集し、既定OFF、network送信は行いません。npm公開、tag、CI、registry登録、registry由来install
-の確認は未実施です。
+場合だけ収集し、既定OFF、network送信は行いません。tag起点CIのnpm provenance（OIDC Trusted
+Publishing）で公開し、GitHub Release が Official MCP Registry を再登録します。
 
 **状態:** 開発継続中 · この分野では新参で、別の形に賭けている（[既存手段との比較](#既存手段との比較)参照）· 動作対象は Linux · WSL2 · macOS · Windows ネイティブ（core PTY ツール。`agent_done` は現時点では POSIX/WSL/macOS のみ）· MIT · [変更履歴](CHANGELOG.md)。
 

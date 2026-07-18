@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-07-18
+
 ### Changed (BREAKING)
 - `aiterm-wait` exit codes now mirror the receipt's `outcome` so exit status
   alone can never be misread as completion: `0` = `done`, `3` = `timeout`
