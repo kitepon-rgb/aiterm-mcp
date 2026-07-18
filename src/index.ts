@@ -110,7 +110,8 @@ server.registerTool(
       "セッションへテキストを送る。通常PTYへは送信のみ（出力は pty_read で取得）。" +
       "agent session（launcher起動）への send は自動で dispatch になる: TUI の ready gate と submit 分離を通して即返り、" +
       "receipt の event_cursor を返す＝親はブロックしない。完了通知は `aiterm-wait --session <id> --cursor <event_cursor>` を" +
-      "ホストのバックグラウンドタスクとして実行し、その exit で受ける（ポーリング不要）。" +
+      "ホストのバックグラウンドタスクとして実行し、exit時にreceiptのoutcomeで判定する" +
+      `（${core.AITERM_WAIT_OUTCOME_NOTE}。ポーリング不要）。` +
       "結果回収は pty_read(agent_transcript:true)、Claude の durable turn は claude_turn を使う。" +
       "force:true は agent session への手動介入用の素送信。",
     inputSchema: {
@@ -156,7 +157,8 @@ server.registerTool(
               type: "text" as const,
               text:
                 `dispatchした（vendor=${receipt.vendor}）。完了通知: aiterm-wait --session ${receipt.session_id} --cursor ${receipt.event_cursor} を` +
-                "ホストのバックグラウンドタスクとして実行し exit を待つ。回収: pty_read(agent_transcript:true)",
+                `ホストのバックグラウンドタスクとして実行し、exit時にreceiptのoutcomeで判定（${core.AITERM_WAIT_OUTCOME_NOTE}）。` +
+                "回収: pty_read(agent_transcript:true)",
             },
           ],
           structuredContent: {
@@ -389,6 +391,14 @@ const agentEffortDesc = (kind: "claude" | "codex" | "grok" | "composer") =>
       "composer は effort 自体非対応）。指定すると起動前にエラーを返す"
     : "reasoning effort（思考レベル）。low/medium/high/xhigh/max/ultra（CLI 版依存）。" +
       "ultra は max 推論＋proactive 自動委譲 ON＝使用量急増注意（明示要求時のみ）。省略時は端末 config／CLI 既定。";
+// 全launcher共通の完了受信ガイド。launch応答のwait_command（起動時promptあり時）／pty_send dispatchの
+// event_cursorから組んだaiterm-waitをホストのバックグラウンドタスクとして1本実行し、exit時にreceiptの
+// outcomeで判定する。
+const agentCompletionDesc =
+  `完了通知は起動応答の wait_command（初回prompt時）または pty_send dispatch 後の ` +
+  `aiterm-wait --session <id> --cursor <event_cursor> をホストのバックグラウンドタスクとして実行し、` +
+  `exit時にreceiptのoutcomeで判定する（${core.AITERM_WAIT_OUTCOME_NOTE}。ポーリング不要）。` +
+  `結果回収は pty_read(agent_transcript:true)。`;
 function registerAgentTool(
   toolName: string,
   kind: "claude" | "codex" | "grok" | "composer",
@@ -421,11 +431,15 @@ function registerAgentTool(
         provider: z.literal(kind),
         session_id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
         managed_completion: z.boolean(),
+        // 起動時 prompt でturnが走っている時だけ非null（additive拡張）。wait_command はそのままホストの
+        // バックグラウンドタスクとして実行できる完了待ちコマンド。
+        event_cursor: z.number().int().nullable(),
+        wait_command: z.string().nullable(),
       },
     },
     async ({ prompt, model, reasoning_effort, cwd, session_name, launch_operation_id }: any) => {
       try {
-        const [sid, hint] = await core.openAgentWithInitialPrompt(kind, {
+        const [sid, hint, eventCursor] = await core.openAgentWithInitialPrompt(kind, {
           prompt: prompt ?? undefined,
           model: model ?? undefined,
           reasoning_effort: reasoning_effort ?? undefined,
@@ -438,6 +452,8 @@ function registerAgentTool(
           provider: kind,
           session_id: sid,
           managed_completion: true,
+          event_cursor: eventCursor,
+          wait_command: eventCursor === null ? null : `aiterm-wait --session ${sid} --cursor ${eventCursor}`,
         };
         return {
           content: [{ type: "text" as const, text: `session_id: ${sid}\n${hint}` }],
@@ -454,27 +470,35 @@ registerAgentTool(
   "claude_agent",
   "claude",
   "【Claude Code (Anthropic)】の対話エージェントTUIを永続端末に起動する。`claude -p`ではなく、" +
-    "同じ利用者可視sessionへpty_sendで継続入力する。常にmanaged（isolated settingsのStop hook）で起動し、完了通知はaiterm-wait、結果はpty_read(agent_transcript)/claude_turnで回収する。",
+    "同じ利用者可視sessionへpty_sendで継続入力する。常にmanaged（isolated settingsのStop hook）で起動する。" +
+    agentCompletionDesc +
+    "Claude の durable turn は claude_turn でも回収できる。",
 );
 
 registerAgentTool(
   "codex_agent",
   "codex",
   "【Codex (OpenAI)】の対話エージェント TUI を永続端末に起動する。実装・レビュー・調査を対話で回す。" +
-    "起動後は pty_read で画面を読み pty_send で操作する。model / reasoning_effort を引数で指定可" +
+    "turn は pty_send で送る（自動で非ブロック dispatch になる）。" +
+    agentCompletionDesc +
+    "model / reasoning_effort を引数で指定可" +
     "（省略時は端末 config／CLI 既定を継承。実効値は起動応答に明示）。",
 );
 registerAgentTool(
   "grok_agent",
   "grok",
   "【Grok Build の Grok モデル (既定 grok-4.5)】の対話エージェント TUI を永続端末に起動する。" +
-    "起動後は pty_read/pty_send で対話操作。model を引数で指定可。reasoning_effort は対話 TUI 非対応（指定はエラー）。",
+    "turn は pty_send で送る（自動で非ブロック dispatch になる）。" +
+    agentCompletionDesc +
+    "model を引数で指定可。reasoning_effort は対話 TUI 非対応（指定はエラー）。",
 );
 registerAgentTool(
   "composer_agent",
   "composer",
   "【Grok Build の Composer モデル (既定 grok-composer-2.5-fast)】の対話エージェント TUI を永続端末に起動する。" +
-    "起動後は pty_read/pty_send で対話操作。model を引数で指定可。reasoning_effort は非対応（指定はエラー）。",
+    "turn は pty_send で送る（自動で非ブロック dispatch になる）。" +
+    agentCompletionDesc +
+    "model を引数で指定可。reasoning_effort は非対応（指定はエラー）。",
 );
 
 async function main(): Promise<void> {

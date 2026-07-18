@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (BREAKING)
+- `aiterm-wait` exit codes now mirror the receipt's `outcome` so exit status
+  alone can never be misread as completion: `0` = `done`, `3` = `timeout`
+  (turn **not** finished; default `--timeout` is 600 s), `4` = `closed`,
+  `1` = error. Previously every observed outcome exited `0`. The receipt's
+  `outcome` remains authoritative.
+
+### Added
+- `aiterm.agent-launch-result.v1` gains two additive nullable fields:
+  `event_cursor` and `wait_command` (a copy-pasteable
+  `aiterm-wait --session <id> --cursor <n>`), non-null exactly when the launch
+  carried an initial `prompt` (a turn is in flight from launch). Durable
+  callers no longer need to discover the completion procedure from other
+  tools' descriptions.
+
+### Fixed
+- Tool descriptions, launch/dispatch hints, and not-yet-complete errors no
+  longer imply that an `aiterm-wait` exit means completion. All four launcher
+  descriptions now state the completion procedure; `pty_read(agent_transcript)`
+  "not complete yet" errors point to the `aiterm-wait` background run instead
+  of leaving the caller to poll.
+
 ## [0.16.0] - 2026-07-18
 
 ### Changed (BREAKING)

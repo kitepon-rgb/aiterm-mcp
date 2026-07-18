@@ -67,6 +67,9 @@ test("claude_agent: text contentを維持しClaude managed launch receiptをstru
       provider: "claude",
       session_id: sessionId,
       managed_completion: true,
+      // promptなしlaunchはturnが走っていない＝完了待ち対象がないため両方null
+      event_cursor: null,
+      wait_command: null,
     });
 
     child.stdin.write(`${JSON.stringify({

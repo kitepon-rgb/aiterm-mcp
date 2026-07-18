@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // aiterm-wait — agent turn 完了eventの純リーダー観測CLI。
 // 完了/timeout/close を1行のJSON receiptで返してexitする。lock・PTY・dispatch状態には一切触れない。
-// 親AIホストのバックグラウンドタスクとして起動し、exitを「完了通知」として使う。
+// 親AIホストのバックグラウンドタスクとして起動し、exitを「観測終了の通知」として使う。
+// exit≠完了: exit code は outcome を映す（0=done / 3=timeout=未完了 / 4=closed / 1=エラー）。
+// receipt の outcome が正で、done 以外は未完了。timeout の既定は core の DEFAULT_AGENT_DONE_TIMEOUT（600秒）。
 import { fileURLToPath } from "node:url";
 import * as fs from "node:fs";
 import { AitermError, observeAgentDone } from "./core.js";
@@ -59,6 +61,9 @@ function emit(value: unknown): void {
   process.stdout.write(JSON.stringify(value) + "\n");
 }
 
+// outcome → exit code。exit status しか見えないホストでも done とそれ以外を誤読できないようにする。
+const OUTCOME_EXIT_CODES = { done: 0, timeout: 3, closed: 4 } as const;
+
 export async function main(argv: string[]): Promise<void> {
   const cmd = parseArgs(argv);
   const result = await observeAgentDone(cmd.session, {
@@ -67,6 +72,7 @@ export async function main(argv: string[]): Promise<void> {
     cursor: cmd.cursor,
   });
   emit(result);
+  process.exitCode = OUTCOME_EXIT_CODES[result.outcome];
 }
 
 function isDirectExecution(): boolean {

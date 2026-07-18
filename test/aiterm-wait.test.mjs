@@ -295,14 +295,34 @@ test("cli: 完了済みclaude operationをreceiptで返しexit 0", { skip: !posi
   }
 });
 
-test("cli: timeoutもreceiptとしてexit 0", { skip: !posix }, async () => {
+test("cli: timeoutはreceiptを出しつつexit 3（exit≠完了）", { skip: !posix }, async () => {
   const { base, agents } = makeStateRoot();
   try {
     writeMeta(agents, "c2", "codex");
     const r = runCli(["--session", "c2", "--timeout", "0"], base);
-    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.status, 3, r.stderr);
     const out = JSON.parse(r.stdout.trim());
     assert.equal(out.outcome, "timeout");
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("cli: 待機中のsession closeはreceiptを出しつつexit 4", { skip: !posix }, async () => {
+  const { base, agents } = makeStateRoot();
+  try {
+    const { metaPath } = writeMeta(agents, "c5", "codex");
+    const child = spawn(process.execPath, [CLI, "--session", "c5", "--timeout", "30"], {
+      env: { PATH: process.env.PATH, XDG_RUNTIME_DIR: base, HOME: process.env.HOME, TMPDIR: process.env.TMPDIR },
+    });
+    let stdout = "";
+    child.stdout.on("data", (d) => (stdout += d));
+    await sleep(500);
+    fs.rmSync(metaPath, { force: true });
+    const status = await new Promise((res) => child.on("close", res));
+    assert.equal(status, 4);
+    const out = JSON.parse(stdout.trim());
+    assert.equal(out.outcome, "closed");
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }

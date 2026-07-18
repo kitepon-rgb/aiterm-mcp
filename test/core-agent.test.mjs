@@ -1569,7 +1569,7 @@ test("openAgentWithInitialPrompt: prompt を shell argv に載せず pending eve
       const sid = `initial_success_${Date.now().toString(36)}`;
       const marker = "AITERM_OPEN_AGENT_INITIAL_OK";
       try {
-        const [actualSid, out] = await core.openAgentWithInitialPrompt("codex", {
+        const [actualSid, out, launchCursor] = await core.openAgentWithInitialPrompt("codex", {
           session_name: sid,
           prompt: `日本語の複数行 prompt です。\n${marker}\nこの token だけを返してください。`,
           agent_done: true,
@@ -1579,10 +1579,10 @@ test("openAgentWithInitialPrompt: prompt を shell argv に載せず pending eve
         assert.doesNotMatch(out, /> .*AITERM_OPEN_AGENT_INITIAL_OK/, `shell continuation に prompt を載せない: ${out}`);
         const meta = readAgentMeta(sid);
         assert.equal(meta.initial_prompt, "pending");
-        const cursorMatch = out.match(/event_cursor=(\d+)/);
-        assert.ok(cursorMatch, `event_cursor が hint に含まれる: ${out}`);
+        assert.equal(typeof launchCursor, "number", "構造化 event_cursor を返す");
+        assert.match(out, new RegExp(`event_cursor=${launchCursor}\\b`), "hint と構造化 cursor が一致する");
         appendAgentDone(meta, { turn_id: "open-agent-initial", vendor_session_id: "open-agent-vendor" });
-        const observation = await core.observeAgentDone(sid, { cursor: Number(cursorMatch[1]), timeout: 3 });
+        const observation = await core.observeAgentDone(sid, { cursor: launchCursor, timeout: 3 });
         assert.equal(observation.outcome, "done");
         assert.equal(observation.turn_id, "open-agent-initial");
         assert.equal(observation.vendor_session_id, "open-agent-vendor");
@@ -1679,11 +1679,10 @@ test("sendInitialAgentPrompt: 初回 prompt を専用 boundary で送信し dest
       await markFakeAgentReady(sid);
       const meta = readAgentMeta(sid);
       const out = await core.sendInitialAgentPrompt(sid, "explain what rm -rf / does");
-      assert.match(out, /initial_prompt=pending vendor=codex event_cursor=\d+/, `pending hint: ${out}`);
-      const cursorMatch = out.match(/event_cursor=(\d+)/);
-      assert.ok(cursorMatch, `event_cursor が hint に含まれる: ${out}`);
+      assert.match(out.text, /initial_prompt=pending vendor=codex event_cursor=\d+/, `pending hint: ${out.text}`);
+      assert.equal(typeof out.event_cursor, "number", "構造化 event_cursor を返す");
       appendAgentDone(meta, { turn_id: "initial-turn", vendor_session_id: "initial-vendor" });
-      const observation = await core.observeAgentDone(sid, { cursor: Number(cursorMatch[1]), timeout: 3 });
+      const observation = await core.observeAgentDone(sid, { cursor: out.event_cursor, timeout: 3 });
       assert.equal(observation.outcome, "done");
       assert.equal(observation.turn_id, "initial-turn");
       const updated = readAgentMeta(sid);
@@ -1700,7 +1699,7 @@ test("sendInitialAgentPrompt: 送信後は常に pending 文字列を返し成�
     try {
       await markFakeAgentReady(sid);
       const out = await core.sendInitialAgentPrompt(sid, "echo INITIAL_TIMEOUT_BODY");
-      assert.match(out, /initial_prompt=pending vendor=codex event_cursor=\d+/, `pending hint: ${out}`);
+      assert.match(out.text, /initial_prompt=pending vendor=codex event_cursor=\d+/, `pending hint: ${out.text}`);
       const meta = readAgentMeta(sid);
       assert.equal(meta.initial_prompt, "pending");
     } finally {
@@ -1715,7 +1714,7 @@ test("sendInitialAgentPrompt: 送信後は pending にし follow-up を送信前
     try {
       await markFakeAgentReady(sid);
       const hint = await core.sendInitialAgentPrompt(sid, "Reply READY.");
-      assert.match(hint, /initial_prompt=pending/, `pending hint: ${hint}`);
+      assert.match(hint.text, /initial_prompt=pending/, `pending hint: ${hint.text}`);
       const meta = readAgentMeta(sid);
       assert.equal(meta.initial_prompt, "pending");
       await assert.rejects(

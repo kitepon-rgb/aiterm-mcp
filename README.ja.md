@@ -52,7 +52,7 @@ pty_read(id, { wait: true })       → 削減済みの出力を読む（完了�
 
 ### 2. その端末の中に他のコーディングエージェントを起動する — オーケストレーションの旗艦
 
-同じ primitive が別エージェントの TUI を宿す。4 つの起動ツールが、Claude/Codex/Grok/Composer の対話 TUI を新しい永続端末の中に起動し、`session_id` を返す。既存の人間向けtextに加えて`aiterm.agent-launch-result.v1` structured receiptも返すため、durable callerは表示文字列を解析せずsession handleを取得できる。以後は同じ `pty_read` / `pty_send` で継続操作する。**起動は常に managed**（aiterm 所有の Stop hook 付き）で、agent session への `pty_send` は非ブロックの **dispatch** になり `event_cursor` 入り receipt を即返す。完了通知は `aiterm-wait --session <id> --cursor <event_cursor>` をホストのバックグラウンドタスクとして実行し、その exit で受ける（親はブロックもポーリングもしない）。durable machine callerは`claude_turn({ action:"issue"|"recover", session_id, operation_id, ... })`を使い、人間向けerror文字列を解析せず`accepted`／`pending`／`completed`／`unknown`を判定できる。recoveryは再送せず、検証済み完了だけがexact `raw_output`を持つ。通常の`pty_send`／`pty_read`は対話callerと人間向けに維持する。`C-c`後もmarkerを保持し、Stopが来なければsessionをcloseする。`claude_agent` と `codex_agent` の初回 `prompt` は ready gate 経由で送信して待たずに返る（Grok/Composer は argv 渡し）。手動でキー操作したい場合は `pty_open` で素の端末を開き vendor CLI を自分で起動する。
+同じ primitive が別エージェントの TUI を宿す。4 つの起動ツールが、Claude/Codex/Grok/Composer の対話 TUI を新しい永続端末の中に起動し、`session_id` を返す。既存の人間向けtextに加えて`aiterm.agent-launch-result.v1` structured receiptも返すため、durable callerは表示文字列を解析せずsession handleを取得できる。以後は同じ `pty_read` / `pty_send` で継続操作する。**起動は常に managed**（aiterm 所有の Stop hook 付き）で、agent session への `pty_send` は非ブロックの **dispatch** になり `event_cursor` 入り receipt を即返す。完了通知は `aiterm-wait --session <id> --cursor <event_cursor>` をホストのバックグラウンドタスクとして実行し、exit 時に receipt の `outcome` で判定する（exit 0=done / 3=timeout=未完了・既定600秒 / 4=closed。親はブロックもポーリングもしない）。起動時 `prompt` を渡した launch は structured receipt にコピペ可能な `wait_command` と `event_cursor` を含む。durable machine callerは`claude_turn({ action:"issue"|"recover", session_id, operation_id, ... })`を使い、人間向けerror文字列を解析せず`accepted`／`pending`／`completed`／`unknown`を判定できる。recoveryは再送せず、検証済み完了だけがexact `raw_output`を持つ。通常の`pty_send`／`pty_read`は対話callerと人間向けに維持する。`C-c`後もmarkerを保持し、Stopが来なければsessionをcloseする。`claude_agent` と `codex_agent` の初回 `prompt` は ready gate 経由で送信して待たずに返る（Grok/Composer は argv 渡し）。手動でキー操作したい場合は `pty_open` で素の端末を開き vendor CLI を自分で起動する。
 
 ```text
 codex_agent({ session_name: "codex1", cwd: "/repo",
@@ -60,7 +60,7 @@ codex_agent({ session_name: "codex1", cwd: "/repo",
                                     → { session_id: "codex1", … }   # Codex が永続端末で稼働開始
 pty_read("codex1", { screen: true })   → 何をしているか読む（トークン削減）
 pty_send("codex1", "also fix the imports it broke")   # 非ブロックdispatch＝event_cursor入りreceipt
-$ aiterm-wait --session codex1 --cursor <event_cursor>   # exitが完了push。回収は pty_read(agent_transcript:true)
+$ aiterm-wait --session codex1 --cursor <event_cursor>   # exit 0=done / 3=timeout(未完了) / 4=closed。回収は pty_read(agent_transcript:true)
                                     → 操舵し、Codex の次の入力境界で返る
 ```
 

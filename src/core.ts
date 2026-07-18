@@ -2605,8 +2605,13 @@ function findLatestCodexTranscript(codexHome: string, vendorSessionId: string): 
   return latestFile;
 }
 
+// 未完了系エラーの共通出口案内。pollingへ誘導せず、正規の完了待ち手段を必ず指す。
+const AGENT_WAIT_GUIDE =
+  "完了待ちは aiterm-wait --session <session_id> のバックグラウンド実行で受ける（polling不要。" +
+  "receiptのoutcome=doneを確認してから再取得）。";
+
 function transcriptUnavailable(): never {
-  throw new AitermError("transcript がまだありません。ターン完了後に再取得してください。", 2);
+  throw new AitermError(`transcript がまだありません。ターン完了後に再取得してください。${AGENT_WAIT_GUIDE}`, 2);
 }
 
 function transcriptNotFound(vendor: AgentKind): never {
@@ -2687,7 +2692,7 @@ export async function readAgentTranscript(
     const active = readClaudeOperationMarker(meta);
     if (active) {
       const label = active.operationId ? `operation ${active.operationId}` : "operation_idなしのClaude turn";
-      throw new AitermError(`${label} はまだ完了していません。Stop完了後に同じsessionから再取得してください。`, 2);
+      throw new AitermError(`${label} はまだ完了していません。Stop完了後に同じsessionから再取得してください。${AGENT_WAIT_GUIDE}`, 2);
     }
   }
   // wait timeout は「失敗」ではなく状態不明。後着した同一launchの完了eventから
@@ -2695,14 +2700,14 @@ export async function readAgentTranscript(
   recoverAgentVendorSession(meta);
   if (!meta.vendor_session_id) {
     throw new AitermError(
-      `agent session '${name}' はまだターンが完了していません。agent_done 完了後に再取得してください。`,
+      `agent session '${name}' はまだターンが完了していません。agent_done 完了後に再取得してください。${AGENT_WAIT_GUIDE}`,
       2,
     );
   }
 
   const done = latestAgentDoneEvent(meta, operationId);
   if (operationId && !done) {
-    throw new AitermError(`operation ${operationId} はまだ完了していません。同じoperation_idで後から再取得してください。`, 2);
+    throw new AitermError(`operation ${operationId} はまだ完了していません。同じoperation_idで後から再取得してください。${AGENT_WAIT_GUIDE}`, 2);
   }
   const turnId = done?.turn_id ?? null;
   let text = "";
@@ -2843,6 +2848,10 @@ function assertInitialPromptNotPendingForSend(name: string, force: boolean): voi
   );
 }
 
+
+// aiterm-wait の exit 契約（CLI と各所の案内文で共有する正）。exit≠完了: outcome が done の時だけ完了。
+export const AITERM_WAIT_OUTCOME_NOTE =
+  `exit 0=done / 3=timeout（既定${DEFAULT_AGENT_DONE_TIMEOUT}秒・未完了） / 4=closed。receiptのoutcomeが正で、done以外は未完了`;
 
 export interface AgentWaitObservation {
   schema: "aiterm.agent-wait-result.v1";
@@ -3090,11 +3099,17 @@ async function sendAgentPromptText(name: string, text: string): Promise<void> {
   sendKey(name, "Enter", { preserveAgentOperation: true });
 }
 
+export interface InitialAgentPromptResult {
+  text: string;
+  // 初回 prompt を dispatch した場合の event file 境界。ready 失敗で未送信なら null。
+  event_cursor: number | null;
+}
+
 export async function sendInitialAgentPrompt(
   name: string,
   text: string,
   o: InitialAgentPromptOpts = {},
-): Promise<string> {
+): Promise<InitialAgentPromptResult> {
   assertSessionName(name);
   const meta = loadAgentMetadata(name);
   if (meta.initial_prompt === "done") {
@@ -3109,10 +3124,12 @@ export async function sendInitialAgentPrompt(
   setInitialPromptState(meta, "not_sent");
   const ready = await waitAgentTuiReady(name, meta, o.ready_timeout ?? AGENT_TUI_READY_TIMEOUT_MS);
   if (!ready.ready) {
-    return (
-      `initial_prompt=not_sent vendor=${meta.kind} ready=false samples=${ready.samples}\n` +
-      `agent session '${name}' の ${agentLabel(meta.kind)} TUI が入力受付状態になりません。prompt は送信していません。`
-    );
+    return {
+      text:
+        `initial_prompt=not_sent vendor=${meta.kind} ready=false samples=${ready.samples}\n` +
+        `agent session '${name}' の ${agentLabel(meta.kind)} TUI が入力受付状態になりません。prompt は送信していません。`,
+      event_cursor: null,
+    };
   }
   const startOffset = safeStatSize(meta.event_file);
   try {
@@ -3126,11 +3143,13 @@ export async function sendInitialAgentPrompt(
     setInitialPromptState(meta, "failed");
     throw e;
   }
-  return (
-    `initial_prompt=pending vendor=${meta.kind} event_cursor=${startOffset}\n` +
-    `起動時 prompt を送信した。完了通知は aiterm-wait --session ${name} --cursor ${startOffset}（ホストのバックグラウンドタスクとして実行し、exit を完了通知にする）、` +
-    `回収は pty_read(agent_transcript:true) を使う。`
-  );
+  return {
+    text:
+      `initial_prompt=pending vendor=${meta.kind} event_cursor=${startOffset}\n` +
+      `起動時 prompt を送信した。完了通知は aiterm-wait --session ${name} --cursor ${startOffset} をホストのバックグラウンドタスクとして実行し、` +
+      `exit 時に receipt の outcome で判定する（${AITERM_WAIT_OUTCOME_NOTE}）。回収は pty_read(agent_transcript:true) を使う。`,
+    event_cursor: startOffset,
+  };
 }
 
 export function isAgentSession(name: string): boolean {
@@ -3702,15 +3721,17 @@ export async function openAgentWithInitialPrompt(
     ready_timeout?: number | null;
     launch_operation_id?: string | null;
   } = {},
-): Promise<[string, string]> {
+): Promise<[string, string, number | null]> {
   const prompt = opts.prompt ?? null;
   if (opts.launch_operation_id != null && prompt !== null) {
     throw new AitermError("launch_operation_idはpromptなしのmanaged Claude launchだけで指定できます", 2);
   }
   // v0.16.0: launcher は常に managed（Stop hook つき）で立つ。手動運転したい場合は
   // pty_open で素の PTY を開き、vendor CLI を自分で send する。
+  // 第3要素は「起動時点でturnが走っているか」の event_cursor: Grok/Composer の argv prompt は
+  // event file 新規作成直後の起動＝境界0、prompt なしの起動は turn なし＝null。
   if (!prompt || (kind !== "codex" && kind !== "claude")) {
-    return openAgent(kind, {
+    const [sid, hint] = openAgent(kind, {
       session_name: opts.session_name ?? null,
       model: opts.model ?? null,
       reasoning_effort: opts.reasoning_effort ?? null,
@@ -3719,6 +3740,7 @@ export async function openAgentWithInitialPrompt(
       agent_done: true,
       launch_operation_id: opts.launch_operation_id ?? null,
     });
+    return [sid, hint, prompt ? 0 : null];
   }
   const [sid, hint] = openAgent(kind, {
     session_name: opts.session_name ?? null,
@@ -3733,7 +3755,7 @@ export async function openAgentWithInitialPrompt(
     const initial = await sendInitialAgentPrompt(sid, prompt, {
       ready_timeout: opts.ready_timeout ?? undefined,
     });
-    return [sid, `${hint}\n${initial}`];
+    return [sid, `${hint}\n${initial.text}`, initial.event_cursor];
   } catch (e) {
     const code = e instanceof AitermError ? e.code : 1;
     const message = e instanceof Error ? e.message : String(e);

@@ -17,6 +17,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 >（全 vendor で起動順序非依存）。完了待ちは aiterm-wait 一本（Claude 親=background、押し込み機構の無い親=foreground shell）。
 > core は sendAndWaitAgentDone/waitAgentDoneEvent/wait lock 取得系を削除し dispatchAgentTurn/observeAgentDone(cursor) へ置換。
 > close/killAll の他プロセス wait lock 検査は cross-version 安全弁として残置。full regression 290/290。
+> 2026-07-18 追補（実運用フィードバック還流）: `aiterm-wait` の exit code は outcome を映す（0=done / 3=timeout=未完了・既定600秒 / 4=closed / 1=エラー。exit≠完了、receiptのoutcomeが正）。
+> launch receipt `aiterm.agent-launch-result.v1` に additive nullable の `event_cursor`/`wait_command` を追加（初回prompt時だけ非null）。
+> launcher 4種の説明に完了受信手順を明記し、transcript未完了エラーは aiterm-wait のバックグラウンド実行を指す。full regression 291/291。
 > 実機E2E通過（2026-07-18）: 実codex子でmanaged起動→dispatch即返り（cursor=0）→**dispatch後起動**の `aiterm-wait --cursor` がdone受信→harness re-invoke→transcript turn_id一致で回収→close。cursor起動順序非依存を実機確認。
 >
 > **v0.15.1（2026-07-18公開）**: `claude_agent`を追加し、PTY 6＋対話launcher 4
