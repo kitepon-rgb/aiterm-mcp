@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Submit-strand observation** (`submit_residue`, additive nullable). Field
+  report: a managed Codex child hung during MCP initialize; the initial prompt
+  stayed **unsubmitted in the composer** for 2h18m while the TUI kept showing
+  "Working", and nothing surfaced it. After every agent dispatch (initial
+  prompt and follow-up), aiterm now runs a bounded screen poll for the sent
+  text's tail lingering in the composer region (below the last input-marker
+  line). `aiterm.pty-send-result.v1`, `aiterm.agent-launch-result.v1`,
+  `aiterm.claude-operation-result.v1` (issue) and the
+  dispatch hint carry the observation: `true` = residue confirmed (submit
+  likely did not take effect; the hint explains recovery via
+  `pty_key Enter` / `Escape`), `false` = no residue observed (not a proof of
+  submission), `null` = not applicable / undecidable. Positive evidence only —
+  no auto-retry, no silent fallback.
+- Agent prompt injection now pastes with tmux `paste-buffer -p` (bracketed
+  paste). tmux negotiates: panes that requested bracketed-paste mode (the
+  vendor TUIs) receive the text wrapped in `ESC[200~/201~` — per paste chunk
+  (macOS splits long prompts into 256-byte chunks, so a long prompt arrives as
+  several consecutive bracketed pastes) — which hardens pastes against
+  mid-word key-interpretation corruption and
+  dropped submits; panes that did not request it receive the text unchanged.
+  Regular shell `pty_send` behaviour is untouched. Byte-level regression fixed
+  in `test/core-tmux.test.mjs`.
+
+### Changed
+- The pre-initial-prompt TUI ready gate no longer counts a Codex/Claude screen
+  as ready while it shows a busy indicator ("esc to interrupt"), closing the
+  window where the initial prompt was pasted into a TUI whose startup work
+  (e.g. MCP initialize) was still running behind a visible composer.
+  Grok/Composer keep the previous gate (no captured busy-string evidence yet).
+
+### Fixed
+- Removed stale v0.15-era guidance from six error/hint messages that still
+  told the caller to retry `pty_send(wait:"agent_done")` — an argument that no
+  longer exists since v0.16. They now point to the actual v0.17 procedure
+  (`aiterm-wait --cursor 0` for initial-prompt completion — cursor 0 is safe
+  because the event file is per-launch, and omitting `--cursor` would start at
+  the waiter's EOF and could skip an already-written done event — plain
+  `pty_send` dispatch, `pty_open` for manual operation).
+
 ## [0.17.0] - 2026-07-18
 
 ### Changed (BREAKING)

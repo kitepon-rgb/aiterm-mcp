@@ -142,6 +142,9 @@ server.registerTool(
       event_cursor: z.number().int().nullable(),
       launch_id: z.string().nullable(),
       vendor: z.enum(["claude", "codex", "grok", "composer"]).nullable(),
+      // dispatch後のsubmit座礁観測（additive）。true=composerに送信textの残存を確認（submit未成立の疑い）/
+      // false=残存を観測せず（成立の保証ではない）/ null=通常送信・判定不能。
+      submit_residue: z.boolean().nullable(),
     },
   },
   async ({ session_id, text, enter, mark, force, rtk, raw }) => {
@@ -158,7 +161,8 @@ server.registerTool(
               text:
                 `dispatchした（vendor=${receipt.vendor}）。完了通知: aiterm-wait --session ${receipt.session_id} --cursor ${receipt.event_cursor} を` +
                 `ホストのバックグラウンドタスクとして実行し、exit時にreceiptのoutcomeで判定（${core.AITERM_WAIT_OUTCOME_NOTE}）。` +
-                "回収: pty_read(agent_transcript:true)",
+                "回収: pty_read(agent_transcript:true)" +
+                core.agentSubmitResidueWarning(receipt.session_id, receipt.submit_residue),
             },
           ],
           structuredContent: {
@@ -168,6 +172,7 @@ server.registerTool(
             event_cursor: receipt.event_cursor,
             launch_id: receipt.launch_id,
             vendor: receipt.vendor,
+            submit_residue: receipt.submit_residue,
           },
         };
       }
@@ -181,6 +186,7 @@ server.registerTool(
           event_cursor: null,
           launch_id: null,
           vendor: null,
+          submit_residue: null,
         },
       };
     } catch (e) {
@@ -354,6 +360,9 @@ server.registerTool(
       operation_id: z.string().regex(/^sha256:[0-9a-f]{64}$/),
       raw_output: z.string().nullable(),
       reason: z.enum(["operation_not_found", "result_unknown"]).nullable(),
+      // issue時のみdispatch由来のsubmit座礁観測（additive）。true=composerに残存を確認（submit未成立の疑い）/
+      // false=残存を観測せず（成立の保証ではない）/ recover等はnull。
+      submit_residue: z.boolean().nullable(),
     },
   },
   async ({ action, session_id, operation_id, text }) => {
@@ -435,11 +444,14 @@ function registerAgentTool(
         // バックグラウンドタスクとして実行できる完了待ちコマンド。
         event_cursor: z.number().int().nullable(),
         wait_command: z.string().nullable(),
+        // 初回prompt dispatch後のsubmit座礁観測（additive）。true=composerに残存を確認（submit未成立の疑い）/
+        // false=残存を観測せず（submit成立の保証ではない）/ null=promptなし・argv prompt・判定不能。
+        submit_residue: z.boolean().nullable(),
       },
     },
     async ({ prompt, model, reasoning_effort, cwd, session_name, launch_operation_id }: any) => {
       try {
-        const [sid, hint, eventCursor] = await core.openAgentWithInitialPrompt(kind, {
+        const [sid, hint, eventCursor, submitResidue] = await core.openAgentWithInitialPrompt(kind, {
           prompt: prompt ?? undefined,
           model: model ?? undefined,
           reasoning_effort: reasoning_effort ?? undefined,
@@ -454,6 +466,7 @@ function registerAgentTool(
           managed_completion: true,
           event_cursor: eventCursor,
           wait_command: eventCursor === null ? null : `aiterm-wait --session ${sid} --cursor ${eventCursor}`,
+          submit_residue: submitResidue,
         };
         return {
           content: [{ type: "text" as const, text: `session_id: ${sid}\n${hint}` }],

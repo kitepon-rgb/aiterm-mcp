@@ -273,6 +273,53 @@ test("send raw: 制御文字とtabをtmux側で再変換しない", { skip }, as
   }
 });
 
+// agent dispatch 経路の paste 原子化: pane が bracketed paste mode を要求している時だけ
+// tmux が ESC[200~/201~ で包み（negotiation）、未要求 pane へは素通しになることをバイトレベルで固定する。
+test("send bracketedPaste: pane が要求している時だけ ESC[200~/201~ で包む", { skip }, async () => {
+  const session = "selftest_brkt";
+  core.openSession(session);
+  try {
+    core.send(
+      session,
+      `stty raw -echo; printf '\\033[?2004h'; printf '<<<AITERM_BRKT_%s>>>\\n' READY; dd bs=1 count=18 2>/dev/null | od -An -tx1; stty sane; printf '\\033[?2004l<<<AITERM_BRKT_%s>>>\\n' OFF`,
+      { force: true },
+    );
+    await core.readOutput(session, { wait: true, until: "<<<AITERM_BRKT_READY>>>", timeout: 5, raw: true });
+    core.send(session, "hello!", { raw: true, force: true, enter: false, bracketedPaste: true });
+    // ESC[200~(6) + "hello!"(6) + ESC[201~(6) = 18 bytes
+    const bracketed = await core.readOutput(session, {
+      wait: true,
+      until: "<<<AITERM_BRKT_OFF>>>",
+      timeout: 5,
+      raw: true,
+    });
+    assert.match(
+      bracketed,
+      /1b\s+5b\s+32\s+30\s+30\s+7e\s+68\s+65\s+6c\s+6c\s+6f\s+21\s+1b\s+5b\s+32\s+30\s+31\s+7e/,
+      `paste mode 要求済み pane へは bracket 付きで届く: ${JSON.stringify(bracketed)}`,
+    );
+    // 2004l で mode 解除後は、bracketedPaste:true でも素通し（tmux 側 negotiation）
+    core.send(
+      session,
+      `stty raw -echo; printf '<<<AITERM_PLAIN_%s>>>\\n' READY; dd bs=1 count=6 2>/dev/null | od -An -tx1; stty sane`,
+      { force: true },
+    );
+    await core.readOutput(session, { wait: true, until: "<<<AITERM_PLAIN_READY>>>", timeout: 5, raw: true });
+    core.send(session, "plain!", { raw: true, force: true, enter: false, bracketedPaste: true });
+    const plain = await core.readOutput(session, {
+      wait: true,
+      until: "6e\\s+21",
+      untilRegex: true,
+      timeout: 5,
+      raw: true,
+    });
+    assert.match(plain, /70\s+6c\s+61\s+69\s+6e\s+21/, `未要求 pane へは素のまま届く: ${JSON.stringify(plain)}`);
+    assert.doesNotMatch(plain.split("<<<AITERM_PLAIN_READY>>>").pop() ?? "", /1b\s+5b\s+32\s+30\s+30\s+7e/, "bracket を付けない");
+  } finally {
+    core.closeSession(session);
+  }
+});
+
 // ---------------------------------------------------------------- sendKey
 test("sendKey: 別名→tmux キー名・戻り値", { skip }, () => {
   assert.equal(core.sendKey(SESS, "C-c"), `sent key C-c to ${SESS}`);

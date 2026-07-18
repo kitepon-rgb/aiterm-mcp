@@ -1167,24 +1167,28 @@ test("runClaudeOperation: timeoutしたissueはaccepted、同じoperationだけ�
     const meta = readAgentMeta(sid);
     await markFakeAgentReady(sid, "claude");
 
-    assert.deepEqual(
-      await core.runClaudeOperation({
-        session_id: sid,
-        action: "issue",
-        operation_id: operationId,
-        text: "STRUCTURED_TIMEOUT_PROMPT",
-        timeout: 0,
-      }),
-      {
-        schema: "aiterm.claude-operation-result.v1", action: "issue", status: "accepted",
-        session_id: sid, operation_id: operationId, raw_output: null, reason: null,
-      },
+    const issued = await core.runClaudeOperation({
+      session_id: sid,
+      action: "issue",
+      operation_id: operationId,
+      text: "STRUCTURED_TIMEOUT_PROMPT",
+      timeout: 0,
+    });
+    // submit_residue は fake TUI の画面内容に依存する観測値なので型だけ固定し、他は exact 一致で固定する
+    assert.ok(
+      issued.submit_residue === null || typeof issued.submit_residue === "boolean",
+      `issue は submit 座礁観測を返す: ${JSON.stringify(issued)}`,
     );
+    delete issued.submit_residue;
+    assert.deepEqual(issued, {
+      schema: "aiterm.claude-operation-result.v1", action: "issue", status: "accepted",
+      session_id: sid, operation_id: operationId, raw_output: null, reason: null,
+    });
     assert.deepEqual(
       await core.runClaudeOperation({ session_id: sid, action: "recover", operation_id: operationId }),
       {
         schema: "aiterm.claude-operation-result.v1", action: "recover", status: "pending",
-        session_id: sid, operation_id: operationId, raw_output: null, reason: null,
+        session_id: sid, operation_id: operationId, raw_output: null, reason: null, submit_residue: null,
       },
     );
     assert.match(fs.readFileSync(sessionLogPath(sid), "utf8"), /STRUCTURED_TIMEOUT_PROMPT/);
@@ -1202,6 +1206,7 @@ test("runClaudeOperation: timeoutしたissueはaccepted、同じoperationだけ�
         operation_id: operationId,
         raw_output: "structured exact raw output",
         reason: null,
+        submit_residue: null,
       },
     );
   } finally {
@@ -1229,6 +1234,7 @@ test("runClaudeOperation: 未dispatchとreceiptだけのoperationをunknown理�
         operation_id: undispatched,
         raw_output: null,
         reason: "operation_not_found",
+        submit_residue: null,
       },
     );
     fs.writeFileSync(claudeDispatchReceiptPath(meta, receiptOnly), "", { mode: 0o600 });
@@ -1242,6 +1248,7 @@ test("runClaudeOperation: 未dispatchとreceiptだけのoperationをunknown理�
         operation_id: receiptOnly,
         raw_output: null,
         reason: "result_unknown",
+        submit_residue: null,
       },
     );
   } finally {
@@ -1569,13 +1576,17 @@ test("openAgentWithInitialPrompt: prompt を shell argv に載せず pending eve
       const sid = `initial_success_${Date.now().toString(36)}`;
       const marker = "AITERM_OPEN_AGENT_INITIAL_OK";
       try {
-        const [actualSid, out, launchCursor] = await core.openAgentWithInitialPrompt("codex", {
+        const [actualSid, out, launchCursor, submitResidue] = await core.openAgentWithInitialPrompt("codex", {
           session_name: sid,
           prompt: `日本語の複数行 prompt です。\n${marker}\nこの token だけを返してください。`,
           agent_done: true,
         });
         assert.equal(actualSid, sid);
         assert.match(out, /initial_prompt=pending vendor=codex event_cursor=\d+/, `pending hint: ${out}`);
+        assert.ok(
+          submitResidue === null || typeof submitResidue === "boolean",
+          `submit_residue を構造化して返す: ${JSON.stringify(submitResidue)}`,
+        );
         assert.doesNotMatch(out, /> .*AITERM_OPEN_AGENT_INITIAL_OK/, `shell continuation に prompt を載せない: ${out}`);
         const meta = readAgentMeta(sid);
         assert.equal(meta.initial_prompt, "pending");
@@ -1821,6 +1832,10 @@ test("observeAgentDone: 送信前の古い event / 初回 prompt done を follow
         turn_id: "initial-turn",
       });
       const receipt = await core.dispatchAgentTurn(sid, "echo FOLLOWUP_BODY");
+      assert.ok(
+        receipt.submit_residue === null || typeof receipt.submit_residue === "boolean",
+        `dispatch receipt に submit_residue 観測を含む: ${JSON.stringify(receipt)}`,
+      );
       const observation = await core.observeAgentDone(sid, { cursor: receipt.event_cursor, timeout: 0 });
       assert.equal(observation.outcome, "timeout", `古い event を拾っていない: ${JSON.stringify(observation)}`);
       assert.equal(observation.turn_id, null, `古い event を完了扱いしない: ${JSON.stringify(observation)}`);

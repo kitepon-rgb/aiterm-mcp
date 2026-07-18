@@ -66,6 +66,12 @@ const AGENT_TUI_READY_TIMEOUT_MS = 30_000;
 const AGENT_TUI_READY_POLL_MS = 500;
 const AGENT_TUI_READY_STABLE_SAMPLES = 11;
 const AGENT_TUI_READY_LINES = 45;
+// submit座礁観測（dispatch後にcomposerへ送信textが残存していないかの有界チェック）
+const AGENT_SUBMIT_RESIDUE_DELAY_MS = 250;
+const AGENT_SUBMIT_RESIDUE_POLL_MS = 300;
+const AGENT_SUBMIT_RESIDUE_MAX_SAMPLES = 5;
+const AGENT_SUBMIT_RESIDUE_TAIL_CHARS = 32;
+const AGENT_SUBMIT_RESIDUE_MIN_TAIL_CHARS = 8;
 const GROK_AUTH_MAX_BYTES = 64 * 1024;
 const CLAUDE_RESULT_MAX_BYTES = 4 * 1024 * 1024;
 
@@ -933,6 +939,14 @@ export interface SendOpts {
   raw?: boolean;
   /** agent operation markerを保つ内部送信境界。MCPの公開引数にはしない。 */
   preserveAgentOperation?: boolean;
+  /**
+   * paste-buffer に -p を付け、pane が bracketed paste mode を要求している時だけ
+   * ESC[200~/201~ で包んで貼る（tmux 側で negotiation されるため未対応 pane へは素通し）。
+   * agent TUI への prompt 投入専用: TUI が paste を原子的に扱い、チャンク境界での
+   * キー解釈（文字化け・Enter 取り落とし）を抑える。通常シェル送信の行単位実行の
+   * 挙動を変えないため、公開引数にはせず agent dispatch 経路だけが立てる。
+   */
+  bracketedPaste?: boolean;
 }
 
 function prepareSendText(text: string, o: Pick<SendOpts, "raw" | "force">): string {
@@ -968,7 +982,7 @@ export function send(name: string, text: string, o: SendOpts = {}): string {
     if (!o.preserveAgentOperation && managedClaudeOperation(name) !== undefined) {
       throw new AitermError(
         "managed Claude agent sessionへの通常送信はturn境界を失うため拒否します。" +
-          'pty_send(wait:"agent_done")を使うか、通常対話へ切り替えるならsessionをcloseしてagent_done:falseで起動し直してください。',
+          "pty_send（forceなし＝自動dispatch）を使うか、通常対話へ切り替えるならsessionをcloseしてpty_openから手動起動し直してください。",
         2,
       );
     }
@@ -1015,6 +1029,7 @@ export function send(name: string, text: string, o: SendOpts = {}): string {
       // -r: LF→CR 置換を無効化。-Sは対応新版だけでvis(3)制御文字変換を無効化する。
       // send 自身の raw/sanitize 契約だけを真実とし、tmux 側で黙って再変換させない。
       const pasteArgs = ["paste-buffer", "-d", "-r"];
+      if (o.bracketedPaste) pasteArgs.push("-p");
       if (pasteSupportsNoSanitize) pasteArgs.push("-S");
       pasteArgs.push("-b", bufferName, "-t", name);
       const pasted = tmux(...pasteArgs);
@@ -1052,7 +1067,7 @@ export function sendKey(name: string, key: string, o: { preserveAgentOperation?:
   if (!o.preserveAgentOperation && managedClaudeOperation(name) !== undefined && k !== "C-c") {
     throw new AitermError(
       "managed Claude agent sessionではturn相関を壊さないC-cだけをpty_keyで送れます。" +
-        "他の対話操作はpty_send(wait:\"agent_done\")、終了はpty_closeを使ってください。",
+        "他の対話操作はpty_send（自動dispatch）、終了はpty_closeを使ってください。",
       2,
     );
   }
@@ -1434,6 +1449,8 @@ export interface ClaudeOperationResult {
   operation_id: string;
   raw_output: string | null;
   reason: "operation_not_found" | "result_unknown" | null;
+  // issue時のみdispatch由来のsubmit座礁観測を載せる（recover等はnull）。falseは成立の保証ではない。
+  submit_residue: boolean | null;
 }
 
 interface AgentDoneParseResult {
@@ -2463,6 +2480,9 @@ function bindAgentVendorSession(meta: AgentMetadata, ev: AgentDoneEvent): void {
   }
 }
 
+// 復旧案内の aiterm-wait は --cursor 0 を明示する: cursor 省略時の既定は waiter 起動時 EOF のため、
+// 案内表示〜実行の間に done event が書かれていると読み飛ばして timeout まで座る。event file は
+// per-launch 新規作成＋launch_id フィルタ付き走査なので、0 起点は取りこぼしゼロかつ安全。
 function bindCompletedInitialPrompt(meta: AgentMetadata): void {
   if (meta.initial_prompt !== "pending" && meta.initial_prompt !== "sent") return;
   if (meta.vendor_session_id) {
@@ -2472,7 +2492,7 @@ function bindCompletedInitialPrompt(meta: AgentMetadata): void {
   const size = safeStatSize(meta.event_file);
   if (size === 0) {
     throw new AitermError(
-      `agent session '${meta.aiterm_session}' は起動時 prompt の完了待ちです。初回応答完了後に再度 pty_send(wait:"agent_done") してください。`,
+      `agent session '${meta.aiterm_session}' は起動時 prompt の完了待ちです。aiterm-wait --session ${meta.aiterm_session} --cursor 0 で完了（outcome=done）を確認してから再度操作してください。`,
       2,
     );
   }
@@ -2487,7 +2507,7 @@ function bindCompletedInitialPrompt(meta: AgentMetadata): void {
     const malformed = scanned.malformedEvents ? ` malformed_events=${scanned.malformedEvents}` : "";
     const partial = tail.trim() ? " partial_event=true" : "";
     throw new AitermError(
-      `agent session '${meta.aiterm_session}' は起動時 prompt の完了 event をまだ確認できません。初回応答完了後に再度 pty_send(wait:"agent_done") してください。${malformed}${partial}`,
+      `agent session '${meta.aiterm_session}' は起動時 prompt の完了 event をまだ確認できません。aiterm-wait --session ${meta.aiterm_session} --cursor 0 で完了（outcome=done）を確認してから再度操作してください。${malformed}${partial}`,
       2,
     );
   }
@@ -2843,7 +2863,7 @@ function assertInitialPromptNotPendingForSend(name: string, force: boolean): voi
   if (meta.initial_prompt !== "pending" && meta.initial_prompt !== "sent") return;
   throw new AitermError(
     `agent session '${name}' は起動時 prompt の完了待ちです。通常 pty_send は混入防止のため送信しません。` +
-      `完了後に pty_send(wait:"agent_done") するか、手動介入が必要な場合だけ force:true を明示してください。`,
+      `aiterm-wait --session ${name} --cursor 0 で完了（outcome=done）を確認してから再度 pty_send するか、手動介入が必要な場合だけ force:true を明示してください。`,
     2,
   );
 }
@@ -2943,6 +2963,19 @@ function isAgentTuiReady(kind: AgentKind, screen: string): boolean {
   return screen.includes("Grok Build") && /(^|\n|\s)❯/.test(screen);
 }
 
+// Codex/Claude は実行中に「(esc to interrupt)」を表示する（実機採取）。startup 側の処理
+// （MCP initialize 等）が走ったまま composer だけ描画されている画面は入力受付とみなさない。
+// Grok/Composer は busy 表示文字列の実機根拠が未採取のため対象外（誤ブロックで起動不能にしない）。
+const AGENT_TUI_BUSY_KINDS: ReadonlySet<AgentKind> = new Set(["codex", "claude"]);
+const AGENT_TUI_BUSY_RE = /esc to interrupt/i;
+
+// ready gate 用: 入力欄マーカーがあっても busy 表示中は ready と数えない。
+// frontend 推定（inferAgentFrontend）は「agent TUI が前面か」を見るだけなので isAgentTuiReady のまま。
+function isAgentTuiIdleReady(kind: AgentKind, screen: string): boolean {
+  if (!isAgentTuiReady(kind, screen)) return false;
+  return !(AGENT_TUI_BUSY_KINDS.has(kind) && AGENT_TUI_BUSY_RE.test(screen));
+}
+
 async function waitAgentTuiReadyImpl(
   kind: AgentKind,
   sample: () => string,
@@ -2963,7 +2996,7 @@ async function waitAgentTuiReadyImpl(
   for (;;) {
     lastScreen = sample();
     samples++;
-    if (isAgentTuiReady(kind, lastScreen)) {
+    if (isAgentTuiIdleReady(kind, lastScreen)) {
       readyStreak++;
       if (readyStreak >= stableSamples) return { ready: true, samples, lastScreen };
     } else {
@@ -2997,6 +3030,88 @@ async function waitAgentTuiReadyByKind(
     () => captureScreen(name, AGENT_TUI_READY_LINES),
     sleep,
     { timeoutMs },
+  );
+}
+
+// ---- submit座礁観測 -------------------------------------------------------
+// dispatch は非ブロックのため submit の成立自体は保証できない（実被弾: Codex が MCP initialize で
+// ハングしたまま prompt が composer に未 submit で座礁し、2時間気づけなかった）。
+// ここでは「送信 text の末尾が composer 領域（画面末尾の最後の入力欄マーカー行以降）に残存している」
+// という陽性の証拠だけを有界ポーリングで観測し、receipt に載せる。
+// residue=true は座礁の強い疑い。false は「残存を観測せず」であり submit 成立の保証ではない
+// （TUI が長文 paste を折りたたみ表示する場合は検出できない）。null は判定不能（tail が短い等）。
+
+export interface AgentSubmitResidueResult {
+  residue: boolean | null;
+  samples: number;
+}
+
+function normalizeResidueText(s: string): string {
+  return s.replace(/\s+/g, "");
+}
+
+function agentSubmitResidueTail(text: string): string | null {
+  // 行単位でなく text 全体の正規化末尾から取る: 最終行が短い prompt（「以上」等の締め行）でも
+  // 直前行の内容を含む末尾 32 codepoint で観測できる。composer は末尾（カーソル位置）を表示し、
+  // submit 済みの transcript echo は長文では先頭側を表示するため、末尾一致は座礁側に偏る。
+  const cps = [...normalizeResidueText(text)];
+  if (cps.length < AGENT_SUBMIT_RESIDUE_MIN_TAIL_CHARS) return null;
+  return cps.slice(-AGENT_SUBMIT_RESIDUE_TAIL_CHARS).join("");
+}
+
+function agentSubmitResidueOnScreen(kind: AgentKind, screen: string, tail: string): boolean | null {
+  const lines = screen.split("\n");
+  // 入力欄マーカーは ready 判定と同じ記号を行頭基準で探す。submit 済みの transcript echo は
+  // マーカー行より上に出るため、最後のマーカー行以降だけを composer 領域として見る。
+  const markerRe = kind === "codex" ? /^\s*[›>]/ : kind === "claude" ? /^\s*❯/ : /(^|\s)❯/;
+  let markerIdx = -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (markerRe.test(lines[i])) {
+      markerIdx = i;
+      break;
+    }
+  }
+  if (markerIdx < 0) return null;
+  return normalizeResidueText(lines.slice(markerIdx).join("")).includes(tail);
+}
+
+async function detectAgentSubmitResidueImpl(
+  kind: AgentKind,
+  text: string,
+  sample: () => string,
+  sleepFn: (ms: number) => Promise<void>,
+  opts: { delayMs?: number; pollMs?: number; maxSamples?: number } = {},
+): Promise<AgentSubmitResidueResult> {
+  const tail = agentSubmitResidueTail(text);
+  if (!tail) return { residue: null, samples: 0 };
+  const delayMs = opts.delayMs ?? AGENT_SUBMIT_RESIDUE_DELAY_MS;
+  const pollMs = opts.pollMs ?? AGENT_SUBMIT_RESIDUE_POLL_MS;
+  const maxSamples = opts.maxSamples ?? AGENT_SUBMIT_RESIDUE_MAX_SAMPLES;
+  if (delayMs > 0) await sleepFn(delayMs);
+  let samples = 0;
+  let last: boolean | null = null;
+  for (let i = 0; i < maxSamples; i++) {
+    last = agentSubmitResidueOnScreen(kind, sample(), tail);
+    samples++;
+    // 残存が消えた（または判定不能になった）時点で確定。true だけは描画遅延と区別するため
+    // 全サンプル持続した場合にのみ報告する。
+    if (last !== true) return { residue: last, samples };
+    if (i < maxSamples - 1) await sleepFn(pollMs);
+  }
+  return { residue: true, samples };
+}
+
+async function detectAgentSubmitResidue(name: string, kind: AgentKind, text: string): Promise<AgentSubmitResidueResult> {
+  return detectAgentSubmitResidueImpl(kind, text, () => captureScreen(name, AGENT_TUI_READY_LINES), sleep);
+}
+
+export function agentSubmitResidueWarning(name: string, residue: boolean | null): string {
+  if (residue !== true) return "";
+  return (
+    `\n警告: submit_residue=true＝送信 text が composer に残存しており submit 未成立の疑いがある` +
+    `（実行中 turn への queued message が表示されている可能性もある）。` +
+    `pty_read(${name}, screen:true) で状態を確認してから、座礁していれば pty_key(${name}, "Enter") で再 submit、` +
+    `破棄するなら pty_key(${name}, "Escape") を使う。盲目的に Enter を送らない（queued だった場合の二重 submit 防止）。`
   );
 }
 
@@ -3074,6 +3189,30 @@ export async function __testWaitAgentTuiReady(
   return { ...result, sleeps };
 }
 
+export function __testIsAgentTuiIdleReady(kind: AgentKind, screen: string): boolean {
+  return isAgentTuiIdleReady(kind, screen);
+}
+
+export async function __testDetectAgentSubmitResidue(
+  kind: AgentKind,
+  text: string,
+  samples: string[],
+  opts: { delayMs?: number; pollMs?: number; maxSamples?: number } = {},
+): Promise<AgentSubmitResidueResult & { sleeps: number[] }> {
+  let i = 0;
+  const sleeps: number[] = [];
+  const result = await detectAgentSubmitResidueImpl(
+    kind,
+    text,
+    () => samples[Math.min(i++, samples.length - 1)],
+    async (ms) => {
+      sleeps.push(ms);
+    },
+    opts,
+  );
+  return { ...result, sleeps };
+}
+
 export function __testSetAgentTuiReadyStableSamples(value: number | null): void {
   if (value !== null && (!Number.isInteger(value) || value < 1 || value > 1000)) {
     throw new AitermError("test ready stable samplesが不正です", 2);
@@ -3094,6 +3233,7 @@ async function sendAgentPromptText(name: string, text: string): Promise<void> {
     mark: false,
     rtk: false,
     preserveAgentOperation: true,
+    bracketedPaste: true,
   });
   await sleep(AGENT_SUBMIT_DELAY_MS);
   sendKey(name, "Enter", { preserveAgentOperation: true });
@@ -3103,6 +3243,8 @@ export interface InitialAgentPromptResult {
   text: string;
   // 初回 prompt を dispatch した場合の event file 境界。ready 失敗で未送信なら null。
   event_cursor: number | null;
+  // submit座礁観測。true=composerに残存を確認（未submitの疑い）/ false=残存を観測せず / null=判定不能・未実施。
+  submit_residue: boolean | null;
 }
 
 export async function sendInitialAgentPrompt(
@@ -3129,6 +3271,7 @@ export async function sendInitialAgentPrompt(
         `initial_prompt=not_sent vendor=${meta.kind} ready=false samples=${ready.samples}\n` +
         `agent session '${name}' の ${agentLabel(meta.kind)} TUI が入力受付状態になりません。prompt は送信していません。`,
       event_cursor: null,
+      submit_residue: null,
     };
   }
   const startOffset = safeStatSize(meta.event_file);
@@ -3143,12 +3286,15 @@ export async function sendInitialAgentPrompt(
     setInitialPromptState(meta, "failed");
     throw e;
   }
+  const residue = await detectAgentSubmitResidue(name, meta.kind, text);
   return {
     text:
       `initial_prompt=pending vendor=${meta.kind} event_cursor=${startOffset}\n` +
       `起動時 prompt を送信した。完了通知は aiterm-wait --session ${name} --cursor ${startOffset} をホストのバックグラウンドタスクとして実行し、` +
-      `exit 時に receipt の outcome で判定する（${AITERM_WAIT_OUTCOME_NOTE}）。回収は pty_read(agent_transcript:true) を使う。`,
+      `exit 時に receipt の outcome で判定する（${AITERM_WAIT_OUTCOME_NOTE}）。回収は pty_read(agent_transcript:true) を使う。` +
+      agentSubmitResidueWarning(name, residue.residue),
     event_cursor: startOffset,
+    submit_residue: residue.residue,
   };
 }
 
@@ -3164,6 +3310,9 @@ export interface AgentDispatchReceipt {
   vendor: AgentKind;
   event_cursor: number;
   operation_id: string | null;
+  // submit座礁観測。true=composerに残存を確認（未submitの疑い）/ false=残存を観測せず
+  // （submit成立の保証ではない）/ null=判定不能。
+  submit_residue: boolean | null;
 }
 
 // v0.16.0: 親をブロックする wait 経路は廃止した。send は ready gate と submit 分離を内蔵した
@@ -3207,10 +3356,12 @@ export async function dispatchAgentTurn(
     mark: false,
     rtk: false,
     preserveAgentOperation: meta.kind === "claude",
+    bracketedPaste: true,
   });
   // Codex TUI は literal text 投入直後の Enter を取り落とすことがある。agent 経路だけ submit を分離する。
   await sleep(AGENT_SUBMIT_DELAY_MS);
   sendKey(name, "Enter", { preserveAgentOperation: meta.kind === "claude" });
+  const residue = await detectAgentSubmitResidue(name, meta.kind, text);
   return {
     schema: "aiterm.agent-dispatch.v1",
     session_id: meta.aiterm_session,
@@ -3218,6 +3369,7 @@ export async function dispatchAgentTurn(
     vendor: meta.kind,
     event_cursor: startOffset,
     operation_id: operationId,
+    submit_residue: residue.residue,
   };
 }
 
@@ -3240,21 +3392,24 @@ export async function runClaudeOperation({
   const meta = loadAgentMetadata(name);
   if (meta.kind !== "claude") throw new AitermError("claude_turnはmanaged Claude agent sessionだけで使用できます", 2);
 
+  let dispatchReceipt: AgentDispatchReceipt | null = null;
   if (action === "issue") {
     if (typeof text !== "string" || text.length === 0) {
       throw new AitermError("claude_turn issueには空でないtextが必要です", 2);
     }
     // v0.16.0: issue は dispatch-only。完了通知は aiterm-wait --operation、回収は recover が担う。
-    await dispatchAgentTurn(name, text, { operation_id: operationId });
+    dispatchReceipt = await dispatchAgentTurn(name, text, { operation_id: operationId });
   } else {
     if (text != null) throw new AitermError("claude_turn recoverにtextは指定できません", 2);
   }
 
   const inspected = inspectClaudeOperation(meta, operationId, action);
-  if (action === "issue" && inspected.status === "pending") {
-    return { ...inspected, status: "accepted" };
+  // issue は dispatch の submit 座礁観測を捨てずに返す（観測を払ったのに信号を返さない契約矛盾を作らない）。
+  const result = dispatchReceipt ? { ...inspected, submit_residue: dispatchReceipt.submit_residue } : inspected;
+  if (action === "issue" && result.status === "pending") {
+    return { ...result, status: "accepted" };
   }
-  return inspected;
+  return result;
 }
 
 function inspectClaudeOperation(
@@ -3267,6 +3422,7 @@ function inspectClaudeOperation(
     action,
     session_id: meta.aiterm_session,
     operation_id: operationId,
+    submit_residue: null as boolean | null,
   };
   const active = readClaudeOperationMarker(meta);
   if (active) {
@@ -3696,7 +3852,7 @@ export function openAgent(
   const driveHint =
     agentDone && kind === "claude"
       ? `TUI の描画には数秒かかる。少し置いてから pty_read(${sid}, screen:true) で画面を読み、` +
-        `turnはpty_send(${sid}, "...", wait:"agent_done")で送る。中断はpty_key(${sid}, "C-c")、` +
+        `turnはpty_send(${sid}, "...")で送る（自動で非ブロックdispatch・完了通知はaiterm-wait）。中断はpty_key(${sid}, "C-c")、` +
         `Stopが来ない場合の解除はpty_close(${sid})を使う。`
       : `TUI の描画には数秒かかる。少し置いてから pty_read(${sid}, screen:true) で画面を読み、` +
         `pty_send(${sid}, "...") で入力・pty_key(${sid}, "Enter"/"Up"/"C-c" 等) で操作する（対話）。`;
@@ -3721,7 +3877,7 @@ export async function openAgentWithInitialPrompt(
     ready_timeout?: number | null;
     launch_operation_id?: string | null;
   } = {},
-): Promise<[string, string, number | null]> {
+): Promise<[string, string, number | null, boolean | null]> {
   const prompt = opts.prompt ?? null;
   if (opts.launch_operation_id != null && prompt !== null) {
     throw new AitermError("launch_operation_idはpromptなしのmanaged Claude launchだけで指定できます", 2);
@@ -3740,7 +3896,8 @@ export async function openAgentWithInitialPrompt(
       agent_done: true,
       launch_operation_id: opts.launch_operation_id ?? null,
     });
-    return [sid, hint, prompt ? 0 : null];
+    // argv prompt（grok/composer）は composer を経由しないため submit 座礁観測の対象外。
+    return [sid, hint, prompt ? 0 : null, null];
   }
   const [sid, hint] = openAgent(kind, {
     session_name: opts.session_name ?? null,
@@ -3755,7 +3912,7 @@ export async function openAgentWithInitialPrompt(
     const initial = await sendInitialAgentPrompt(sid, prompt, {
       ready_timeout: opts.ready_timeout ?? undefined,
     });
-    return [sid, `${hint}\n${initial.text}`, initial.event_cursor];
+    return [sid, `${hint}\n${initial.text}`, initial.event_cursor, initial.submit_residue];
   } catch (e) {
     const code = e instanceof AitermError ? e.code : 1;
     const message = e instanceof Error ? e.message : String(e);

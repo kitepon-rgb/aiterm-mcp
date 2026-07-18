@@ -70,6 +70,8 @@ test("claude_agent: text contentを維持しClaude managed launch receiptをstru
       // promptなしlaunchはturnが走っていない＝完了待ち対象がないため両方null
       event_cursor: null,
       wait_command: null,
+      // promptなし＝submit座礁観測の対象なし
+      submit_residue: null,
     });
 
     child.stdin.write(`${JSON.stringify({

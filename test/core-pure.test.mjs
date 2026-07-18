@@ -197,6 +197,77 @@ test("agent_done ready gate: production既定は11回連続readyを要求する"
   assert.equal(result.sleeps.length, 10);
 });
 
+// ---------------------------------------------------------------- busy 除外 ready gate（実被弾: Codex MCP init ハング中の誤送信）
+test("agent_done ready gate: busy 表示（esc to interrupt）中の Codex/Claude は ready と数えない", async () => {
+  // 実機採取: Codex 実行中は「Working (2m 18s • esc to interrupt)」を表示しつつ composer も描画する
+  const codexBusy = "OpenAI Codex\n• Working (2m 18s • esc to interrupt)\n› ";
+  const claudeBusy = "Claude Code\n✻ Musing… (esc to interrupt)\n❯ ";
+  assert.equal(core.__testIsAgentTuiIdleReady("codex", codexBusy), false);
+  assert.equal(core.__testIsAgentTuiIdleReady("claude", claudeBusy), false);
+  // frontend 推定用の isAgentTuiReady は busy 中も agent TUI と判定したまま（回帰防止）
+  assert.equal(core.__testIsAgentTuiReady("codex", codexBusy), true);
+  assert.equal(core.__testIsAgentTuiReady("claude", claudeBusy), true);
+  // idle 画面はこれまでどおり ready
+  assert.equal(core.__testIsAgentTuiIdleReady("codex", "OpenAI Codex\n› "), true);
+  assert.equal(core.__testIsAgentTuiIdleReady("claude", "Claude Code\n❯ "), true);
+  // Grok/Composer は busy 文字列の実機根拠が未採取のため除外対象外（従来判定を維持）
+  assert.equal(core.__testIsAgentTuiIdleReady("grok", "Grok Build\n❯ esc to interrupt"), true);
+
+  // gate 全体: busy が続く間は streak が積み上がらない
+  const blocked = await core.__testWaitAgentTuiReady("codex", [codexBusy], { timeoutMs: 0, pollMs: 10 });
+  assert.equal(blocked.ready, false);
+  const recovered = await core.__testWaitAgentTuiReady(
+    "codex",
+    [codexBusy, "OpenAI Codex\n› ", "OpenAI Codex\n› "],
+    { timeoutMs: 100, pollMs: 10, stableSamples: 2 },
+  );
+  assert.equal(recovered.ready, true);
+});
+
+// ---------------------------------------------------------------- submit座礁観測（実被弾: 未submit promptがcomposerに2時間滞留）
+test("submit座礁観測: composer に送信 text の末尾が残存していれば residue=true", async () => {
+  const text = "1. 既存 runtime event-store を読む\n2. byte-level fail closed を実装する";
+  const stranded =
+    "OpenAI Codex\n• Working (12m • esc to interrupt)\n› 1. 既存 runtime event-store を読む\n  2. byte-level fail closed を実装する";
+  const result = await core.__testDetectAgentSubmitResidue("codex", text, [stranded], { maxSamples: 3 });
+  assert.equal(result.residue, true);
+  assert.equal(result.samples, 3, "残存はサンプル全数の持続で確定する");
+});
+
+test("submit座礁観測: submit 済み（echo は marker より上・composer 空）は residue=false で早期確定", async () => {
+  const text = "1. 既存 runtime event-store を読む\n2. byte-level fail closed を実装する";
+  const submitted =
+    "OpenAI Codex\nuser: 1. 既存 runtime event-store を読む\n  2. byte-level fail closed を実装する\n• Working (2s • esc to interrupt)\n› ";
+  const result = await core.__testDetectAgentSubmitResidue("codex", text, [submitted]);
+  assert.equal(result.residue, false);
+  assert.equal(result.samples, 1);
+});
+
+test("submit座礁観測: 描画遅延の一時残存は false へ収束し、判定不能は null", async () => {
+  const text = "実装方針を検討して plan を出してください";
+  const strandedOnce = "Claude Code\n❯ 実装方針を検討して plan を出してください";
+  const cleared = "Claude Code\n❯ ";
+  const settle = await core.__testDetectAgentSubmitResidue("claude", text, [strandedOnce, cleared]);
+  assert.equal(settle.residue, false, "途中で消えた残存は座礁と報告しない");
+  assert.equal(settle.samples, 2);
+
+  // tail が短すぎる（8 codepoint 未満）→ 観測せず null
+  const short = await core.__testDetectAgentSubmitResidue("codex", "OK", ["OpenAI Codex\n› OK"]);
+  assert.equal(short.residue, null);
+  assert.equal(short.samples, 0);
+
+  // 入力欄 marker が見つからない画面 → null
+  const noMarker = await core.__testDetectAgentSubmitResidue("codex", text, ["OpenAI Codex\nrestarting..."]);
+  assert.equal(noMarker.residue, null);
+});
+
+test("submit座礁観測: 画面折返し（whitespace 差）を跨いでも末尾一致で検出する", async () => {
+  const text = "3. byte-level fail closed を critical path に適用する";
+  const wrapped = "OpenAI Codex\n› 3. byte-level fail closed を critical\n  path に適用する";
+  const result = await core.__testDetectAgentSubmitResidue("codex", text, [wrapped], { maxSamples: 1 });
+  assert.equal(result.residue, true);
+});
+
 // ---------------------------------------------------------------- toWslPath（Windows 橋渡しのパス変換）
 test("toWslPath: ドライブパスを /mnt 形へ（ドライブ文字は小文字化）", () => {
   assert.equal(core.toWslPath("C:\\Users\\x\\f.log"), "/mnt/c/Users/x/f.log");
