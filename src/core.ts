@@ -1261,9 +1261,6 @@ export function readOnlyPtyListDiagnostic(): { status: DiagnosticStatus; session
 
 function closeSessionInternal(name: string, observeDependency = true): string {
   assertSessionName(name);
-  if (agentWaitLocks.has(name)) {
-    throw new AitermError(`agent session '${name}' は agent_done 待機中のため close できません`, 2);
-  }
   {
     // 別プロセスの待機は in-memory Set に映らない。生きた file lock があれば close で state を消さない
     const foreign = liveWaitLocks(name);
@@ -1326,12 +1323,6 @@ export function closeSessionResult(name: string): PtyCloseResult {
 }
 
 export function killAll(): string {
-  if (agentWaitLocks.size > 0) {
-    throw new AitermError(
-      `agent_done 待機中の session があるため killAll できません: ${Array.from(agentWaitLocks).join(",")}`,
-      2,
-    );
-  }
   {
     // 別プロセスの待機（file lock が生きているもの）も巻き添えにしない
     const foreign = liveWaitLocks(null);
@@ -1475,18 +1466,11 @@ interface AgentTuiReadyWaitResult {
   lastScreen: string;
 }
 
-type AgentLauncherWait = "none" | "agent_done";
 
 const DEFAULT_AGENT_DONE_TIMEOUT = 600;
-const agentWaitLocks = new Set<string>();
 const agentMetadataNegativeCache = new Map<string, number>();
 let agentTuiReadyStableSamplesTestOverride: number | null = null;
 
-function normalizeAgentLauncherWait(v: unknown): AgentLauncherWait {
-  if (v == null || v === "none") return "none";
-  if (v === "agent_done") return "agent_done";
-  throw new AitermError('wait は "none" または "agent_done" を指定してください', 2);
-}
 
 function codexHookScriptPath(): string {
   return path.join(path.dirname(fileURLToPath(import.meta.url)), "codex-stop-hook.js");
@@ -2175,53 +2159,13 @@ function liveWaitLocks(name: string | null): Array<{ session: string; pid: numbe
     if (!f.endsWith(".wait.lock")) continue;
     const session = f.slice(0, f.indexOf("."));
     if (name != null && session !== name) continue;
-    if (agentWaitLocks.has(session)) continue; // in-process 待機は呼び出し側の既存ガードが担当
     const probe = probeWaitLock(path.join(dir, f));
     if (probe.live) out.push({ session, pid: probe.pid, at: probe.at });
   }
   return out;
 }
 
-function waitLockBusyError(session: string, probe: WaitLockProbe): AitermError {
-  const detail = probe.pid != null ? `（pid ${probe.pid}${probe.at ? ` / ${probe.at} 開始` : ""}）` : "";
-  return new AitermError(`agent session '${session}' は別プロセスの agent_done 待機中です${detail}`, 2);
-}
 
-function acquireAgentWaitFileLock(meta: AgentMetadata): () => void {
-  const p = agentWaitLockPath(meta.aiterm_session, meta.launch_id);
-  const nofollow = (fs.constants as Record<string, number>).O_NOFOLLOW ?? 0;
-  let fd: number | null = null;
-  for (let attempt = 0; attempt < 2 && fd == null; attempt++) {
-    try {
-      fd = fs.openSync(p, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY | nofollow, 0o600);
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
-      const probe = probeWaitLock(p);
-      // 生きた待機、または回収後の再取得でも EEXIST（=直後に別プロセスが取得した race）は拒否
-      if (probe.live || attempt > 0) throw waitLockBusyError(meta.aiterm_session, probe);
-      unlinkStaleWaitLock(p);
-    }
-  }
-  if (fd == null) throw new AitermError(`agent session '${meta.aiterm_session}' は別プロセスの agent_done 待機中です`, 2);
-  try {
-    fs.writeSync(fd, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }) + "\n", undefined, "utf8");
-  } finally {
-    fs.closeSync(fd);
-  }
-  try {
-    fs.chmodSync(p, 0o600);
-  } catch {
-    /* noop */
-  }
-  return () => {
-    try {
-      const st = fs.lstatSync(p);
-      if (st.isFile() && !st.isSymbolicLink() && st.uid === currentUid()) fs.unlinkSync(p);
-    } catch {
-      /* noop */
-    }
-  };
-}
 
 function createClaudeAgentMetadata(
   name: string,
@@ -2899,45 +2843,6 @@ function assertInitialPromptNotPendingForSend(name: string, force: boolean): voi
   );
 }
 
-async function waitAgentDoneEvent(
-  meta: AgentMetadata,
-  startOffset: number,
-  timeout: number,
-  expectedOperationId: string | null = null,
-): Promise<AgentDoneWaitResult> {
-  const deadline = performance.now() + timeout * 1000;
-  let cursor = startOffset;
-  let carry = "";
-  let malformedEvents = 0;
-  for (;;) {
-    const size = safeStatSize(meta.event_file);
-    if (size < cursor) {
-      cursor = 0;
-      carry = "";
-    }
-    if (size > cursor) {
-      if (size - cursor > AGENT_EVENT_MAX_BYTES) {
-        throw new AitermError("agent event file の増分が大きすぎます。該当セッションを閉じて起動し直してください。", 2);
-      }
-      carry += readFileRange(meta.event_file, cursor, size).toString("utf8");
-      cursor = size;
-      const parts = carry.split("\n");
-      carry = parts.pop() ?? "";
-      const scanned = scanAgentDoneLines(parts, meta, expectedOperationId);
-      malformedEvents += scanned.malformedEvents;
-      if (scanned.ambiguousVendorSession) {
-        throw new AitermError("agent event file に複数の vendor_session_id が混在しています。該当セッションを閉じて起動し直してください。", 2);
-      }
-      if (scanned.event) {
-        bindAgentVendorSession(meta, scanned.event);
-        if (meta.vendor_session_id) writeAgentMetadata(meta);
-        return { event: scanned.event, malformedEvents };
-      }
-    }
-    if (performance.now() >= deadline) return { event: null, malformedEvents };
-    await sleep(AGENT_DONE_POLL_MS);
-  }
-}
 
 export interface AgentWaitObservation {
   schema: "aiterm.agent-wait-result.v1";
@@ -2957,18 +2862,21 @@ export interface AgentWaitObservation {
 // vendor_session_idのbind永続化を行わない点だけ意図的に異なる（waiterは観測者であって所有者でない）。
 export async function observeAgentDone(
   name: string,
-  o: { operation_id?: string | null; timeout?: number } = {},
+  o: { operation_id?: string | null; timeout?: number; cursor?: number | null } = {},
 ): Promise<AgentWaitObservation> {
   const meta = loadAgentMetadata(name);
   const operationId = o.operation_id == null ? null : validateOperationId(o.operation_id);
   if (operationId && meta.kind !== "claude") {
     throw new AitermError("operation_id はClaude agent sessionだけで使用できます", 2);
   }
+  if (o.cursor != null && (!Number.isInteger(o.cursor) || o.cursor < 0)) {
+    throw new AitermError("cursor は0以上の整数byte offsetで指定してください", 2);
+  }
   const timeout = o.timeout ?? DEFAULT_AGENT_DONE_TIMEOUT;
   const metadataFile = agentMetadataPath(meta.aiterm_session, meta.launch_id);
-  // operation相関があるならoperation_idの一意性で誤帰属を防げるため先頭から全走査できる
-  // （waiter起動がdispatchより遅れても取りこぼさない）。相関なしはwaiter起動時EOFを境界にする。
-  const startOffset = operationId ? 0 : safeStatSize(meta.event_file);
+  // 境界の優先順: dispatch receipt の event_cursor（起動順序に依存しない）→ operation相関
+  // （operation_idの一意性で先頭から全走査できる）→ waiter起動時EOF（waiter先行起動が前提）。
+  const startOffset = o.cursor ?? (operationId ? 0 : safeStatSize(meta.event_file));
   const deadline = performance.now() + timeout * 1000;
   let cursor = startOffset;
   let carry = "";
@@ -3015,28 +2923,6 @@ export async function observeAgentDone(
   }
 }
 
-function agentDoneSuffix(
-  wait: AgentDoneWaitResult,
-  vendor: AgentKind,
-  operationId: string | null = null,
-): string {
-  const ev = wait.event;
-  if (!ev) {
-    const malformed = wait.malformedEvents ? ` malformed_events=${wait.malformedEvents}` : "";
-    const operation = operationId ? ` operation_id=${operationId}` : "";
-    return ` [is_complete=False via agent_timeout vendor=${vendor}${operation}${malformed}]`;
-  }
-  const bits = [
-    "is_complete=True",
-    "via agent_done",
-    `vendor=${ev.vendor}`,
-    ev.turn_id ? `turn_id=${ev.turn_id}` : null,
-    ev.vendor_session_id ? `vendor_session_id=${ev.vendor_session_id}` : null,
-    ev.operation_id ? `operation_id=${ev.operation_id}` : null,
-    `done_status=${ev.done_status}`,
-  ].filter(Boolean);
-  return ` [${bits.join(" ")}]`;
-}
 
 function isAgentTuiReady(kind: AgentKind, screen: string): boolean {
   if (kind === "claude") {
@@ -3138,15 +3024,6 @@ async function settleAgentDoneScreenImpl(
   return { unstable: true, samples };
 }
 
-async function settleAgentDoneScreen(name: string, lines: number): Promise<AgentScreenSettleResult> {
-  return settleAgentDoneScreenImpl(
-    () => ({
-      screen: captureScreen(name, lines),
-      logSize: safeStatSize(logpath(name)),
-    }),
-    sleep,
-  );
-}
 
 export async function __testSettleAgentDoneScreen(
   samples: AgentScreenSample[],
@@ -3195,20 +3072,9 @@ export function __testSetAgentTuiReadyStableSamples(value: number | null): void 
   agentTuiReadyStableSamplesTestOverride = value;
 }
 
-export interface AgentDoneSendOpts extends SendOpts {
-  timeout?: number;
-  ready_timeout?: number;
-  screen?: boolean;
-  lines?: number | null;
-  operation_id?: string | null;
-}
 
 export interface InitialAgentPromptOpts {
-  wait?: AgentLauncherWait;
-  timeout?: number;
   ready_timeout?: number;
-  screen?: boolean;
-  lines?: number | null;
 }
 
 async function sendAgentPromptText(name: string, text: string): Promise<void> {
@@ -3230,9 +3096,7 @@ export async function sendInitialAgentPrompt(
   o: InitialAgentPromptOpts = {},
 ): Promise<string> {
   assertSessionName(name);
-  const waitMode = normalizeAgentLauncherWait(o.wait);
   const meta = loadAgentMetadata(name);
-  if (agentWaitLocks.has(name)) throw new AitermError(`agent session '${name}' は別の agent_done 待機中です`, 2);
   if (meta.initial_prompt === "done") {
     throw new AitermError(`agent session '${name}' の起動時 prompt は既に完了しています`, 2);
   }
@@ -3242,122 +3106,100 @@ export async function sendInitialAgentPrompt(
       2,
     );
   }
-  const releaseFileLock = acquireAgentWaitFileLock(meta);
-  const timeout = o.timeout ?? DEFAULT_AGENT_DONE_TIMEOUT;
-  const screen = o.screen ?? true;
-  agentWaitLocks.add(name);
-  try {
-    setInitialPromptState(meta, "not_sent");
-    const ready = await waitAgentTuiReady(name, meta, o.ready_timeout ?? AGENT_TUI_READY_TIMEOUT_MS);
-    if (!ready.ready) {
-      return (
-        `initial_prompt=not_sent vendor=${meta.kind} ready=false samples=${ready.samples}\n` +
-        `agent session '${name}' の ${agentLabel(meta.kind)} TUI が入力受付状態になりません。prompt は送信していません。`
-      );
-    }
-    const startOffset = safeStatSize(meta.event_file);
-    try {
-      if (meta.kind === "claude") {
-        prepareSendText(text, { raw: false, force: true });
-        reserveAnonymousClaudeTurn(meta);
-      }
-      await sendAgentPromptText(name, text);
-      setInitialPromptState(meta, "pending");
-    } catch (e) {
-      setInitialPromptState(meta, "failed");
-      throw e;
-    }
-    if (waitMode === "none") {
-      return (
-        `initial_prompt=pending vendor=${meta.kind}\n` +
-        `起動時 prompt を送信しました。完了後の follow-up は pty_send(wait:"agent_done") を使ってください。`
-      );
-    }
-    const wait = await waitAgentDoneEvent(meta, startOffset, timeout);
-    if (wait.event) {
-      setInitialPromptState(meta, "done");
-    } else {
-      setInitialPromptState(meta, "pending");
-    }
-    const settled = wait.event
-      ? await settleAgentDoneScreen(name, o.lines ?? 0)
-      : { unstable: false, samples: 0 };
-    const out = await readOutput(name, {
-      screen,
-      lines: o.lines ?? null,
-      timeout: 0,
-    });
-    writeOffset(name, safeStatSize(logpath(name)));
-    return out + agentDoneSuffix(wait, meta.kind) + (settled.unstable ? " [agent_done_but_screen_unstable]" : "");
-  } finally {
-    agentWaitLocks.delete(name);
-    releaseFileLock();
+  setInitialPromptState(meta, "not_sent");
+  const ready = await waitAgentTuiReady(name, meta, o.ready_timeout ?? AGENT_TUI_READY_TIMEOUT_MS);
+  if (!ready.ready) {
+    return (
+      `initial_prompt=not_sent vendor=${meta.kind} ready=false samples=${ready.samples}\n` +
+      `agent session '${name}' の ${agentLabel(meta.kind)} TUI が入力受付状態になりません。prompt は送信していません。`
+    );
   }
+  const startOffset = safeStatSize(meta.event_file);
+  try {
+    if (meta.kind === "claude") {
+      prepareSendText(text, { raw: false, force: true });
+      reserveAnonymousClaudeTurn(meta);
+    }
+    await sendAgentPromptText(name, text);
+    setInitialPromptState(meta, "pending");
+  } catch (e) {
+    setInitialPromptState(meta, "failed");
+    throw e;
+  }
+  return (
+    `initial_prompt=pending vendor=${meta.kind} event_cursor=${startOffset}\n` +
+    `起動時 prompt を送信した。完了通知は aiterm-wait --session ${name} --cursor ${startOffset}（ホストのバックグラウンドタスクとして実行し、exit を完了通知にする）、` +
+    `回収は pty_read(agent_transcript:true) を使う。`
+  );
 }
 
-export async function sendAndWaitAgentDone(name: string, text: string, o: AgentDoneSendOpts = {}): Promise<string> {
+export function isAgentSession(name: string): boolean {
   assertSessionName(name);
-  if (o.enter === false) throw new AitermError('wait:"agent_done" は enter:false と併用できません', 2);
-  if (o.mark) throw new AitermError('wait:"agent_done" と mark:true は併用できません', 2);
-  if (o.rtk) throw new AitermError('wait:"agent_done" と rtk:true は併用できません', 2);
+  return tryLoadAgentMetadata(name) !== null;
+}
+
+export interface AgentDispatchReceipt {
+  schema: "aiterm.agent-dispatch.v1";
+  session_id: string;
+  launch_id: string;
+  vendor: AgentKind;
+  event_cursor: number;
+  operation_id: string | null;
+}
+
+// v0.16.0: 親をブロックする wait 経路は廃止した。send は ready gate と submit 分離を内蔵した
+// dispatch として即返り、event_cursor（送信直前の event file 境界）を receipt で返す。
+// 完了通知は aiterm-wait（--cursor で境界を渡す）、回収は pty_read / claude_turn recover が担う。
+export async function dispatchAgentTurn(
+  name: string,
+  text: string,
+  o: { operation_id?: string | null; ready_timeout?: number; force?: boolean; raw?: boolean } = {},
+): Promise<AgentDispatchReceipt> {
+  assertSessionName(name);
   const meta = loadAgentMetadata(name);
   const operationId = o.operation_id == null ? null : validateOperationId(o.operation_id);
   if (operationId && meta.kind !== "claude") {
     throw new AitermError("operation_id はClaude agent sessionだけで使用できます", 2);
   }
-  if (agentWaitLocks.has(name)) throw new AitermError(`agent session '${name}' は別の agent_done 待機中です`, 2);
-  const releaseFileLock = acquireAgentWaitFileLock(meta);
-
-  const timeout = o.timeout ?? DEFAULT_AGENT_DONE_TIMEOUT;
-  const screen = o.screen ?? true;
-  agentWaitLocks.add(name);
-  try {
-    bindCompletedInitialPrompt(meta);
-    if (!meta.vendor_session_id) {
-      const ready = await waitAgentTuiReady(name, meta, o.ready_timeout ?? AGENT_TUI_READY_TIMEOUT_MS);
-      if (!ready.ready) {
-        throw new AitermError(
-          `agent session '${name}' の ${agentLabel(meta.kind)} TUI が入力受付状態になりません。文字列は送信していません。` +
-            "少し後で pty_read(screen:true) を確認し、TUI が起動済みなら再度 pty_send(wait:\"agent_done\") してください。",
-          2,
-        );
-      }
+  bindCompletedInitialPrompt(meta);
+  if (!meta.vendor_session_id) {
+    const ready = await waitAgentTuiReady(name, meta, o.ready_timeout ?? AGENT_TUI_READY_TIMEOUT_MS);
+    if (!ready.ready) {
+      throw new AitermError(
+        `agent session '${name}' の ${agentLabel(meta.kind)} TUI が入力受付状態になりません。文字列は送信していません。` +
+          "少し後で pty_read(screen:true) を確認し、TUI が起動済みなら再度 pty_send してください。",
+        2,
+      );
     }
-    const startOffset = safeStatSize(meta.event_file);
-    if (meta.kind === "claude") {
-      // durable／anonymousを分岐する前に同じsend preflightを通す。拒否されるpromptの
-      // receipt／active markerだけを残して、来ないStopを待つ状態を作らない。
-      prepareSendText(text, { raw: o.raw, force: o.force });
-      if (operationId) {
-        reserveClaudeOperation(meta, operationId);
-      } else reserveAnonymousClaudeTurn(meta);
-    }
-    send(name, text, {
-      enter: false,
-      force: o.force,
-      raw: o.raw,
-      mark: false,
-      rtk: false,
-      preserveAgentOperation: meta.kind === "claude",
-    });
-    // Codex TUI は literal text 投入直後の Enter を取り落とすことがある。agent 経路だけ submit を分離する。
-    await sleep(AGENT_SUBMIT_DELAY_MS);
-    sendKey(name, "Enter", { preserveAgentOperation: meta.kind === "claude" });
-    const wait = await waitAgentDoneEvent(meta, startOffset, timeout, operationId);
-    const settled = wait.event
-      ? await settleAgentDoneScreen(name, o.lines ?? 0)
-      : { unstable: false, samples: 0 };
-    const out = await readOutput(name, {
-      screen,
-      lines: o.lines ?? null,
-      timeout: 0,
-    });
-    writeOffset(name, safeStatSize(logpath(name)));
-    return out + agentDoneSuffix(wait, meta.kind, operationId) + (settled.unstable ? " [agent_done_but_screen_unstable]" : "");
-  } finally {
-    agentWaitLocks.delete(name);
-    releaseFileLock();
   }
+  const startOffset = safeStatSize(meta.event_file);
+  if (meta.kind === "claude") {
+    // durable／anonymousを分岐する前に同じsend preflightを通す。拒否されるpromptの
+    // receipt／active markerだけを残して、来ないStopを待つ状態を作らない。
+    prepareSendText(text, { raw: o.raw, force: o.force });
+    if (operationId) {
+      reserveClaudeOperation(meta, operationId);
+    } else reserveAnonymousClaudeTurn(meta);
+  }
+  send(name, text, {
+    enter: false,
+    force: o.force,
+    raw: o.raw,
+    mark: false,
+    rtk: false,
+    preserveAgentOperation: meta.kind === "claude",
+  });
+  // Codex TUI は literal text 投入直後の Enter を取り落とすことがある。agent 経路だけ submit を分離する。
+  await sleep(AGENT_SUBMIT_DELAY_MS);
+  sendKey(name, "Enter", { preserveAgentOperation: meta.kind === "claude" });
+  return {
+    schema: "aiterm.agent-dispatch.v1",
+    session_id: meta.aiterm_session,
+    launch_id: meta.launch_id,
+    vendor: meta.kind,
+    event_cursor: startOffset,
+    operation_id: operationId,
+  };
 }
 
 export async function runClaudeOperation({
@@ -3365,13 +3207,11 @@ export async function runClaudeOperation({
   action,
   operation_id: operationIdInput,
   text,
-  timeout,
 }: {
   session_id: string;
   action: "issue" | "recover";
   operation_id: string;
   text?: string | null;
-  timeout?: number;
 }): Promise<ClaudeOperationResult> {
   assertSessionName(name);
   if (action !== "issue" && action !== "recover") {
@@ -3385,19 +3225,10 @@ export async function runClaudeOperation({
     if (typeof text !== "string" || text.length === 0) {
       throw new AitermError("claude_turn issueには空でないtextが必要です", 2);
     }
-    const waitTimeout = timeout ?? DEFAULT_AGENT_DONE_TIMEOUT;
-    if (!Number.isFinite(waitTimeout) || waitTimeout < 0 || waitTimeout > 3600) {
-      throw new AitermError("claude_turn timeoutは0〜3600秒で指定してください", 2);
-    }
-    await sendAndWaitAgentDone(name, text, {
-      operation_id: operationId,
-      timeout: waitTimeout,
-      screen: false,
-      lines: 0,
-    });
+    // v0.16.0: issue は dispatch-only。完了通知は aiterm-wait --operation、回収は recover が担う。
+    await dispatchAgentTurn(name, text, { operation_id: operationId });
   } else {
     if (text != null) throw new AitermError("claude_turn recoverにtextは指定できません", 2);
-    if (timeout != null) throw new AitermError("claude_turn recoverにtimeoutは指定できません", 2);
   }
 
   const inspected = inspectClaudeOperation(meta, operationId, action);
@@ -3859,22 +3690,6 @@ export function openAgent(
   ];
 }
 
-async function sendInitialPromptWithoutAgentDone(
-  name: string,
-  kind: AgentKind,
-  text: string,
-  opts: { ready_timeout?: number } = {},
-): Promise<string> {
-  const ready = await waitAgentTuiReadyByKind(name, kind, opts.ready_timeout ?? AGENT_TUI_READY_TIMEOUT_MS);
-  if (!ready.ready) {
-    return (
-      `initial_prompt=not_sent vendor=${kind} ready=false samples=${ready.samples}\n` +
-      `agent session '${name}' の ${agentLabel(kind)} TUI が入力受付状態になりません。prompt は送信していません。`
-    );
-  }
-  await sendAgentPromptText(name, text);
-  return `initial_prompt=sent vendor=${kind}\n起動時 prompt を送信しました。完了待ちは通常の pty_read で行ってください。`;
-}
 
 export async function openAgentWithInitialPrompt(
   kind: AgentKind,
@@ -3884,39 +3699,26 @@ export async function openAgentWithInitialPrompt(
     reasoning_effort?: string | null;
     cwd?: string | null;
     prompt?: string | null;
-    agent_done?: boolean | null;
-    wait?: AgentLauncherWait | null;
-    timeout?: number | null;
     ready_timeout?: number | null;
-    screen?: boolean | null;
-    lines?: number | null;
     launch_operation_id?: string | null;
   } = {},
 ): Promise<[string, string]> {
-  const waitMode = normalizeAgentLauncherWait(opts.wait);
   const prompt = opts.prompt ?? null;
-  const agentDone = !!opts.agent_done;
-  if (opts.launch_operation_id != null && (prompt !== null || waitMode !== "none")) {
-    throw new AitermError('launch_operation_idはpromptなし・wait:"none"のmanaged Claude launchだけで指定できます', 2);
+  if (opts.launch_operation_id != null && prompt !== null) {
+    throw new AitermError("launch_operation_idはpromptなしのmanaged Claude launchだけで指定できます", 2);
   }
-  if (waitMode === "agent_done" && !prompt) {
-    throw new AitermError('wait:"agent_done" は prompt 指定時だけ使えます', 2);
-  }
-  if (waitMode === "agent_done" && !agentDone) {
-    throw new AitermError('wait:"agent_done" には agent_done:true が必要です', 2);
-  }
-  if (!prompt) {
-    return openAgent(kind, opts);
-  }
-  if (kind !== "codex" && kind !== "claude") {
-    if (waitMode === "agent_done") {
-      throw new AitermError(
-        `${agentLabel(kind)} の起動時 prompt wait は未対応です。` +
-          `agent_done:true で prompt なし起動後、TUI のログイン/ready を確認してから pty_send(wait:"agent_done") を使ってください。`,
-        2,
-      );
-    }
-    return openAgent(kind, opts);
+  // v0.16.0: launcher は常に managed（Stop hook つき）で立つ。手動運転したい場合は
+  // pty_open で素の PTY を開き、vendor CLI を自分で send する。
+  if (!prompt || (kind !== "codex" && kind !== "claude")) {
+    return openAgent(kind, {
+      session_name: opts.session_name ?? null,
+      model: opts.model ?? null,
+      reasoning_effort: opts.reasoning_effort ?? null,
+      cwd: opts.cwd ?? null,
+      prompt,
+      agent_done: true,
+      launch_operation_id: opts.launch_operation_id ?? null,
+    });
   }
   const [sid, hint] = openAgent(kind, {
     session_name: opts.session_name ?? null,
@@ -3924,21 +3726,13 @@ export async function openAgentWithInitialPrompt(
     reasoning_effort: opts.reasoning_effort ?? null,
     cwd: opts.cwd ?? null,
     prompt: null,
-    agent_done: agentDone,
+    agent_done: true,
     launch_operation_id: opts.launch_operation_id ?? null,
   });
   try {
-    const initial = agentDone
-      ? await sendInitialAgentPrompt(sid, prompt, {
-          wait: waitMode,
-          timeout: opts.timeout ?? undefined,
-          ready_timeout: opts.ready_timeout ?? undefined,
-          screen: opts.screen ?? undefined,
-          lines: opts.lines ?? null,
-        })
-      : await sendInitialPromptWithoutAgentDone(sid, kind, prompt, {
-          ready_timeout: opts.ready_timeout ?? undefined,
-        });
+    const initial = await sendInitialAgentPrompt(sid, prompt, {
+      ready_timeout: opts.ready_timeout ?? undefined,
+    });
     return [sid, `${hint}\n${initial}`];
   } catch (e) {
     const code = e instanceof AitermError ? e.code : 1;

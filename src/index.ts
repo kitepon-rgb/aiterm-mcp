@@ -107,27 +107,18 @@ server.registerTool(
   "pty_send",
   {
     description:
-      "セッションへテキスト(コマンド)を送る。通常は送信だけ行い、出力は pty_read で取得する。" +
-      "agent_done:true で起動した Claude/Codex/Grok/Composer セッションは wait:'agent_done' で Stop hook まで待てる。" +
-      "managed Claude sessionはturn相関のためwait:'agent_done'を必須とし、通常送信を拒否する。",
+      "セッションへテキストを送る。通常PTYへは送信のみ（出力は pty_read で取得）。" +
+      "agent session（launcher起動）への send は自動で dispatch になる: TUI の ready gate と submit 分離を通して即返り、" +
+      "receipt の event_cursor を返す＝親はブロックしない。完了通知は `aiterm-wait --session <id> --cursor <event_cursor>` を" +
+      "ホストのバックグラウンドタスクとして実行し、その exit で受ける（ポーリング不要）。" +
+      "結果回収は pty_read(agent_transcript:true)、Claude の durable turn は claude_turn を使う。" +
+      "force:true は agent session への手動介入用の素送信。",
     inputSchema: {
       session_id: z.string(),
       text: z
         .string()
-        .describe("送る文字列（コマンド）。UTF-8で最大64KiB"),
-      enter: z.boolean().default(true).describe("末尾で Enter を送る"),
-      wait: z
-        .enum(["none", "agent_done"])
-        .default("none")
-        .describe("none=従来通り送信のみ（managed Claudeでは拒否）。agent_done=agent Stop hook まで待って最終画面を返す"),
-      timeout: z.number().default(600).describe("wait:'agent_done' の最大待ち秒数"),
-      screen: z.boolean().default(true).describe("wait:'agent_done' の返り値を描画済みスクリーンにする"),
-      lines: z.number().int().nullish().describe("wait:'agent_done' で返す末尾 N 行"),
-      operation_id: z
-        .string()
-        .regex(/^sha256:[0-9a-f]{64}$/)
-        .nullish()
-        .describe("Claudeのdurable caller operation ID。wait:'agent_done'時だけ指定し、timeout後の同一結果回収へ使う"),
+        .describe("送る文字列（コマンド／prompt）。UTF-8で最大64KiB"),
+      enter: z.boolean().default(true).describe("末尾で Enter を送る（agent dispatch では常に submit）"),
       mark: z
         .boolean()
         .default(false)
@@ -139,30 +130,57 @@ server.registerTool(
       force: z
         .boolean()
         .default(false)
-        .describe("破壊的コマンドゲートを越える。agent 起動時 prompt の完了待ち中の混入防止ガードも同時に解除する"),
+        .describe("破壊的コマンドゲートを越える。agent session では dispatch せず素送信する（手動介入用）"),
       rtk: z.boolean().default(false).describe("既知コマンドを rtk 形へ委譲して送る（rtk 不在なら素通し）"),
       raw: z.boolean().default(false).describe("送信前サニタイズを無効化"),
     },
+    outputSchema: {
+      schema: z.literal("aiterm.pty-send-result.v1"),
+      mode: z.enum(["sent", "agent_dispatch"]),
+      session_id: z.string(),
+      event_cursor: z.number().int().nullable(),
+      launch_id: z.string().nullable(),
+      vendor: z.enum(["claude", "codex", "grok", "composer"]).nullable(),
+    },
   },
-  async ({ session_id, text, enter, wait, timeout, screen, lines, operation_id, mark, force, rtk, raw }) => {
+  async ({ session_id, text, enter, mark, force, rtk, raw }) => {
     try {
-      if (wait === "agent_done") {
-        return ok(
-          await core.sendAndWaitAgentDone(session_id, text, {
-            enter,
-            mark,
-            force,
-            rtk,
-            raw,
-            timeout,
-            screen,
-            lines: lines ?? null,
-            operation_id: operation_id ?? null,
-          }),
-        );
+      if (!force && core.isAgentSession(session_id)) {
+        if (enter === false) throw new Error("agent session への dispatch は enter:false と併用できません（手動介入は force:true）");
+        if (mark) throw new Error("agent session への dispatch は mark:true と併用できません");
+        if (rtk) throw new Error("agent session への dispatch は rtk:true と併用できません");
+        const receipt = await core.dispatchAgentTurn(session_id, text, { raw });
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text:
+                `dispatchした（vendor=${receipt.vendor}）。完了通知: aiterm-wait --session ${receipt.session_id} --cursor ${receipt.event_cursor} を` +
+                "ホストのバックグラウンドタスクとして実行し exit を待つ。回収: pty_read(agent_transcript:true)",
+            },
+          ],
+          structuredContent: {
+            schema: "aiterm.pty-send-result.v1" as const,
+            mode: "agent_dispatch" as const,
+            session_id: receipt.session_id,
+            event_cursor: receipt.event_cursor,
+            launch_id: receipt.launch_id,
+            vendor: receipt.vendor,
+          },
+        };
       }
-      if (operation_id != null) throw new Error("operation_idはwait:'agent_done'時だけ指定できます");
-      return ok(core.send(session_id, text, { enter, mark, force, rtk, raw }));
+      const out = core.send(session_id, text, { enter, mark, force, rtk, raw });
+      return {
+        content: [{ type: "text" as const, text: out }],
+        structuredContent: {
+          schema: "aiterm.pty-send-result.v1" as const,
+          mode: "sent" as const,
+          session_id,
+          event_cursor: null,
+          launch_id: null,
+          vendor: null,
+        },
+      };
     } catch (e) {
       return fail(e);
     }
@@ -325,7 +343,6 @@ server.registerTool(
       session_id: z.string(),
       operation_id: z.string().regex(/^sha256:[0-9a-f]{64}$/),
       text: z.string().optional().describe("issueだけに指定するbounded turn本文"),
-      timeout: z.number().min(0).max(3600).optional().describe("issueだけに指定するStop待ち秒数"),
     },
     outputSchema: {
       schema: z.literal("aiterm.claude-operation-result.v1"),
@@ -337,14 +354,13 @@ server.registerTool(
       reason: z.enum(["operation_not_found", "result_unknown"]).nullable(),
     },
   },
-  async ({ action, session_id, operation_id, text, timeout }) => {
+  async ({ action, session_id, operation_id, text }) => {
     try {
       const result = await core.runClaudeOperation({
         action,
         session_id,
         operation_id,
         text: text ?? undefined,
-        timeout,
       });
       return {
         content: [{ type: "text" as const, text: JSON.stringify(result) }],
@@ -378,42 +394,27 @@ function registerAgentTool(
   kind: "claude" | "codex" | "grok" | "composer",
   desc: string,
 ): void {
-  const initialPromptWaitSchema: Record<string, z.ZodTypeAny> = {};
-  if (kind === "codex" || kind === "claude") {
-    initialPromptWaitSchema.wait = z
-      .enum(["none", "agent_done"])
-      .default("none")
-      .describe("none=従来通り起動/初回prompt送信のみ。agent_done=起動時promptのStop hookまで待つ（agent_done:true必須）");
-    initialPromptWaitSchema.timeout = z.number().default(600).describe("wait:'agent_done' の最大待ち秒数");
-    initialPromptWaitSchema.screen = z.boolean().default(true).describe("wait:'agent_done' の返り値を描画済みスクリーンにする");
-    initialPromptWaitSchema.lines = z.number().int().nullish().describe("wait:'agent_done' で返す末尾 N 行");
-  }
   const correlatedLaunchSchema: Record<string, z.ZodTypeAny> = {};
   if (kind === "claude") {
     correlatedLaunchSchema.launch_operation_id = z
       .string()
       .regex(/^sha256:[0-9a-f]{64}$/)
       .optional()
-      .describe("promptless managed launchのexact replay相関ID。session_nameとagent_done:trueが必須");
+      .describe("promptless managed launchのexact replay相関ID。session_name必須");
   }
   server.registerTool(
     toolName,
     {
       description: desc,
       inputSchema: {
-        prompt: z.string().nullish().describe("起動時に渡す初手プロンプト（任意）。省略で素のTUI起動"),
+        prompt: z.string().nullish().describe("起動時に渡す初手プロンプト（任意）。送信後は待たずに即返る"),
         model: z.string().nullish().describe(agentModelDesc(kind)),
         // grok/composer の effort は対話 TUI で無効（headless 専用）＝core 側が起動前に明示エラーで拒否。
         // codex は CLI 側の値集合が版で変わるため縛らない（core 側も同方針）。
         reasoning_effort: z.string().nullish().describe(agentEffortDesc(kind)),
         cwd: z.string().nullish().describe("作業ディレクトリ（対象リポのルート等・任意）"),
         session_name: z.string().nullish().describe("セッション名（省略で自動採番）"),
-        agent_done: z
-          .boolean()
-          .default(false)
-          .describe("managed Stop hook を有効化し、pty_send(wait:'agent_done') を使えるようにする"),
         ...correlatedLaunchSchema,
-        ...initialPromptWaitSchema,
       },
       outputSchema: {
         schema: z.literal("aiterm.agent-launch-result.v1"),
@@ -422,7 +423,7 @@ function registerAgentTool(
         managed_completion: z.boolean(),
       },
     },
-    async ({ prompt, model, reasoning_effort, cwd, session_name, agent_done, launch_operation_id, wait, timeout, screen, lines }: any) => {
+    async ({ prompt, model, reasoning_effort, cwd, session_name, launch_operation_id }: any) => {
       try {
         const [sid, hint] = await core.openAgentWithInitialPrompt(kind, {
           prompt: prompt ?? undefined,
@@ -430,18 +431,13 @@ function registerAgentTool(
           reasoning_effort: reasoning_effort ?? undefined,
           cwd: cwd ?? undefined,
           session_name: session_name ?? undefined,
-          agent_done: agent_done ?? false,
           launch_operation_id: launch_operation_id ?? undefined,
-          wait: wait ?? "none",
-          timeout,
-          screen,
-          lines,
         });
         const structured = {
           schema: "aiterm.agent-launch-result.v1" as const,
           provider: kind,
           session_id: sid,
-          managed_completion: agent_done ?? false,
+          managed_completion: true,
         };
         return {
           content: [{ type: "text" as const, text: `session_id: ${sid}\n${hint}` }],
@@ -458,7 +454,7 @@ registerAgentTool(
   "claude_agent",
   "claude",
   "【Claude Code (Anthropic)】の対話エージェントTUIを永続端末に起動する。`claude -p`ではなく、" +
-    "同じ利用者可視sessionへpty_sendで継続入力する。agent_done:trueではisolated settingsのmanaged Stop hookで完了と結果を回収する。",
+    "同じ利用者可視sessionへpty_sendで継続入力する。常にmanaged（isolated settingsのStop hook）で起動し、完了通知はaiterm-wait、結果はpty_read(agent_transcript)/claude_turnで回収する。",
 );
 
 registerAgentTool(

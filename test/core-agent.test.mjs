@@ -569,7 +569,7 @@ test("openAgent claude: launch_operation_idのpromptless managed条件を固定�
       agent_done: true,
       launch_operation_id: operationId,
     }),
-    /promptなし・wait:"none"/,
+    /launch_operation_idはpromptなしのmanaged Claude launchだけで指定できます/,
   );
 });
 
@@ -937,11 +937,7 @@ test("killAll: Claude operation markerとdispatch receiptもcleanupする", { sk
   const operationId = `sha256:${"0".repeat(64)}`;
   const meta = readAgentMeta(sid);
   await markFakeAgentReady(sid, "claude");
-  await core.sendAndWaitAgentDone(sid, "CLAUDE_KILL_ALL_OPERATION", {
-    operation_id: operationId,
-    timeout: 0,
-    screen: false,
-  });
+  await core.dispatchAgentTurn(sid, "CLAUDE_KILL_ALL_OPERATION", { operation_id: operationId });
   const dir = path.dirname(meta.result_file);
   const before = fs.readdirSync(dir).filter((f) => f.startsWith(`${sid}.${meta.launch_id}.`));
   assert.ok(before.some((f) => f.endsWith(".claude-operation.json")));
@@ -969,16 +965,17 @@ test("openAgent agent_done: 緩い state root でも stale metadata を掃除し
       assert.equal(fs.statSync(root).mode & 0o777, 0o700);
 
       await markFakeAgentReady(session, "codex");
-      const out = await core.sendAndWaitAgentDone(session, "echo LOOSE_CLEANUP_BODY", { timeout: 0, screen: false });
-      assert.match(out, /LOOSE_CLEANUP_BODY/);
-      assert.match(out, /is_complete=False via agent_timeout vendor=codex/);
+      const receipt = await core.dispatchAgentTurn(session, "echo LOOSE_CLEANUP_BODY");
+      const observation = await core.observeAgentDone(session, { cursor: receipt.event_cursor, timeout: 0 });
+      assert.equal(observation.outcome, "timeout");
+      assert.equal(observation.vendor, "codex");
     } finally {
       core.closeSession(sid);
     }
   });
 });
 
-test("sendAndWaitAgentDone: event 到着まで待って結果へ agent_done suffix を付ける", { skip: skipAgentDone }, async () => {
+test("dispatch/observe: event 到着まで待って結果へ agent_done suffix を付ける", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const [sid] = core.openAgent("codex", { agent_done: true });
     try {
@@ -986,7 +983,7 @@ test("sendAndWaitAgentDone: event 到着まで待って結果へ agent_done suff
       assert.ok(metaFile);
       const meta = JSON.parse(fs.readFileSync(path.join(agentStateDir(), metaFile), "utf8"));
       await markFakeAgentReady(sid, "codex");
-      const p = core.sendAndWaitAgentDone(sid, "echo AGENT_DONE_BODY", { timeout: 3, screen: false });
+      const receipt = await core.dispatchAgentTurn(sid, "echo AGENT_DONE_BODY");
       setTimeout(() => {
         fs.appendFileSync(
           meta.event_file,
@@ -1003,16 +1000,17 @@ test("sendAndWaitAgentDone: event 到着まで待って結果へ agent_done suff
           }) + "\n",
         );
       }, 200);
-      const out = await p;
-      assert.match(out, /AGENT_DONE_BODY/, `send 結果を読める: ${out}`);
-      assert.match(out, /is_complete=True via agent_done vendor=codex turn_id=turn-test/, `agent_done suffix: ${out}`);
+      const observation = await core.observeAgentDone(sid, { cursor: receipt.event_cursor, timeout: 3 });
+      assert.equal(observation.outcome, "done");
+      assert.equal(observation.vendor, "codex");
+      assert.equal(observation.turn_id, "turn-test");
     } finally {
       core.closeSession(sid);
     }
   });
 });
 
-test("sendAndWaitAgentDone: Grok vendor event も待って suffix に vendor=grok を付ける", { skip: skipAgentDone }, async () => {
+test("dispatch/observe: Grok vendor event も待って suffix に vendor=grok を付ける", { skip: skipAgentDone }, async () => {
   const savedBin = process.env.GROK_BIN;
   process.env.GROK_BIN = "/bin/echo";
   try {
@@ -1023,7 +1021,7 @@ test("sendAndWaitAgentDone: Grok vendor event も待って suffix に vendor=gro
         assert.ok(metaFile);
         const meta = JSON.parse(fs.readFileSync(path.join(agentStateDir(), metaFile), "utf8"));
         await markFakeAgentReady(sid, "grok");
-        const p = core.sendAndWaitAgentDone(sid, "echo GROK_DONE_BODY", { timeout: 5, screen: false });
+        const receipt = await core.dispatchAgentTurn(sid, "echo GROK_DONE_BODY");
         setTimeout(() => {
           fs.appendFileSync(
             meta.event_file,
@@ -1040,9 +1038,10 @@ test("sendAndWaitAgentDone: Grok vendor event も待って suffix に vendor=gro
             }) + "\n",
           );
         }, 500);
-        const out = await p;
-        assert.match(out, /GROK_DONE_BODY/, `send 結果を読める: ${out}`);
-        assert.match(out, /is_complete=True via agent_done vendor=grok turn_id=prompt-test/, `agent_done suffix: ${out}`);
+        const observation = await core.observeAgentDone(sid, { cursor: receipt.event_cursor, timeout: 5 });
+        assert.equal(observation.outcome, "done");
+        assert.equal(observation.vendor, "grok");
+        assert.equal(observation.turn_id, "prompt-test");
       } finally {
         core.closeSession(sid);
       }
@@ -1053,18 +1052,20 @@ test("sendAndWaitAgentDone: Grok vendor event も待って suffix に vendor=gro
   }
 });
 
-test("sendAndWaitAgentDone: Claudeの同一PTY follow-upをStop resultと相関して回収する", { skip: skipAgentDone }, async () => {
+test("dispatch/observe: Claudeの同一PTY follow-upをStop resultと相関して回収する", { skip: skipAgentDone }, async () => {
   const [sid] = core.openAgent("claude", { agent_done: true });
   try {
     const meta = readAgentMeta(sid);
     await markFakeAgentReady(sid, "claude");
-    const p = core.sendAndWaitAgentDone(sid, "CLAUDE_FOLLOWUP_PROMPT", { timeout: 3, screen: false });
+    const receipt = await core.dispatchAgentTurn(sid, "CLAUDE_FOLLOWUP_PROMPT");
     setTimeout(() => writeClaudeDone(meta, "Claude follow-up answer", {
       vendor_session_id: "claude-followup-session",
     }), 200);
-    const out = await p;
-    assert.match(out, /CLAUDE_FOLLOWUP_PROMPT/);
-    assert.match(out, /is_complete=True via agent_done vendor=claude vendor_session_id=claude-followup-session/);
+    const observation = await core.observeAgentDone(sid, { cursor: receipt.event_cursor, timeout: 3 });
+    assert.equal(observation.outcome, "done");
+    assert.equal(observation.vendor, "claude");
+    assert.equal(observation.vendor_session_id, "claude-followup-session");
+    assert.match(fs.readFileSync(sessionLogPath(sid), "utf8"), /CLAUDE_FOLLOWUP_PROMPT/);
     const transcript = await core.readAgentTranscript(sid);
     assert.match(transcript, /Claude follow-up answer/);
     assert.match(transcript, /agent_transcript vendor=claude turn_id=unknown/);
@@ -1073,13 +1074,15 @@ test("sendAndWaitAgentDone: Claudeの同一PTY follow-upをStop resultと相関�
   }
 });
 
-test("sendAndWaitAgentDone: Claude timeout後は再送せず後着resultを同一sessionから回収する", { skip: skipAgentDone }, async () => {
+test("dispatch/observe: Claude timeout後は再送せず後着resultを同一sessionから回収する", { skip: skipAgentDone }, async () => {
   const [sid] = core.openAgent("claude", { agent_done: true });
   try {
     const meta = readAgentMeta(sid);
     await markFakeAgentReady(sid, "claude");
-    const out = await core.sendAndWaitAgentDone(sid, "CLAUDE_TIMEOUT_PROMPT", { timeout: 0, screen: false });
-    assert.match(out, /is_complete=False via agent_timeout vendor=claude/);
+    const receipt = await core.dispatchAgentTurn(sid, "CLAUDE_TIMEOUT_PROMPT");
+    const observation = await core.observeAgentDone(sid, { cursor: receipt.event_cursor, timeout: 0 });
+    assert.equal(observation.outcome, "timeout");
+    assert.equal(observation.vendor, "claude");
     assert.match(core.listSessions(), new RegExp(`(^|\\n)${sid}\\t`), "timeout後も同じsessionを残す");
 
     writeClaudeDone(meta, "Claude late answer", {
@@ -1124,18 +1127,21 @@ test("Claude operation回収: 古いR1を新しいO2へ誤帰属せずO2だけ�
   }
 });
 
-test("sendAndWaitAgentDone: Claude operation_idをmarker・完了suffix・timeout後回収へ通す", { skip: skipAgentDone }, async () => {
+test("dispatch/observe: Claude operation_idをmarker・完了suffix・timeout後回収へ通す", { skip: skipAgentDone }, async () => {
   const [sid] = core.openAgent("claude", { agent_done: true });
   const operationId = `sha256:${"3".repeat(64)}`;
   try {
     const meta = readAgentMeta(sid);
     await markFakeAgentReady(sid, "claude");
-    const pending = await core.sendAndWaitAgentDone(sid, "CLAUDE_OPERATION_TIMEOUT", {
+    const receipt = await core.dispatchAgentTurn(sid, "CLAUDE_OPERATION_TIMEOUT", { operation_id: operationId });
+    assert.equal(receipt.operation_id, operationId);
+    const observation = await core.observeAgentDone(sid, {
+      cursor: receipt.event_cursor,
       operation_id: operationId,
       timeout: 0,
-      screen: false,
     });
-    assert.match(pending, new RegExp(`operation_id=${operationId}`));
+    assert.equal(observation.outcome, "timeout");
+    assert.equal(observation.operation_id, operationId);
     const marker = JSON.parse(fs.readFileSync(
       path.join(path.dirname(meta.result_file), `${sid}.${meta.launch_id}.claude-operation.json`),
       "utf8",
@@ -1209,15 +1215,10 @@ test("runClaudeOperation: 未dispatchとreceiptだけのoperationをunknown理�
   const receiptOnly = `sha256:${"f".repeat(64)}`;
   try {
     const meta = readAgentMeta(sid);
-    await assert.rejects(
-      () => core.runClaudeOperation({
-        session_id: sid,
-        action: "recover",
-        operation_id: undispatched,
-        timeout: 1,
-      }),
-      /recoverにtimeoutは指定できません/,
-    );
+    // v0.16.0: runClaudeOperation から timeout パラメータ自体が削除された（型からも消えた）。
+    // 実装は destructuring で未知キーを黙って無視するだけで、"recoverにtimeoutは指定できません"
+    // という拒否は現 core.ts に存在しない（grep で確認済み）。旧テストが検証していたrejectを
+    // 期待側の実挙動（無視されて通常のunknown結果が返る）へ合わせる。
     assert.deepEqual(
       await core.runClaudeOperation({ session_id: sid, action: "recover", operation_id: undispatched }),
       {
@@ -1290,11 +1291,7 @@ test("Claude operation E2E fixture: core dispatch markerを実Stop hookが消費
   try {
     const meta = readAgentMeta(sid);
     await markFakeAgentReady(sid, "claude");
-    await core.sendAndWaitAgentDone(sid, "CLAUDE_OPERATION_E2E", {
-      operation_id: operationId,
-      timeout: 0,
-      screen: false,
-    });
+    await core.dispatchAgentTurn(sid, "CLAUDE_OPERATION_E2E", { operation_id: operationId });
     const hook = invokeClaudeStopHook(meta, "hook-correlated E2E answer", "claude-operation-e2e-session");
     assert.equal(hook.status, 0, hook.stderr);
     assert.equal(hook.stderr, "");
@@ -1302,10 +1299,7 @@ test("Claude operation E2E fixture: core dispatch markerを実Stop hookが消費
     assert.match(recovered, /hook-correlated E2E answer/);
     assert.match(recovered, new RegExp(`operation_id=${operationId}`));
     await assert.rejects(
-      () => core.sendAndWaitAgentDone(sid, "CLAUDE_OPERATION_E2E_REPLAY", {
-        operation_id: operationId,
-        timeout: 0,
-      }),
+      () => core.dispatchAgentTurn(sid, "CLAUDE_OPERATION_E2E_REPLAY", { operation_id: operationId }),
       /既にdispatch済み/,
     );
   } finally {
@@ -1313,26 +1307,26 @@ test("Claude operation E2E fixture: core dispatch markerを実Stop hookが消費
   }
 });
 
-test("sendAndWaitAgentDone: 別operationのStop eventを期待operationの完了にしない", { skip: skipAgentDone }, async () => {
+test("dispatch/observe: 別operationのStop eventを期待operationの完了にしない", { skip: skipAgentDone }, async () => {
   const [sid] = core.openAgent("claude", { agent_done: true });
   const expected = `sha256:${"4".repeat(64)}`;
   const other = `sha256:${"5".repeat(64)}`;
   try {
     const meta = readAgentMeta(sid);
     await markFakeAgentReady(sid, "claude");
-    const waiting = core.sendAndWaitAgentDone(sid, "CLAUDE_EXPECTED_OPERATION", {
-      operation_id: expected,
-      timeout: 1,
-      screen: false,
-    });
+    const receipt = await core.dispatchAgentTurn(sid, "CLAUDE_EXPECTED_OPERATION", { operation_id: expected });
     setTimeout(() => writeClaudeDone(meta, "wrong operation answer", {
       vendor_session_id: "claude-other-operation-session",
       operation_id: other,
       consume_marker: false,
     }), 200);
-    const out = await waiting;
-    assert.match(out, /is_complete=False via agent_timeout/);
-    assert.match(out, new RegExp(`operation_id=${expected}`));
+    const observation = await core.observeAgentDone(sid, {
+      cursor: receipt.event_cursor,
+      operation_id: expected,
+      timeout: 1,
+    });
+    assert.equal(observation.outcome, "timeout");
+    assert.equal(observation.operation_id, expected);
   } finally {
     core.closeSession(sid);
   }
@@ -1345,11 +1339,7 @@ test("Claude operation interrupt: active中の通常入力を拒否しC-c後もS
   try {
     const meta = readAgentMeta(sid);
     await markFakeAgentReady(sid, "claude");
-    await core.sendAndWaitAgentDone(sid, "CLAUDE_INTERRUPT_ACTIVE", {
-      operation_id: operationId,
-      timeout: 0,
-      screen: false,
-    });
+    await core.dispatchAgentTurn(sid, "CLAUDE_INTERRUPT_ACTIVE", { operation_id: operationId });
     const marker = path.join(path.dirname(meta.result_file), `${sid}.${meta.launch_id}.claude-operation.json`);
     const tmuxStateDir = path.join(process.env.TMPDIR, "claude-tmux-sockets");
     const markFile = path.join(tmuxStateDir, `${sid}.mark`);
@@ -1373,10 +1363,7 @@ test("Claude operation interrupt: active中の通常入力を拒否しC-c後もS
     assert.match(core.sendKey(sid, "C-c"), /sent key C-c/);
     assert.equal(fs.existsSync(marker), true, "C-c直後も遅延Stopを元operationへ相関する");
     await assert.rejects(
-      () => core.sendAndWaitAgentDone(sid, "MUST_WAIT_FOR_INTERRUPTED_STOP", {
-        operation_id: operation2,
-        timeout: 0,
-      }),
+      () => core.dispatchAgentTurn(sid, "MUST_WAIT_FOR_INTERRUPTED_STOP", { operation_id: operation2 }),
       /未解決/,
     );
 
@@ -1386,11 +1373,7 @@ test("Claude operation interrupt: active中の通常入力を拒否しC-c後もS
     assert.equal(fs.existsSync(marker), false);
     const recovered = await core.readAgentTranscript(sid, { operation_id: operationId });
     assert.match(recovered, /interrupted operation result/);
-    await core.sendAndWaitAgentDone(sid, "SAFE_AFTER_INTERRUPTED_STOP", {
-      operation_id: operation2,
-      timeout: 0,
-      screen: false,
-    });
+    await core.dispatchAgentTurn(sid, "SAFE_AFTER_INTERRUPTED_STOP", { operation_id: operation2 });
   } finally {
     core.closeSession(sid);
   }
@@ -1408,20 +1391,14 @@ test("Claude anonymous turn: timeout中はdurable operationを開始せず遅延
       vendor_session_id: "claude-anonymous-session",
       consume_marker: false,
     });
-    await core.sendAndWaitAgentDone(sid, "CLAUDE_ANONYMOUS_TIMEOUT", {
-      timeout: 0,
-      screen: false,
-    });
+    await core.dispatchAgentTurn(sid, "CLAUDE_ANONYMOUS_TIMEOUT");
     const marker = path.join(path.dirname(meta.result_file), `${sid}.${meta.launch_id}.claude-operation.json`);
     assert.deepEqual(JSON.parse(fs.readFileSync(marker, "utf8")), {
       schema: "aiterm.claude-operation-marker.v1",
       operation_id: null,
     });
     await assert.rejects(
-      () => core.sendAndWaitAgentDone(sid, "MUST_NOT_OVERWRITE_ANONYMOUS", {
-        operation_id: operationId,
-        timeout: 0,
-      }),
+      () => core.dispatchAgentTurn(sid, "MUST_NOT_OVERWRITE_ANONYMOUS", { operation_id: operationId }),
       /operation_idなし.*未解決/,
     );
     await assert.rejects(() => core.readAgentTranscript(sid), /operation_idなし.*まだ完了していません/);
@@ -1433,11 +1410,7 @@ test("Claude anonymous turn: timeout中はdurable operationを開始せず遅延
     const anonymous = await core.readAgentTranscript(sid);
     assert.match(anonymous, /anonymous late result/);
     assert.doesNotMatch(anonymous, /operation_id=/);
-    await core.sendAndWaitAgentDone(sid, "SAFE_DURABLE_AFTER_ANONYMOUS_STOP", {
-      operation_id: operationId,
-      timeout: 0,
-      screen: false,
-    });
+    await core.dispatchAgentTurn(sid, "SAFE_DURABLE_AFTER_ANONYMOUS_STOP", { operation_id: operationId });
   } finally {
     core.closeSession(sid);
   }
@@ -1447,7 +1420,7 @@ test("Claude operation_id: malformed値と非Claude sessionは送信前に拒否
   const [claude] = core.openAgent("claude", { agent_done: true });
   try {
     await assert.rejects(
-      () => core.sendAndWaitAgentDone(claude, "MUST_NOT_SEND", { operation_id: "bad", timeout: 0 }),
+      () => core.dispatchAgentTurn(claude, "MUST_NOT_SEND", { operation_id: "bad" }),
       /sha256:<64 lowercase hex>/,
     );
     assert.doesNotMatch(fs.readFileSync(sessionLogPath(claude), "utf8"), /MUST_NOT_SEND/);
@@ -1459,10 +1432,7 @@ test("Claude operation_id: malformed値と非Claude sessionは送信前に拒否
     const [codex] = core.openAgent("codex", { agent_done: true });
     try {
       await assert.rejects(
-        () => core.sendAndWaitAgentDone(codex, "MUST_NOT_SEND_CODEX", {
-          operation_id: `sha256:${"f".repeat(64)}`,
-          timeout: 0,
-        }),
+        () => core.dispatchAgentTurn(codex, "MUST_NOT_SEND_CODEX", { operation_id: `sha256:${"f".repeat(64)}` }),
         /Claude agent session/,
       );
       assert.doesNotMatch(fs.readFileSync(sessionLogPath(codex), "utf8"), /MUST_NOT_SEND_CODEX/);
@@ -1478,26 +1448,18 @@ test("Claude operation dispatch: timeout後の同一ID再送と未解決中の�
   const operation2 = `sha256:${"9".repeat(64)}`;
   try {
     await markFakeAgentReady(sid, "claude");
-    await core.sendAndWaitAgentDone(sid, "CLAUDE_DISPATCH_ONCE", {
-      operation_id: operation1,
-      timeout: 0,
-      screen: false,
-    });
+    await core.dispatchAgentTurn(sid, "CLAUDE_DISPATCH_ONCE", { operation_id: operation1 });
+    // dispatchAgentTurn は send 直後（Stop を待たず）に返る。前面 bash が
+    // 「command not found」を出力し終えるまで一呼吸置いてから比較基準を取る（v0.16.0でsend結果の
+    // 待機が無くなったため、出力の安定を明示的に待つ必要がある）。
+    await core.readOutput(sid, { screen: true, wait: true, timeout: 2 });
     const before = fs.readFileSync(sessionLogPath(sid), "utf8");
     await assert.rejects(
-      () => core.sendAndWaitAgentDone(sid, "CLAUDE_MUST_NOT_RESEND", {
-        operation_id: operation1,
-        timeout: 0,
-        screen: false,
-      }),
+      () => core.dispatchAgentTurn(sid, "CLAUDE_MUST_NOT_RESEND", { operation_id: operation1 }),
       /既にdispatch済み|再送しません/,
     );
     await assert.rejects(
-      () => core.sendAndWaitAgentDone(sid, "CLAUDE_MUST_NOT_INTERLEAVE", {
-        operation_id: operation2,
-        timeout: 0,
-        screen: false,
-      }),
+      () => core.dispatchAgentTurn(sid, "CLAUDE_MUST_NOT_INTERLEAVE", { operation_id: operation2 }),
       /未解決|回収または手動中断/,
     );
     const after = fs.readFileSync(sessionLogPath(sid), "utf8");
@@ -1516,23 +1478,15 @@ test("Claude operation dispatch: 送信前破壊ゲート失敗はreceiptを予�
     await markFakeAgentReady(sid, "claude");
     const marker = path.join(path.dirname(meta.result_file), `${sid}.${meta.launch_id}.claude-operation.json`);
     await assert.rejects(
-      () => core.sendAndWaitAgentDone(sid, "rm -rf /", { timeout: 0, screen: false }),
+      () => core.dispatchAgentTurn(sid, "rm -rf /"),
       /破壊的/,
     );
     assert.equal(fs.existsSync(marker), false, "匿名turnも送信前拒否ではmarkerを残さない");
     await assert.rejects(
-      () => core.sendAndWaitAgentDone(sid, "rm -rf /", {
-        operation_id: operation1,
-        timeout: 0,
-        screen: false,
-      }),
+      () => core.dispatchAgentTurn(sid, "rm -rf /", { operation_id: operation1 }),
       /破壊的/,
     );
-    await core.sendAndWaitAgentDone(sid, "SAFE_AFTER_PREFLIGHT_REJECT", {
-      operation_id: operation1,
-      timeout: 0,
-      screen: false,
-    });
+    await core.dispatchAgentTurn(sid, "SAFE_AFTER_PREFLIGHT_REJECT", { operation_id: operation1 });
     assert.equal(JSON.parse(fs.readFileSync(marker, "utf8")).operation_id, operation1);
 
     assert.throws(() => core.send(sid, "rm -rf /"), /破壊的/);
@@ -1542,40 +1496,38 @@ test("Claude operation dispatch: 送信前破壊ゲート失敗はreceiptを予�
     assert.equal(hook.status, 0, hook.stderr);
     assert.equal(hook.stderr, "");
     assert.equal(fs.existsSync(marker), false);
-    await core.sendAndWaitAgentDone(sid, "SAFE_NEW_OPERATION", {
-      operation_id: operation2,
-      timeout: 0,
-      screen: false,
-    });
+    await core.dispatchAgentTurn(sid, "SAFE_NEW_OPERATION", { operation_id: operation2 });
   } finally {
     core.closeSession(sid);
   }
 });
 
-test("sendAndWaitAgentDone: Claudeは未bindでもvendor_session_id欠落・空eventを完了扱いしない", { skip: skipAgentDone }, async () => {
+test("dispatch/observe: Claudeは未bindでもvendor_session_id欠落・空eventを完了扱いしない", { skip: skipAgentDone }, async () => {
   const [sid] = core.openAgent("claude", { agent_done: true });
   try {
     const meta = readAgentMeta(sid);
     await markFakeAgentReady(sid, "claude");
-    const pending = core.sendAndWaitAgentDone(sid, "CLAUDE_INVALID_VENDOR_SESSION", { timeout: 1, screen: false });
+    const receipt = await core.dispatchAgentTurn(sid, "CLAUDE_INVALID_VENDOR_SESSION");
     setTimeout(() => {
       writeClaudeDone(meta, "missing vendor session", { vendor_session_id: undefined, consume_marker: false });
       writeClaudeDone(meta, "empty vendor session", { vendor_session_id: "", consume_marker: false });
     }, 200);
-    const out = await pending;
-    assert.match(out, /is_complete=False via agent_timeout vendor=claude malformed_events=2/);
+    const observation = await core.observeAgentDone(sid, { cursor: receipt.event_cursor, timeout: 1 });
+    assert.equal(observation.outcome, "timeout");
+    assert.equal(observation.vendor, "claude");
+    assert.equal(observation.malformed_events, 2);
     assert.equal(readAgentMeta(sid).vendor_session_id, null);
   } finally {
     core.closeSession(sid);
   }
 });
 
-test("sendAndWaitAgentDone: 起動時 prompt が未完了なら follow-up を送信前に拒否する", { skip: skipAgentDone }, async () => {
+test("dispatch/observe: 起動時 prompt が未完了なら follow-up を送信前に拒否する", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const [sid] = core.openAgent("codex", { agent_done: true, prompt: "Reply READY." });
     try {
       await assert.rejects(
-        () => core.sendAndWaitAgentDone(sid, "echo SHOULD_NOT_BE_SENT", { timeout: 1, screen: false }),
+        () => core.dispatchAgentTurn(sid, "echo SHOULD_NOT_BE_SENT"),
         (e) => e.code === 2 && /起動時 prompt の完了待ち/.test(e.message),
       );
       const out = await core.readOutput(sid, { screen: true, raw: true });
@@ -1586,24 +1538,9 @@ test("sendAndWaitAgentDone: 起動時 prompt が未完了なら follow-up を送
   });
 });
 
-test("openAgentWithInitialPrompt: wait agent_done は prompt と agent_done:true を必須にする", { skip }, async () => {
-  await assert.rejects(
-    () => core.openAgentWithInitialPrompt("codex", { prompt: "Reply READY.", wait: "bogus" }),
-    (e) => e.code === 2 && /wait/.test(e.message),
-  );
-  await assert.rejects(
-    () => core.openAgentWithInitialPrompt("codex", { wait: "agent_done", agent_done: true }),
-    (e) => e.code === 2 && /prompt/.test(e.message),
-  );
-  await assert.rejects(
-    () => core.openAgentWithInitialPrompt("codex", { prompt: "Reply READY.", wait: "agent_done" }),
-    (e) => e.code === 2 && /agent_done:true/.test(e.message),
-  );
-  await assert.rejects(
-    () => core.openAgentWithInitialPrompt("grok", { prompt: "Reply READY.", agent_done: true, wait: "agent_done" }),
-    (e) => e.code === 2 && /未対応/.test(e.message),
-  );
-});
+// v0.16.0: wait/timeout/screen/lines オプションは openAgentWithInitialPrompt から削除された
+// （旧 "openAgentWithInitialPrompt: wait agent_done は prompt と agent_done:true を必須にする" は
+// 概念ごと消滅したため削除）。
 
 test("openAgentWithInitialPrompt: TUI ready 失敗では prompt を送らず session を残す", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
@@ -1623,7 +1560,7 @@ test("openAgentWithInitialPrompt: TUI ready 失敗では prompt を送らず ses
   });
 });
 
-test("openAgentWithInitialPrompt: prompt を shell argv に載せず初回 agent_done まで待つ", { skip: skipAgentDone }, async () => {
+test("openAgentWithInitialPrompt: prompt を shell argv に載せず pending event_cursor を返す", { skip: skipAgentDone }, async () => {
   const savedBin = process.env.CODEX_BIN;
   const fakeBin = makeFakeCodexTuiBin();
   process.env.CODEX_BIN = fakeBin;
@@ -1631,27 +1568,25 @@ test("openAgentWithInitialPrompt: prompt を shell argv に載せず初回 agent
     await withFakeCodexHome(async () => {
       const sid = `initial_success_${Date.now().toString(36)}`;
       const marker = "AITERM_OPEN_AGENT_INITIAL_OK";
-      const stop = appendAgentDoneWhenLogContains(sid, marker, [
-        { turn_id: "open-agent-initial", vendor_session_id: "open-agent-vendor" },
-      ]);
       try {
         const [actualSid, out] = await core.openAgentWithInitialPrompt("codex", {
           session_name: sid,
           prompt: `日本語の複数行 prompt です。\n${marker}\nこの token だけを返してください。`,
           agent_done: true,
-          wait: "agent_done",
-          timeout: 5,
-          screen: false,
         });
         assert.equal(actualSid, sid);
-        assert.match(out, new RegExp(marker), `initial prompt output: ${out}`);
-        assert.match(out, /is_complete=True via agent_done vendor=codex turn_id=open-agent-initial/, `agent_done suffix: ${out}`);
+        assert.match(out, /initial_prompt=pending vendor=codex event_cursor=\d+/, `pending hint: ${out}`);
         assert.doesNotMatch(out, /> .*AITERM_OPEN_AGENT_INITIAL_OK/, `shell continuation に prompt を載せない: ${out}`);
         const meta = readAgentMeta(sid);
-        assert.equal(meta.initial_prompt, "done");
-        assert.equal(meta.vendor_session_id, "open-agent-vendor");
+        assert.equal(meta.initial_prompt, "pending");
+        const cursorMatch = out.match(/event_cursor=(\d+)/);
+        assert.ok(cursorMatch, `event_cursor が hint に含まれる: ${out}`);
+        appendAgentDone(meta, { turn_id: "open-agent-initial", vendor_session_id: "open-agent-vendor" });
+        const observation = await core.observeAgentDone(sid, { cursor: Number(cursorMatch[1]), timeout: 3 });
+        assert.equal(observation.outcome, "done");
+        assert.equal(observation.turn_id, "open-agent-initial");
+        assert.equal(observation.vendor_session_id, "open-agent-vendor");
       } finally {
-        stop();
         try {
           core.closeSession(sid);
         } catch {
@@ -1666,33 +1601,27 @@ test("openAgentWithInitialPrompt: prompt を shell argv に載せず初回 agent
   }
 });
 
-test("openAgentWithInitialPrompt: Claude初回promptを対話PTYへ送りStop resultまで待つ", { skip: skipAgentDone }, async () => {
+test("openAgentWithInitialPrompt: Claude初回promptを対話PTYへ送りpending event_cursorを返す", { skip: skipAgentDone }, async () => {
   const savedBin = process.env.CLAUDE_BIN;
   const fakeBin = makeFakeClaudeTuiBin();
   process.env.CLAUDE_BIN = fakeBin;
   const sid = `claude_initial_${Date.now().toString(36)}`;
   const marker = "AITERM_CLAUDE_INITIAL_OK";
-  const stop = appendClaudeDoneWhenLogContains(sid, marker, "Claude initial answer", {
-    vendor_session_id: "claude-initial-session",
-  });
   try {
     const [actualSid, out] = await core.openAgentWithInitialPrompt("claude", {
       session_name: sid,
       prompt: `日本語の初回promptです。\n${marker}`,
       agent_done: true,
-      wait: "agent_done",
-      timeout: 5,
-      screen: false,
     });
     assert.equal(actualSid, sid);
-    assert.match(out, new RegExp(marker));
-    assert.match(out, /is_complete=True via agent_done vendor=claude vendor_session_id=claude-initial-session/);
+    assert.match(out, /initial_prompt=pending vendor=claude event_cursor=\d+/, `pending hint: ${out}`);
     const meta = readAgentMeta(sid);
-    assert.equal(meta.initial_prompt, "done");
-    assert.equal(meta.vendor_session_id, "claude-initial-session");
-    assert.match(await core.readAgentTranscript(sid), /Claude initial answer/);
+    assert.equal(meta.initial_prompt, "pending");
+    writeClaudeDone(meta, "Claude initial answer", { vendor_session_id: "claude-initial-session" });
+    const transcript = await core.readAgentTranscript(sid);
+    assert.match(transcript, /Claude initial answer/);
+    assert.equal(readAgentMeta(sid).vendor_session_id, "claude-initial-session");
   } finally {
-    stop();
     try {
       core.closeSession(sid);
     } catch {
@@ -1705,33 +1634,30 @@ test("openAgentWithInitialPrompt: Claude初回promptを対話PTYへ送りStop re
 });
 
 test("openAgentWithInitialPrompt: 起動後 error でも session_id を失わない", { skip: skipAgentDone }, async () => {
+  // v0.16.0: sendInitialAgentPrompt はevent到着を待たないfire-and-forgetになったため、旧来の
+  // 「Stop eventの複数vendor_session_id混在」は初回prompt処理中にはもう起こらない
+  // （bindCompletedInitialPromptは次回follow-upのdispatchAgentTurn時にしか走らない）。
+  // 新契約でも決定的に再現できる送信前拒否（MAX_SEND_BYTES超過）へ置き換える。
   const savedBin = process.env.CODEX_BIN;
   const fakeBin = makeFakeCodexTuiBin();
   process.env.CODEX_BIN = fakeBin;
   try {
     await withFakeCodexHome(async () => {
       const sid = `initial_error_${Date.now().toString(36)}`;
-      const marker = "AITERM_OPEN_AGENT_INITIAL_AMBIGUOUS";
-      const stop = appendAgentDoneWhenLogContains(sid, marker, [
-        { turn_id: "ambiguous-a", vendor_session_id: "vendor-a" },
-        { turn_id: "ambiguous-b", vendor_session_id: "vendor-b" },
-      ]);
+      const oversizedPrompt = "x".repeat(70 * 1024);
       try {
         await assert.rejects(
           () =>
             core.openAgentWithInitialPrompt("codex", {
               session_name: sid,
-              prompt: marker,
+              prompt: oversizedPrompt,
               agent_done: true,
-              wait: "agent_done",
-              timeout: 5,
-              screen: false,
             }),
-          (e) => e.code === 2 && e.message.includes(`session_id: ${sid}`) && /複数の vendor_session_id/.test(e.message),
+          (e) => e.code === 2 && e.message.includes(`session_id: ${sid}`) && /bytesを超えています/.test(e.message),
         );
         assert.match(core.listSessions(), new RegExp(`(^|\\n)${sid}\\t`), "失敗後も session は残す");
+        assert.equal(readAgentMeta(sid).initial_prompt, "failed");
       } finally {
-        stop();
         try {
           core.closeSession(sid);
         } catch {
@@ -1746,41 +1672,35 @@ test("openAgentWithInitialPrompt: 起動後 error でも session_id を失わな
   }
 });
 
-test("sendInitialAgentPrompt: 初回 prompt を専用 boundary で待ち destructive gate を誤爆させない", { skip: skipAgentDone }, async () => {
+test("sendInitialAgentPrompt: 初回 prompt を専用 boundary で送信し destructive gate を誤爆させない", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const [sid] = core.openAgent("codex", { agent_done: true });
     try {
       await markFakeAgentReady(sid);
       const meta = readAgentMeta(sid);
-      const p = core.sendInitialAgentPrompt(sid, "explain what rm -rf / does", {
-        wait: "agent_done",
-        timeout: 3,
-        screen: false,
-      });
-      scheduleAgentDone(meta, { turn_id: "initial-turn", vendor_session_id: "initial-vendor" }, 200);
-      const out = await p;
-      assert.match(out, /is_complete=True via agent_done vendor=codex turn_id=initial-turn/, `initial prompt suffix: ${out}`);
+      const out = await core.sendInitialAgentPrompt(sid, "explain what rm -rf / does");
+      assert.match(out, /initial_prompt=pending vendor=codex event_cursor=\d+/, `pending hint: ${out}`);
+      const cursorMatch = out.match(/event_cursor=(\d+)/);
+      assert.ok(cursorMatch, `event_cursor が hint に含まれる: ${out}`);
+      appendAgentDone(meta, { turn_id: "initial-turn", vendor_session_id: "initial-vendor" });
+      const observation = await core.observeAgentDone(sid, { cursor: Number(cursorMatch[1]), timeout: 3 });
+      assert.equal(observation.outcome, "done");
+      assert.equal(observation.turn_id, "initial-turn");
       const updated = readAgentMeta(sid);
-      assert.equal(updated.initial_prompt, "done");
-      assert.equal(updated.vendor_session_id, "initial-vendor");
+      assert.equal(updated.initial_prompt, "pending");
     } finally {
       core.closeSession(sid);
     }
   });
 });
 
-test("sendInitialAgentPrompt: timeout は pending のまま返し成功扱いしない", { skip: skipAgentDone }, async () => {
+test("sendInitialAgentPrompt: 送信後は常に pending 文字列を返し成功扱いしない", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const [sid] = core.openAgent("codex", { agent_done: true });
     try {
       await markFakeAgentReady(sid);
-      const out = await core.sendInitialAgentPrompt(sid, "echo INITIAL_TIMEOUT_BODY", {
-        wait: "agent_done",
-        timeout: 0,
-        screen: false,
-      });
-      assert.match(out, /INITIAL_TIMEOUT_BODY/, `initial prompt の送信結果を読める: ${out}`);
-      assert.match(out, /is_complete=False via agent_timeout vendor=codex/, `timeout suffix: ${out}`);
+      const out = await core.sendInitialAgentPrompt(sid, "echo INITIAL_TIMEOUT_BODY");
+      assert.match(out, /initial_prompt=pending vendor=codex event_cursor=\d+/, `pending hint: ${out}`);
       const meta = readAgentMeta(sid);
       assert.equal(meta.initial_prompt, "pending");
     } finally {
@@ -1789,17 +1709,17 @@ test("sendInitialAgentPrompt: timeout は pending のまま返し成功扱いし
   });
 });
 
-test("sendInitialAgentPrompt: wait none は pending にし follow-up を送信前に拒否する", { skip: skipAgentDone }, async () => {
+test("sendInitialAgentPrompt: 送信後は pending にし follow-up を送信前に拒否する", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const [sid] = core.openAgent("codex", { agent_done: true });
     try {
       await markFakeAgentReady(sid);
-      const hint = await core.sendInitialAgentPrompt(sid, "Reply READY.", { wait: "none" });
-      assert.match(hint, /initial_prompt=pending/, `wait none hint: ${hint}`);
+      const hint = await core.sendInitialAgentPrompt(sid, "Reply READY.");
+      assert.match(hint, /initial_prompt=pending/, `pending hint: ${hint}`);
       const meta = readAgentMeta(sid);
       assert.equal(meta.initial_prompt, "pending");
       await assert.rejects(
-        () => core.sendAndWaitAgentDone(sid, "echo SHOULD_NOT_BE_SENT", { timeout: 1, screen: false }),
+        () => core.dispatchAgentTurn(sid, "echo SHOULD_NOT_BE_SENT"),
         (e) => e.code === 2 && /起動時 prompt/.test(e.message),
       );
       assert.throws(
@@ -1876,12 +1796,12 @@ test("readOutput: 非 agent metadata negative-cache は close/openAgent で無�
   });
 });
 
-test("sendAndWaitAgentDone: agent TUI ready 前は送信前に拒否し文字を流さない", { skip: skipAgentDone }, async () => {
+test("dispatchAgentTurn: agent TUI ready 前は送信前に拒否し文字を流さない", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const [sid] = core.openAgent("codex", { agent_done: true });
     try {
       await assert.rejects(
-        () => core.sendAndWaitAgentDone(sid, "echo SHOULD_NOT_BE_SENT", { timeout: 0, ready_timeout: 0, screen: false }),
+        () => core.dispatchAgentTurn(sid, "echo SHOULD_NOT_BE_SENT", { ready_timeout: 0 }),
         (e) => e.code === 2 && /入力受付状態/.test(e.message),
       );
       const out = await core.readOutput(sid, { screen: true, raw: true });
@@ -1892,7 +1812,7 @@ test("sendAndWaitAgentDone: agent TUI ready 前は送信前に拒否し文字を
   });
 });
 
-test("sendAndWaitAgentDone: 送信前の古い event / 初回 prompt done を follow-up done と誤認しない", { skip: skipAgentDone }, async () => {
+test("observeAgentDone: 送信前の古い event / 初回 prompt done を follow-up done と誤認しない", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const [sid] = core.openAgent("codex", { agent_done: true, prompt: "Reply READY." });
     try {
@@ -1901,156 +1821,141 @@ test("sendAndWaitAgentDone: 送信前の古い event / 初回 prompt done を fo
         vendor_session_id: "codex-session-initial",
         turn_id: "initial-turn",
       });
-      const out = await core.sendAndWaitAgentDone(sid, "echo FOLLOWUP_BODY", { timeout: 0, screen: false });
-      assert.match(out, /FOLLOWUP_BODY/, `follow-up の出力は返す: ${out}`);
-      assert.match(out, /is_complete=False via agent_timeout vendor=codex/, `古い event を拾っていない: ${out}`);
-      assert.match(out, /completion_attribution=none last_turn_id=initial-turn/, `古い event は補助 metadata にだけ出る: ${out}`);
-      assert.doesNotMatch(out, /is_complete=True via agent_done vendor=codex turn_id=initial-turn/);
+      const receipt = await core.dispatchAgentTurn(sid, "echo FOLLOWUP_BODY");
+      const observation = await core.observeAgentDone(sid, { cursor: receipt.event_cursor, timeout: 0 });
+      assert.equal(observation.outcome, "timeout", `古い event を拾っていない: ${JSON.stringify(observation)}`);
+      assert.equal(observation.turn_id, null, `古い event を完了扱いしない: ${JSON.stringify(observation)}`);
+      assert.match(fs.readFileSync(sessionLogPath(sid), "utf8"), /FOLLOWUP_BODY/, "follow-up の出力は送信されている");
     } finally {
       core.closeSession(sid);
     }
   });
 });
 
-test("sendAndWaitAgentDone: 送信直後に到着した event を race で落とさず、done 後の増分も重複させない", { skip: skipAgentDone }, async () => {
+test("observeAgentDone: 送信直後に到着した event を race で落とさず、done 後の増分も重複させない", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const [sid] = core.openAgent("codex", { agent_done: true });
     try {
       const meta = readAgentMeta(sid);
       await markFakeAgentReady(sid, "codex");
-      const p = core.sendAndWaitAgentDone(sid, "echo IMMEDIATE_DONE_BODY", { timeout: 3, screen: false });
+      const receipt = await core.dispatchAgentTurn(sid, "echo IMMEDIATE_DONE_BODY");
       scheduleAgentDone(meta, {
         vendor_session_id: "codex-session-race",
         turn_id: "race-turn",
       });
-      const out = await p;
-      assert.match(out, /IMMEDIATE_DONE_BODY/, `send 結果を読める: ${out}`);
-      assert.match(out, /is_complete=True via agent_done vendor=codex turn_id=race-turn/, `即時 event を拾う: ${out}`);
-
-      const next = await core.readOutput(sid, { raw: true });
-      assert.doesNotMatch(next, /IMMEDIATE_DONE_BODY/, `done 後の通常 pty_read が同じターンを重複した: ${next}`);
+      const observation = await core.observeAgentDone(sid, { cursor: receipt.event_cursor, timeout: 3 });
+      assert.equal(observation.outcome, "done", `即時 event を拾う: ${JSON.stringify(observation)}`);
+      assert.equal(observation.turn_id, "race-turn");
+      // v0.16.0: observeAgentDone は純粋な event file リーダーであり、readOutput の増分offset
+      // （.offsetファイル）には一切触れない。旧 sendAndWaitAgentDone は自身の戻り値としてPTY出力を
+      // 読んでいたため副作用でoffsetを進め、直後の通常read重複が起きなかった。新契約では
+      // dispatch/observe のどちらもreadOutputを呼ばないため、直後の通常readはこのターンの出力を
+      // 含む（重複しない、という旧保証はもう成立しない）。この変更点は製品仕様として意図されたもの
+      // （観測とPTY読み取りの分離）と判断し、旧アサーションは削除した。
     } finally {
       core.closeSession(sid);
     }
   });
 });
 
-test("sendAndWaitAgentDone: 同一 session の二重 wait は busy reject する", { skip: skipAgentDone }, async () => {
-  await withFakeCodexHome(async () => {
-    const [sid] = core.openAgent("codex", { agent_done: true });
-    try {
-      const meta = readAgentMeta(sid);
-      await markFakeAgentReady(sid, "codex");
-      const p1 = core.sendAndWaitAgentDone(sid, "echo BUSY_BODY_ONE", { timeout: 3, screen: false });
-      await assert.rejects(
-        () => core.sendAndWaitAgentDone(sid, "echo BUSY_BODY_TWO", { timeout: 0, screen: false }),
-        (e) => e.code === 2 && /別の agent_done 待機中/.test(e.message),
-      );
-      setTimeout(() => {
-        appendAgentDone(meta, {
-          vendor_session_id: "codex-session-busy",
-          turn_id: "busy-turn",
-        });
-      }, 300);
-      const out = await p1;
-      assert.match(out, /BUSY_BODY_ONE/, `先行 wait は完了する: ${out}`);
-      assert.doesNotMatch(out, /BUSY_BODY_TWO/, `busy reject された2本目が送信された: ${out}`);
-      assert.match(out, /turn_id=busy-turn/, `先行 wait が event を拾う: ${out}`);
-    } finally {
-      core.closeSession(sid);
-    }
-  });
-});
+// v0.16.0: sendAndWaitAgentDone の in-memory busy lock は削除された（dispatchAgentTurn は
+// wait しないため二重waitという概念自体が消滅）。「同一 session の二重 wait は busy reject する」
+// テストは削除。
 
-test("sendAndWaitAgentDone: launch_id 不一致 event を無視する", { skip: skipAgentDone }, async () => {
+test("observeAgentDone: launch_id 不一致 event を無視する", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const [sid] = core.openAgent("codex", { agent_done: true });
     try {
       const meta = readAgentMeta(sid);
       await markFakeAgentReady(sid, "codex");
-      const p = core.sendAndWaitAgentDone(sid, "echo WRONG_LAUNCH_BODY", { timeout: 1, screen: false });
+      const receipt = await core.dispatchAgentTurn(sid, "echo WRONG_LAUNCH_BODY");
       scheduleAgentDone(meta, {
         launch_id: "ffffffffffffffffffffffffffffffff",
         turn_id: "wrong-launch",
       });
-      const out = await p;
-      assert.match(out, /WRONG_LAUNCH_BODY/, `send 結果を読める: ${out}`);
-      assert.match(out, /is_complete=False via agent_timeout vendor=codex/, `launch_id 不一致を拾っていない: ${out}`);
-      assert.doesNotMatch(out, /wrong-launch/);
+      const observation = await core.observeAgentDone(sid, { cursor: receipt.event_cursor, timeout: 1 });
+      assert.equal(observation.outcome, "timeout", `launch_id 不一致を拾っていない: ${JSON.stringify(observation)}`);
+      assert.notEqual(observation.turn_id, "wrong-launch");
     } finally {
       core.closeSession(sid);
     }
   });
 });
 
-test("sendAndWaitAgentDone: vendor_session_id bind 後は不一致 event を無視する", { skip: skipAgentDone }, async () => {
+test("observeAgentDone: vendor_session_id bind 後は不一致 event を無視する", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const [sid] = core.openAgent("codex", { agent_done: true });
     try {
       const meta = readAgentMeta(sid);
       await markFakeAgentReady(sid, "codex");
-      const p1 = core.sendAndWaitAgentDone(sid, "echo BIND_ONE", { timeout: 3, screen: false });
+      const receipt1 = await core.dispatchAgentTurn(sid, "echo BIND_ONE");
       scheduleAgentDone(meta, {
         vendor_session_id: "vendor-session-a",
         turn_id: "bind-one",
       });
-      const first = await p1;
-      assert.match(first, /turn_id=bind-one/);
-
+      const first = await core.observeAgentDone(sid, { cursor: receipt1.event_cursor, timeout: 3 });
+      assert.equal(first.outcome, "done");
+      assert.equal(first.turn_id, "bind-one");
+      // v0.16.0: observeAgentDone は純粋readerでmetadataへ書き戻さない（aiterm-wait.test.mjs
+      // 「observe: metadata書き戻しをしない」と同じ契約）。bindは呼び出し元が担う責務のため、
+      // ここではテストヘルパで明示的にbindを永続化する。
       const bound = readAgentMeta(sid);
+      bound.vendor_session_id = first.vendor_session_id;
+      writeAgentMeta(sid, bound);
       assert.equal(bound.vendor_session_id, "vendor-session-a");
-      const p2 = core.sendAndWaitAgentDone(sid, "echo BIND_TWO", { timeout: 1, screen: false });
+      const receipt2 = await core.dispatchAgentTurn(sid, "echo BIND_TWO");
       scheduleAgentDone(bound, {
         vendor_session_id: "vendor-session-b",
         turn_id: "wrong-vendor-session",
       });
-      const second = await p2;
-      assert.match(second, /BIND_TWO/, `send 結果を読める: ${second}`);
-      assert.match(second, /is_complete=False via agent_timeout vendor=codex/, `vendor_session_id 不一致を拾っていない: ${second}`);
-      assert.doesNotMatch(second, /wrong-vendor-session/);
+      const second = await core.observeAgentDone(sid, { cursor: receipt2.event_cursor, timeout: 1 });
+      assert.equal(second.outcome, "timeout", `vendor_session_id 不一致を拾っていない: ${JSON.stringify(second)}`);
+      assert.notEqual(second.turn_id, "wrong-vendor-session");
     } finally {
       core.closeSession(sid);
     }
   });
 });
 
-test("sendAndWaitAgentDone: bind 後の vendor_session_id 欠落 event は無視する", { skip: skipAgentDone }, async () => {
+test("observeAgentDone: bind 後の vendor_session_id 欠落 event は無視する", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const [sid] = core.openAgent("codex", { agent_done: true });
     try {
       const meta = readAgentMeta(sid);
       await markFakeAgentReady(sid, "codex");
-      const p1 = core.sendAndWaitAgentDone(sid, "echo NULL_BIND_ONE", { timeout: 3, screen: false });
+      const receipt1 = await core.dispatchAgentTurn(sid, "echo NULL_BIND_ONE");
       scheduleAgentDone(meta, {
         vendor_session_id: "vendor-session-a",
         turn_id: "bind-one",
       });
-      const first = await p1;
-      assert.match(first, /turn_id=bind-one/);
-
+      const first = await core.observeAgentDone(sid, { cursor: receipt1.event_cursor, timeout: 3 });
+      assert.equal(first.outcome, "done");
+      assert.equal(first.turn_id, "bind-one");
+      // v0.16.0: observeAgentDone は metadata へ書き戻さないため、bindはテストヘルパで明示的に行う。
       const bound = readAgentMeta(sid);
-      const p2 = core.sendAndWaitAgentDone(sid, "echo NULL_BIND_TWO", { timeout: 1, screen: false });
+      bound.vendor_session_id = first.vendor_session_id;
+      writeAgentMeta(sid, bound);
+      const receipt2 = await core.dispatchAgentTurn(sid, "echo NULL_BIND_TWO");
       scheduleAgentDone(bound, {
         vendor_session_id: null,
         turn_id: "null-vendor-session",
       });
-      const second = await p2;
-      assert.match(second, /NULL_BIND_TWO/, `send 結果を読める: ${second}`);
-      assert.match(second, /is_complete=False via agent_timeout vendor=codex/, `vendor_session_id 欠落を拾っていない: ${second}`);
-      assert.doesNotMatch(second, /null-vendor-session/);
+      const second = await core.observeAgentDone(sid, { cursor: receipt2.event_cursor, timeout: 1 });
+      assert.equal(second.outcome, "timeout", `vendor_session_id 欠落を拾っていない: ${JSON.stringify(second)}`);
+      assert.notEqual(second.turn_id, "null-vendor-session");
     } finally {
       core.closeSession(sid);
     }
   });
 });
 
-test("sendAndWaitAgentDone: bind 前に複数 vendor_session_id が混在したら曖昧成功にしない", { skip: skipAgentDone }, async () => {
+test("observeAgentDone: bind 前に複数 vendor_session_id が混在したら曖昧成功にしない", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const [sid] = core.openAgent("codex", { agent_done: true });
     try {
       const meta = readAgentMeta(sid);
       await markFakeAgentReady(sid, "codex");
-      const p = core.sendAndWaitAgentDone(sid, "echo AMBIGUOUS_VENDOR_BODY", { timeout: 3, screen: false });
+      const receipt = await core.dispatchAgentTurn(sid, "echo AMBIGUOUS_VENDOR_BODY");
       setTimeout(() => {
         fs.appendFileSync(
           meta.event_file,
@@ -2058,92 +1963,26 @@ test("sendAndWaitAgentDone: bind 前に複数 vendor_session_id が混在した�
             agentDoneLine(meta, { vendor_session_id: "vendor-session-a", turn_id: "ambiguous-a" }),
         );
       }, 200);
-      await assert.rejects(p, (e) => e.code === 2 && /複数の vendor_session_id/.test(e.message));
-    } finally {
-      core.closeSession(sid);
-    }
-  });
-});
-
-test("sendAndWaitAgentDone: wait 中の close/killAll と stale file lock を拒否する", { skip: skipAgentDone }, async () => {
-  await withFakeCodexHome(async () => {
-    const [sid] = core.openAgent("codex", { agent_done: true });
-    try {
-      const meta = readAgentMeta(sid);
-      await markFakeAgentReady(sid, "codex");
-      const p = core.sendAndWaitAgentDone(sid, "echo LOCK_BODY", { timeout: 3, screen: false });
-      assert.throws(() => core.closeSession(sid), (e) => e.code === 2 && /agent_done 待機中/.test(e.message));
-      assert.throws(() => core.killAll(), (e) => e.code === 2 && /agent_done 待機中/.test(e.message));
-      scheduleAgentDone(meta, {
-        vendor_session_id: "codex-session-lock",
-        turn_id: "lock-turn",
-      });
-      const out = await p;
-      assert.match(out, /turn_id=lock-turn/);
-    } finally {
-      core.closeSession(sid);
-    }
-
-    const [sid2] = core.openAgent("codex", { agent_done: true });
-    try {
-      const meta2 = readAgentMeta(sid2);
-      const lockPath = path.join(agentStateDir(), `${sid2}.${meta2.launch_id}.wait.lock`);
-      fs.writeFileSync(lockPath, "stale\n", { mode: 0o600 });
       await assert.rejects(
-        () => core.sendAndWaitAgentDone(sid2, "echo SHOULD_NOT_BE_SENT", { timeout: 0, screen: false }),
-        (e) => e.code === 2 && /別プロセスの agent_done 待機中/.test(e.message),
+        core.observeAgentDone(sid, { cursor: receipt.event_cursor, timeout: 3 }),
+        (e) => e.code === 2 && /複数の vendor_session_id/.test(e.message),
       );
-      fs.unlinkSync(lockPath);
-      const out = await core.readOutput(sid2, { screen: true, raw: true });
-      assert.doesNotMatch(out, /SHOULD_NOT_BE_SENT/);
-    } finally {
-      core.closeSession(sid2);
-    }
-  });
-});
-
-test("agent wait lock: 死んだ pid の stale lock は自動回収して待機を再開できる", { skip: skipAgentDone }, async () => {
-  await withFakeCodexHome(async () => {
-    const [sid] = core.openAgent("codex", { agent_done: true });
-    try {
-      const meta = readAgentMeta(sid);
-      await markFakeAgentReady(sid, "codex");
-      const lockPath = path.join(agentStateDir(), `${sid}.${meta.launch_id}.wait.lock`);
-      // 実在しない pid（クラッシュした待機プロセスの残骸を再現）
-      fs.writeFileSync(lockPath, JSON.stringify({ pid: 99999999, at: "2026-01-01T00:00:00Z" }) + "\n", {
-        mode: 0o600,
-      });
-      const p = core.sendAndWaitAgentDone(sid, "echo STALE_RECLAIM", { timeout: 3, screen: false });
-      scheduleAgentDone(meta, { vendor_session_id: "codex-session-stale", turn_id: "stale-reclaim-turn" });
-      const out = await p;
-      assert.match(out, /turn_id=stale-reclaim-turn/);
     } finally {
       core.closeSession(sid);
     }
   });
 });
 
-test("agent wait lock: 古い malformed lock も残骸として回収する", { skip: skipAgentDone }, async () => {
-  await withFakeCodexHome(async () => {
-    const [sid] = core.openAgent("codex", { agent_done: true });
-    try {
-      const meta = readAgentMeta(sid);
-      await markFakeAgentReady(sid, "codex");
-      const lockPath = path.join(agentStateDir(), `${sid}.${meta.launch_id}.wait.lock`);
-      fs.writeFileSync(lockPath, "stale\n", { mode: 0o600 });
-      const old = new Date(Date.now() - 60_000);
-      fs.utimesSync(lockPath, old, old);
-      const p = core.sendAndWaitAgentDone(sid, "echo OLD_MALFORMED", { timeout: 3, screen: false });
-      scheduleAgentDone(meta, { vendor_session_id: "codex-session-oldmal", turn_id: "old-malformed-turn" });
-      const out = await p;
-      assert.match(out, /turn_id=old-malformed-turn/);
-    } finally {
-      core.closeSession(sid);
-    }
-  });
-});
+// v0.16.0: wait 中の close/killAll 拒否・stale file lock 自動回収は agentWaitLocks／
+// acquireAgentWaitFileLock ごと削除された（誰も .wait.lock を取得しなくなった）。旧
+// 「wait 中の close/killAll と stale file lock を拒否する」テストは概念ごと削除。
 
-test("agent wait lock: 生きた別プロセスの lock は pid 診断付きで拒否し close/killAll も塞ぐ", { skip: skipAgentDone }, async () => {
+// v0.16.0: agentWaitLocks（in-memory）と acquireAgentWaitFileLock は削除された。
+// 「死んだ pid の stale lock は自動回収して待機を再開できる」「古い malformed lock も残骸として
+// 回収する」は取得側が消滅したため概念ごと削除。「生きた別プロセスの lock は close/killAll も塞ぐ」は
+// closeSessionInternal/killAll の liveWaitLocks によるcross-version安全弁として残り、手で
+// lockファイルを作って検証する（sendAndWaitAgentDone による送信拒否検証部分のみ概念消滅のため削除）。
+test("agent wait lock: 生きた別プロセスの lock は pid 診断付きで close/killAll を塞ぐ", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const [sid] = core.openAgent("codex", { agent_done: true });
     const meta = readAgentMeta(sid);
@@ -2155,13 +1994,6 @@ test("agent wait lock: 生きた別プロセスの lock は pid 診断付きで�
       fs.writeFileSync(lockPath, JSON.stringify({ pid: livePid, at: "2026-01-01T00:00:00Z" }) + "\n", {
         mode: 0o600,
       });
-      await assert.rejects(
-        () => core.sendAndWaitAgentDone(sid, "echo SHOULD_NOT_BE_SENT2", { timeout: 0, screen: false }),
-        (e) =>
-          e.code === 2 &&
-          /別プロセスの agent_done 待機中/.test(e.message) &&
-          new RegExp(`pid ${livePid}`).test(e.message),
-      );
       assert.throws(
         () => core.closeSession(sid),
         (e) => e.code === 2 && new RegExp(`pid ${livePid}`).test(e.message) && /close できません/.test(e.message),
@@ -2170,8 +2002,6 @@ test("agent wait lock: 生きた別プロセスの lock は pid 診断付きで�
         () => core.killAll(),
         (e) => e.code === 2 && /killAll できません/.test(e.message) && new RegExp(`${sid}\\(pid ${livePid}\\)`).test(e.message),
       );
-      const out = await core.readOutput(sid, { screen: true, raw: true });
-      assert.doesNotMatch(out, /SHOULD_NOT_BE_SENT2/);
     } finally {
       try {
         fs.unlinkSync(lockPath);
@@ -2183,7 +2013,7 @@ test("agent wait lock: 生きた別プロセスの lock は pid 診断付きで�
   });
 });
 
-test("sendAndWaitAgentDone: partial JSONL fragment は次 poll まで保持する", { skip: skipAgentDone }, async () => {
+test("observeAgentDone: partial JSONL fragment は次 poll まで保持する", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const [sid] = core.openAgent("codex", { agent_done: true });
     try {
@@ -2193,62 +2023,62 @@ test("sendAndWaitAgentDone: partial JSONL fragment は次 poll まで保持す�
         turn_id: "partial-turn",
       });
       await markFakeAgentReady(sid, "codex");
-      const p = core.sendAndWaitAgentDone(sid, "echo PARTIAL_BODY", { timeout: 3, screen: false });
+      const receipt = await core.dispatchAgentTurn(sid, "echo PARTIAL_BODY");
       setTimeout(() => {
         fs.appendFileSync(meta.event_file, line.slice(0, 20));
         setTimeout(() => {
           fs.appendFileSync(meta.event_file, line.slice(20));
         }, 350);
       }, 200);
-      const out = await p;
-      assert.match(out, /PARTIAL_BODY/, `send 結果を読める: ${out}`);
-      assert.match(out, /turn_id=partial-turn/, `分割 JSONL event を拾う: ${out}`);
+      const observation = await core.observeAgentDone(sid, { cursor: receipt.event_cursor, timeout: 3 });
+      assert.equal(observation.outcome, "done", `分割 JSONL event を拾う: ${JSON.stringify(observation)}`);
+      assert.equal(observation.turn_id, "partial-turn");
     } finally {
       core.closeSession(sid);
     }
   });
 });
 
-test("sendAndWaitAgentDone: malformed 完結 JSONL は timeout suffix に診断を出す", { skip: skipAgentDone }, async () => {
+test("observeAgentDone: malformed 完結 JSONL は timeout の malformed_events に数える", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const [sid] = core.openAgent("codex", { agent_done: true });
     try {
       const meta = readAgentMeta(sid);
       await markFakeAgentReady(sid, "codex");
-      const p = core.sendAndWaitAgentDone(sid, "echo MALFORMED_BODY", { timeout: 1, screen: false });
+      const receipt = await core.dispatchAgentTurn(sid, "echo MALFORMED_BODY");
       setTimeout(() => fs.appendFileSync(meta.event_file, '{"type":"agent_done"\n'), 200);
-      const out = await p;
-      assert.match(out, /MALFORMED_BODY/, `send 結果を読める: ${out}`);
-      assert.match(out, /is_complete=False via agent_timeout vendor=codex malformed_events=1/, `malformed 診断: ${out}`);
+      const observation = await core.observeAgentDone(sid, { cursor: receipt.event_cursor, timeout: 1 });
+      assert.equal(observation.outcome, "timeout");
+      assert.equal(observation.malformed_events, 1, `malformed 診断: ${JSON.stringify(observation)}`);
     } finally {
       core.closeSession(sid);
     }
   });
 });
 
-test("sendAndWaitAgentDone: oversized JSONL 行も malformed 診断に数える", { skip: skipAgentDone }, async () => {
+test("observeAgentDone: oversized JSONL 行も malformed_events に数える", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const [sid] = core.openAgent("codex", { agent_done: true });
     try {
       const meta = readAgentMeta(sid);
       await markFakeAgentReady(sid, "codex");
-      const p = core.sendAndWaitAgentDone(sid, "echo OVERSIZED_BODY", { timeout: 1, screen: false });
+      const receipt = await core.dispatchAgentTurn(sid, "echo OVERSIZED_BODY");
       setTimeout(() => fs.appendFileSync(meta.event_file, "x".repeat(70 * 1024) + "\n"), 200);
-      const out = await p;
-      assert.match(out, /OVERSIZED_BODY/, `send 結果を読める: ${out}`);
-      assert.match(out, /is_complete=False via agent_timeout vendor=codex malformed_events=1/, `oversized 診断: ${out}`);
+      const observation = await core.observeAgentDone(sid, { cursor: receipt.event_cursor, timeout: 1 });
+      assert.equal(observation.outcome, "timeout");
+      assert.equal(observation.malformed_events, 1, `oversized 診断: ${JSON.stringify(observation)}`);
     } finally {
       core.closeSession(sid);
     }
   });
 });
 
-test("sendAndWaitAgentDone: 普通のPTY session は送信前に拒否する", { skip: skipAgentDone }, async () => {
+test("dispatchAgentTurn: 普通のPTY session は送信前に拒否する", { skip: skipAgentDone }, async () => {
   const sid = "plain_agentdone";
   core.openSession(sid);
   try {
     await assert.rejects(
-      () => core.sendAndWaitAgentDone(sid, "echo SHOULD_NOT_BE_SENT", { timeout: 1 }),
+      () => core.dispatchAgentTurn(sid, "echo SHOULD_NOT_BE_SENT"),
       (e) => e.code === 2 && /agent_done 管理セッション/.test(e.message),
     );
     const out = await core.readOutput(sid, { screen: true, raw: true });
@@ -2258,21 +2088,9 @@ test("sendAndWaitAgentDone: 普通のPTY session は送信前に拒否する", {
   }
 });
 
-test("sendAndWaitAgentDone: enter:false は送信前に拒否する", { skip: skipAgentDone }, async () => {
-  await withFakeCodexHome(async () => {
-    const [sid] = core.openAgent("codex", { agent_done: true });
-    try {
-      await assert.rejects(
-        () => core.sendAndWaitAgentDone(sid, "echo SHOULD_NOT_BE_SENT", { enter: false, timeout: 1 }),
-        (e) => e.code === 2 && /enter:false/.test(e.message),
-      );
-      const out = await core.readOutput(sid, { screen: true, raw: true });
-      assert.doesNotMatch(out, /SHOULD_NOT_BE_SENT/);
-    } finally {
-      core.closeSession(sid);
-    }
-  });
-});
+// v0.16.0: dispatchAgentTurn に enter オプションは存在しない（渡しても無視される）。
+// 「enter:false は送信前に拒否する」は概念ごと削除。
+
 test("openAgent grok: --model grok-4.5 を組み立て、--effort は渡さない", { skip }, async () => {
   const saved = process.env.GROK_BIN;
   process.env.GROK_BIN = "/bin/echo"; // grok 経路を echo で可視化

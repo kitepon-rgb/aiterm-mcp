@@ -240,6 +240,36 @@ test("observe: metadata書き戻しをしない（vendor_session_id bindを永�
   });
 });
 
+test("observe: cursor指定はwaiter起動より前のeventも境界から回収する", { skip: !posix }, async () => {
+  await withStateRoot(async (agents) => {
+    const { eventPath } = writeMeta(agents, "s12", "codex");
+    fs.appendFileSync(eventPath, codexEvent("s12", { turn_id: "old-turn" }));
+    const boundary = fs.statSync(eventPath).size;
+    fs.appendFileSync(eventPath, codexEvent("s12", { turn_id: "new-turn" }));
+    const r = await core.observeAgentDone("s12", { cursor: boundary, timeout: 5 });
+    assert.equal(r.outcome, "done");
+    assert.equal(r.turn_id, "new-turn", "cursor以降のeventだけを見る");
+  });
+});
+
+test("observe: cursor境界より前のeventは不可視", { skip: !posix }, async () => {
+  await withStateRoot(async (agents) => {
+    const { eventPath } = writeMeta(agents, "s13", "codex");
+    fs.appendFileSync(eventPath, codexEvent("s13"));
+    const boundary = fs.statSync(eventPath).size;
+    const r = await core.observeAgentDone("s13", { cursor: boundary, timeout: 0 });
+    assert.equal(r.outcome, "timeout");
+  });
+});
+
+test("observe: 不正cursorは拒否", { skip: !posix }, async () => {
+  await withStateRoot(async (agents) => {
+    writeMeta(agents, "s14", "codex");
+    await assert.rejects(() => core.observeAgentDone("s14", { cursor: -1, timeout: 0 }), /cursor/);
+    await assert.rejects(() => core.observeAgentDone("s14", { cursor: 1.5, timeout: 0 }), /cursor/);
+  });
+});
+
 // ---- CLI black-box ----
 
 function runCli(args, env) {
@@ -322,6 +352,34 @@ test("cli: 未管理sessionはAitermErrorの文言つきでexit 1", { skip: !pos
     const out = JSON.parse(r.stdout.trim());
     assert.equal(out.ok, false);
     assert.match(out.message, /agent_done 管理セッション/);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("cli: --cursor で境界指定して回収できる", { skip: !posix }, async () => {
+  const { base, agents } = makeStateRoot();
+  try {
+    const { eventPath } = writeMeta(agents, "c4", "codex");
+    fs.appendFileSync(eventPath, codexEvent("c4", { turn_id: "old" }));
+    const boundary = fs.statSync(eventPath).size;
+    fs.appendFileSync(eventPath, codexEvent("c4", { turn_id: "target" }));
+    const r = runCli(["--session", "c4", "--cursor", String(boundary), "--timeout", "5"], base);
+    assert.equal(r.status, 0, r.stderr);
+    const out = JSON.parse(r.stdout.trim());
+    assert.equal(out.outcome, "done");
+    assert.equal(out.turn_id, "target");
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("cli: 不正--cursorはexit 1", { skip: !posix }, () => {
+  const { base } = makeStateRoot();
+  try {
+    const r = runCli(["--session", "x", "--cursor", "-1"], base);
+    assert.equal(r.status, 1);
+    assert.equal(JSON.parse(r.stdout.trim()).ok, false);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }

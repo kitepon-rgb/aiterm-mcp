@@ -10,20 +10,22 @@ interface WaitCommand {
   session: string;
   operationId: string | null;
   timeout: number;
+  cursor: number | null;
 }
 
 const SESSION_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const OPERATION_RE = /^sha256:[0-9a-f]{64}$/;
 const USAGE =
-  "usage: aiterm-wait --session <name> [--operation sha256:<64hex>] [--timeout <sec>]";
+  "usage: aiterm-wait --session <name> [--cursor <event_cursor>] [--operation sha256:<64hex>] [--timeout <sec>]";
 
 export function parseArgs(argv: string[]): WaitCommand {
   let session: string | null = null;
   let operationId: string | null = null;
   let timeout: number | null = null;
+  let cursor: number | null = null;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--session" || a === "--operation" || a === "--timeout") {
+    if (a === "--session" || a === "--operation" || a === "--timeout" || a === "--cursor") {
       const v = argv[i + 1];
       if (v === undefined) throw new Error(`${a} に値がありません。${USAGE}`);
       i++;
@@ -35,6 +37,10 @@ export function parseArgs(argv: string[]): WaitCommand {
         if (operationId !== null) throw new Error(`--operation が重複しています。${USAGE}`);
         if (!OPERATION_RE.test(v)) throw new Error(`--operation が不正です。${USAGE}`);
         operationId = v;
+      } else if (a === "--cursor") {
+        if (cursor !== null) throw new Error(`--cursor が重複しています。${USAGE}`);
+        if (!/^\d+$/.test(v)) throw new Error(`--cursor は0以上の整数byte offsetだけを受理します。${USAGE}`);
+        cursor = Number(v);
       } else {
         if (timeout !== null) throw new Error(`--timeout が重複しています。${USAGE}`);
         if (!/^\d+$/.test(v)) throw new Error(`--timeout は0以上の整数秒だけを受理します。${USAGE}`);
@@ -46,7 +52,7 @@ export function parseArgs(argv: string[]): WaitCommand {
     }
   }
   if (session === null) throw new Error(`--session は必須です。${USAGE}`);
-  return { session, operationId, timeout: timeout ?? 600 };
+  return { session, operationId, timeout: timeout ?? 600, cursor };
 }
 
 function emit(value: unknown): void {
@@ -58,6 +64,7 @@ export async function main(argv: string[]): Promise<void> {
   const result = await observeAgentDone(cmd.session, {
     operation_id: cmd.operationId,
     timeout: cmd.timeout,
+    cursor: cmd.cursor,
   });
   emit(result);
 }

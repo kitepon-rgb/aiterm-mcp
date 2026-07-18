@@ -7,7 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.15.1] - 2026-07-18
+## [0.16.0] - 2026-07-18
+
+### Changed (BREAKING)
+- **The blocking wait surface is gone.** A parent agent never blocks on aiterm:
+  - `pty_send` no longer accepts `wait` / `timeout` / `screen` / `lines` /
+    `operation_id`. Sending to an agent session is now automatically a
+    **dispatch**: the TUI ready gate and submit separation still run, the call
+    returns immediately, and the result envelope
+    (`aiterm.pty-send-result.v1`, `mode: "sent" | "agent_dispatch"`) carries an
+    `event_cursor` — the event-file boundary taken just before the send.
+    Completion is observed by running
+    `aiterm-wait --session <id> --cursor <event_cursor>` as a host background
+    task (its exit is the push notification); results are collected with
+    `pty_read(agent_transcript: true)` or `claude_turn recover` as before.
+    `force: true` bypasses dispatch for manual intervention.
+  - `claude_turn issue` no longer takes `timeout`; it is dispatch-only and
+    returns `accepted` immediately. Recovery semantics are unchanged.
+  - Launchers (`claude_agent` / `codex_agent` / `grok_agent` /
+    `composer_agent`) no longer accept `agent_done` / `wait` / `timeout` /
+    `screen` / `lines`. **Every launch is managed** (Stop-hook completion
+    detection installed); an initial `prompt` is submitted through the ready
+    gate and the launcher returns without waiting. For raw manual TUI driving,
+    open a plain `pty_open` session and start the vendor CLI yourself.
+- `aiterm-wait` gained `--cursor <n>` so the waiter can start after the
+  dispatch without missing a completion (start-order independent for every
+  vendor, not just Claude's `--operation`).
 
 ### Fixed
 - tmux is now always spawned with a UTF-8 `LC_CTYPE` when the effective locale

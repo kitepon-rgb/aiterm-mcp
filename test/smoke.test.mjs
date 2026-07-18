@@ -18,7 +18,7 @@ const PACKAGE = JSON.parse(fs.readFileSync(path.join(HERE, "..", "package.json")
 test("smoke: 公開versionはpackage・lock・server manifestで一致する", () => {
   const lock = JSON.parse(fs.readFileSync(path.join(HERE, "..", "package-lock.json"), "utf8"));
   const server = JSON.parse(fs.readFileSync(path.join(HERE, "..", "server.json"), "utf8"));
-  assert.equal(PACKAGE.version, "0.15.1", "locale注入fix付き公開面は0.15.0と区別する");
+  assert.equal(PACKAGE.version, "0.16.0", "wait廃止・dispatch統一の公開面は0.15.xと区別する");
   assert.equal(lock.version, PACKAGE.version);
   assert.equal(lock.packages?.[""]?.version, PACKAGE.version);
   assert.equal(server.version, PACKAGE.version);
@@ -91,9 +91,17 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 12 ツール公�
     "pty_send",
   ]);
   const ptySend = toolsResp.result.tools.find((t) => t.name === "pty_send");
-  assert.deepEqual(ptySend.inputSchema.properties.wait.enum, ["none", "agent_done"]);
-  assert.equal(ptySend.inputSchema.properties.wait.default, "none");
-  assert.ok(ptySend.inputSchema.properties.operation_id.anyOf?.some((v) => v.type === "string"));
+  assert.equal(ptySend.inputSchema.properties.wait, undefined, "v0.16: wait は廃止");
+  assert.equal(ptySend.inputSchema.properties.operation_id, undefined, "v0.16: durable相関はclaude_turn専用");
+  assert.equal(ptySend.inputSchema.properties.timeout, undefined, "v0.16: pty_send はブロックしない");
+  assert.equal(ptySend.inputSchema.properties.screen, undefined);
+  assert.equal(ptySend.inputSchema.properties.lines, undefined);
+  assert.equal(ptySend.outputSchema.properties.schema.const, "aiterm.pty-send-result.v1", "pty_send result schema");
+  assert.deepEqual(ptySend.outputSchema.properties.mode.enum, ["sent", "agent_dispatch"], "pty_send mode schema");
+  assert.ok(
+    ptySend.outputSchema.properties.event_cursor.anyOf?.some((v) => v.type === "integer"),
+    "pty_send event_cursor schema",
+  );
   const ptyRead = toolsResp.result.tools.find((t) => t.name === "pty_read");
   assert.equal(ptyRead.inputSchema.properties.agent_transcript.type, "boolean", "pty_read agent_transcript schema");
   assert.equal(ptyRead.inputSchema.properties.agent_transcript.default, false, "pty_read agent_transcript default");
@@ -109,17 +117,16 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 12 ツール公�
   );
   const claudeAgent = toolsResp.result.tools.find((t) => t.name === "claude_agent");
   assert.ok(claudeAgent.inputSchema.properties.model.anyOf?.some((v) => v.type === "string"), "claude_agent model schema");
-  assert.equal(claudeAgent.inputSchema.properties.agent_done.type, "boolean", "claude_agent agent_done schema");
+  assert.equal(claudeAgent.inputSchema.properties.agent_done, undefined, "v0.16: launcher は常に managed");
   assert.equal(claudeAgent.inputSchema.properties.launch_operation_id.pattern, "^sha256:[0-9a-f]{64}$", "claude_agent launch replay schema");
-  assert.deepEqual(claudeAgent.inputSchema.properties.wait.enum, ["none", "agent_done"], "claude_agent wait schema");
-  assert.equal(claudeAgent.inputSchema.properties.timeout.type, "number", "claude_agent timeout schema");
+  assert.equal(claudeAgent.inputSchema.properties.wait, undefined, "v0.16: 初回prompt waitは廃止");
+  assert.equal(claudeAgent.inputSchema.properties.timeout, undefined, "v0.16: launcher はブロックしない");
   const claudeTurn = toolsResp.result.tools.find((t) => t.name === "claude_turn");
   assert.equal(claudeTurn.inputSchema.properties.session_id.type, "string", "claude_turn session_id schema");
   assert.deepEqual(claudeTurn.inputSchema.properties.action.enum, ["issue", "recover"], "claude_turn action schema");
   assert.equal(claudeTurn.inputSchema.properties.operation_id.pattern, "^sha256:[0-9a-f]{64}$", "claude_turn operation_id schema");
   assert.equal(claudeTurn.inputSchema.properties.text.type, "string", "claude_turn issue text schema");
-  assert.equal(claudeTurn.inputSchema.properties.timeout.type, "number", "claude_turn issue timeout schema");
-  assert.equal(claudeTurn.inputSchema.properties.timeout.default, undefined, "recoverへtimeout既定値を注入しない");
+  assert.equal(claudeTurn.inputSchema.properties.timeout, undefined, "v0.16: issue は dispatch-only でブロックしない");
   assert.ok(claudeTurn.outputSchema, "claude_turn output schemaを公開する");
   assert.equal(claudeTurn.outputSchema.properties.schema.const, "aiterm.claude-operation-result.v1", "claude_turn result schema");
   assert.deepEqual([...claudeTurn.outputSchema.properties.status.enum].sort(), ["accepted", "completed", "pending", "unknown"], "claude_turn status schema");
@@ -129,15 +136,11 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 12 ツール公�
     "claude_turn unknown reason schema",
   );
   assert.ok(claudeTurn.outputSchema.properties.raw_output.anyOf.some((entry) => entry.type === "string"), "claude_turn completed raw_output schema");
-  assert.equal(codexAgent.inputSchema.properties.agent_done.type, "boolean", "codex_agent agent_done schema");
-  assert.deepEqual(codexAgent.inputSchema.properties.wait.enum, ["none", "agent_done"], "codex_agent wait schema");
-  assert.equal(codexAgent.inputSchema.properties.wait.default, "none", "codex_agent wait default");
-  assert.equal(codexAgent.inputSchema.properties.timeout.type, "number", "codex_agent timeout schema");
-  assert.equal(codexAgent.inputSchema.properties.screen.type, "boolean", "codex_agent screen schema");
-  assert.ok(
-    codexAgent.inputSchema.properties.lines.anyOf?.some((v) => v.type === "integer"),
-    "codex_agent lines schema",
-  );
+  assert.equal(codexAgent.inputSchema.properties.agent_done, undefined, "v0.16: launcher は常に managed");
+  assert.equal(codexAgent.inputSchema.properties.wait, undefined, "v0.16: 初回prompt waitは廃止");
+  assert.equal(codexAgent.inputSchema.properties.timeout, undefined);
+  assert.equal(codexAgent.inputSchema.properties.screen, undefined);
+  assert.equal(codexAgent.inputSchema.properties.lines, undefined);
   for (const [name, provider] of [
     ["claude_agent", "claude"],
     ["codex_agent", "codex"],
@@ -157,7 +160,7 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 12 ツール公�
       `${name} model schema`,
     );
     assert.equal(tool.inputSchema.properties.reasoning_effort.enum, undefined, `${name} reasoning_effort enum は未公開`);
-    assert.equal(tool.inputSchema.properties.agent_done.type, "boolean", `${name} agent_done schema`);
+    assert.equal(tool.inputSchema.properties.agent_done, undefined, `${name} v0.16: 常に managed`);
     assert.equal(tool.inputSchema.properties.wait, undefined, `${name} initial prompt wait は未公開`);
     assert.equal(tool.inputSchema.properties.timeout, undefined, `${name} initial prompt timeout は未公開`);
     assert.equal(tool.inputSchema.properties.screen, undefined, `${name} initial prompt screen は未公開`);

@@ -8,7 +8,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > collectionはschema-exact canonical dotagents configの`collection.enabled`がJSON boolean `true`の時だけ有効で既定OFF、network送信は行わない。raw exception/stderr/stack/prompt/PTY/transcript/event/pathはAPIで拒否する。
 > 公開commit `239e7e4`、tag CI `29245251184`、npm `latest`、tag / GitHub Release、MCP Registry workflow `29245462227`、registry由来隔離installから10-tool MCP diagnosticsとruntime snapshotまで確認済み。
 
-> **最新リリース v0.15.1（2026-07-18公開）**: `claude_agent`を追加し、PTY 6＋対話launcher 4
+> **現在の未公開source（2026-07-18・v0.16.0）**: オーナー裁定「waitは廃止。引数を減らし使い方のパターンを減らす」による breaking 再設計。
+> ①`pty_send` から wait/timeout/screen/lines/operation_id を撤去。agent session への send は自動で**非ブロック dispatch**になり
+>（ready gate・submit 分離内蔵・即返り）、`aiterm.pty-send-result.v1`（mode: sent|agent_dispatch）で **event_cursor**（送信直前の
+> event file 境界）を返す。force:true は手動介入の素送信。②`claude_turn issue` は timeout 撤去・dispatch-only で即 accepted。
+> ③launcher 4種から agent_done/wait/timeout/screen/lines を撤去し**常に managed 起動**（手動運転は pty_open＋vendor CLI 手動起動へ）。
+> 初回 prompt は ready gate 経由で送信して待たずに返る。④`aiterm-wait` に --cursor を追加＝dispatch 後起動でも取りこぼしゼロ
+>（全 vendor で起動順序非依存）。完了待ちは aiterm-wait 一本（Claude 親=background、押し込み機構の無い親=foreground shell）。
+> core は sendAndWaitAgentDone/waitAgentDoneEvent/wait lock 取得系を削除し dispatchAgentTurn/observeAgentDone(cursor) へ置換。
+> close/killAll の他プロセス wait lock 検査は cross-version 安全弁として残置。
+>
+> **v0.15.1（2026-07-18公開）**: `claude_agent`を追加し、PTY 6＋対話launcher 4
 >（Claude/Codex/Grok/Composer）＋diagnostics 1＋構造化Claude caller 1＝計12ツール。Claudeは`claude -p`反復ではなく、
 > 利用者がattachできる同じClaude Code TUI sessionへ初回／follow-upを送る。launch専用settingsの
 > Stop hookが本文なしeventとowner-only bounded resultを分離し、timeout後もprompt再送なしで同じ
