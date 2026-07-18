@@ -16,7 +16,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > 初回 prompt は ready gate 経由で送信して待たずに返る。④`aiterm-wait` に --cursor を追加＝dispatch 後起動でも取りこぼしゼロ
 >（全 vendor で起動順序非依存）。完了待ちは aiterm-wait 一本（Claude 親=background、押し込み機構の無い親=foreground shell）。
 > core は sendAndWaitAgentDone/waitAgentDoneEvent/wait lock 取得系を削除し dispatchAgentTurn/observeAgentDone(cursor) へ置換。
-> close/killAll の他プロセス wait lock 検査は cross-version 安全弁として残置。
+> close/killAll の他プロセス wait lock 検査は cross-version 安全弁として残置。full regression 290/290。
+> 実機E2E通過（2026-07-18）: 実codex子でmanaged起動→dispatch即返り（cursor=0）→**dispatch後起動**の `aiterm-wait --cursor` がdone受信→harness re-invoke→transcript turn_id一致で回収→close。cursor起動順序非依存を実機確認。
 >
 > **v0.15.1（2026-07-18公開）**: `claude_agent`を追加し、PTY 6＋対話launcher 4
 >（Claude/Codex/Grok/Composer）＋diagnostics 1＋構造化Claude caller 1＝計12ツール。Claudeは`claude -p`反復ではなく、
