@@ -33,6 +33,7 @@ Codex / Grok Build(Grok) / Grok Build(Composer) の対話 TUI を永続PTYで扱
 - Codex は aiterm の tmux/openAgent 相当経路でも Stop hook と `AITERM_AGENT_*` env が届くことを実測した。
 - ただし Codex Stop hook は同居 hook が `decision:"block"` を返すと同じ `turn_id` のまま継続する。bridge が初回 Stop を見ただけで done と呼ぶ設計は禁止する。
 - Codex route は managed `CODEX_HOME` で Stop chain を aiterm が単独所有する形を採用した。既存 `~/.codex/hooks.json` は変更しない。2026-07-07 の追加 hardening で、通常 Codex home の広い symlink は廃止し、managed home へ持ち込む通常 home 側エントリは `auth.json` symlink と `config.toml` copy に限定した。
+- 2026-07-18 v0.18.2修理で、custom role discoveryに必要な`agents/*.toml`を起動時snapshot allowlistへ追加した。source symlinkは実体をprivate regular fileへ複製し、その他state/cache/session隔離は維持する。hook trustはprocess-local bypass、project directory trustはprivate config snapshotの別安全gateであるため、追加のtrust state copyは行わない。
 - Codex TUI は literal text 投入直後の Enter を取り落とすことがある。`wait:"agent_done"` 経路では text と submit Enter を分離し、短い delay を挟む。
 - Grok Build(Grok) / Grok Build(Composer) の TUI Stop hook は実測で発火した。payload は同型だが model id は入らないため、aiterm 側の `kind` metadata で区別する。
 - `CODEX_HOME` / `GROK_HOME` の temporary home + auth symlink だけでは採用不可。Codex は `auth.json` symlink + `config.toml` copy + aiterm-owned `hooks.json` の allowlist route を採用し、通常 home のその他 state/cache/session entry は managed home へ symlink しない。

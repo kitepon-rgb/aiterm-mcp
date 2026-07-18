@@ -473,6 +473,36 @@ test("openAgent codex agent_done: managed CODEX_HOME と Stop hook を組み立�
   });
 });
 
+test("openAgent codex agent_done: agents/*.toml を symlink ではなく snapshot 継承する", { skip: skipAgentDone }, async () => {
+  await withFakeCodexHome(async (fakeHome) => {
+    const sourceAgents = path.join(fakeHome, "agents");
+    fs.mkdirSync(sourceAgents, { mode: 0o700 });
+    const implementer = 'name = "implementer"\ndescription = "Implement changes"\n';
+    const refuter = 'name = "refuter"\ndescription = "Challenge changes"\n';
+    fs.writeFileSync(path.join(sourceAgents, "implementer.toml"), implementer, { mode: 0o600 });
+    fs.writeFileSync(path.join(fakeHome, "refuter-source.toml"), refuter, { mode: 0o600 });
+    fs.symlinkSync(path.join(fakeHome, "refuter-source.toml"), path.join(sourceAgents, "refuter.toml"));
+    fs.writeFileSync(path.join(sourceAgents, "ignored.json"), "{}\n", { mode: 0o600 });
+
+    const [sid] = core.openAgent("codex", { agent_done: true });
+    try {
+      const meta = readAgentMeta(sid);
+      const managedAgents = path.join(meta.codex_home, "agents");
+      assert.deepEqual(fs.readdirSync(managedAgents).sort(), ["implementer.toml", "refuter.toml"]);
+      for (const [name, expected] of [["implementer.toml", implementer], ["refuter.toml", refuter]]) {
+        const copied = path.join(managedAgents, name);
+        assert.equal(fs.lstatSync(copied).isSymbolicLink(), false, `${name} は実体copy`);
+        assert.equal(fs.readFileSync(copied, "utf8"), expected);
+        if (process.platform !== "win32") assert.equal(fs.statSync(copied).mode & 0o777, 0o600);
+      }
+      fs.writeFileSync(path.join(fakeHome, "refuter-source.toml"), 'name = "changed"\n', { mode: 0o600 });
+      assert.equal(fs.readFileSync(path.join(managedAgents, "refuter.toml"), "utf8"), refuter, "起動後はsource変更から独立する");
+    } finally {
+      core.closeSession(sid);
+    }
+  });
+});
+
 test("openAgent claude agent_done: isolated settings、Stop hook、result pathを組み立てる", { skip: skipAgentDone }, async () => {
   const [sid, hint] = core.openAgent("claude", {
     model: "claude-sonnet-4-6",

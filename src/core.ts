@@ -1656,6 +1656,39 @@ function managedCodexConfigSummary(configPath: string, hookTrustBypass: boolean)
   return `managed config: ${bits.join(" / ")}`;
 }
 
+// Custom agent definitions are configuration, not mutable Codex state. Copy only direct
+// agents/*.toml entries into the per-launch home so role discovery matches the source home while
+// sessions/cache remain isolated. Source symlinks are resolved and their contents are snapshotted;
+// the managed home never points back to the source definition.
+function snapshotCodexAgentDefinitions(srcHome: string, managedHome: string): void {
+  const srcDir = path.join(srcHome, "agents");
+  let srcDirSt: fs.Stats;
+  try {
+    srcDirSt = fs.statSync(srcDir);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw e;
+  }
+  if (!srcDirSt.isDirectory()) {
+    throw new AitermError(`Codex agents が directory ではありません: ${srcDir}`, 2);
+  }
+
+  const names = fs.readdirSync(srcDir).filter((name) => name.endsWith(".toml")).sort();
+  if (!names.length) return;
+  const dstDir = path.join(managedHome, "agents");
+  fs.mkdirSync(dstDir, { mode: 0o700 });
+  fs.chmodSync(dstDir, 0o700);
+  for (const name of names) {
+    const src = path.join(srcDir, name);
+    const resolved = fs.realpathSync(src);
+    const st = fs.statSync(resolved);
+    if (!st.isFile()) {
+      throw new AitermError(`Codex agent definition が通常ファイルではありません: ${src}`, 2);
+    }
+    writeText0600(path.join(dstDir, name), fs.readFileSync(resolved, "utf8"));
+  }
+}
+
 function createManagedCodexHome(
   name: string,
   launchId: string,
@@ -1700,6 +1733,8 @@ function createManagedCodexHome(
     fs.writeFileSync(configDst, configOut, { mode: 0o600 });
     fs.chmodSync(configDst, 0o600);
   }
+
+  snapshotCodexAgentDefinitions(srcHome, managedHome);
 
   const hookScript = codexHookScriptPath();
   if (!fs.existsSync(hookScript)) {

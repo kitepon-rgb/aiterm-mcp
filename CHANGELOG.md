@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.2] - 2026-07-18
+
+### Fixed
+- Managed Codex homes now snapshot-copy `agents/*.toml` custom-role
+  definitions from the source `CODEX_HOME`. Symlinked definitions are resolved
+  into private regular-file copies, so `codex_agent` sessions can discover the
+  same custom roles without sharing mutable sessions, caches, or other home
+  state. A missing or empty source `agents/` directory remains valid.
+- Hook trust state is deliberately not copied as a separate credential/state
+  artifact: aiterm's launch-owned Stop hook already uses
+  `--dangerously-bypass-hook-trust` for that process. Project directory trust
+  remains a separate safety gate and continues to come from the private
+  `config.toml` snapshot; an untrusted cwd is not auto-approved.
+
 ## [0.18.1] - 2026-07-18
 
 ### Fixed
