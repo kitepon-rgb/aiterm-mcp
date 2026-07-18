@@ -171,6 +171,7 @@ Host home
 4. バックエンド第一候補は tmux。
 5. 完了境界は quiescence 検出を第一候補とする。
 6. 適用対象は POSIX（Linux / WSL2 / macOS）を第一とし、**Windows ネイティブも全 tmux 呼び出しを WSL 経由へ橋渡しして対応**する（Windows にネイティブ tmux が無く、`/mnt` の 9p 上では AF_UNIX ソケットが使えないため、ソケットは WSL ネイティブ fs に置き、ログは `/mnt` 経由で Windows と共有する）。詳細は §11。
+7. （2026-07-18 追記・v0.18.0）agent TUI への prompt 投入は「submit の成立」を保証できない（非ブロック dispatch の原理的帰結。実被弾: 子 vendor の startup ハング中に prompt が composer へ未 submit で座礁）。対処は D（安全性ガード）の一部として3層で確定: ①投入は tmux bracketed paste（pane negotiation）で原子化し、キー解釈由来の文字化け・Enter 取り落としを抑える ②ready gate は busy 表示中（esc to interrupt・実機根拠のある vendor のみ）を ready と数えない ③投入後に composer 残存の**陽性証拠だけ**を有界観測し receipt（`submit_residue`）で報告する——auto-retry・例外化はしない（観測と操作の分離。false は成立の保証ではないと契約に明記）。
 
 ## 10. 未決事項（次の議論）
 

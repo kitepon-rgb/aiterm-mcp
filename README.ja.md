@@ -24,7 +24,13 @@
 
 12 ツール: 6 つの **PTY ツール**（`pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list`）で 1 本の永続端末を開き・操作し・読む。加えて 4 つの **エージェント起動ツール**（`claude_agent` / `codex_agent` / `grok_agent` / `composer_agent`）が別のコーディングエージェントの TUI を新しい端末の中に起動し、`claude_turn`がdurable caller向けの構造化issue／recoveryを、`diagnostics`が安全なfactory readinessを返す。バックエンドは **tmux** なので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
 
-**v0.17.0 を 2026-07-18 に公開。** 親エージェントは aiterm 上で一切ブロックしない:
+**v0.18.0 を 2026-07-18 に公開。** 実運用障害の還流による agent dispatch の hardening:
+全 dispatch／launch receipt に **submit 座礁観測** `submit_residue` を追加
+（送信 prompt が vendor TUI の composer に未 submit のまま残存していないかを有界に観測して報告する。
+陽性証拠のみ・auto-retry なし）。agent への prompt paste は tmux **bracketed paste**（pane ごとの
+negotiation）で包み、語中の文字化けと Enter 取り落としを抑制。初回 prompt 前の ready gate は
+busy 表示中（esc to interrupt）の Codex/Claude を ready と数えない。
+v0.16/0.17 以来、親エージェントは aiterm 上で一切ブロックしない:
 agent session への send は常に非ブロック dispatch になり、完了待ちは `aiterm-wait` 一本
 （exit code が receipt の outcome を映す: 0=done / 3=timeout=未完了 / 4=closed）、初回 prompt 付き
 launch は structured receipt にコピペ可能な `wait_command` を含む。factory diagnostics と local
@@ -55,7 +61,7 @@ pty_read(id, { wait: true })       → 削減済みの出力を読む（完了�
 
 ### 2. その端末の中に他のコーディングエージェントを起動する — オーケストレーションの旗艦
 
-同じ primitive が別エージェントの TUI を宿す。4 つの起動ツールが、Claude/Codex/Grok/Composer の対話 TUI を新しい永続端末の中に起動し、`session_id` を返す。既存の人間向けtextに加えて`aiterm.agent-launch-result.v1` structured receiptも返すため、durable callerは表示文字列を解析せずsession handleを取得できる。以後は同じ `pty_read` / `pty_send` で継続操作する。**起動は常に managed**（aiterm 所有の Stop hook 付き）で、agent session への `pty_send` は非ブロックの **dispatch** になり `event_cursor` 入り receipt を即返す。完了通知は `aiterm-wait --session <id> --cursor <event_cursor>` をホストのバックグラウンドタスクとして実行し、exit 時に receipt の `outcome` で判定する（exit 0=done / 3=timeout=未完了・既定600秒 / 4=closed。親はブロックもポーリングもしない）。起動時 `prompt` を渡した launch は structured receipt にコピペ可能な `wait_command` と `event_cursor` を含む。durable machine callerは`claude_turn({ action:"issue"|"recover", session_id, operation_id, ... })`を使い、人間向けerror文字列を解析せず`accepted`／`pending`／`completed`／`unknown`を判定できる。recoveryは再送せず、検証済み完了だけがexact `raw_output`を持つ。通常の`pty_send`／`pty_read`は対話callerと人間向けに維持する。`C-c`後もmarkerを保持し、Stopが来なければsessionをcloseする。`claude_agent` と `codex_agent` の初回 `prompt` は ready gate 経由で送信して待たずに返る（Grok/Composer は argv 渡し）。手動でキー操作したい場合は `pty_open` で素の端末を開き vendor CLI を自分で起動する。
+同じ primitive が別エージェントの TUI を宿す。4 つの起動ツールが、Claude/Codex/Grok/Composer の対話 TUI を新しい永続端末の中に起動し、`session_id` を返す。既存の人間向けtextに加えて`aiterm.agent-launch-result.v1` structured receiptも返すため、durable callerは表示文字列を解析せずsession handleを取得できる。以後は同じ `pty_read` / `pty_send` で継続操作する。**起動は常に managed**（aiterm 所有の Stop hook 付き）で、agent session への `pty_send` は非ブロックの **dispatch** になり `event_cursor` 入り receipt を即返す。完了通知は `aiterm-wait --session <id> --cursor <event_cursor>` をホストのバックグラウンドタスクとして実行し、exit 時に receipt の `outcome` で判定する（exit 0=done / 3=timeout=未完了・既定600秒 / 4=closed。親はブロックもポーリングもしない）。起動時 `prompt` を渡した launch は structured receipt にコピペ可能な `wait_command` と `event_cursor`、そして `submit_residue` 観測を含む（true=prompt が composer に未 submit で残存している疑い＝案内に従い画面確認から復旧 / false=残存観測せず・成立の保証ではない / null=対象外）。dispatch receipt にも同じ観測が付く。durable machine callerは`claude_turn({ action:"issue"|"recover", session_id, operation_id, ... })`を使い、人間向けerror文字列を解析せず`accepted`／`pending`／`completed`／`unknown`を判定できる。recoveryは再送せず、検証済み完了だけがexact `raw_output`を持つ。通常の`pty_send`／`pty_read`は対話callerと人間向けに維持する。`C-c`後もmarkerを保持し、Stopが来なければsessionをcloseする。`claude_agent` と `codex_agent` の初回 `prompt` は ready gate 経由で送信して待たずに返る（Grok/Composer は argv 渡し）。手動でキー操作したい場合は `pty_open` で素の端末を開き vendor CLI を自分で起動する。
 
 ```text
 codex_agent({ session_name: "codex1", cwd: "/repo",
@@ -301,7 +307,7 @@ consumer は `aiterm-runtime-errors snapshot` を読み、durable ingestion 後�
 
 `pty_send` は送信前に破壊的コマンド（`rm -rf /`, `mkfs`, `dd of=/dev/…`, `DROP TABLE` 等）を遮断し（`force: true` で越える）、ESC・ブラケットペースト終端などをサニタイズする。`pty_read` は既定で制御文字を無害化して返す（`raw: true` はバイトをそのまま返す）。これは**サンドボックスではなく tripwire**（[既知の制約](#既知の制約バグではなく仕様)参照）。
 
-1回の `pty_send` が受理する本文はUTF-8で最大64KiB。同一sessionへの送信はaiterm processをまたいで直列化し、chunk同士の混線を防ぐ。macOSでは長いPTY入力の欠落を避けるためUTF-8境界を壊さない256-byte単位でtmux pasteし、Linux/WSLでは上限内を1回でpasteする。途中chunkが失敗した場合は部分送信済みであることを明示し、自動でEnterを押さない。送信processの異常終了でlockが残った場合は送信前にfail-closedする。そのsessionを `pty_close` して作り直すか、全sessionを破棄できる場合だけ `pty_kill_all` で安全に掃除する。
+1回の `pty_send` が受理する本文はUTF-8で最大64KiB。同一sessionへの送信はaiterm processをまたいで直列化し、chunk同士の混線を防ぐ。macOSでは長いPTY入力の欠落を避けるためUTF-8境界を壊さない256-byte単位でtmux pasteし、Linux/WSLでは上限内を1回でpasteする。agent dispatch の paste はさらに tmux bracketed paste（`paste-buffer -p`）を使う: bracketed paste mode を要求している pane（vendor TUI）へは各 chunk を `ESC[200~/201~` で包んで届け、チャンク投入中のキー解釈による語中文字化け・submit 取り落としを抑える。通常の shell 送信は不変。途中chunkが失敗した場合は部分送信済みであることを明示し、自動でEnterを押さない。送信processの異常終了でlockが残った場合は送信前にfail-closedする。そのsessionを `pty_close` して作り直すか、全sessionを破棄できる場合だけ `pty_kill_all` で安全に掃除する。
 
 ## 人が覗く
 
