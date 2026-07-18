@@ -24,6 +24,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > Observer queue 19e実Claudeで、入力欄の単発ready直後に初回promptがstartup再描画へ消えるraceを再現した。
 > 初回prompt前の4 vendor共通ready gateを11回連続pollへhardeningする修理はADR 0014／plan 15どおり完了し、
 > pure 21/21、focused agent 4/4、related 113/113で受入済み。queue 19eの実managed Claude再検証待ち。
+> B方式統一の完了push（2026-07-18）: 新bin `aiterm-wait`＋`core.observeAgentDone()` を追加。events.jsonlの純リーダーとして完了を待ち `aiterm.agent-wait-result.v1` receipt（done/timeout/closed）でexitする。lock/metadata/dispatch不干渉・launch_id隔離で多重waiter安全。dispatchは `claude_turn issue(timeout:0)`／`pty_send(wait:"agent_done",timeout:0)`。focused 16/16。Codex親のpush受け口は上流待ち（openai/codex#17543/#18056）。実Claude Code親のlive E2Eは未実施。
 > release／publish／端末更新は未実施。
 > 実Claude model requestのlive smokeは明示承認待ち。
 > 下記の10-tool記述とtest件数は公開済みreleaseの履歴であり、現sourceの公開面ではない。

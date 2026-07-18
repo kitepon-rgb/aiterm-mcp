@@ -33,7 +33,8 @@
   "type": "module",
   "bin": {
     "aiterm-mcp": "dist/index.js",
-    "aiterm-runtime-errors": "dist/runtime-errors-cli.js"
+    "aiterm-runtime-errors": "dist/runtime-errors-cli.js",
+    "aiterm-wait": "dist/aiterm-wait-cli.js"
   },
   "files": [
     "dist",

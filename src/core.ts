@@ -50,7 +50,7 @@ const NON_POSIX_MARK_SHELLS = new Set(["fish", "csh", "tcsh"]);
 const MARK_DONE_RE = /<<<AITERM_DONE rc=[0-9]+>>>/;
 const LAUNCH_ID_RE = /^[0-9a-f]{32}$/;
 const OPERATION_ID_RE = /^sha256:[0-9a-f]{64}$/;
-type AgentKind = "claude" | "codex" | "grok" | "composer";
+export type AgentKind = "claude" | "codex" | "grok" | "composer";
 type InitialPromptState = "none" | "not_sent" | "sent" | "pending" | "done" | "failed";
 
 const AGENT_DONE_POLL_MS = 100;
@@ -2920,6 +2920,82 @@ async function waitAgentDoneEvent(
       }
     }
     if (performance.now() >= deadline) return { event: null, malformedEvents };
+    await sleep(AGENT_DONE_POLL_MS);
+  }
+}
+
+export interface AgentWaitObservation {
+  schema: "aiterm.agent-wait-result.v1";
+  session_id: string;
+  launch_id: string;
+  vendor: AgentKind;
+  outcome: "done" | "timeout" | "closed";
+  operation_id: string | null;
+  vendor_session_id: string | null;
+  turn_id: string | null;
+  malformed_events: number;
+  at: string | null;
+}
+
+// 外部waiterプロセス用の純リーダー観測。lock・PTY・metadata書込・dispatch状態には一切触れない。
+// event fileのtail規律（未終端行保持・増分上限）はwaitAgentDoneEventと同一だが、
+// vendor_session_idのbind永続化を行わない点だけ意図的に異なる（waiterは観測者であって所有者でない）。
+export async function observeAgentDone(
+  name: string,
+  o: { operation_id?: string | null; timeout?: number } = {},
+): Promise<AgentWaitObservation> {
+  const meta = loadAgentMetadata(name);
+  const operationId = o.operation_id == null ? null : validateOperationId(o.operation_id);
+  if (operationId && meta.kind !== "claude") {
+    throw new AitermError("operation_id はClaude agent sessionだけで使用できます", 2);
+  }
+  const timeout = o.timeout ?? DEFAULT_AGENT_DONE_TIMEOUT;
+  const metadataFile = agentMetadataPath(meta.aiterm_session, meta.launch_id);
+  // operation相関があるならoperation_idの一意性で誤帰属を防げるため先頭から全走査できる
+  // （waiter起動がdispatchより遅れても取りこぼさない）。相関なしはwaiter起動時EOFを境界にする。
+  const startOffset = operationId ? 0 : safeStatSize(meta.event_file);
+  const deadline = performance.now() + timeout * 1000;
+  let cursor = startOffset;
+  let carry = "";
+  let malformedEvents = 0;
+  const observation = (
+    outcome: AgentWaitObservation["outcome"],
+    ev: AgentDoneEvent | null = null,
+  ): AgentWaitObservation => ({
+    schema: "aiterm.agent-wait-result.v1",
+    session_id: meta.aiterm_session,
+    launch_id: meta.launch_id,
+    vendor: meta.kind,
+    outcome,
+    operation_id: ev?.operation_id ?? operationId,
+    vendor_session_id: ev?.vendor_session_id ?? meta.vendor_session_id ?? null,
+    turn_id: ev?.turn_id ?? null,
+    malformed_events: malformedEvents,
+    at: ev?.at ?? null,
+  });
+  for (;;) {
+    if (!fs.existsSync(metadataFile)) return observation("closed");
+    const size = safeStatSize(meta.event_file);
+    if (size < cursor) {
+      cursor = 0;
+      carry = "";
+    }
+    if (size > cursor) {
+      if (size - cursor > AGENT_EVENT_MAX_BYTES) {
+        throw new AitermError("agent event file の増分が大きすぎます。該当セッションを閉じて起動し直してください。", 2);
+      }
+      carry += readFileRange(meta.event_file, cursor, size).toString("utf8");
+      cursor = size;
+      const parts = carry.split("\n");
+      carry = parts.pop() ?? "";
+      const scanned = scanAgentDoneLines(parts, meta, operationId);
+      malformedEvents += scanned.malformedEvents;
+      if (scanned.ambiguousVendorSession) {
+        throw new AitermError("agent event file に複数の vendor_session_id が混在しています。該当セッションを閉じて起動し直してください。", 2);
+      }
+      if (scanned.event) return observation("done", scanned.event);
+    }
+    if (performance.now() >= deadline) return observation("timeout");
     await sleep(AGENT_DONE_POLL_MS);
   }
 }
