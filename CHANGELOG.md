@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-07-18
+
 ### Fixed
 - tmux is now always spawned with a UTF-8 `LC_CTYPE` when the effective locale
   is unset or plain `C`/`POSIX` (common for GUI-launched MCP clients). A tmux
