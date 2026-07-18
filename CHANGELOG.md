@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-07-18
+
 ### Added
 - Interactive Claude Code sessions now use the same persistent, user-visible
   PTY model as the other agent launchers. Managed turns correlate a durable
@@ -15,6 +17,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `pty_close` now returns an `aiterm.pty-close-result.v1` structured receipt
   with `closed` or `already_closed`. Retrying the same session ID after an MCP
   response loss therefore recovers the terminal close outcome exactly.
+- New `aiterm-wait` binary for fire-and-forget ("B-style") orchestration: it
+  observes the vendor Stop-hook completion event as a pure reader and exits with
+  a one-line `aiterm.agent-wait-result.v1` receipt (`done` / `timeout` /
+  `closed`). Run it as a parent harness background task so a completion becomes a
+  process exit — a harness that re-invokes its agent on background-task exit
+  (Claude Code) is woken with zero polling, and the parent tool call never
+  blocks. The waiter takes no locks and never writes session or dispatch state,
+  so any number run beside the MCP server and beside each other; `--operation`
+  makes Claude recovery start-order-independent. Backed by the exported
+  `observeAgentDone()` core primitive. A Codex parent has no equivalent
+  wake-on-completion hook yet (upstream openai/codex#17543 / #18056), so it keeps
+  using the blocking wait or manual recovery.
 
 ## [0.12.3] - 2026-07-14
 
