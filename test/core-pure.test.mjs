@@ -205,3 +205,54 @@ test("toWslPath: ドライブパスを /mnt 形へ（ドライブ文字は小文
 test("toWslPath: UNC（ドライブ直下でない）は code=2 で弾く", () => {
   assert.throws(() => core.toWslPath("\\\\server\\share\\x"), (e) => e.code === 2);
 });
+
+// tmuxSpawnEnv: C/POSIX/未設定 locale だけに UTF-8 LC_CTYPE を注入する（実挙動の破壊は
+// caveat tmux-3-7b-list-sessions-f が正。server 側入力破壊・client 側 format タブ "_" 化の対策）。
+function withLocaleEnv(vars, fn) {
+  const keys = ["LC_ALL", "LC_CTYPE", "LANG"];
+  const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  try {
+    for (const k of keys) delete process.env[k];
+    Object.assign(process.env, vars);
+    return fn();
+  } finally {
+    for (const k of keys) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  }
+}
+
+test("tmuxSpawnEnv: locale 未設定は UTF-8 LC_CTYPE を注入する", () => {
+  withLocaleEnv({}, () => {
+    const env = core.tmuxSpawnEnv();
+    assert.ok(env, "注入 env を返す");
+    assert.equal(env.LC_CTYPE, process.platform === "darwin" ? "UTF-8" : "C.UTF-8");
+    assert.equal("LC_ALL" in env, false);
+  });
+});
+
+test("tmuxSpawnEnv: C/POSIX locale は上書きし、優先される LC_ALL=C は削除する", () => {
+  for (const vars of [{ LANG: "C" }, { LC_CTYPE: "POSIX" }, { LC_ALL: "C", LANG: "ja_JP.UTF-8" }]) {
+    withLocaleEnv(vars, () => {
+      const env = core.tmuxSpawnEnv();
+      assert.ok(env, `注入する: ${JSON.stringify(vars)}`);
+      assert.equal("LC_ALL" in env, false, "LC_ALL 残存は注入を無効化するため削除");
+      assert.match(env.LC_CTYPE, /UTF-8/);
+    });
+  }
+});
+
+test("tmuxSpawnEnv: 明示された非C locale は尊重して注入しない", () => {
+  for (const vars of [{ LANG: "ja_JP.UTF-8" }, { LC_CTYPE: "en_US.UTF-8" }, { LC_ALL: "ja_JP.eucJP" }]) {
+    withLocaleEnv(vars, () => {
+      assert.equal(core.tmuxSpawnEnv(), undefined, `尊重する: ${JSON.stringify(vars)}`);
+    });
+  }
+});
+
+test("tmuxSpawnEnv: C.UTF-8 は既に UTF-8 なので注入しない", () => {
+  withLocaleEnv({ LANG: "C.UTF-8" }, () => {
+    assert.equal(core.tmuxSpawnEnv(), undefined);
+  });
+});

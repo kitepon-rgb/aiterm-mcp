@@ -228,6 +228,21 @@ function resolveTmux(observe = true): string {
   ptyDependencyError(tmuxMissingMessage(), observe);
 }
 
+// tmux は locale が C/POSIX/未設定だと UTF-8 を扱えない: server は send-keys/paste のマルチバイト
+// 入力を破壊し（文字消失・周辺バイトの並べ替えを実測）、client は format 出力のタブ等を "_" へ
+// サニタイズする。GUI 起動の MCP client は LANG を持たないことが多く、その環境で立った tmux server は
+// 以後すべての入力を壊すため、UTF-8 locale が確定しない場合だけ LC_CTYPE を明示注入する。
+// 利用者が C/POSIX 以外を明示設定している場合はその選択を尊重して触らない。
+export function tmuxSpawnEnv(): NodeJS.ProcessEnv | undefined {
+  const effective = process.env.LC_ALL || process.env.LC_CTYPE || process.env.LANG || "";
+  // 素の "C"/"POSIX" だけを壊れた既定とみなす。"C.UTF-8" を含む charset 付きの明示設定は尊重する。
+  if (effective && !/^(C|POSIX)$/i.test(effective)) return undefined;
+  const env: NodeJS.ProcessEnv = { ...process.env, LC_CTYPE: process.platform === "darwin" ? "UTF-8" : "C.UTF-8" };
+  // LC_ALL は LC_CTYPE より優先されるため、C/POSIX の LC_ALL が残ると注入が無効になる
+  delete env.LC_ALL;
+  return env;
+}
+
 function tmuxCommandWithInput(
   observe: boolean,
   input: string | undefined,
@@ -237,7 +252,7 @@ function tmuxCommandWithInput(
   // 頭打ちになり stdout が切れる/空になる。Python の subprocess.run は無制限だったので 64MiB へ広げる。
   // Windows は同じ tmux を WSL 経由（-e でログインシェル非経由＝$ 展開やクオート崩れを防ぐ）で叩く。
   let r;
-  const spawnOpts = { encoding: "utf8" as const, maxBuffer: 64 * 1024 * 1024, input };
+  const spawnOpts = { encoding: "utf8" as const, maxBuffer: 64 * 1024 * 1024, input, env: tmuxSpawnEnv() };
   if (isWin) {
     ensureWinBridge(observe);
     r = spawnSync("wsl.exe", ["-e", "tmux", "-S", SOCK, ...args], spawnOpts);

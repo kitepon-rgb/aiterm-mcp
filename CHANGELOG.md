@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- tmux is now always spawned with a UTF-8 `LC_CTYPE` when the effective locale
+  is unset or plain `C`/`POSIX` (common for GUI-launched MCP clients). A tmux
+  server started under a C locale corrupts multibyte input — dropped and
+  reordered bytes in `send-keys`/paste (Japanese prompts garbled) — and a C
+  locale client sanitizes tabs in `list-sessions -F` output to `_`, which
+  silently broke the `pty_list` agent column. Explicit non-C locales (including
+  `C.UTF-8`) are respected; a stale `LC_ALL=C` is dropped so the injection can
+  take effect. Note: an already-running tmux server keeps its startup locale
+  until restarted.
+
 ## [0.15.0] - 2026-07-18
 
 ### Added
