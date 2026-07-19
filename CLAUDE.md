@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **v0.19.2 candidate（2026-07-20）**: Windows nativeでWSL側tmux serverが未起動の時、
+> `diagnostics`が`pty_list.status="not_applicable"`と`session_count=0`を同時に返し、公開契約の
+> status/count不変条件へ違反してdotagents factory adapterからpresence不明扱いされた欠陥を修理。
+> `not_applicable`ではcountを`null`とし、一覧取得成功の`ready`時だけ非負整数を返す回帰を追加した。
+> publish・registry install・4host再受入れは未実施。
+
 > **Unreleased（2026-07-19）**: 通常PTYのPOSIX shellへ複数行を一括送信した際、途中で起動したpagerが後続行の先頭をキー入力として消費し、commandを変形させる欠陥を修理。sanitize済み複数行を改行なしの単一`eval`入力へ可逆変換し、shellがscript全体を所有してから実行する。単一行、`raw:true`、非shell前面は従来の直接pasteを維持する。入力窃取を行う前面programの回帰を追加。
 
 > **v0.19.0（2026-07-19公開）**: managed Claudeのactive turn中に正規の権限確認UIが出ると、

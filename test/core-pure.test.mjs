@@ -3,6 +3,24 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as core from "../dist/core.js";
 
+test("factory diagnostics: PTY server不在はnot_applicableかつ件数null", () => {
+  const diagnostic = core.readOnlyPtyListDiagnostic(() => ({
+    code: 1,
+    stdout: "",
+    stderr: "no server running on /tmp/aiterm.sock",
+  }));
+  assert.deepEqual(diagnostic, { status: "not_applicable", session_count: null });
+});
+
+test("factory diagnostics: PTY一覧成功時だけ件数を公開", () => {
+  const diagnostic = core.readOnlyPtyListDiagnostic(() => ({
+    code: 0,
+    stdout: "one\ntwo\n",
+    stderr: "",
+  }));
+  assert.deepEqual(diagnostic, { status: "ready", session_count: 2 });
+});
+
 // ---------------------------------------------------------------- utf8SafeEnd（B3: マルチバイト境界）
 test("utf8SafeEnd: 不完全な UTF-8 末尾を文字境界まで戻す", () => {
   const s = Buffer.from("あい", "utf8"); // 6 バイト（3+3）

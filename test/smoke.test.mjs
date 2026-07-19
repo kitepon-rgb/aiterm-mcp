@@ -18,7 +18,7 @@ const PACKAGE = JSON.parse(fs.readFileSync(path.join(HERE, "..", "package.json")
 test("smoke: 公開versionはpackage・lock・server manifestで一致する", () => {
   const lock = JSON.parse(fs.readFileSync(path.join(HERE, "..", "package-lock.json"), "utf8"));
   const server = JSON.parse(fs.readFileSync(path.join(HERE, "..", "server.json"), "utf8"));
-  assert.equal(PACKAGE.version, "0.19.1", "atomic multiline送信修正を0.19.0と区別する");
+  assert.equal(PACKAGE.version, "0.19.2", "Windows diagnostics修正を0.19.1と区別する");
   assert.equal(lock.version, PACKAGE.version);
   assert.equal(lock.packages?.[""]?.version, PACKAGE.version);
   assert.equal(server.version, PACKAGE.version);
@@ -195,7 +195,7 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 13 ツール公�
   assert.ok(DIAGNOSTICS_FIXTURE.status_values.includes(diagnostics.pty_list.status));
   assert.ok(diagnostics.pty_list.session_count === null ||
     (Number.isInteger(diagnostics.pty_list.session_count) && diagnostics.pty_list.session_count >= 0));
-  assert.equal(diagnostics.pty_list.status === "unverified", diagnostics.pty_list.session_count === null);
+  assert.equal(diagnostics.pty_list.status === "ready", Number.isInteger(diagnostics.pty_list.session_count));
   assert.equal(
     diagnostics.overall,
     diagnostics.pty_list.status === "unverified" || diagnostics.runtime_error_store.status === "unverified"

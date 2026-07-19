@@ -1289,16 +1289,16 @@ export type DiagnosticStatus = "ready" | "not_applicable" | "unverified";
  * session 名・前面コマンド・PTY 出力を診断応答へ持ち出さないため、factory が安全に readiness を
  * 見られる。socket 不在は「セッション未設定」であって障害ではない。
  */
-export function readOnlyPtyListDiagnostic(): { status: DiagnosticStatus; session_count: number | null } {
+export function readOnlyPtyListDiagnostic(runTmux = tmux): { status: DiagnosticStatus; session_count: number | null } {
   try {
-    const r = tmux("list-sessions", "-F", "#{session_name}");
+    const r = runTmux("list-sessions", "-F", "#{session_name}");
     if (r.code === 0) {
       return { status: "ready", session_count: r.stdout.split(/\r?\n/).filter(Boolean).length };
     }
     // tmux は専用 socket に server がいない通常状態を exit 1 で返す。その他の失敗を「空」と
     // 偽装しないため、メッセージを公開せず unverified に留める。
     if (/no server running|failed to connect/i.test(r.stderr)) {
-      return { status: "not_applicable", session_count: 0 };
+      return { status: "not_applicable", session_count: null };
     }
   } catch {
     // tmux 未導入・WSL bridge 不全等。絶対 path や生 stderr を診断 JSON に出さない。

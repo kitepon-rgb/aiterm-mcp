@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.2] - 2026-07-20
+
+### Fixed
+- Native Windows factory diagnostics now report `session_count: null` when
+  the WSL-backed tmux server is not running and `pty_list.status` is
+  `not_applicable`. This restores the published status/count invariant and
+  lets strict factory adapters distinguish an absent session set from a
+  verified empty list.
+
 ## [0.19.1] - 2026-07-19
 
 ### Fixed
