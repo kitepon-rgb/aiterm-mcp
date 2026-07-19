@@ -2,11 +2,15 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **v0.19.2 candidate（2026-07-20）**: Windows nativeでWSL側tmux serverが未起動の時、
+> **v0.19.2（2026-07-20公開）**: Windows nativeでWSL側tmux serverが未起動の時、
 > `diagnostics`が`pty_list.status="not_applicable"`と`session_count=0`を同時に返し、公開契約の
 > status/count不変条件へ違反してdotagents factory adapterからpresence不明扱いされた欠陥を修理。
 > `not_applicable`ではcountを`null`とし、一覧取得成功の`ready`時だけ非負整数を返す回帰を追加した。
-> publish・registry install・4host再受入れは未実施。
+> 公開commit `cd42e43`、local full regression 303/303、tag CI `29693472622`の全必須jobとnpm
+> provenance publish、MCP Registry workflow `29693472240`がgreen。npm integrity
+> `sha512-/jz+V746N/ShgOhs6214s6ihc6d5M81VTRsRwiyX32jJ4wxUsPl1vOCkAjL01lHI0E5+2z2FYC8p5UefeDVqyQ==`。
+> 4hostへregistry版0.19.2をglobal installし、Mac installed distのsource一致とWindows dotagents
+> factory post-update gate success（report `f5d34e01-1e66-4cf3-8932-f6d6fd2cbab9`）を確認した。
 
 > **Unreleased（2026-07-19）**: 通常PTYのPOSIX shellへ複数行を一括送信した際、途中で起動したpagerが後続行の先頭をキー入力として消費し、commandを変形させる欠陥を修理。sanitize済み複数行を改行なしの単一`eval`入力へ可逆変換し、shellがscript全体を所有してから実行する。単一行、`raw:true`、非shell前面は従来の直接pasteを維持する。入力窃取を行う前面programの回帰を追加。
 
