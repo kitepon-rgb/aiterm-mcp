@@ -2,12 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **v0.19.0（2026-07-19 source・未publish）**: managed Claudeのactive turn中に正規の権限確認UIが出ると、
+> **v0.19.0（2026-07-19公開）**: managed Claudeのactive turn中に正規の権限確認UIが出ると、
 > 通常send／`force:true`／C-c以外のkeyがすべて拒否されStopへ到達できないデッドロックを修理。
 > `claude_approval`を追加し、inspectでactive operationと現在画面のSHA-256 digestを観測、respondで
 > 同じoperation・同じdigestをsend lock内で再検証して`approve_once | deny`だけを送る。任意文字列、恒久許可、
 > 未知UI、画面変更後の入力は拒否し、markerは維持、prompt本文なしのowner-only receiptを残す。
-> 公開面は計13ツール。設計はADR 0015。fixture focused 3/3はgreen、real-model approval smokeは未実施。
+> 公開面は計13ツール。設計はADR 0015。local full regression 300/300、tag CI `29682309390`の全必須jobとnpm provenance publish、Registry workflow `29682448833`がgreen。公開commit `96d461c`、npm latest=0.19.0、GitHub Release公開済み。registry由来隔離installとこの端末のglobal installでversion・3 bins・13 tools・approval schema・local dist一致を確認した。実Claude model requestを使うapproval smokeは未実施で、fixtureから成功を過剰主張しない。
 
 ## 現状: Node/TS の npm パッケージ `aiterm-mcp`（stdio MCP サーバ）
 

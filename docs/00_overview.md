@@ -25,6 +25,7 @@
 - [adr/0010-agent-launch-structured-receipt.md](adr/0010-agent-launch-structured-receipt.md) - durable callerが表示textを解析せずlauncher session handleを得る構造化receipt契約。
 - [adr/0011-agent-launch-structured-receipt-acceptance.md](adr/0011-agent-launch-structured-receipt-acceptance.md) - launcher構造化receiptの実MCP fixtureと関連gateを固定する受入記録。
 - [adr/0015-managed-claude-approval-relay.md](adr/0015-managed-claude-approval-relay.md) - managed Claudeのactive turn中に、operationと画面digestへ結合して単発承認／拒否だけを中継する契約。
+- [adr/0016-release-0.19.0-acceptance.md](adr/0016-release-0.19.0-acceptance.md) - v0.19.0のtag CI、npm provenance、GitHub Release、Official Registry、隔離／global installの不変受入記録。
 
 ## 運用メモ
 

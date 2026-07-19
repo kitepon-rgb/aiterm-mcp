@@ -18,11 +18,11 @@ Official MCP Registry・この端末のglobal installまで同じ成果物とし
   過去時点のADR／受入記録は履歴として保持する。
 - [x] `CHANGELOG.md`へ0.19.0を追加し、package／lock／server manifestを0.19.0で一致させる。
 - [x] full regression、release metadata、diff hygieneがgreen（300/300、metadata 1/1、pack 14 files）。
-- [ ] 対象pathだけをcommitし、`main`をpushする。
-- [ ] `v0.19.0` tagをpushし、必須GitHub Actions全jobのgreenとnpm provenance publishを確認する。
-- [ ] GitHub Releaseを公開し、Official MCP Registry workflowのgreenを確認する。
-- [ ] npm registry由来の隔離installでversion・bin・13 tools・approval schemaを確認する。
-- [ ] この端末へ`aiterm-mcp@0.19.0`をglobal installし、installed distと公開tarball／source distの一致を確認する。
+- [x] 対象pathだけをrelease commit `96d461c`へcommitし、`main`をpushする。
+- [x] `v0.19.0` tagをpushし、必須GitHub Actions全jobのgreenとnpm provenance publishを確認する（run `29682309390`）。
+- [x] GitHub Releaseを公開し、Official MCP Registry workflowのgreenを確認する（run `29682448833`）。
+- [x] npm registry由来の隔離installでversion・bin・13 tools・approval schemaを確認する。
+- [x] この端末へ`aiterm-mcp@0.19.0`をglobal installし、installed distと公開tarball／source distの一致を確認する。
 - [ ] 公開証跡を`CLAUDE.md`／`docs/PROMOTION.md`／不変ADRへ還流し、planをarchiveしてdocs commitをpushする。
 
 ## 非目標

@@ -13,17 +13,17 @@ output) is already committed — these steps activate it.
 
 ## Status (live)
 
-> **v0.19.0（2026-07-19公開候補）**: managed Claude approval relayを追加し、公開面を
-> 13 toolsへ更新した。package／lock／server manifestは0.19.0で同期済み。直前のnpm latestは
-> 0.18.2（tag CI `29648775495` success）だが、0.18.2ではGitHub ReleaseとRegistry再登録が
-> 欠落したため、0.19.0でtag CI→npm→GitHub Release→Registryの連鎖を復旧する。
+> **v0.19.0（2026-07-19公開）**: managed Claude approval relayを追加し、公開面を
+> 13 toolsへ更新した。公開commit `96d461c`、tag CI `29682309390` success、npm latest=0.19.0、
+> GitHub Release公開済み、Official MCP Registry workflow `29682448833` success。registry由来
+> 隔離installとmacOS global installでversion・3 bins・13 tools・approval schema・dist一致を確認済み。
 
 Done and verified:
 
-- 🔄 **npm `0.18.2` is latest before this release** — tag CI `29648775495` succeeded; `0.19.0` will publish through provenance-enabled tag CI.
-- ⚠️ **Official MCP Registry** — latest verified registration is `v0.18.1` via workflow `29643535111`; `v0.18.2` was not registered because no GitHub Release was created.
+- ✅ **npm `0.19.0` is latest** — provenance publish completed in tag CI `29682309390`; registry and global installs verified on 2026-07-19.
+- ✅ **Official MCP Registry** — `v0.19.0` registration workflow `29682448833` completed successfully through GitHub OIDC.
 - ✅ **mcp.so** — submitted/listed (with the square `.github/avatar.png`).
-- ⚠️ **GitHub topic** `mcp-server` added; latest GitHub Release is `v0.18.1`. Creating the `v0.19.0` Release after npm publication is part of this release gate.
+- ✅ **GitHub topic** `mcp-server` added; **v0.19.0 Release** published after npm availability was confirmed.
 - 🔄 **awesome-mcp-servers** — PR [#7620](https://github.com/punkpeye/awesome-mcp-servers/pull/7620) open (awaiting maintainer merge).
 - ✅ **Announced** on r/mcp.
 
