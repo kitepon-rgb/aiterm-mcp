@@ -23,7 +23,7 @@ Official MCP Registry・この端末のglobal installまで同じ成果物とし
 - [x] GitHub Releaseを公開し、Official MCP Registry workflowのgreenを確認する（run `29682448833`）。
 - [x] npm registry由来の隔離installでversion・bin・13 tools・approval schemaを確認する。
 - [x] この端末へ`aiterm-mcp@0.19.0`をglobal installし、installed distと公開tarball／source distの一致を確認する。
-- [ ] 公開証跡を`CLAUDE.md`／`docs/PROMOTION.md`／不変ADRへ還流し、planをarchiveしてdocs commitをpushする。
+- [x] 公開証跡を`CLAUDE.md`／`docs/PROMOTION.md`／不変ADRへ還流し、docs commit `e765273`をpushする。planは本commitでarchiveする。
 
 ## 非目標
 
