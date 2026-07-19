@@ -172,6 +172,7 @@ Host home
 5. 完了境界は quiescence 検出を第一候補とする。
 6. 適用対象は POSIX（Linux / WSL2 / macOS）を第一とし、**Windows ネイティブも全 tmux 呼び出しを WSL 経由へ橋渡しして対応**する（Windows にネイティブ tmux が無く、`/mnt` の 9p 上では AF_UNIX ソケットが使えないため、ソケットは WSL ネイティブ fs に置き、ログは `/mnt` 経由で Windows と共有する）。詳細は §11。
 7. （2026-07-18 追記・v0.18.0）agent TUI への prompt 投入は「submit の成立」を保証できない（非ブロック dispatch の原理的帰結。実被弾: 子 vendor の startup ハング中に prompt が composer へ未 submit で座礁）。対処は D（安全性ガード）の一部として3層で確定: ①投入は tmux bracketed paste（pane negotiation）で原子化し、キー解釈由来の文字化け・Enter 取り落としを抑える ②ready gate は busy 表示中（esc to interrupt・実機根拠のある vendor のみ）を ready と数えない ③投入後に composer 残存の**陽性証拠だけ**を有界観測し receipt（`submit_residue`）で報告する——auto-retry・例外化はしない（観測と操作の分離。false は成立の保証ではないと契約に明記）。
+8. （2026-07-19追記）通常PTYでPOSIX shellが前面にいる時のsanitize済み複数行は、改行を含まない単一の`eval`入力へ可逆変換してからsubmitする。全行をPTY queueへ先行投入すると、途中で起動したpager／REPLが後続行の先頭をキー入力として消費し、別commandへ変形する実障害が起きたため。単一行、`raw:true`、非shell前面は1 PTYの透過性を維持して直接pasteする。
 
 ## 10. 未決事項（次の議論）
 
@@ -192,7 +193,7 @@ Host home
 - **F（実証）→ 解決**: tmux `send-keys` + `pipe-pane` ログで、bash → 中で Python REPL を握り `2**100` を継続対話、を**呼び出しプロセスをまたいで**実証。ssh/docker も同一機構（`send "ssh ..."`）。
 - **B**: quiescence は固定 ms でなく「出力静止(≈2ポーリング) ∧ `pane_current_command` がシェルに復帰」で判定。`--until`(sentinel/prompt) と timeout を併用（4層）。長時間コマンドは pane が子プロセスのままなら誤完了しない。
 - **C**: `read` は pipe-pane ログ→ 制御除去 / `\r`畳み / 反復圧縮 / head+tail 折りたたみ＋復元ヒント + メタ併記（RTK 由来）。TUI 向けに `--screen`(capture-pane) も用意。
-- **D**: `send` 前に破壊的コマンドゲート（`--force` で越える）＋ペイロードの ESC・ブラケットペースト終端除去。`read` は制御文字を無害化して返す。
+- **D**: `send` 前に破壊的コマンドゲート（`--force` で越える）＋ペイロードの ESC・ブラケットペースト終端除去。POSIX shell前面のsanitize済み複数行は単一の改行なし`eval`入力へ符号化し、途中の対話programへの後続行誤帰属を防ぐ。`read` は制御文字を無害化して返す。
 - **A（状態追跡）**: 層スタックの自動追跡は未実装（送った ssh/docker を呼び出し側で記録する方針。今後）。
 - **MCP 化（2026-06-01）→ 完了。Node/TS の npm パッケージ `aiterm-mcp` へ移行し、2026-06-02 に npm 公開（`aiterm-mcp@0.1.0`・provenance 付き、リポジトリ `kitepon-rgb/aiterm-mcp`）**: 実装は `src/index.ts`（`@modelcontextprotocol/sdk`/stdio で 6 ツール公開）/ `src/core.ts`（ロジック・stdout 非汚染）/ `src/rtk.ts`（reducer）。`npx -y aiterm-mcp` で起動、ユーザースコープ global 登録（絶対パス・venv なし）。ローカル/ネスト(192.168.1.2)/永続/削減を実機検証。回帰テスト `test/`（`node:test` 77 件、CI で Node 18/20/22）。旧 Python 実装は `prototype/python/`（移植元・検証基準）。
 - **`send rtk:true`（委譲）＋ `read rtk:true`（自前 reducer）→ 実装**: `src/rtk.ts`（rtk ファイル非複製・自作。**pytest は rtk 0.42.0 と一致**、ただし `FAILED` 要約行の理由は可読性優先で全文保持＝意図的に rtk と相違／grep／git status・log／簡易フィルタ）。`send` が last-cmd を記録し `read rtk:true` が直前コマンド別に適用。

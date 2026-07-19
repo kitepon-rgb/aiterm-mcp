@@ -184,6 +184,27 @@ test("send: 6,000文字の入力を途中欠落させずPTYへ送る", { skip },
   }
 });
 
+test("send: shellへの複数行は途中の対話programに後続行を奪わせない", { skip }, async () => {
+  const session = "selftest_multiline_atomic";
+  core.openSession(session);
+  try {
+    const marker = "<<<AITERM_AFTER_STEALER>>>";
+    core.send(session, "stty -echo", { force: true });
+    await core.readOutput(session, { wait: true, timeout: 2, raw: true });
+    const stealer =
+      `node -e 'process.stdin.setRawMode?.(true); process.stdin.resume(); ` +
+      `process.stdin.once("data",d=>{console.log("<<<AITERM_STOLEN_DATA>>>");process.exit(0)}); ` +
+      `setTimeout(()=>{console.log("<<<AITERM_STOLEN_NONE>>>");process.exit(0)},250)'`;
+    core.send(session, `${stealer}\nprintf '${marker}\\n'`, { force: true, mark: true });
+    const out = await core.readOutput(session, { wait: true, until: marker, timeout: 3, raw: true });
+    assert.ok(out.includes("<<<AITERM_STOLEN_NONE>>>"), `途中programが後続行をPTY入力として奪っていない: ${JSON.stringify(out)}`);
+    assert.ok(!out.includes("<<<AITERM_STOLEN_DATA>>>"), `途中programが入力を盗んだ: ${JSON.stringify(out)}`);
+    assert.ok(out.includes(marker), "後続行がshell scriptとして実行される");
+  } finally {
+    try { core.closeSession(session); } catch {}
+  }
+});
+
 test("send: 別processの同一session送信をchunk単位で混線させない", { skip }, async () => {
   const session = "selftest_send_lock";
   const outputPath = path.join(process.env.TMPDIR, "send-lock-output.bin");

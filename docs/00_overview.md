@@ -13,6 +13,7 @@
 - [12_agent-transcript-read-plan.md](12_agent-transcript-read-plan.md) - `pty_read(agent_transcript:true)` で長い TUI 回答を vendor transcript から回収する設計（B5・実装済み）。
 - [13_native-factory-diagnostics-plan.md](13_native-factory-diagnostics-plan.md) - factory 向け read-only diagnostics の公開契約・privacy 境界・検証 TODO。
 - [15_claude-agent-plan.md](15_claude-agent-plan.md) - 永続PTY上の対話型`claude_agent`、managed Stop hook、operation相関、構造化`claude_turn`、権限確認用`claude_approval`の設計履歴。
+- [17_release-0.19.1-plan.md](17_release-0.19.1-plan.md) - 通常PTYの複数行原子化修理をnpm／Registry／global installまで同一成果物で公開する生きたrelease plan。
 
 ## 決定記録
 

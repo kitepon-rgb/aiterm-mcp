@@ -308,7 +308,7 @@ consumer は `aiterm-runtime-errors snapshot` を読み、durable ingestion 後�
 
 `pty_send` は送信前に破壊的コマンド（`rm -rf /`, `mkfs`, `dd of=/dev/…`, `DROP TABLE` 等）を遮断し（`force: true` で越える）、ESC・ブラケットペースト終端などをサニタイズする。`pty_read` は既定で制御文字を無害化して返す（`raw: true` はバイトをそのまま返す）。これは**サンドボックスではなく tripwire**（[既知の制約](#既知の制約バグではなく仕様)参照）。
 
-1回の `pty_send` が受理する本文はUTF-8で最大64KiB。同一sessionへの送信はaiterm processをまたいで直列化し、chunk同士の混線を防ぐ。macOSでは長いPTY入力の欠落を避けるためUTF-8境界を壊さない256-byte単位でtmux pasteし、Linux/WSLでは上限内を1回でpasteする。agent dispatch の paste はさらに tmux bracketed paste（`paste-buffer -p`）を使う: bracketed paste mode を要求している pane（vendor TUI）へは各 chunk を `ESC[200~/201~` で包んで届け、チャンク投入中のキー解釈による語中文字化け・submit 取り落としを抑える。通常の shell 送信は不変。途中chunkが失敗した場合は部分送信済みであることを明示し、自動でEnterを押さない。送信processの異常終了でlockが残った場合は送信前にfail-closedする。そのsessionを `pty_close` して作り直すか、全sessionを破棄できる場合だけ `pty_kill_all` で安全に掃除する。
+1回の `pty_send` が受理する本文はUTF-8で最大64KiB。同一sessionへの送信はaiterm processをまたいで直列化し、chunk同士の混線を防ぐ。macOSでは長いPTY入力の欠落を避けるためUTF-8境界を壊さない256-byte単位でtmux pasteし、Linux/WSLでは上限内を1回でpasteする。POSIX shellが前面にいる時のsanitize済み複数行は、改行を含まない単一の`eval`入力へ符号化する。shellがscript全体を所有してから先頭行を実行するため、途中で起動したpager／REPLが後続行を対話キーとして奪わない。単一行、`raw:true`、非shell前面は従来どおり直接PTYへpasteする。agent dispatch の paste はさらに tmux bracketed paste（`paste-buffer -p`）を使う: bracketed paste mode を要求している pane（vendor TUI）へは各 chunk を `ESC[200~/201~` で包んで届け、チャンク投入中のキー解釈による語中文字化け・submit 取り落としを抑える。途中chunkが失敗した場合は部分送信済みであることを明示し、自動でEnterを押さない。送信processの異常終了でlockが残った場合は送信前にfail-closedする。そのsessionを `pty_close` して作り直すか、全sessionを破棄できる場合だけ `pty_kill_all` で安全に掃除する。
 
 ## 人が覗く
 

@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **Unreleased（2026-07-19）**: 通常PTYのPOSIX shellへ複数行を一括送信した際、途中で起動したpagerが後続行の先頭をキー入力として消費し、commandを変形させる欠陥を修理。sanitize済み複数行を改行なしの単一`eval`入力へ可逆変換し、shellがscript全体を所有してから実行する。単一行、`raw:true`、非shell前面は従来の直接pasteを維持する。入力窃取を行う前面programの回帰を追加。
+
 > **v0.19.0（2026-07-19公開）**: managed Claudeのactive turn中に正規の権限確認UIが出ると、
 > 通常send／`force:true`／C-c以外のkeyがすべて拒否されStopへ到達できないデッドロックを修理。
 > `claude_approval`を追加し、inspectでactive operationと現在画面のSHA-256 digestを観測、respondで

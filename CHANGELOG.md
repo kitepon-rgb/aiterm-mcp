@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-07-19
+
+### Fixed
+- Ordinary PTY sends no longer let a pager or REPL started by an earlier line
+  consume the beginning of later lines from the same multiline payload. When
+  the foreground process is a POSIX shell, sanitized multiline text is encoded
+  as one newline-free `eval` input, so the shell owns the complete script before
+  execution begins. Single-line input, raw byte sends, and non-shell frontends
+  keep their existing direct-paste behavior.
+
 ## [0.19.0] - 2026-07-19
 
 ### Added
