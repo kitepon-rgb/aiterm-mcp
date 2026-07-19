@@ -22,7 +22,7 @@
 
 **言葉でなく実測で:** このリポジトリ自身の 203 テストで、`pty_read` はコンテキストに載るトークンを生ログの **約 7.1 分の 1** に減らす。しかも pass/fail の判定は畳んでも残る。→ [組み込みシェルツールとの使い分け](#組み込みシェルツールとの使い分け)
 
-12 ツール: 6 つの **PTY ツール**（`pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list`）で 1 本の永続端末を開き・操作し・読む。加えて 4 つの **エージェント起動ツール**（`claude_agent` / `codex_agent` / `grok_agent` / `composer_agent`）が別のコーディングエージェントの TUI を新しい端末の中に起動し、`claude_turn`がdurable caller向けの構造化issue／recoveryを、`diagnostics`が安全なfactory readinessを返す。バックエンドは **tmux** なので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
+13 ツール: 6 つの **PTY ツール**（`pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list`）で 1 本の永続端末を開き・操作し・読む。加えて 4 つの **エージェント起動ツール**（`claude_agent` / `codex_agent` / `grok_agent` / `composer_agent`）が別のコーディングエージェントの TUI を新しい端末の中に起動し、`claude_turn`がdurable caller向けの構造化issue／recoveryを、`claude_approval`がmanaged Claudeの相関済み承認UI中継を、`diagnostics`が安全なfactory readinessを返す。バックエンドは **tmux** なので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
 
 **v0.18.1 を 2026-07-18 に公開**（0.18.0＋stale案内文言の修理1件）。実運用障害の還流による agent dispatch の hardening:
 全 dispatch／launch receipt に **submit 座礁観測** `submit_residue` を追加
@@ -82,7 +82,7 @@ $ aiterm-wait --session codex1 --cursor <event_cursor>   # exit 0=done / 3=timeo
 | `grok_agent` | Grok Build（xAI、既定`grok-4.5`、`model?`で上書き） | `prompt?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `cwd?`, `session_name?` |
 | `composer_agent` | Grok Build（xAI、既定`grok-composer-2.5-fast`、`model?`で上書き） | `prompt?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `cwd?`, `session_name?` |
 
-各ベンダーの CLI が導入・認証済みであること（`claude_agent` は `claude`、`codex_agent` は `codex`、Grok 系は `grok`）。バイナリは `CLAUDE_BIN` / `CODEX_BIN` / `GROK_BIN`、各既定path、`PATH` の順で解決する。CLI不在・不正なmodel/effort・実在しない`cwd`はsession作成前に失敗し、残骸を残さない。Claudeは通常settingsを継承しないlaunch専用settingsとStop hookを使い、本文なしeventとowner-only bounded resultを分離する。`pty_read({ agent_transcript:true })`はdigestとbyte数を検証したresultだけを返し、Claude private transcriptを読まない。後着resultは同じsessionからprompt再送なしで回収できる。managed ClaudeではC-c以外の`pty_key`を拒否する（手動介入は`pty_send`の`force:true`）。中断は`C-c`、解除は`pty_close`。
+各ベンダーの CLI が導入・認証済みであること（`claude_agent` は `claude`、`codex_agent` は `codex`、Grok 系は `grok`）。バイナリは `CLAUDE_BIN` / `CODEX_BIN` / `GROK_BIN`、各既定path、`PATH` の順で解決する。CLI不在・不正なmodel/effort・実在しない`cwd`はsession作成前に失敗し、残骸を残さない。Claudeは通常settingsを継承しないlaunch専用settingsとStop hookを使い、本文なしeventとowner-only bounded resultを分離する。`pty_read({ agent_transcript:true })`はdigestとbyte数を検証したresultだけを返し、Claude private transcriptを読まない。後着resultは同じsessionからprompt再送なしで回収できる。managed Claudeのactive turn中はC-c以外の`pty_key`と素送信を拒否する。Claudeが`Do you want to proceed?`を表示したら、`claude_approval(action:"inspect", ...)`で画面digestを取得し、表示内容を判断してから、そのdigestと`approve_once`または`deny`を`respond`へ渡す。同じoperation・同じ画面が維持されている時だけ入力し、任意文字列や恒久許可選択肢は中継しない。中断は`C-c`、解除は`pty_close`。
 
 エージェント間の隠れたプロトコルは無い。起動したClaude/Codex/Grok/Composerは利用者がattachできるもう1本の永続sessionであり、MCPクライアントが通常のPTY操作で駆動する。
 
@@ -145,7 +145,7 @@ claude mcp add --scope user --transport stdio aiterm -- npx -y aiterm-mcp
 Claude Code を再起動して、接続を確認:
 
 ```bash
-/mcp        # aiterm が connected・12 ツール公開、と出る
+/mcp        # aiterm が connected・13 ツール公開、と出る
 ```
 
 最初のセッション——4 回の呼び出しで、1 個の永続端末:
@@ -186,7 +186,7 @@ MCP クライアントが aiterm を stdio 越しにプログラムから駆動�
 
 ```mermaid
 flowchart LR
-    AI["AI / MCP client<br/>(the orchestrator)"] -->|"pty_send · claude_agent · claude_turn · codex_agent<br/>grok_agent · composer_agent · diagnostics"| S["aiterm-mcp<br/>stdio MCP · 12 tools"]
+    AI["AI / MCP client<br/>(the orchestrator)"] -->|"pty_send · claude_agent · claude_turn · claude_approval · codex_agent<br/>grok_agent · composer_agent · diagnostics"| S["aiterm-mcp<br/>stdio MCP · 13 tools"]
     S -->|"pty_read<br/>token-reduced"| AI
     S -->|"tmux send-keys<br/>capture-pane"| P["persistent PTYs<br/>tmux · survive restarts"]
     P -->|"ssh · docker · repl"| R["nested<br/>remote · container · REPL"]
@@ -262,12 +262,13 @@ aiterm は同じ核心の洞察——端末を出会いの場にする——を�
 | ツール | 役割 | 主な引数 |
 | --- | --- | --- |
 | `pty_open` | 端末を 1 個握り `session_id` を返す | `name?`, `shell="bash"` |
-| `pty_send` | テキスト(コマンド)を送る | `session_id`, `text`, `enter=true`, `wait`, `timeout`, `screen`, `lines`, `operation_id`, `mark`, `force`, `rtk`, `raw` |
+| `pty_send` | テキストを送る。agent sessionでは非ブロックdispatchとして`event_cursor`を返す | `session_id`, `text`, `enter=true`, `mark`, `force`, `rtk`, `raw` |
 | `pty_read` | 出力を削減して読む（既定は増分） | `session_id`, `wait`, `until`, `until_regex`, `timeout`, `screen`, `full`, `lines`, `line_range`, `raw`, `rtk`, `agent_transcript`, `operation_id` |
 | `pty_key` | 制御キーを送る | `session_id`, `key`（`C-c`/`Enter`/`Up`…） |
 | `pty_close` | 冪等に閉じ、`closed` / `already_closed`を返す | `session_id` |
 | `pty_list` | セッション一覧 | （なし） |
 | `claude_turn` | 相関済みmanaged Claude operationをdispatch（issue）または回収（recover） | `action`, `session_id`, `operation_id`, `text?` |
+| `claude_approval` | 現在表示中の相関済みmanaged Claude承認UIを検査または応答 | `action`, `session_id`, `operation_id?`, `approval_choice?`, `observed_prompt_digest?` |
 | `diagnostics` | 機械可読 JSON による read-only factory readiness | （なし） |
 
 `diagnostics` は PTY やエージェントを起動しない。パッケージ版、MCP 呼出 readiness、read-only な PTY 一覧要約、bounded runtime-error-store status、任意 vendor launcher の可用性だけを返す。path・環境値・認証情報・コマンド本文・PTY 出力・raw log は意図的に返さない。通常未設定の任意依存は `not_applicable`、安全に確定できない状態は `unverified` と表す。

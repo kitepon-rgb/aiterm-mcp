@@ -113,7 +113,7 @@ server.registerTool(
       "ホストのバックグラウンドタスクとして実行し、exit時にreceiptのoutcomeで判定する" +
       `（${core.AITERM_WAIT_OUTCOME_NOTE}。ポーリング不要）。` +
       "結果回収は pty_read(agent_transcript:true)、Claude の durable turn は claude_turn を使う。" +
-      "force:true は agent session への手動介入用の素送信。",
+      "force:true は非Claude agent sessionへの手動介入用の素送信。managed Claudeの承認UIはclaude_approvalを使う。",
     inputSchema: {
       session_id: z.string(),
       text: z
@@ -131,7 +131,7 @@ server.registerTool(
       force: z
         .boolean()
         .default(false)
-        .describe("破壊的コマンドゲートを越える。agent session では dispatch せず素送信する（手動介入用）"),
+        .describe("破壊的コマンドゲートを越える。非Claude agent sessionではdispatchせず素送信する。managed Claudeのactive turnには使えない"),
       rtk: z.boolean().default(false).describe("既知コマンドを rtk 形へ委譲して送る（rtk 不在なら素通し）"),
       raw: z.boolean().default(false).describe("送信前サニタイズを無効化"),
     },
@@ -284,7 +284,7 @@ server.registerTool(
 server.registerTool(
   "pty_key",
   {
-    description: "制御キーを送る（C-c, C-d, Enter, Tab, Up, Down... の別名に対応）。managed Claude sessionではturn相関を守るためC-cだけを許可する。",
+    description: "制御キーを送る（C-c, C-d, Enter, Tab, Up, Down... の別名に対応）。managed Claude sessionではturn相関を守るためC-cだけを許可し、承認UIはclaude_approvalで操作する。",
     inputSchema: {
       session_id: z.string(),
       key: z.string().describe('キー名（例 "C-c", "Enter", "Up"）'),
@@ -372,6 +372,62 @@ server.registerTool(
         session_id,
         operation_id,
         text: text ?? undefined,
+      });
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(result) }],
+        structuredContent: { ...result },
+      };
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  "claude_approval",
+  {
+    description:
+      "managed Claudeのactive turn中に表示された権限確認UIを、turn相関を保ったまま検査・応答する専用面。" +
+      "inspectで画面digestと安全な単発Yes/Noだけを取得し、respondは同じoperation・同じdigestが現在も表示中の場合だけ送信する。",
+    inputSchema: {
+      action: z.enum(["inspect", "respond"]),
+      session_id: z.string(),
+      operation_id: z
+        .string()
+        .regex(/^sha256:[0-9a-f]{64}$/)
+        .nullish()
+        .describe("durable operationのID。通常pty_send由来の匿名turnでは省略する"),
+      approval_choice: z.enum(["approve_once", "deny"]).optional().describe("respondだけに指定する"),
+      observed_prompt_digest: z
+        .string()
+        .regex(/^sha256:[0-9a-f]{64}$/)
+        .optional()
+        .describe("直前のinspectが返したdigest。respondだけに指定する"),
+    },
+    outputSchema: {
+      schema: z.literal("aiterm.claude-approval-result.v1"),
+      action: z.enum(["inspect", "respond"]),
+      status: z.enum(["approval_required", "submitted"]),
+      session_id: z.string(),
+      operation_id: z.string().regex(/^sha256:[0-9a-f]{64}$/).nullable(),
+      prompt_digest: z.string().regex(/^sha256:[0-9a-f]{64}$/),
+      choices: z.array(z.object({
+        decision: z.enum(["approve_once", "deny"]),
+        index: z.number().int().positive(),
+        label: z.string(),
+      })),
+      selected_choice: z.enum(["approve_once", "deny"]).nullable(),
+      at: z.string(),
+    },
+  },
+  async ({ action, session_id, operation_id, approval_choice, observed_prompt_digest }) => {
+    try {
+      const result = core.runClaudeApproval({
+        action,
+        session_id,
+        operation_id: operation_id ?? null,
+        approval_choice,
+        observed_prompt_digest,
       });
       return {
         content: [{ type: "text" as const, text: JSON.stringify(result) }],

@@ -74,9 +74,14 @@ protocol／transcript読取、Observer／Throughline／Mailboxロジックの内
   実managed Claude再Hは次項のlive Hとして独立に判定する
   既存plan 04／15の全体lintは今回外のMD013 baselineで赤のためgreenへ数えない
   （[ADR 0014](adr/0014-agent-tui-ready-stabilization.md)）。
-- [ ] 実Claude model requestを使うlive H smokeは、operation相関gateの完了後、目的・影響・rollbackの承認を得て
-  初回／follow-up各一turnで
-  実施し、認証再要求、Stop、結果回収、session closeを確認する。
+- [x] **managed Claude approval relay:** isolated settingsにより正規の権限確認UIが出た時、
+  active operation中の`pty_send(force:true)`と`pty_key`が双方拒否されるデッドロックを解消する。
+  `claude_approval`のinspect／respondをoperation IDと画面digestへ結合し、単発Yes／No以外は送らず、
+  markerを保持したままowner-only receiptへ記録する。契約は
+  [ADR 0015](adr/0015-managed-claude-approval-relay.md)を正とする。
+- [ ] 実Claude model requestを使うlive H smokeは、目的・影響・rollbackの承認を得て初回／follow-up各一turnと
+  別worktreeへのread-only commandでapproval UIを発生させ、inspect→approve_once→同じStop eventへの相関、
+  結果回収、session closeを確認する。
 
 fixture gateの旧受入記録は[ADR 0004](adr/0004-claude-agent-fixture-gate-acceptance.md)、Observer統合前に必要な
 operation相関の設計は[ADR 0005](adr/0005-claude-operation-correlated-recovery.md)、その受入証拠は

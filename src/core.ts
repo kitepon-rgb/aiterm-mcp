@@ -66,6 +66,7 @@ const AGENT_TUI_READY_TIMEOUT_MS = 30_000;
 const AGENT_TUI_READY_POLL_MS = 500;
 const AGENT_TUI_READY_STABLE_SAMPLES = 11;
 const AGENT_TUI_READY_LINES = 45;
+const CLAUDE_APPROVAL_SCREEN_LINES = 80;
 // submit座礁観測（dispatch後にcomposerへ送信textが残存していないかの有界チェック）
 const AGENT_SUBMIT_RESIDUE_DELAY_MS = 250;
 const AGENT_SUBMIT_RESIDUE_POLL_MS = 300;
@@ -438,6 +439,12 @@ function agentClaudeOperationPath(name: string, launchId: string): string {
   return path.join(agentsDir(), `${name}.${launchId}.claude-operation.json`);
 }
 
+function agentClaudeApprovalReceiptPath(name: string, launchId: string): string {
+  assertSessionName(name);
+  if (!LAUNCH_ID_RE.test(launchId)) throw new AitermError(`launch_id が不正です: ${launchId}`, 2);
+  return path.join(agentsDir(), `${name}.${launchId}.claude-approval.json`);
+}
+
 function agentClaudeDispatchReceiptPath(name: string, launchId: string, operationId: string): string {
   assertSessionName(name);
   if (!LAUNCH_ID_RE.test(launchId)) throw new AitermError(`launch_id が不正です: ${launchId}`, 2);
@@ -498,6 +505,7 @@ function cleanupAgentState(name: string): void {
           f.endsWith(".claude-settings.json") ||
           f.endsWith(".claude-result.json") ||
           f.endsWith(".claude-operation.json") ||
+          f.endsWith(".claude-approval.json") ||
           f.endsWith(".claude-dispatch")
         ) fs.unlinkSync(p);
         else if (f.endsWith(".codex-home") || f.endsWith(".grok-home") || f.endsWith(".home")) {
@@ -1453,6 +1461,26 @@ export interface ClaudeOperationResult {
   submit_residue: boolean | null;
 }
 
+export type ClaudeApprovalDecision = "approve_once" | "deny";
+
+export interface ClaudeApprovalChoice {
+  decision: ClaudeApprovalDecision;
+  index: number;
+  label: string;
+}
+
+export interface ClaudeApprovalResult {
+  schema: "aiterm.claude-approval-result.v1";
+  action: "inspect" | "respond";
+  status: "approval_required" | "submitted";
+  session_id: string;
+  operation_id: string | null;
+  prompt_digest: string;
+  choices: ClaudeApprovalChoice[];
+  selected_choice: ClaudeApprovalDecision | null;
+  at: string;
+}
+
 interface AgentDoneParseResult {
   event: AgentDoneEvent | null;
   malformed: boolean;
@@ -2016,6 +2044,151 @@ function managedClaudeOperation(name: string): ClaudeOperationMarker | null | un
   }
   if (meta.kind !== "claude") return undefined;
   return readClaudeOperationMarker(meta);
+}
+
+function canonicalClaudeApprovalScreen(screen: string): string {
+  return stripControl(screen)
+    .split("\n")
+    .map((line) => line.replace(/^\s*[❯>]\s*/, "").replace(/\s+$/, ""))
+    .join("\n")
+    .trim();
+}
+
+function parseClaudeApprovalScreen(screen: string): {
+  promptDigest: string;
+  choices: ClaudeApprovalChoice[];
+} {
+  const canonical = canonicalClaudeApprovalScreen(screen);
+  const lines = canonical.split("\n");
+  let question = -1;
+  for (let i = 0; i < lines.length; i += 1) {
+    if (lines[i].trim() === "Do you want to proceed?") question = i;
+  }
+  if (question < 0) {
+    throw new AitermError("managed Claudeの承認UIを現在画面で確認できません（Do you want to proceed? がありません）", 2);
+  }
+
+  const choices: ClaudeApprovalChoice[] = [];
+  const seen = new Set<ClaudeApprovalDecision>();
+  for (const line of lines.slice(question + 1)) {
+    const match = line.trim().match(/^(\d+)\.\s+(.+?)\s*$/);
+    if (!match) continue;
+    const index = Number(match[1]);
+    const label = match[2];
+    const decision: ClaudeApprovalDecision | null = /^yes$/i.test(label)
+      ? "approve_once"
+      : /^no$/i.test(label)
+        ? "deny"
+        : null;
+    // 「常に許可」等は意図的に公開しない。単発Yes/No以外を自動操作できる契約にしない。
+    if (!decision) continue;
+    if (!Number.isSafeInteger(index) || index < 1 || seen.has(decision)) {
+      throw new AitermError("managed Claudeの承認UI選択肢が一意に解釈できません", 2);
+    }
+    seen.add(decision);
+    choices.push({ decision, index, label });
+  }
+  if (!seen.has("approve_once") || !seen.has("deny")) {
+    throw new AitermError("managed Claudeの承認UIに安全な単発Yes/No選択肢を確認できません", 2);
+  }
+  return {
+    promptDigest: `sha256:${createHash("sha256").update(canonical, "utf8").digest("hex")}`,
+    choices,
+  };
+}
+
+function assertExpectedClaudeOperation(
+  meta: AgentMetadata,
+  expectedOperationId: string | null,
+): ClaudeOperationMarker {
+  const active = readClaudeOperationMarker(meta);
+  if (!active) throw new AitermError("managed Claudeに未解決のactive operationがありません", 2);
+  if (active.operationId !== expectedOperationId) {
+    const actual = active.operationId ?? "operation_idなし";
+    const expected = expectedOperationId ?? "operation_idなし";
+    throw new AitermError(`active operationが一致しません（expected=${expected}, actual=${actual}）`, 2);
+  }
+  return active;
+}
+
+export function runClaudeApproval({
+  action,
+  session_id: name,
+  operation_id: operationIdInput,
+  approval_choice: approvalChoice,
+  observed_prompt_digest: observedPromptDigest,
+}: {
+  action: "inspect" | "respond";
+  session_id: string;
+  operation_id?: string | null;
+  approval_choice?: ClaudeApprovalDecision;
+  observed_prompt_digest?: string;
+}): ClaudeApprovalResult {
+  assertSessionName(name);
+  if (!sessionExists(name)) throw new AitermError(`session '${name}' が無い`, 2);
+  const meta = loadAgentMetadata(name);
+  if (meta.kind !== "claude") throw new AitermError("claude_approvalはmanaged Claude agent sessionだけで使用できます", 2);
+  const operationId = operationIdInput == null ? null : validateOperationId(operationIdInput);
+
+  if (action === "inspect") {
+    if (approvalChoice != null || observedPromptDigest != null) {
+      throw new AitermError("claude_approval inspectにapproval_choice／observed_prompt_digestは指定できません", 2);
+    }
+    assertExpectedClaudeOperation(meta, operationId);
+    const observed = parseClaudeApprovalScreen(captureScreen(name, CLAUDE_APPROVAL_SCREEN_LINES));
+    return {
+      schema: "aiterm.claude-approval-result.v1",
+      action,
+      status: "approval_required",
+      session_id: name,
+      operation_id: operationId,
+      prompt_digest: observed.promptDigest,
+      choices: observed.choices,
+      selected_choice: null,
+      at: new Date().toISOString(),
+    };
+  }
+
+  if (action !== "respond") throw new AitermError(`claude_approval actionが不正です: ${action}`, 2);
+  if (approvalChoice == null || observedPromptDigest == null) {
+    throw new AitermError("claude_approval respondにはapproval_choiceとobserved_prompt_digestが必要です", 2);
+  }
+  if (!OPERATION_ID_RE.test(observedPromptDigest)) {
+    throw new AitermError("observed_prompt_digestはsha256:<64 lowercase hex>で指定してください", 2);
+  }
+
+  const releaseSendLock = acquireSessionSendFileLock(name);
+  try {
+    // inspect後にoperationまたは画面が変わっていないことを、入力と同じsend lock内で再検証する。
+    assertExpectedClaudeOperation(meta, operationId);
+    const observed = parseClaudeApprovalScreen(captureScreen(name, CLAUDE_APPROVAL_SCREEN_LINES));
+    if (observed.promptDigest !== observedPromptDigest) {
+      throw new AitermError("承認UIがinspect後に変化しました。再度inspectしてから判断してください", 2);
+    }
+    const choice = observed.choices.find((entry) => entry.decision === approvalChoice);
+    if (!choice) throw new AitermError(`承認UIに${approvalChoice}の安全な選択肢がありません`, 2);
+    const sent = tmux("send-keys", "-t", name, String(choice.index), "Enter");
+    if (sent.code !== 0) {
+      throw new AitermError(`Claude承認入力を送れませんでした: ${sent.stderr.trim() || `code=${sent.code}`}`, 2);
+    }
+    const at = new Date().toISOString();
+    const result: ClaudeApprovalResult = {
+      schema: "aiterm.claude-approval-result.v1",
+      action,
+      status: "submitted",
+      session_id: name,
+      operation_id: operationId,
+      prompt_digest: observed.promptDigest,
+      choices: observed.choices,
+      selected_choice: approvalChoice,
+      at,
+    };
+    // prompt本文は保存せず、相関ID・digest・選択だけをowner-only receiptへ残す。
+    writeJson0600(agentClaudeApprovalReceiptPath(name, meta.launch_id), result);
+    return result;
+  } finally {
+    releaseSendLock();
+  }
 }
 
 function hasClaudeDispatchReceipt(meta: AgentMetadata, operationId: string): boolean {

@@ -12,7 +12,8 @@
 - [11_audit-2026-07-11.md](11_audit-2026-07-11.md) - v0.11.0 全域監査＋実動作確認の確定指摘（チェックボックス＝修正 TODO 兼用）・棄却台帳・残余検証点。
 - [12_agent-transcript-read-plan.md](12_agent-transcript-read-plan.md) - `pty_read(agent_transcript:true)` で長い TUI 回答を vendor transcript から回収する設計（B5・実装済み）。
 - [13_native-factory-diagnostics-plan.md](13_native-factory-diagnostics-plan.md) - factory 向け read-only diagnostics の公開契約・privacy 境界・検証 TODO。
-- [15_claude-agent-plan.md](15_claude-agent-plan.md) - 永続PTY上の対話型`claude_agent`、managed Stop hook、operation相関、構造化`claude_turn` issue／recoveryを追加する現役計画。
+- [15_claude-agent-plan.md](15_claude-agent-plan.md) - 永続PTY上の対話型`claude_agent`、managed Stop hook、operation相関、構造化`claude_turn`、権限確認用`claude_approval`の設計履歴。
+- [16_release-0.19.0-plan.md](16_release-0.19.0-plan.md) - v0.19.0をnpm・GitHub Release・Official MCP Registry・global installまで多段受入する現役plan。
 
 ## 決定記録
 
@@ -23,6 +24,7 @@
 - [adr/0009-claude-operation-structured-caller-gate-acceptance.md](adr/0009-claude-operation-structured-caller-gate-acceptance.md) - 構造化callerのfocused／related gateと親反証を固定する受入記録。
 - [adr/0010-agent-launch-structured-receipt.md](adr/0010-agent-launch-structured-receipt.md) - durable callerが表示textを解析せずlauncher session handleを得る構造化receipt契約。
 - [adr/0011-agent-launch-structured-receipt-acceptance.md](adr/0011-agent-launch-structured-receipt-acceptance.md) - launcher構造化receiptの実MCP fixtureと関連gateを固定する受入記録。
+- [adr/0015-managed-claude-approval-relay.md](adr/0015-managed-claude-approval-relay.md) - managed Claudeのactive turn中に、operationと画面digestへ結合して単発承認／拒否だけを中継する契約。
 
 ## 運用メモ
 

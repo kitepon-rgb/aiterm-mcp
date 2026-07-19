@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-07-19
+
+### Added
+- New `claude_approval` tool for managed Claude permission prompts. `inspect`
+  binds the currently visible `Do you want to proceed?` UI to the active
+  operation and a SHA-256 screen digest; `respond` relays only
+  `approve_once` or `deny` while that same operation and digest remain
+  current. Anonymous `pty_send` turns are supported with a null operation ID.
+- Approval decisions are recorded as an owner-only, prompt-free structured
+  receipt and cleaned up with the managed session.
+
+### Fixed
+- Managed Claude turns no longer deadlock when Claude Code requests a normal
+  permission confirmation. Previously active-operation protection rejected
+  raw `pty_send(force:true)` and every `pty_key` except `C-c`, leaving no
+  supported way to answer the UI and therefore no Stop event.
+- The documented `force:true` manual-intervention escape now states its real
+  boundary: it does not bypass an active managed-Claude operation. Arbitrary
+  text, persistent-allow choices, unknown prompt layouts, operation mismatch,
+  and screens changed after inspection fail explicitly.
+
+### Changed
+- The public MCP surface is now 13 tools. Package, lockfile, server manifest,
+  English/Japanese README, contributor guide, design docs, and release
+  metadata are synchronized at `0.19.0`.
+
 ## [0.18.2] - 2026-07-18
 
 ### Fixed
@@ -109,7 +135,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `aiterm-wait --session <id> --cursor <event_cursor>` as a host background
     task (its exit is the push notification); results are collected with
     `pty_read(agent_transcript: true)` or `claude_turn recover` as before.
-    `force: true` bypasses dispatch for manual intervention.
+    `force: true` bypasses dispatch for manual intervention on non-Claude
+    agent sessions. An active managed-Claude turn remains protected; v0.19.0
+    adds the dedicated approval relay for its permission UI.
   - `claude_turn issue` no longer takes `timeout`; it is dispatch-only and
     returns `accepted` immediately. Recovery semantics are unchanged.
   - Launchers (`claude_agent` / `codex_agent` / `grok_agent` /

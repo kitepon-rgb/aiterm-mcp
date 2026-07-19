@@ -22,4 +22,4 @@
 - [ ] Docs updated where relevant (README, `CHANGELOG.md`, and `docs/01_design-plan.md` for design behavior)
 - [ ] No new runtime dependency (or justified)
 
-<!-- CI runs ubuntu + macos on Node 18/20/22. Native Windows runs tmux-independent tests on Node 20/22 as a non-blocking guard; the WSL tmux bridge is still manual. Publishing is automated on v* tags — contributors don't publish. -->
+<!-- CI runs ubuntu + macos on Node 18/20/22. Native Windows runs tmux-independent tests on Node 20/22 as a required publish gate; the WSL tmux bridge is still manual. Publishing is automated on v* tags — contributors don't publish. -->

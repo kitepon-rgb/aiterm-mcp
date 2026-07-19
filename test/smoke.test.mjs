@@ -1,5 +1,5 @@
 // smoke: 実際に `node dist/index.js` を起動し、initialize + tools/list を stdin にパイプ。
-// 検証: stdout は改行区切り JSON-RPC のみ（診断混入なし）／12 ツールが公開されている。
+// 検証: stdout は改行区切り JSON-RPC のみ（診断混入なし）／13 ツールが公開されている。
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -18,14 +18,14 @@ const PACKAGE = JSON.parse(fs.readFileSync(path.join(HERE, "..", "package.json")
 test("smoke: 公開versionはpackage・lock・server manifestで一致する", () => {
   const lock = JSON.parse(fs.readFileSync(path.join(HERE, "..", "package-lock.json"), "utf8"));
   const server = JSON.parse(fs.readFileSync(path.join(HERE, "..", "server.json"), "utf8"));
-  assert.equal(PACKAGE.version, "0.18.2", "managed Codex homeのrole継承修理を0.18.1と区別する");
+  assert.equal(PACKAGE.version, "0.19.0", "approval relay追加を0.18.xと区別する");
   assert.equal(lock.version, PACKAGE.version);
   assert.equal(lock.packages?.[""]?.version, PACKAGE.version);
   assert.equal(server.version, PACKAGE.version);
   assert.equal(server.packages?.[0]?.version, PACKAGE.version);
 });
 
-test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 12 ツール公開", async () => {
+test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 13 ツール公開", async () => {
   const tmpdir = fs.mkdtempSync(path.join(os.tmpdir(), "aiterm-diagnostics-"));
   const child = spawn(process.execPath, [ENTRY], {
     stdio: ["pipe", "pipe", "pipe"],
@@ -78,6 +78,7 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 12 ツール公�
   const names = (toolsResp.result?.tools ?? []).map((t) => t.name).sort();
   assert.deepEqual(names, [
     "claude_agent",
+    "claude_approval",
     "claude_turn",
     "codex_agent",
     "composer_agent",
@@ -136,6 +137,13 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 12 ツール公�
     "claude_turn unknown reason schema",
   );
   assert.ok(claudeTurn.outputSchema.properties.raw_output.anyOf.some((entry) => entry.type === "string"), "claude_turn completed raw_output schema");
+  const claudeApproval = toolsResp.result.tools.find((t) => t.name === "claude_approval");
+  assert.deepEqual(claudeApproval.inputSchema.properties.action.enum, ["inspect", "respond"], "claude_approval action schema");
+  assert.deepEqual(claudeApproval.inputSchema.properties.approval_choice.enum, ["approve_once", "deny"]);
+  assert.equal(claudeApproval.inputSchema.properties.observed_prompt_digest.pattern, "^sha256:[0-9a-f]{64}$");
+  assert.equal(claudeApproval.outputSchema.properties.schema.const, "aiterm.claude-approval-result.v1");
+  assert.deepEqual(claudeApproval.outputSchema.properties.status.enum, ["approval_required", "submitted"]);
+  assert.deepEqual(claudeApproval.outputSchema.properties.selected_choice.anyOf.flatMap((entry) => entry.enum ?? []), ["approve_once", "deny"]);
   assert.equal(codexAgent.inputSchema.properties.agent_done, undefined, "v0.16: launcher は常に managed");
   assert.equal(codexAgent.inputSchema.properties.wait, undefined, "v0.16: 初回prompt waitは廃止");
   assert.equal(codexAgent.inputSchema.properties.timeout, undefined);

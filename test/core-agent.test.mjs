@@ -1416,6 +1416,77 @@ test("Claude operation interrupt: active中の通常入力を拒否しC-c後もS
   }
 });
 
+test("claude_approval: active operationと画面digestを結合して単発承認だけを送る", { skip: skipAgentDone }, async () => {
+  const [sid] = core.openAgent("claude", { agent_done: true });
+  const operationId = `sha256:${"7".repeat(64)}`;
+  try {
+    const meta = readAgentMeta(sid);
+    await markFakeAgentReady(sid, "claude");
+    await core.dispatchAgentTurn(
+      sid,
+      "printf '\\nThis command changes directory before running git.\\n\\nDo you want to proceed?\\n❯ 1. Yes\\n  2. No\\n'",
+      { operation_id: operationId },
+    );
+    await core.readOutput(sid, { wait: true, until: "2. No", timeout: 5, raw: true });
+
+    assert.throws(
+      () => core.runClaudeApproval({ action: "inspect", session_id: sid, operation_id: `sha256:${"6".repeat(64)}` }),
+      /active operationが一致しません/,
+    );
+    const inspected = core.runClaudeApproval({ action: "inspect", session_id: sid, operation_id: operationId });
+    assert.equal(inspected.schema, "aiterm.claude-approval-result.v1");
+    assert.equal(inspected.status, "approval_required");
+    assert.match(inspected.prompt_digest, /^sha256:[0-9a-f]{64}$/);
+    assert.deepEqual(inspected.choices, [
+      { decision: "approve_once", index: 1, label: "Yes" },
+      { decision: "deny", index: 2, label: "No" },
+    ]);
+    assert.throws(
+      () => core.runClaudeApproval({
+        action: "respond",
+        session_id: sid,
+        operation_id: operationId,
+        approval_choice: "approve_once",
+        observed_prompt_digest: `sha256:${"0".repeat(64)}`,
+      }),
+      /inspect後に変化|再度inspect/,
+    );
+
+    const submitted = core.runClaudeApproval({
+      action: "respond",
+      session_id: sid,
+      operation_id: operationId,
+      approval_choice: "approve_once",
+      observed_prompt_digest: inspected.prompt_digest,
+    });
+    assert.equal(submitted.status, "submitted");
+    assert.equal(submitted.selected_choice, "approve_once");
+    const approvalReceipt = path.join(agentStateDir(), `${sid}.${meta.launch_id}.claude-approval.json`);
+    assert.equal(fs.existsSync(approvalReceipt), true);
+    assert.equal(fs.statSync(approvalReceipt).mode & 0o777, 0o600, "approval receiptはowner-only");
+    assert.equal(JSON.parse(fs.readFileSync(approvalReceipt, "utf8")).prompt_digest, inspected.prompt_digest);
+    assert.equal(fs.existsSync(path.join(agentStateDir(), `${sid}.${meta.launch_id}.claude-operation.json`)), true,
+      "承認入力はactive operation markerを消費しない");
+  } finally {
+    core.closeSession(sid);
+  }
+});
+
+test("claude_approval: 恒久許可だけの選択肢を拒否する", { skip: skipAgentDone }, async () => {
+  const [sid] = core.openAgent("claude", { agent_done: true });
+  try {
+    await markFakeAgentReady(sid, "claude");
+    await core.dispatchAgentTurn(sid, "printf 'Do you want to proceed?\\n1. Yes, and do not ask again\\n2. No\\n'");
+    await core.readOutput(sid, { wait: true, until: "2. No", timeout: 5, raw: true });
+    assert.throws(
+      () => core.runClaudeApproval({ action: "inspect", session_id: sid }),
+      /安全な単発Yes\/No選択肢/,
+    );
+  } finally {
+    core.closeSession(sid);
+  }
+});
+
 test("Claude anonymous turn: timeout中はdurable operationを開始せず遅延Stopを匿名turnへ保持する", { skip: skipAgentDone }, async () => {
   const operationId = `sha256:${"a".repeat(64)}`;
   const [sid] = core.openAgent("claude", { agent_done: true });

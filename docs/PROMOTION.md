@@ -13,18 +13,17 @@ output) is already committed — these steps activate it.
 
 ## Status (live)
 
-> **v0.12.2（2026-07-13公開）**: factory diagnostics と opt-in の local runtime
-> error store を追加した。collection は既定OFFで canonical dotagents config の
-> `collection.enabled: true` が明示された時だけ有効、network送信は行わない。公開commit
-> `239e7e4`、tag CI `29245251184`、npm `latest`、tag / GitHub Release、MCP Registry
-> workflow `29245462227`、registry由来隔離installとMCP diagnosticsを確認済み。
+> **v0.19.0（2026-07-19公開候補）**: managed Claude approval relayを追加し、公開面を
+> 13 toolsへ更新した。package／lock／server manifestは0.19.0で同期済み。直前のnpm latestは
+> 0.18.2（tag CI `29648775495` success）だが、0.18.2ではGitHub ReleaseとRegistry再登録が
+> 欠落したため、0.19.0でtag CI→npm→GitHub Release→Registryの連鎖を復旧する。
 
 Done and verified:
 
-- ✅ **npm `0.12.2` is latest** — provenance publish and registry install verified on 2026-07-13.
-- ✅ **Official MCP Registry** — `v0.12.2` registration workflow `29245462227` completed successfully; auto-registers on each release via `.github/workflows/registry.yml` (OIDC).
+- 🔄 **npm `0.18.2` is latest before this release** — tag CI `29648775495` succeeded; `0.19.0` will publish through provenance-enabled tag CI.
+- ⚠️ **Official MCP Registry** — latest verified registration is `v0.18.1` via workflow `29643535111`; `v0.18.2` was not registered because no GitHub Release was created.
 - ✅ **mcp.so** — submitted/listed (with the square `.github/avatar.png`).
-- ✅ **GitHub topic** `mcp-server` added; **v0.12.1 Release** published. The published release has 9 tools; the next release adds read-only `diagnostics` as tool 10.
+- ⚠️ **GitHub topic** `mcp-server` added; latest GitHub Release is `v0.18.1`. Creating the `v0.19.0` Release after npm publication is part of this release gate.
 - 🔄 **awesome-mcp-servers** — PR [#7620](https://github.com/punkpeye/awesome-mcp-servers/pull/7620) open (awaiting maintainer merge).
 - ✅ **Announced** on r/mcp.
 
@@ -193,7 +192,7 @@ on the SSH-persistence wedge, not "another tmux MCP".
    every command after rides the same authenticated session. SSH, docker, REPLs
    are just text you send in, not separate tools.
 3. Reads come back token-reduced (git/grep/pytest reducers), with a 4-layer
-   "is the command done?" detector. `npx -y aiterm-mcp`, 12 tools, MIT,
+   "is the command done?" detector. `npx -y aiterm-mcp`, 13 tools, MIT,
    Linux/WSL2/macOS/Windows. [demo gif]
 4. Repo + one-line Claude Code install 👇 https://github.com/kitepon-rgb/aiterm-mcp
 
