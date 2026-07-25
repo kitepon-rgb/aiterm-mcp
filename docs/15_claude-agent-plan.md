@@ -79,7 +79,7 @@ protocol／transcript読取、Observer／Throughline／Mailboxロジックの内
   `claude_approval`のinspect／respondをoperation IDと画面digestへ結合し、単発Yes／No以外は送らず、
   markerを保持したままowner-only receiptへ記録する。契約は
   [ADR 0015](adr/0015-managed-claude-approval-relay.md)を正とする。
-- [ ] 実Claude model requestを使うlive H smokeは、目的・影響・rollbackの承認を得て初回／follow-up各一turnと
+- [x] 実Claude model requestを使うlive H smokeは、目的・影響・rollbackの承認を得て初回／follow-up各一turnと
   別worktreeへのread-only commandでapproval UIを発生させ、inspect→approve_once→同じStop eventへの相関、
   結果回収、session closeを確認する。
 

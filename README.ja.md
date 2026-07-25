@@ -20,17 +20,17 @@
 >
 > *MCP = Model Context Protocol — Claude Code のようなツールが AI に機能を差し込むためのオープン標準。*
 
+**工場での役割:** aiterm-mcpはdotagents開発工場が管理する自作コア10製品の一つです。
+永続PTYと外部agent実行レーンを所有し、dotagentsが製品横断の導入・統合契約を所有します。
+
 **言葉でなく実測で:** このリポジトリ自身の 203 テストで、`pty_read` はコンテキストに載るトークンを生ログの **約 7.1 分の 1** に減らす。しかも pass/fail の判定は畳んでも残る。→ [組み込みシェルツールとの使い分け](#組み込みシェルツールとの使い分け)
 
 13 ツール: 6 つの **PTY ツール**（`pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list`）で 1 本の永続端末を開き・操作し・読む。加えて 4 つの **エージェント起動ツール**（`claude_agent` / `codex_agent` / `grok_agent` / `composer_agent`）が別のコーディングエージェントの TUI を新しい端末の中に起動し、`claude_turn`がdurable caller向けの構造化issue／recoveryを、`claude_approval`がmanaged Claudeの相関済み承認UI中継を、`diagnostics`が安全なfactory readinessを返す。バックエンドは **tmux** なので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
 
-**v0.18.1 を 2026-07-18 に公開**（0.18.0＋stale案内文言の修理1件）。実運用障害の還流による agent dispatch の hardening:
-全 dispatch／launch receipt に **submit 座礁観測** `submit_residue` を追加
-（送信 prompt が vendor TUI の composer に未 submit のまま残存していないかを有界に観測して報告する。
-陽性証拠のみ・auto-retry なし）。agent への prompt paste は tmux **bracketed paste**（pane ごとの
-negotiation）で包み、語中の文字化けと Enter 取り落としを抑制。初回 prompt 前の ready gate は
-busy 表示中（esc to interrupt）の Codex/Claude を ready と数えない。
-v0.16/0.17 以来、親エージェントは aiterm 上で一切ブロックしない:
+**v0.19.2 を 2026-07-20 に公開。** v0.19系では相関済みmanaged Claude approval中継を追加し、
+複数行shell配送を維持し、native Windowsのfactory diagnosticsを拡張しました。v0.18系では
+`submit_residue`、tmux bracketed paste、busyなCodex/Claude画面をreadyと数えないgateにより
+agent dispatchを強化しました。v0.16/0.17以来、親エージェントはaiterm上で一切ブロックしません:
 agent session への send は常に非ブロック dispatch になり、完了待ちは `aiterm-wait` 一本
 （exit code が receipt の outcome を映す: 0=done / 3=timeout=未完了 / 4=closed）、初回 prompt 付き
 launch は structured receipt にコピペ可能な `wait_command` を含む。factory diagnostics と local
@@ -290,7 +290,7 @@ consumer は `aiterm-runtime-errors snapshot` を読み、durable ingestion 後�
 | `grok_agent` | Grok Build（xAI、既定`grok-4.5`、`model?`で上書き） | `prompt?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `cwd?`, `session_name?` |
 | `composer_agent` | Grok Build（xAI、既定`grok-composer-2.5-fast`、`model?`で上書き） | `prompt?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `cwd?`, `session_name?` |
 
-対応するCLI（`claude` / `codex` / `grok`）の導入・認証が必要。解決順は`CLAUDE_BIN` / `CODEX_BIN` / `GROK_BIN`、既定path、`PATH`。前提違反はsession作成前に明示失敗する。4 launcherすべてが同じ非ブロックdispatch契約を使い、Claude/Codexの初回promptはready gate経由で送信される。Claudeはisolated managed settingsとhook-captured resultを使い、private transcriptへ依存しない。既存3 vendorのlive smokeはgreen、Claude実モデルsmokeは承認待ちでありfixture成功と混同しない。
+対応するCLI（`claude` / `codex` / `grok`）の導入・認証が必要。解決順は`CLAUDE_BIN` / `CODEX_BIN` / `GROK_BIN`、既定path、`PATH`。前提違反はsession作成前に明示失敗する。4 launcherすべてが同じ非ブロックdispatch契約を使い、Claude/Codexの初回promptはready gate経由で送信される。Claudeはisolated managed settingsとhook-captured resultを使い、private transcriptへ依存しない。Claude／Codex／Grok／Composerのlive smokeはすべてgreenであり、fixtureによる検証とは区別して記録する。
 
 エージェントの回答が画面 tailより長ければ、対話callerは`pty_read({ agent_transcript:true })`で再promptなしに全文回収する。Claudeはmanaged Stop hookがowner-only resultへ保存した本文をdigest/byte数で検証して返し、private transcriptを読まない。durable machine callerは`claude_turn`を使う。`issue`は一度だけ送信し、`recover`は決して再送せず、`pending`を破損やidentity不一致と区別する。検証済みの`completed`だけがexact `raw_output`を持ち、`unknown`は未dispatchと帰属不能を区別する。不一致・破損は成功statusへ丸めずtool errorのままにする。IDなしの対話turnも匿名markerで直列化するため、現在Stop待ちの間に古い回答を返さない。CodexはStop hookの`turn_id`で構造化transcriptへjoinし、Grok/Composerは最後の実user行より後ろのassistant行を採る。不在・非agent・抽出不能は明示エラー。
 

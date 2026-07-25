@@ -20,24 +20,24 @@
 >
 > *MCP = Model Context Protocol — the open standard that lets tools like Claude Code plug capabilities into an AI.*
 
+**Factory role:** aiterm-mcp is one of the ten self-owned core products managed by
+the dotagents development factory. It owns the persistent PTY and external-agent
+execution lane; dotagents owns the cross-product installation and integration
+contract.
+
 **Measured, not claimed:** on this repo's own 203-test suite, a `pty_read` puts **~7.1× fewer tokens** in your context than the raw log — and the pass/fail verdict survives the fold. → [When to reach for it vs. the built-in shell](#when-to-reach-for-it-vs-the-built-in-shell)
 
 Thirteen tools: six **PTY tools** — `pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list` — to open, drive, and read one persistent terminal, four **agent launchers** — `claude_agent` / `codex_agent` / `grok_agent` / `composer_agent` — that each start another coding agent's TUI inside a fresh one, `claude_turn` for durable structured issue/recovery, `claude_approval` for correlated managed-Claude approval prompts, and `diagnostics` for safe factory readiness. The backend is **tmux**, so sessions survive even if the MCP server or the AI client restarts.
 
-**v0.18.1 was published on 2026-07-18** (v0.18.0 plus one stale-guidance
-message fix). Field-failure hardening for agent
-dispatch: every dispatch/launch receipt now carries a **submit-strand
-observation** `submit_residue` (a bounded screen poll that reports when the
-sent prompt is still sitting unsubmitted in the vendor TUI's composer —
-positive evidence only, no auto-retry), agent prompt pastes are wrapped in
-tmux **bracketed paste** (negotiated per pane) against mid-word corruption and
-dropped submits, and the pre-prompt ready gate no longer counts a busy
-Codex/Claude screen ("esc to interrupt") as ready. As of v0.16/0.17 a parent
-agent never blocks on aiterm: every send to an agent session is a non-blocking
-dispatch, completion is one universal `aiterm-wait` waiter whose exit codes
-mirror the receipt outcome (`0`=done / `3`=timeout, not finished /
-`4`=closed), and a launch with an initial prompt returns a ready-made
-`wait_command` in its structured receipt.
+**v0.19.2 was published on 2026-07-20.** The v0.19 line adds the correlated
+managed-Claude approval relay, preserves multiline shell delivery, and extends
+factory diagnostics on native Windows. The v0.18 line hardened agent dispatch
+with `submit_residue`, tmux bracketed paste, and a ready gate that rejects busy
+Codex/Claude screens. As of v0.16/0.17 a parent agent never blocks on aiterm:
+every send to an agent session is a non-blocking dispatch, completion is one
+universal `aiterm-wait` waiter whose exit codes mirror the receipt outcome
+(`0`=done / `3`=timeout, not finished / `4`=closed), and a launch with an
+initial prompt returns a ready-made `wait_command` in its structured receipt.
 Factory diagnostics and the local runtime-error store collect only when
 canonical dotagents config explicitly sets `collection.enabled: true`;
 collection is off by default and performs no network I/O. It ships via
@@ -309,7 +309,7 @@ Each launcher starts a specific vendor's interactive coding-agent TUI inside a f
 | `grok_agent` | Grok Build, model `grok-4.5` by default (`model?` overrides) (xAI) | `prompt?`, `model?`, `reasoning_effort?` unsupported (an explicit value is an error; Grok CLI `--effort` is headless-only), `cwd?`, `session_name?` |
 | `composer_agent` | Grok Build, model `grok-composer-2.5-fast` by default (`model?` overrides) (xAI) | `prompt?`, `model?`, `reasoning_effort?` unsupported (an explicit value is an error), `cwd?`, `session_name?` |
 
-The vendor CLI must be installed and authenticated (`claude` for `claude_agent`; `codex` for `codex_agent`; `grok` for both Grok tools). Binary resolution uses `CLAUDE_BIN` / `CODEX_BIN` / `GROK_BIN`, then each documented default location, then `PATH`. Missing binaries, invalid model/effort values, and nonexistent `cwd` fail before a session is created. All four share the same non-blocking dispatch contract for follow-up turns; `claude_agent`/`codex_agent` submit an initial `prompt` through the ready gate. Claude uses isolated managed settings and a hook-captured bounded result rather than private transcript access. Codex/Grok/Composer live smokes are green; Claude real-model smoke remains approval-gated and is not claimed from fixtures. Native Windows can launch agents but managed completion is not supported yet.
+The vendor CLI must be installed and authenticated (`claude` for `claude_agent`; `codex` for `codex_agent`; `grok` for both Grok tools). Binary resolution uses `CLAUDE_BIN` / `CODEX_BIN` / `GROK_BIN`, then each documented default location, then `PATH`. Missing binaries, invalid model/effort values, and nonexistent `cwd` fail before a session is created. All four share the same non-blocking dispatch contract for follow-up turns; `claude_agent`/`codex_agent` submit an initial `prompt` through the ready gate. Claude uses isolated managed settings and a hook-captured bounded result rather than private transcript access. Claude, Codex, Grok, and Composer live smokes are green; fixture coverage remains a separate claim. Native Windows can launch agents but managed completion is not supported yet.
 
 When an agent's answer is longer than the on-screen tail (pane height ≈ 24 lines), callers recover it in full with `pty_read({ agent_transcript: true })`. It returns the most recently completed turn's final assistant message in plain text with no re-prompting. Claude reads the bounded owner-only result captured by the managed Stop hook and verifies its digest/byte count; it never reads Claude's private transcript. Durable machine callers should use `claude_turn`: `issue` sends once, `recover` never sends, `pending` is distinct from unsafe or malformed state, and only `completed` carries the exact verified `raw_output`. `unknown` distinguishes `operation_not_found` from a receipt whose result can no longer be attributed. Mismatch and corruption remain tool errors rather than being folded into a successful status. ID-less interactive Claude turns are still serialized by an anonymous marker, so an older answer is not returned while the current Stop is pending. Codex joins its structured transcript on the Stop hook `turn_id`; Grok/Composer take the assistant rows after the last real user row. A missing result/transcript, a non-agent session, or an unextractable message is an explicit error, never a silent empty.
 
