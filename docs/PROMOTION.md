@@ -20,15 +20,20 @@ Done and verified:
 
 - ✅ **npm `0.20.0` is latest** — provenance publish and public registry entry confirmed on 2026-07-26.
 - ✅ **Official MCP Registry** — `io.github.kitepon-rgb/aiterm-mcp` 0.20.0 is active and latest.
-- ⚠️ **mcp.so** — already listed; do not submit a duplicate. The current card is stale (6 tools / 4-layer completion), so update or refresh the existing listing.
+- ⚠️ **mcp.so** — the existing listing was claimed through GitHub on 2026-07-26.
+  Do not submit a duplicate. Its editor currently discards submitted changes
+  (a fresh reload restores the stale 6-tool content), so the update remains blocked.
 - ✅ **GitHub topic** `mcp-server` added; **v0.20.0 Release** is public.
 - 🔄 **awesome-mcp-servers** — PR [#7620](https://github.com/punkpeye/awesome-mcp-servers/pull/7620) open (awaiting maintainer merge).
 - ✅ **Announced** on r/mcp.
 
 Remaining:
 
-- ⬜ **Glama** — directory search did not surface the repository on 2026-07-26. Submit with GitHub OAuth and verify ownership; `glama.json` is already present.
-- 🔄 **Smithery** — current publishing requires a public Streamable HTTP URL or a prebuilt `.mcpb` for local stdio servers. The MCPB build is now prepared and validated; authenticated publish remains.
+- 🔄 **Glama** — directory search did not surface the repository on 2026-07-26.
+  GitHub OAuth reached the authorization screen; manual authorization remains.
+  `glama.json` is already present.
+- 🔄 **Smithery** — current publishing requires a public Streamable HTTP URL or a prebuilt `.mcpb` for local stdio servers. The MCPB build is prepared and validated.
+  CLI login is waiting for manual GitHub authorization; authenticated publish remains.
 - ⬜ **Show HN / X / dev.to** — optional extra reach (drafts below).
 - ⬜ **Animated demo GIF** — needs a real SSH target + a client-UI recording; the README currently shows real captured text instead.
 

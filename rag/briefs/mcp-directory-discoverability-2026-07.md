@@ -10,6 +10,8 @@
 
 - aiterm-mcpはすでに掲載されているため、重複登録しない。
 - 既存カードは6 tools・4-layer completionと表示され、現行の13 tools・現行READMEと不一致。
+- GitHub認証後に既存掲載をClaimできた。編集フォームは送信後の再読込で旧内容へ戻るため、
+  2026-07-26時点では更新未完了。
 - 登録フォームの必須項目はRepository URL。Nameは任意。
 - 無料枠はqueued review・random placement・nofollow。有料枠は実画面上で即時掲載・verified・featured・dofollow。
 - 次の操作は新規submitではなく、既存掲載の更新またはrefresh。
@@ -20,6 +22,7 @@
 
 - ディレクトリ検索で公式掲載を確認できず、想定URLへの直接アクセスは504だった。
 - Add Serverはアカウント作成／GitHub OAuthを要求する。
+- GitHub OAuthの認可画面までは到達したが、Authorizeが無効状態で手動完了待ち。
 - 現行methodologyでは、GitHub OAuthでリポジトリのwrite/admin accessを確認し、clone・build・run・scanを行う。
 - 推定Dockerfile等のbuildに失敗すると、ページが存在しても検索から除外される場合がある。
 - リポジトリの`glama.json`はmaintainer claim用の現行例と整合する。
@@ -34,6 +37,7 @@
 - 登録にはMCPBパッケージング、install smoke、認証済みpublishが必要。
 - 本調査を受け、manifest v0.3と再現可能なbuildを追加した。`mcpb validate`、archive整合、
   bundle内serverのinitialize・tools/list（v0.20.0 / 13 tools）まで通過した。
+- CLI OAuth loginは起動済みで、GitHub側の手動認証完了後にpublishできる位置で待機している。
 
 一次資料: [[smithery-publish-server]] / [[smithery-cli]] /
 [[mcpb-manifest-specification]] / [[mcpb-readme]] / [[claude-build-mcpb]]

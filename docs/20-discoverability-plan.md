@@ -40,3 +40,17 @@
 - READMEの1行目、バッジ、導入コマンド、3クライアントの節を検索で確認する。
 - `package.json`・`server.json`・READMEの公開バージョン／ツール数を突き合わせる。
 - GitHub APIと各ディレクトリの公開ページで反映状態を再確認する。
+
+## 2026-07-26 外部公開の現在地
+
+- GitHub Topicsは指定5件が揃い、READMEとMCPBの作者帰属は
+  `Quo / クオ`・`kitepon.dev`・`@QLyun35332`へ統一して`main`へpush済み。
+- GitHub公開プロフィールは、CompanyとBioに`kitepon.dev`、Websiteに公開中の
+  `https://blog.kitepon.dev`、Social accountにXを設定済み。
+- mcp.soの既存掲載はGitHubアカウントでClaim済み。編集フォームは送信できるが、
+  再読込すると全変更が旧内容へ戻るため、更新は未完了。重複登録はしない。
+- GlamaはGitHub OAuthの認可画面まで到達。GitHub側のAuthorizeが無効状態のため、
+  手動認証の完了待ち。
+- SmitheryはMCPBを生成・検証済み。CLIのOAuth loginを起動し、GitHub側の
+  Authorizeが無効状態のため、手動認証の完了待ち。認証後に
+  `dist/aiterm-mcp.mcpb`を`kitepon-rgb/aiterm-mcp`としてpublishする。
