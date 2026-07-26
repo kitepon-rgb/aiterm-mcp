@@ -23,7 +23,8 @@
 >
 > *MCP = Model Context Protocol — the open standard that lets tools like Claude Code plug capabilities into an AI.*
 
-Built and maintained by [Quo (@QLyun35332)](https://x.com/QLyun35332).
+Built and maintained by [Quo](https://x.com/QLyun35332) at
+[kitepon.dev](https://kitepon.dev).
 
 ## Install in your MCP client
 

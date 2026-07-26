@@ -7,8 +7,8 @@
   "description": "A tmux-backed persistent terminal MCP server that can launch and drive interactive Claude, Codex, Grok, and Composer TUIs.",
   "long_description": "Give an AI one persistent terminal for SSH, containers, REPLs, and interactive coding-agent TUIs. Claude Code can launch Codex CLI and drive its interactive features through the same MCP session. Reads are token-reduced, sessions survive client restarts, and humans can attach to the shared tmux session.",
   "author": {
-    "name": "Quo",
-    "url": "https://x.com/QLyun35332"
+    "name": "Quo / kitepon.dev",
+    "url": "https://kitepon.dev"
   },
   "repository": {
     "type": "git",
