@@ -1,5 +1,9 @@
 # v0.19.1 atomic multiline release plan
 
+> **完了・凍結（2026-07-26退避）**: v0.19.1は2026-07-19に公開済みで、この planの役目は終わっている。
+> 公開証跡（commit・tag CI・npm・Registry・global install）は CLAUDE.md のv0.19.1節が正。
+> 以下の未チェック項目は「未実施」ではなく、当時checkboxを更新しないまま公開が進んだ記録である。
+
 ## 目的
 
 通常PTYの複数行を途中のpager／REPLへ誤帰属させない修理を`aiterm-mcp@0.19.1`として、

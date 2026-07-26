@@ -44,6 +44,8 @@ Accepted。pure gateとsmoke gateはgreen。clientInfo実測と実codex子のE2E
 
 - `--timeout 0`の一発照会に`running` outcomeを足す件は別タスク。公開schemaのenum追加は
   消費者のexhaustive switchを壊すため、本文面変更へ混ぜない。
+  （後続: この非目標は[ADR 0018](0018-agent-wait-running-outcome.md)＝v0.20.0で別releaseとして消化した。
+  照会をreceipt・descriptionで宣伝しない本ADRの決定は0018でも維持している。）
 - 「複数子へ同時dispatchして回収する」使い方の型をdescriptionへ書くことはしない。
   並行以外あり得ない以上、型として教えるものではなく既定の文型へ埋め込むものである。
 

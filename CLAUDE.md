@@ -46,7 +46,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > global installの0.19.3で実codex子を起動し、receiptが`Bash(command: "aiterm-wait --session pub_smoke
 > --cursor 0", run_in_background: true)`とホスト名指しで案内すること、その案内どおりのコマンドが
 > `outcome=done`で返ること、transcript回収（`PUBOK`）とcloseまでを実機確認した。
-> 残タスク: `--timeout 0`の一発照会に`running` outcomeを足す件（公開enum追加のため別release）。
+> 当時の残タスク「`--timeout 0`の一発照会に`running` outcomeを足す件」は v0.20.0 で消化済み。
 >
 > **v0.19.2（2026-07-20公開）**: Windows nativeでWSL側tmux serverが未起動の時、
 > `diagnostics`が`pty_list.status="not_applicable"`と`session_count=0`を同時に返し、公開契約の
