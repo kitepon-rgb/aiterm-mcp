@@ -345,3 +345,46 @@ test("tmuxSpawnEnv: C.UTF-8 は既に UTF-8 なので注入しない", () => {
     assert.equal(core.tmuxSpawnEnv(), undefined);
   });
 });
+
+// ---- 完了待ちの案内（投げっぱなし規範） ----
+// 抽象名詞の「バックグラウンドで」だけでは親が foreground 実行へ落ちるため、親ホストが分かる時は
+// 実際の呼び出し形を名指しする。分からない時は汎用文へ落ちるだけで機能は変わらない。
+
+test("agentWaitLaunchForm: claude-code親には実際の非ブロック呼び出し形を名指しする", () => {
+  try {
+    core.setParentClient("claude-code");
+    const form = core.agentWaitLaunchForm("aiterm-wait --session t1 --cursor 0");
+    assert.match(form, /run_in_background: true/, "背景実行フラグを名指しする");
+    assert.match(form, /aiterm-wait --session t1 --cursor 0/, "コマンドをそのまま含む");
+  } finally {
+    core.setParentClient(null);
+  }
+});
+
+test("agentWaitLaunchForm: 未知/未申告の親には汎用の非ブロック指示へ落ちる", () => {
+  for (const client of [null, "", "   ", "some-other-host"]) {
+    core.setParentClient(client);
+    const form = core.agentWaitLaunchForm("aiterm-wait --session t1 --cursor 0");
+    assert.doesNotMatch(form, /run_in_background/, `ホスト固有形を漏らさない: ${JSON.stringify(client)}`);
+    assert.match(form, /親のターンを塞がない別プロセス/, `非ブロックを要求する: ${JSON.stringify(client)}`);
+  }
+  core.setParentClient(null);
+});
+
+test("agentDispatchGuide: 先頭で待たないことを宣言し、待ちコマンドと禁止事項を含む", () => {
+  const guide = core.agentDispatchGuide("t7", 4096);
+  const first = guide.split("\n")[0];
+  assert.match(first, /投げっぱなしでよい/, "1行目で投げっぱなしを許諾する");
+  assert.match(first, /ここで待たない/, "1行目で待たないことを宣言する");
+  assert.match(guide, /aiterm-wait --session t7 --cursor 4096/, "cursorを含む正しい待ちコマンドを出す");
+  assert.match(guide, /foreground 実行は親を最大 600 秒塞ぐ/, "foreground実行の害を明示する");
+  assert.match(guide, /pty_read\(agent_transcript:true\)/, "回収経路を示す");
+});
+
+test("agentWaitGuide: 復旧案内は取りこぼしゼロの --cursor 0 を維持する", () => {
+  // cursor 省略時の既定は waiter 起動時 EOF＝案内表示〜実行の間に届いた done を読み飛ばす race。
+  const guide = core.agentWaitGuide("t9");
+  assert.match(guide, /aiterm-wait --session t9 --cursor 0/, "0起点を明示する");
+  assert.match(guide, /親はここで待たない/, "復旧経路でも親を待たせない");
+  assert.match(guide, /outcome=done/, "exit≠完了の判定基準を示す");
+});

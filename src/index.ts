@@ -25,6 +25,17 @@ const server = new McpServer({ name: "aiterm", version: pkg.version });
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 
+/**
+ * dispatch 系の説明で共有する非ブロック規範。tool description は registerTool 時＝initialize 前に
+ * 固定されるため親ホストを名指しできない（ホスト別の具体形は receipt 側が core.agentWaitLaunchForm で出す）。
+ * ここでは「待つな」を断定形で先に置き、foreground 実行の禁止までを説明の側に含める。
+ */
+const NON_BLOCKING_RULE =
+  "dispatch した子は投げっぱなしでよい＝親はここで待たない。" +
+  "完了通知は `aiterm-wait --session <id> --cursor <event_cursor>` を親のターンを塞がない別プロセスとして起動して受け、" +
+  `exit を完了通知として扱う（${core.AITERM_WAIT_OUTCOME_NOTE}。ポーリング不要）。` +
+  "この待ちコマンドを foreground で実行して親のターンを塞ぐことはしない（receipt が実際の起動形を示す）。";
+
 function ok(s: string): ToolResult {
   return { content: [{ type: "text", text: s }] };
 }
@@ -109,9 +120,8 @@ server.registerTool(
     description:
       "セッションへテキストを送る。通常PTYへは送信のみ（出力は pty_read で取得）。" +
       "agent session（launcher起動）への send は自動で dispatch になる: TUI の ready gate と submit 分離を通して即返り、" +
-      "receipt の event_cursor を返す＝親はブロックしない。完了通知は `aiterm-wait --session <id> --cursor <event_cursor>` を" +
-      "ホストのバックグラウンドタスクとして実行し、exit時にreceiptのoutcomeで判定する" +
-      `（${core.AITERM_WAIT_OUTCOME_NOTE}。ポーリング不要）。` +
+      "receipt の event_cursor を返す。" +
+      NON_BLOCKING_RULE +
       "結果回収は pty_read(agent_transcript:true)、Claude の durable turn は claude_turn を使う。" +
       "force:true は非Claude agent sessionへの手動介入用の素送信。managed Claudeの承認UIはclaude_approvalを使う。",
     inputSchema: {
@@ -159,9 +169,8 @@ server.registerTool(
             {
               type: "text" as const,
               text:
-                `dispatchした（vendor=${receipt.vendor}）。完了通知: aiterm-wait --session ${receipt.session_id} --cursor ${receipt.event_cursor} を` +
-                `ホストのバックグラウンドタスクとして実行し、exit時にreceiptのoutcomeで判定（${core.AITERM_WAIT_OUTCOME_NOTE}）。` +
-                "回収: pty_read(agent_transcript:true)" +
+                `dispatchした（vendor=${receipt.vendor}）。\n` +
+                core.agentDispatchGuide(receipt.session_id, receipt.event_cursor) +
                 core.agentSubmitResidueWarning(receipt.session_id, receipt.submit_residue),
             },
           ],
@@ -456,13 +465,13 @@ const agentEffortDesc = (kind: "claude" | "codex" | "grok" | "composer") =>
       "composer は effort 自体非対応）。指定すると起動前にエラーを返す"
     : "reasoning effort（思考レベル）。low/medium/high/xhigh/max/ultra（CLI 版依存）。" +
       "ultra は max 推論＋proactive 自動委譲 ON＝使用量急増注意（明示要求時のみ）。省略時は端末 config／CLI 既定。";
-// 全launcher共通の完了受信ガイド。launch応答のwait_command（起動時promptあり時）／pty_send dispatchの
-// event_cursorから組んだaiterm-waitをホストのバックグラウンドタスクとして1本実行し、exit時にreceiptの
-// outcomeで判定する。
+// 全launcher共通の完了受信ガイド。待ちコマンドは起動応答の wait_command（初回prompt時）または
+// pty_send dispatch の event_cursor から組む。文型は NON_BLOCKING_RULE と同じく「待たない」が先。
 const agentCompletionDesc =
+  `起動して投げたら投げっぱなしでよい＝親はここで待たない。` +
   `完了通知は起動応答の wait_command（初回prompt時）または pty_send dispatch 後の ` +
-  `aiterm-wait --session <id> --cursor <event_cursor> をホストのバックグラウンドタスクとして実行し、` +
-  `exit時にreceiptのoutcomeで判定する（${core.AITERM_WAIT_OUTCOME_NOTE}。ポーリング不要）。` +
+  `aiterm-wait --session <id> --cursor <event_cursor> を親のターンを塞がない別プロセスとして起動して受ける` +
+  `（${core.AITERM_WAIT_OUTCOME_NOTE}。ポーリング不要・foreground実行はしない）。` +
   `結果回収は pty_read(agent_transcript:true)。`;
 function registerAgentTool(
   toolName: string,
@@ -571,6 +580,12 @@ registerAgentTool(
 );
 
 async function main(): Promise<void> {
+  // 親ホストを initialize の clientInfo.name から確定させ、receipt の完了待ちコマンドを
+  // そのホストの実際の起動形で名指しする（実測: claude-code は initialize → notifications/initialized
+  // → tools/list の順で送るため、どの tool 呼び出しより先に確定する）。取れない時は汎用文へ落ちるだけ。
+  server.server.oninitialized = () => {
+    core.setParentClient(server.server.getClientVersion()?.name ?? null);
+  };
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }

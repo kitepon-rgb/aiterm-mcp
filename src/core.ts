@@ -2724,7 +2724,7 @@ function bindCompletedInitialPrompt(meta: AgentMetadata): void {
   const size = safeStatSize(meta.event_file);
   if (size === 0) {
     throw new AitermError(
-      `agent session '${meta.aiterm_session}' は起動時 prompt の完了待ちです。aiterm-wait --session ${meta.aiterm_session} --cursor 0 で完了（outcome=done）を確認してから再度操作してください。`,
+      `agent session '${meta.aiterm_session}' は起動時 prompt の完了待ちです。${agentWaitGuide(meta.aiterm_session)}`,
       2,
     );
   }
@@ -2739,7 +2739,7 @@ function bindCompletedInitialPrompt(meta: AgentMetadata): void {
     const malformed = scanned.malformedEvents ? ` malformed_events=${scanned.malformedEvents}` : "";
     const partial = tail.trim() ? " partial_event=true" : "";
     throw new AitermError(
-      `agent session '${meta.aiterm_session}' は起動時 prompt の完了 event をまだ確認できません。aiterm-wait --session ${meta.aiterm_session} --cursor 0 で完了（outcome=done）を確認してから再度操作してください。${malformed}${partial}`,
+      `agent session '${meta.aiterm_session}' は起動時 prompt の完了 event をまだ確認できません。${agentWaitGuide(meta.aiterm_session)}${malformed}${partial}`,
       2,
     );
   }
@@ -2857,13 +2857,8 @@ function findLatestCodexTranscript(codexHome: string, vendorSessionId: string): 
   return latestFile;
 }
 
-// 未完了系エラーの共通出口案内。pollingへ誘導せず、正規の完了待ち手段を必ず指す。
-const AGENT_WAIT_GUIDE =
-  "完了待ちは aiterm-wait --session <session_id> のバックグラウンド実行で受ける（polling不要。" +
-  "receiptのoutcome=doneを確認してから再取得）。";
-
 function transcriptUnavailable(): never {
-  throw new AitermError(`transcript がまだありません。ターン完了後に再取得してください。${AGENT_WAIT_GUIDE}`, 2);
+  throw new AitermError(`transcript がまだありません。ターン完了後に再取得してください。${agentWaitGuide()}`, 2);
 }
 
 function transcriptNotFound(vendor: AgentKind): never {
@@ -2944,7 +2939,7 @@ export async function readAgentTranscript(
     const active = readClaudeOperationMarker(meta);
     if (active) {
       const label = active.operationId ? `operation ${active.operationId}` : "operation_idなしのClaude turn";
-      throw new AitermError(`${label} はまだ完了していません。Stop完了後に同じsessionから再取得してください。${AGENT_WAIT_GUIDE}`, 2);
+      throw new AitermError(`${label} はまだ完了していません。Stop完了後に同じsessionから再取得してください。${agentWaitGuide(name)}`, 2);
     }
   }
   // wait timeout は「失敗」ではなく状態不明。後着した同一launchの完了eventから
@@ -2952,14 +2947,14 @@ export async function readAgentTranscript(
   recoverAgentVendorSession(meta);
   if (!meta.vendor_session_id) {
     throw new AitermError(
-      `agent session '${name}' はまだターンが完了していません。agent_done 完了後に再取得してください。${AGENT_WAIT_GUIDE}`,
+      `agent session '${name}' はまだターンが完了していません。agent_done 完了後に再取得してください。${agentWaitGuide(name)}`,
       2,
     );
   }
 
   const done = latestAgentDoneEvent(meta, operationId);
   if (operationId && !done) {
-    throw new AitermError(`operation ${operationId} はまだ完了していません。同じoperation_idで後から再取得してください。${AGENT_WAIT_GUIDE}`, 2);
+    throw new AitermError(`operation ${operationId} はまだ完了していません。同じoperation_idで後から再取得してください。${agentWaitGuide(name)}`, 2);
   }
   const turnId = done?.turn_id ?? null;
   let text = "";
@@ -3095,7 +3090,7 @@ function assertInitialPromptNotPendingForSend(name: string, force: boolean): voi
   if (meta.initial_prompt !== "pending" && meta.initial_prompt !== "sent") return;
   throw new AitermError(
     `agent session '${name}' は起動時 prompt の完了待ちです。通常 pty_send は混入防止のため送信しません。` +
-      `aiterm-wait --session ${name} --cursor 0 で完了（outcome=done）を確認してから再度 pty_send するか、手動介入が必要な場合だけ force:true を明示してください。`,
+      `${agentWaitGuide(name)}完了後に再度 pty_send するか、手動介入が必要な場合だけ force:true を明示してください。`,
     2,
   );
 }
@@ -3104,6 +3099,40 @@ function assertInitialPromptNotPendingForSend(name: string, force: boolean): voi
 // aiterm-wait の exit 契約（CLI と各所の案内文で共有する正）。exit≠完了: outcome が done の時だけ完了。
 export const AITERM_WAIT_OUTCOME_NOTE =
   `exit 0=done / 3=timeout（既定${DEFAULT_AGENT_DONE_TIMEOUT}秒・未完了） / 4=closed。receiptのoutcomeが正で、done以外は未完了`;
+
+// 親ホストの識別（MCP initialize の clientInfo.name）。完了待ちコマンドを「親のターンを塞がない
+// 起動形」で名指しするためだけに使う。分からない時は汎用文へ落ち、機能は一切変えない。
+let parentClientName: string | null = null;
+
+export function setParentClient(name: string | null): void {
+  const trimmed = typeof name === "string" ? name.trim() : "";
+  parentClientName = trimmed === "" ? null : trimmed;
+}
+
+// 完了待ちを親のターンを塞がない形で起動する具体形。ホストが分かる時は実際の呼び出し形を名指しする
+// （抽象名詞の「バックグラウンドで」だけでは親が foreground 実行へ落ちるため・ADR 0017）。
+export function agentWaitLaunchForm(command: string): string {
+  if (parentClientName === "claude-code") {
+    return `Bash(command: ${JSON.stringify(command)}, run_in_background: true)`;
+  }
+  return `\`${command}\` を親のターンを塞がない別プロセスとして起動`;
+}
+
+// dispatch / 起動時 prompt 送信後の共通案内。第一文で「待たない」を宣言し、待ち方は後段に置く。
+export function agentDispatchGuide(session: string, cursor: number): string {
+  const cmd = `aiterm-wait --session ${session} --cursor ${cursor}`;
+  return (
+    `投げっぱなしでよい＝ここで待たない。親は自分の作業へ戻るか、このターンを終える。\n` +
+    `完了通知: ${agentWaitLaunchForm(cmd)}。exit が完了通知（${AITERM_WAIT_OUTCOME_NOTE}）。\n` +
+    `foreground 実行は親を最大 ${DEFAULT_AGENT_DONE_TIMEOUT} 秒塞ぐので使わない。回収: pty_read(agent_transcript:true)`
+  );
+}
+
+// 未完了 session へ触った時の共通案内。ここでも待つのは waiter プロセスであって親ではない。
+export function agentWaitGuide(session?: string): string {
+  const cmd = `aiterm-wait --session ${session ?? "<session_id>"} --cursor 0`;
+  return `完了通知は ${agentWaitLaunchForm(cmd)} で受ける（親はここで待たない・polling 不要）。receipt の outcome=done を確認してから再取得する。`;
+}
 
 export interface AgentWaitObservation {
   schema: "aiterm.agent-wait-result.v1";
@@ -3522,8 +3551,7 @@ export async function sendInitialAgentPrompt(
   return {
     text:
       `initial_prompt=pending vendor=${meta.kind} event_cursor=${startOffset}\n` +
-      `起動時 prompt を送信した。完了通知は aiterm-wait --session ${name} --cursor ${startOffset} をホストのバックグラウンドタスクとして実行し、` +
-      `exit 時に receipt の outcome で判定する（${AITERM_WAIT_OUTCOME_NOTE}）。回収は pty_read(agent_transcript:true) を使う。` +
+      `起動時 prompt を送信した。${agentDispatchGuide(name, startOffset)}` +
       agentSubmitResidueWarning(name, residue.residue),
     event_cursor: startOffset,
     submit_residue: residue.residue,
@@ -4084,7 +4112,7 @@ export function openAgent(
   const driveHint =
     agentDone && kind === "claude"
       ? `TUI の描画には数秒かかる。少し置いてから pty_read(${sid}, screen:true) で画面を読み、` +
-        `turnはpty_send(${sid}, "...")で送る（自動で非ブロックdispatch・完了通知はaiterm-wait）。中断はpty_key(${sid}, "C-c")、` +
+        `turnはpty_send(${sid}, "...")で送る（自動で非ブロックdispatch＝投げっぱなしでよい・完了通知はaiterm-wait）。中断はpty_key(${sid}, "C-c")、` +
         `Stopが来ない場合の解除はpty_close(${sid})を使う。`
       : `TUI の描画には数秒かかる。少し置いてから pty_read(${sid}, screen:true) で画面を読み、` +
         `pty_send(${sid}, "...") で入力・pty_key(${sid}, "Enter"/"Up"/"C-c" 等) で操作する（対話）。`;

@@ -18,7 +18,7 @@ const PACKAGE = JSON.parse(fs.readFileSync(path.join(HERE, "..", "package.json")
 test("smoke: 公開versionはpackage・lock・server manifestで一致する", () => {
   const lock = JSON.parse(fs.readFileSync(path.join(HERE, "..", "package-lock.json"), "utf8"));
   const server = JSON.parse(fs.readFileSync(path.join(HERE, "..", "server.json"), "utf8"));
-  assert.equal(PACKAGE.version, "0.19.2", "Windows diagnostics修正を0.19.1と区別する");
+  assert.equal(PACKAGE.version, "0.19.3", "非ブロックdispatch案内の反転を0.19.2と区別する");
   assert.equal(lock.version, PACKAGE.version);
   assert.equal(lock.packages?.[""]?.version, PACKAGE.version);
   assert.equal(server.version, PACKAGE.version);
@@ -103,6 +103,17 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 13 ツール公�
     ptySend.outputSchema.properties.event_cursor.anyOf?.some((v) => v.type === "integer"),
     "pty_send event_cursor schema",
   );
+  // 非ブロック規範: dispatch 系の説明は「待たない」を明示し、foreground 実行へ誘導する
+  // 抽象文（旧「ホストのバックグラウンドタスクとして実行」）へ戻らない。
+  const dispatchDescs = [ptySend, ...["claude_agent", "codex_agent", "grok_agent", "composer_agent"].map((n) => toolsResp.result.tools.find((t) => t.name === n))];
+  for (const tool of dispatchDescs) {
+    assert.match(tool.description, /投げっぱなしでよい/, `${tool.name}: 投げっぱなし許諾を明示する`);
+    assert.match(tool.description, /親はここで待たない/, `${tool.name}: 親が待たないことを明示する`);
+    assert.match(tool.description, /親のターンを塞がない別プロセス/, `${tool.name}: 非ブロック起動形を指す`);
+    assert.doesNotMatch(tool.description, /ホストのバックグラウンドタスクとして実行/, `${tool.name}: 抽象案内へ戻さない`);
+  }
+  assert.match(ptySend.description, /foreground/, "pty_send: foreground実行の禁止を明示する");
+
   const ptyRead = toolsResp.result.tools.find((t) => t.name === "pty_read");
   assert.equal(ptyRead.inputSchema.properties.agent_transcript.type, "boolean", "pty_read agent_transcript schema");
   assert.equal(ptyRead.inputSchema.properties.agent_transcript.default, false, "pty_read agent_transcript default");

@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.3] - 2026-07-26
+
+### Changed
+
+- dispatch／起動時 prompt 送信後の案内を「投げっぱなし」正典へ反転した。第一文で
+  「投げっぱなしでよい＝ここで待たない」を宣言し、待ち方は後段へ置き、foreground 実行の
+  禁止を案内本文へ含める。従来は「即返る」の直後に完了待ち手順が続き、dispatch→wait が
+  一続きの手順に見えて親がブロックする使い方へ流れていた（ADR 0017）。
+- 完了待ちの起動形を親ホスト別に名指しするようにした。MCP initialize の `clientInfo.name`
+  が `claude-code` の時は receipt に `Bash(command: ..., run_in_background: true)` を出す。
+  取れない／未知のホストは汎用の非ブロック指示へ落ちる。抽象名詞の
+  「ホストのバックグラウンドタスクとして実行」だけでは親が foreground 実行へ落ちるため。
+- 未完了 session へ触れた時の復旧案内も同じ文型へ揃えた。取りこぼしゼロの `--cursor 0` は維持する。
+
+### Unchanged
+
+- `aiterm-wait` の既定 timeout・exit 契約・outcome 語彙・公開 schema・完了判定は変更なし。
+  待つ主体は waiter プロセスであって親ではない、が本変更の分界。
+
 ## [0.19.2] - 2026-07-20
 
 ### Fixed

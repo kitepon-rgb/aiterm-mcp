@@ -2,6 +2,22 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **v0.19.3（2026-07-26・公開待ち）**: 「非ブロックdispatchが要なのに親が待つ使い方に流れる」という
+> 実運用報告の還流。案内の文型が原因で、①全descriptionが「即返る」の直後に完了待ち手順を続けて
+> dispatch→waitを一続きの手順に見せ、「待たなくてよい」という許諾がどこにも無かった
+> ②起動形の指示が「ホストのバックグラウンドタスクとして実行」という抽象名詞だけで、
+> 具体形を知らない親がforeground実行へ落ち既定600秒ターンを塞いだ。
+> 対処は、案内の第一文を「投げっぱなしでよい＝ここで待たない」の宣言へ反転し、foreground実行の
+> 禁止を本文へ含め、完了待ちの起動形を親ホスト別に名指しすること。MCP initializeの
+> `clientInfo.name`が`claude-code`ならreceiptへ`Bash(command: ..., run_in_background: true)`を出し、
+> 取れない／未知のホストは汎用の非ブロック指示へ落ちる。tool descriptionは`registerTool`時＝
+> initialize前に固定されるためホストを名指しできず、汎用の断定形を持つ（ホスト別の具体形はreceiptが所有）。
+> `aiterm-wait`の既定timeout・exit契約・outcome語彙・公開schema・完了判定は不変＝
+> **待つ主体はwaiterプロセスであって親ではない**、が本変更の分界。設計はADR 0017。
+> 検証: local full regression 307/307（新規pure 4件込み）、実物のClaude Codeから
+> `clientInfo.name="claude-code"`を実測、実codex子で launch receipt → 案内どおりの完了待ち →
+> `outcome=done` → transcript回収 → close まで通した。
+>
 > **v0.19.2（2026-07-20公開）**: Windows nativeでWSL側tmux serverが未起動の時、
 > `diagnostics`が`pty_list.status="not_applicable"`と`session_count=0`を同時に返し、公開契約の
 > status/count不変条件へ違反してdotagents factory adapterからpresence不明扱いされた欠陥を修理。
