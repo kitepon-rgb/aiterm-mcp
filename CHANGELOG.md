@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.2] - 2026-07-26
+
+### Fixed
+
+- npmがauthor名の丸括弧をURL記法として再解釈し、指定したXプロフィールを
+  `kitepon.dev`へ置き換えたため、author名を`Quo / クオ at kitepon.dev`へ訂正した。
+  これにより作者名・所属ブランド・Xへのリンクを同時に保持する。
+
+### Unchanged
+
+- 0.20.1のREADME、検索語、短い説明、14ファイルのnpm tarball、およびruntime挙動は不変。
+
 ## [0.20.1] - 2026-07-26
 
 ### Changed
