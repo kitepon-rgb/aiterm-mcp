@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **v0.20.0（2026-07-26・公開待ち）**: `aiterm-wait`の`outcome`へ`running`（exit 5）を追加。
+> **v0.20.0（2026-07-26公開）**: `aiterm-wait`の`outcome`へ`running`（exit 5）を追加。
 > `--timeout 0`は以前から「待たずに一度だけ観測する照会」として動いていたが、未完了を
 > `timeout`（既定600秒待って終わらなかった）と同じ語で返していたため、軽い照会の答えが
 > 失敗・異常として親へ届き、「投げる→自分の作業→一度だけ様子見→まだなら作業へ戻る」が
@@ -15,6 +15,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > MCPの公開toolとschemaは不変で、影響は`aiterm-wait`のreceiptだけに閉じる。設計はADR 0018。
 > `aiterm.agent-wait-result.v1`のoutcome語彙が増えるためpatchでは出さずminor bump（0.19.3→0.20.0）。
 > 検証: local full regression 311/311（新規4件込み）。
+> 公開証跡: 公開commit `0ad1e6d`、tag CI `30199631692` の全9job success（test-windows含む）と
+> npm provenance publish、MCP Registry workflow `30199631718` success、npm latest=0.20.0。
+> npm integrity `sha512-S93YUspzJ/NBuVFvPlZPHADWKBuU7nzsGGIHJtbDTmqjeeORDAaph0XozdF2nVGTt8qdOlRJlJulShY+ZuXK8Q==`。
+> global installのdistはlocal distとバイト一致。公開binで実codex子を走らせ、走行中の照会が
+> `outcome=running`／exit 5、完了後が`done`／exit 0、未知sessionがexit 1（runningへ倒れない）、
+> usageに照会の説明が出ることを実機確認した。
 >
 > **v0.19.3（2026-07-26公開）**: 「非ブロックdispatchが要なのに親が待つ使い方に流れる」という
 > 実運用報告の還流。案内の文型が原因で、①全descriptionが「即返る」の直後に完了待ち手順を続けて
