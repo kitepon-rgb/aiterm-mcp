@@ -23,8 +23,8 @@
 >
 > *MCP = Model Context Protocol — Claude Code のようなツールが AI に機能を差し込むためのオープン標準。*
 
-[kitepon.dev](https://kitepon.dev)を運営する
-[クオ（@QLyun35332）](https://x.com/QLyun35332)が開発・メンテナンスしています。
+kitepon.devを運営する[クオ（@QLyun35332）](https://x.com/QLyun35332)が
+開発・メンテナンスしています。
 
 ## MCPクライアントへ導入
 
