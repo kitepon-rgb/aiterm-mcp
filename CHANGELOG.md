@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-07-26
+
+### Changed
+
+- npmの短い説明を、Claude CodeからCodex CLIの対話TUI（スラッシュコマンドや
+  `$imagegen`を含む）を操作できる差別化点が先頭で伝わる文へ更新した。
+- npm authorを`Quo / クオ (kitepon.dev)`とXプロフィールへ結び、検索語へ
+  `codex-cli`、`terminal-mcp`、`persistent-terminal`、`interactive-cli`を追加した。
+- 現行README（npm版・週間ダウンロード数バッジ、`npx` quickstart、
+  Claude Code / Claude Desktop / Cursor設定、作者帰属）をnpmへ反映するため再公開した。
+- Official MCP RegistryとMCPBの説明・版・作者帰属を同じ公開面へ同期した。
+- npmの`files`を実行に必要な`dist/*.js`へ限定し、Smithery向けの旧版bundleや
+  展開済み依存をnpm利用者へ重複配布しないようにした。
+
+### Unchanged
+
+- MCPの13ツール、3つのbin、stdio transport、PTY／agent runtimeの挙動は
+  0.20.0から変更しない。公開面だけのpatch release。
+
 ## [0.20.0] - 2026-07-26
 
 ### Added

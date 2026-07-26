@@ -1,8 +1,8 @@
 {
   "name": "aiterm-mcp",
-  "version": "0.20.0",
+  "version": "0.20.1",
   "mcpName": "io.github.kitepon-rgb/aiterm-mcp",
-  "description": "AI-driven persistent terminal as a local stdio MCP server (tmux-backed). Holds one local PTY; SSH and containers are just commands you send into it. Also launches interactive Claude/Codex/Grok/Composer agent TUIs in a persistent terminal. Token-reducing reads.",
+  "description": "Persistent tmux terminal MCP that lets Claude Code drive Codex CLI's interactive TUI, including slash commands and $imagegen. Also runs durable PTY sessions for SSH, containers, REPLs, and coding agents.",
   "keywords": [
     "mcp",
     "mcp-server",
@@ -17,11 +17,18 @@
     "ai-agent",
     "agent",
     "codex",
+    "codex-cli",
     "grok",
-    "devtools"
+    "devtools",
+    "terminal-mcp",
+    "persistent-terminal",
+    "interactive-cli"
   ],
   "license": "MIT",
-  "author": "kitepon",
+  "author": {
+    "name": "Quo / クオ (kitepon.dev)",
+    "url": "https://x.com/QLyun35332"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kitepon-rgb/aiterm-mcp.git"
@@ -37,7 +44,7 @@
     "aiterm-wait": "dist/aiterm-wait-cli.js"
   },
   "files": [
-    "dist",
+    "dist/*.js",
     "README.md",
     "LICENSE"
   ],

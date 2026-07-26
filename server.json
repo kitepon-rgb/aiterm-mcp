@@ -1,18 +1,18 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.kitepon-rgb/aiterm-mcp",
-  "description": "AI drives one persistent tmux terminal over MCP; ssh, containers & agent TUIs nest inside it.",
+  "description": "Claude Code drives Codex CLI's interactive TUI and durable tmux terminals over MCP.",
   "repository": {
     "url": "https://github.com/kitepon-rgb/aiterm-mcp",
     "source": "github"
   },
-  "version": "0.20.0",
+  "version": "0.20.1",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "aiterm-mcp",
-      "version": "0.20.0",
+      "version": "0.20.1",
       "transport": {
         "type": "stdio"
       }
