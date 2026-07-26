@@ -84,7 +84,7 @@ codex_agent({ session_name: "codex1", cwd: "/repo",
 pty_read("codex1", { screen: true })   → read what it's doing (token-reduced)
 pty_send("codex1", "also fix the imports it broke")
                                     → non-blocking dispatch; receipt carries event_cursor
-$ aiterm-wait --session codex1 --cursor <event_cursor>   # host background task; exit code 0=done, 3=timeout (not done), 4=closed
+$ aiterm-wait --session codex1 --cursor <event_cursor>   # never in the parent's foreground; exit 0=done, 3=timeout (not done), 4=closed
 pty_read("codex1", { agent_transcript: true })           → collect the full answer
 ```
 
@@ -323,7 +323,7 @@ As of v0.16 a parent agent **never blocks** on aiterm — there is no wait param
 
 1. Launch the child (`claude_agent` / `codex_agent` / ...; every launch is managed). Send a turn with plain `pty_send` (or `claude_turn issue` for durable Claude operations). The call passes the TUI ready gate, submits, and returns immediately with an `event_cursor` in its structured receipt — plus a `submit_residue` observation: `true` means the sent text still lingered in the composer after submit (likely stranded; inspect the screen before re-pressing Enter), `false` means no residue was observed (not a proof of submission), `null` means not applicable.
 2. Run `aiterm-wait --session <id> --cursor <event_cursor> [--operation sha256:<64hex>] [--timeout <sec>]` (a launch with an initial `prompt` returns this command ready-made as `wait_command` in its structured receipt). It observes the vendor Stop-hook completion event as a **pure reader** and exits with a one-line `aiterm.agent-wait-result.v1` receipt. **Exit ≠ done**: the receipt's `outcome` is authoritative, and the exit code mirrors it — `0` = `done`, `3` = `timeout` (the turn is **not** finished; default `--timeout` is 600 s), `4` = `closed`, `1` = error. On `timeout` just re-run the waiter with the same cursor. The `--cursor` boundary makes it start-order independent: no completion can slip past even if the waiter starts late.
-3. Host integration picks the invocation style: a harness that re-invokes its agent when a background task exits (Claude Code) runs the waiter **in the background** and gets woken with zero polling; a host without that mechanism runs it as a foreground shell command. Either way the aiterm MCP call itself never blocks.
+3. **The parent never runs the waiter in its own foreground.** Waiting is correct — but the waiter is a separate process, not the parent's turn. A harness that re-invokes its agent when a background task exits (Claude Code) runs the waiter **in the background** and gets woken with zero polling. So that this is not left to interpretation, aiterm reads `clientInfo.name` from the MCP `initialize` handshake and its receipts name the concrete invocation for the detected host — for Claude Code, literally `Bash(command: "aiterm-wait …", run_in_background: true)`. Unknown or undeclared hosts get the generic "start it as a process that does not block the parent's turn" wording; nothing else about the contract changes. Every receipt leads with the same rule: dispatch and let go, then go do something else or end the turn.
 4. Collect the result exactly as before: `pty_read(agent_transcript: true)`, or `claude_turn recover` for durable Claude operations. The waiter carries the signal, never the payload.
 
 `aiterm-wait` takes no locks, never writes session state, and never dispatches — any number can run beside the MCP server and each other, and `pty_close`/concurrent sends are unaffected.
