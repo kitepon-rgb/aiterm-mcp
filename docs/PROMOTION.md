@@ -23,17 +23,19 @@ Done and verified:
 - ⚠️ **mcp.so** — the existing listing was claimed through GitHub on 2026-07-26.
   Do not submit a duplicate. Its editor currently discards submitted changes
   (a fresh reload restores the stale 6-tool content), so the update remains blocked.
+- ✅ **Smithery** — [`kitepon/aiterm-mcp`](https://smithery.ai/servers/kitepon/aiterm-mcp)
+  is public with the validated MCPB, all 13 runtime tools, repository/license/icon
+  metadata, and the Claude Code × Codex CLI lead. The public page scored 84/100
+  immediately after metadata completion.
 - ✅ **GitHub topic** `mcp-server` added; **v0.20.0 Release** is public.
 - 🔄 **awesome-mcp-servers** — PR [#7620](https://github.com/punkpeye/awesome-mcp-servers/pull/7620) open (awaiting maintainer merge).
 - ✅ **Announced** on r/mcp.
 
 Remaining:
 
-- 🔄 **Glama** — directory search did not surface the repository on 2026-07-26.
-  GitHub OAuth reached the authorization screen; manual authorization remains.
+- 🔄 **Glama** — GitHub OAuth and the Add Server form were completed on
+  2026-07-26. The submission is now awaiting Glama's public review/build/scan;
   `glama.json` is already present.
-- 🔄 **Smithery** — current publishing requires a public Streamable HTTP URL or a prebuilt `.mcpb` for local stdio servers. The MCPB build is prepared and validated.
-  CLI login is waiting for manual GitHub authorization; authenticated publish remains.
 - ⬜ **Show HN / X / dev.to** — optional extra reach (drafts below).
 - ⬜ **Animated demo GIF** — needs a real SSH target + a client-UI recording; the README currently shows real captured text instead.
 
@@ -100,10 +102,19 @@ checks write/admin access through GitHub OAuth and clones, builds, runs, and
 scans the repository. A failed inferred build may leave a page present but
 withhold it from search, so a successful submit is not the final verification.
 
+The live Add Server form checked on 2026-07-26 required exactly:
+
+- Name
+- A 1–2 sentence description
+- Public GitHub repository URL
+
+It did not request `server.json`. The `aiterm-mcp` submission was accepted for
+review with `https://github.com/kitepon-rgb/aiterm-mcp`.
+
 ## E. Smithery (https://smithery.ai)
 
 The old GitHub-repository publishing flow is no longer sufficient for this
-stdio package. Smithery currently accepts either:
+stdio package. Smithery accepts either:
 
 - a public HTTPS Streamable HTTP endpoint, or
 - a prebuilt `.mcpb` bundle for a local stdio server.
@@ -117,11 +128,24 @@ npm run mcpb:build
 The command validates `mcpb/manifest.json`, bundles the compiled server and
 production dependencies, and writes `dist/aiterm-mcp.mcpb`. The bundle's
 archive integrity and staged initialize / tools-list smoke (v0.20.0, 13 tools)
-passed on 2026-07-26. Publish after Smithery authentication:
+passed on 2026-07-26.
 
 ```bash
-smithery mcp publish dist/aiterm-mcp.mcpb -n kitepon-rgb/aiterm-mcp
+smithery mcp publish dist/aiterm-mcp.mcpb -n kitepon/aiterm-mcp
 ```
+
+Smithery CLI 1.2.0 could authenticate and create the server, but its MCPB
+adapter forwarded the manifest's MCPB-spec `tools` summaries without the full
+MCP `inputSchema` required by Smithery's release API. Omitting `tools` instead
+failed with `No values to set`. The official multipart release API was used
+with the unchanged, valid MCPB plus the 13 tool definitions returned by the
+running server. Release
+`d392fd46-32e4-4cb8-849d-ad6f391f05a7` completed with `SUCCESS`.
+
+Public endpoints:
+
+- Server page: <https://smithery.ai/servers/kitepon/aiterm-mcp>
+- Smithery MCP URL: <https://aiterm-mcp--kitepon.run.tools>
 
 ## F. awesome-mcp-servers PR (punkpeye/awesome-mcp-servers)
 

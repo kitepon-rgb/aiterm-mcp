@@ -305,3 +305,9 @@ AIターミナル直接操作プロジェクトの調査一次資料。`rag/sour
 - [Publish an MCP server on Smithery](sources/discoverability/smithery-publish-server.md) — SmitheryのURL公開とローカルstdio向けMCPB公開手順。
   - 出典: <https://smithery.ai/docs/build/publish> (docs, 9482 chars)
   - 効きどころ: aiterm-mcpをSmitheryへ登録する際の成果物要件の一次資料。
+- [Smithery API: Publish a server](sources/discoverability/smithery-publish-server-api.md) — Smitheryへmultipart formでMCPBとJSON release payloadを送る公式API仕様。
+  - 出典: <https://smithery.ai/docs/api-reference/servers/publish-a-server> (docs, 17281 chars)
+  - 効きどころ: Smithery CLI 1.2.0のMCPB metadata変換不整合を回避し、公式APIでstdio releaseを公開する根拠。
+- [Smithery API: Update a server](sources/discoverability/smithery-update-server-api.md) — SmitheryのdisplayName・description・repository・icon・visibilityを更新する公式API仕様。
+  - 出典: <https://smithery.ai/docs/api-reference/servers/update-a-server> (docs, 13461 chars)
+  - 効きどころ: aiterm-mcp公開ページの訴求、リポジトリ導線、MITライセンス、アイコンを正規APIで設定する根拠。

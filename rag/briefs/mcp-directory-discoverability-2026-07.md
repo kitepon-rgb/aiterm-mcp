@@ -20,9 +20,12 @@
 
 ### Glama
 
-- ディレクトリ検索で公式掲載を確認できず、想定URLへの直接アクセスは504だった。
-- Add Serverはアカウント作成／GitHub OAuthを要求する。
-- GitHub OAuthの認可画面までは到達したが、Authorizeが無効状態で手動完了待ち。
+- ディレクトリ検索で公式掲載を確認できなかったため、Add Serverから新規申請した。
+- GitHub OAuthと初回プロフィール作成を完了した。
+- 実画面のServer申請で必須だったのは、Name、1–2文のDescription、公開GitHub Repository URLの3項目。
+  `server.json`は要求されなかった。
+- `aiterm-mcp`、Claude Code × Codex CLIを先頭にした説明、
+  `https://github.com/kitepon-rgb/aiterm-mcp`を送信し、公開前review待ちになった。
 - 現行methodologyでは、GitHub OAuthでリポジトリのwrite/admin accessを確認し、clone・build・run・scanを行う。
 - 推定Dockerfile等のbuildに失敗すると、ページが存在しても検索から除外される場合がある。
 - リポジトリの`glama.json`はmaintainer claim用の現行例と整合する。
@@ -33,14 +36,25 @@
 
 - 現行の公開経路は、公開HTTPS Streamable HTTP endpoint、またはローカルstdioサーバー向けのprebuilt `.mcpb`。
 - GitHub repositoryと`server.json`だけでstdioサーバーを直接公開する旧手順は使えない。
-- aiterm-mcpはローカルstdio packageで、現時点では`.mcpb`を持たない。
-- 登録にはMCPBパッケージング、install smoke、認証済みpublishが必要。
+- aiterm-mcpはローカルstdio packageで、MCPBパッケージング、install smoke、認証済みpublishが必要。
 - 本調査を受け、manifest v0.3と再現可能なbuildを追加した。`mcpb validate`、archive整合、
   bundle内serverのinitialize・tools/list（v0.20.0 / 13 tools）まで通過した。
-- CLI OAuth loginは起動済みで、GitHub側の手動認証完了後にpublishできる位置で待機している。
+- CLI OAuthは完了し、namespace `kitepon`でserver shellを作成できた。
+- Smithery CLI 1.2.0は、MCPB仕様上の`tools`要素（name/description）をSmithery APIの
+  server cardへそのまま転送し、API側が要求する`inputSchema`を欠くため400になった。
+  `tools`を省くと`No values to set`で400になった。
+- 正式なMCPBを変更せず、実際のrunning serverから取得した13ツールの完全なMCP schemaを
+  公式multipart release APIのpayloadへ添付して公開した。
+- release `d392fd46-32e4-4cb8-849d-ad6f391f05a7`は`SUCCESS`、
+  公開ページは`https://smithery.ai/servers/kitepon/aiterm-mcp`、
+  MCP URLは`https://aiterm-mcp--kitepon.run.tools`。
+- metadata APIでdisplay name、差別化説明、repository、MIT、icon、公開状態を設定し、
+  公開ページは13 tools・84/100を表示した。
+- `backlinkUrl`は`homepage`と同じdomainでなければ400になる。X帰属URLを入れる欄ではないため省略した。
 
 一次資料: [[smithery-publish-server]] / [[smithery-cli]] /
-[[mcpb-manifest-specification]] / [[mcpb-readme]] / [[claude-build-mcpb]]
+[[mcpb-manifest-specification]] / [[mcpb-readme]] / [[claude-build-mcpb]] /
+[[smithery-publish-server-api]] / [[smithery-update-server-api]]
 
 ## README設定の根拠
 

@@ -1148,6 +1148,43 @@
       "fetched": "2026-07-26"
     },
     {
+      "slug": "smithery-publish-server-api",
+      "topic": "discoverability",
+      "title": "Smithery API: Publish a server",
+      "source_url": "https://smithery.ai/docs/api-reference/servers/publish-a-server",
+      "source_type": "docs",
+      "path": "sources/discoverability/smithery-publish-server-api.md",
+      "tags": [
+        "smithery",
+        "mcp-directory",
+        "mcpb",
+        "api",
+        "submission"
+      ],
+      "summary": "Smitheryへmultipart formでMCPBとJSON release payloadを送る公式API仕様。",
+      "relevance": "Smithery CLI 1.2.0のMCPB metadata変換不整合を回避し、公式APIでstdio releaseを公開する根拠。",
+      "chars": 17281,
+      "fetched": "2026-07-26"
+    },
+    {
+      "slug": "smithery-update-server-api",
+      "topic": "discoverability",
+      "title": "Smithery API: Update a server",
+      "source_url": "https://smithery.ai/docs/api-reference/servers/update-a-server",
+      "source_type": "docs",
+      "path": "sources/discoverability/smithery-update-server-api.md",
+      "tags": [
+        "smithery",
+        "mcp-directory",
+        "metadata",
+        "api"
+      ],
+      "summary": "SmitheryのdisplayName・description・repository・icon・visibilityを更新する公式API仕様。",
+      "relevance": "aiterm-mcp公開ページの訴求、リポジトリ導線、MITライセンス、アイコンを正規APIで設定する根拠。",
+      "chars": 13461,
+      "fetched": "2026-07-26"
+    },
+    {
       "slug": "aider-in-chat-commands",
       "topic": "prior-art",
       "title": "Aider In-chat commands (/run, /test)",
