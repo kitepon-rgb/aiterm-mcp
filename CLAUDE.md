@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **v0.19.3（2026-07-26・公開待ち）**: 「非ブロックdispatchが要なのに親が待つ使い方に流れる」という
+> **v0.19.3（2026-07-26公開）**: 「非ブロックdispatchが要なのに親が待つ使い方に流れる」という
 > 実運用報告の還流。案内の文型が原因で、①全descriptionが「即返る」の直後に完了待ち手順を続けて
 > dispatch→waitを一続きの手順に見せ、「待たなくてよい」という許諾がどこにも無かった
 > ②起動形の指示が「ホストのバックグラウンドタスクとして実行」という抽象名詞だけで、
@@ -15,8 +15,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > `aiterm-wait`の既定timeout・exit契約・outcome語彙・公開schema・完了判定は不変＝
 > **待つ主体はwaiterプロセスであって親ではない**、が本変更の分界。設計はADR 0017。
 > 検証: local full regression 307/307（新規pure 4件込み）、実物のClaude Codeから
-> `clientInfo.name="claude-code"`を実測、実codex子で launch receipt → 案内どおりの完了待ち →
+> `clientInfo.name="claude-code"`を実測（`initialize`→`notifications/initialized`→`tools/list`の順で
+> 届くため、どのtool呼び出しより先に確定する）、実codex子で launch receipt → 案内どおりの完了待ち →
 > `outcome=done` → transcript回収 → close まで通した。
+> 公開証跡: 公開commit `47ff318`、tag CI `30198620312` の全9job success（**test-windows含む**）と
+> npm provenance publish、MCP Registry workflow `30198620296` success、npm latest=0.19.3。
+> npm integrity `sha512-ao0XGC+UK/FJPfH8C8BPxDVSJMoNtbpOkoDwgssyhYvm3hyuiEr0Qwa3gftYbXTRBD6lUahr4+ZYNRvd6pC0Sw==`。
+> registry由来の隔離installで version・bin 3種・13 tools・dispatch系5ツールの非ブロック規範を確認。
+> この端末へglobal installし、installed distはlocal distとバイト一致。公開後smokeとして
+> global installの0.19.3で実codex子を起動し、receiptが`Bash(command: "aiterm-wait --session pub_smoke
+> --cursor 0", run_in_background: true)`とホスト名指しで案内すること、その案内どおりのコマンドが
+> `outcome=done`で返ること、transcript回収（`PUBOK`）とcloseまでを実機確認した。
+> 残タスク: `--timeout 0`の一発照会に`running` outcomeを足す件（公開enum追加のため別release）。
 >
 > **v0.19.2（2026-07-20公開）**: Windows nativeでWSL側tmux serverが未起動の時、
 > `diagnostics`が`pty_list.status="not_applicable"`と`session_count=0`を同時に返し、公開契約の
