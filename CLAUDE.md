@@ -2,6 +2,20 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **v0.20.2（2026-07-26公開）**: npmと各公開面で、Claude CodeからCodex CLIの対話TUI
+> （スラッシュコマンド・`$imagegen`を含む）を操作できる差別化、現行README、作者帰属を前面化した。
+> npm authorは`Quo / クオ at kitepon.dev`、URLは`https://x.com/QLyun35332`として公開APIで確認。
+> v0.20.1では丸括弧をnpmのlegacy author parserがURL記法として再解釈しX URLを捨てたため、
+> v0.20.2で括弧を使わない表記へ訂正した。npm tarballはSmithery生成物を除外し14 files、
+> 382,455 bytes。runtime・MCPの13 tools・3 binsは0.20.0から不変。
+> 検証: v0.20.1 local full regression 311/311、v0.20.2 focused release/server smoke 4/4、
+> MCPB build/schema/icon/archive、npm pack dry-run。公開commit `3715c7a`、tag CI
+> `30203465207`の全9job successとnpm provenance publish、MCP Registry workflow
+> `30203465282` success。npm latest=0.20.2、integrity
+> `sha512-IOlBjlrII8tbUWy0axSXjLw5T/HKUrPcIR90UVKga8qy1dQIK0u/Qn/Ygy3guVsnMUWN9pNhmacUAJ1abLCX+w==`。
+> Registry由来の隔離installでversion 0.20.2、3 bins、13 tools、stderr混入ゼロを確認。
+> 公開受入はADR 0019。
+>
 > **v0.20.0（2026-07-26公開）**: `aiterm-wait`の`outcome`へ`running`（exit 5）を追加。
 > `--timeout 0`は以前から「待たずに一度だけ観測する照会」として動いていたが、未完了を
 > `timeout`（既定600秒待って終わらなかった）と同じ語で返していたため、軽い照会の答えが

@@ -13,13 +13,15 @@ output) is already committed — these steps activate it.
 
 ## Status (live)
 
-> **v0.20.0（2026-07-26公開）**: npm・GitHub Release・Official MCP Registryで公開済み。
-> `package.json`と`server.json`は0.20.0で同期し、Official MCP Registryのlatest entryもactive。
+> **v0.20.2（2026-07-26公開）**: npm・GitHub Release・Official MCP Registryで公開済み。
+> `package.json`、lockfile、`server.json`、MCPB manifestは0.20.2で同期し、
+> Official MCP Registryのlatest entryもactive。
 
 Done and verified:
 
-- ✅ **npm `0.20.0` is latest** — provenance publish and public registry entry confirmed on 2026-07-26.
-- ✅ **Official MCP Registry** — `io.github.kitepon-rgb/aiterm-mcp` 0.20.0 is active and latest.
+- ✅ **npm `0.20.2` is latest** — Quo / クオ at kitepon.dev、X author link、
+  Claude Code × Codex CLI lead、現行README、provenance、14-file tarballを公開APIで確認済み。
+- ✅ **Official MCP Registry** — `io.github.kitepon-rgb/aiterm-mcp` 0.20.2 is active and latest.
 - ⚠️ **mcp.so** — the existing listing was claimed through GitHub on 2026-07-26.
   Do not submit a duplicate. Its editor currently discards submitted changes
   (a fresh reload restores the stale 6-tool content), so the update remains blocked.
@@ -27,7 +29,7 @@ Done and verified:
   is public with the validated MCPB, all 13 runtime tools, repository/license/icon
   metadata, and the Claude Code × Codex CLI lead. The public page scored 84/100
   immediately after metadata completion.
-- ✅ **GitHub topic** `mcp-server` added; **v0.20.0 Release** is public.
+- ✅ **GitHub topics** include the requested discovery set; **v0.20.2 Release** is public.
 - 🔄 **awesome-mcp-servers** — PR [#7620](https://github.com/punkpeye/awesome-mcp-servers/pull/7620) open (awaiting maintainer merge).
 - ✅ **Announced** on r/mcp.
 
@@ -56,10 +58,15 @@ The lettered steps below are kept as a re-run reference and for the announcement
 
 ---
 
-## A. Re-publish to npm so the new keywords/mcpName take effect
+## A. Re-publish to npm so the new keywords/mcpName take effect（完了）
 
 npm only re-indexes keywords on a new published version. Bump a patch, keep
 `server.json` `version` in lockstep, then let CI publish on the tag.
+
+Completed with v0.20.2 on 2026-07-26. v0.20.1 published the refreshed public
+surface; v0.20.2 corrected npm's legacy author-parentheses normalization so the
+explicit X profile remains the author URL. Acceptance evidence is recorded in
+[`ADR 0019`](adr/0019-release-0.20.2-public-presentation-acceptance.md).
 
 ```bash
 # 1. bump package.json + package-lock.json + server.json to the same new version (e.g. next patch)
