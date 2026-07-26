@@ -2,11 +2,12 @@
 // aiterm-wait — agent turn 完了eventの純リーダー観測CLI。
 // 完了/timeout/close を1行のJSON receiptで返してexitする。lock・PTY・dispatch状態には一切触れない。
 // 親AIホストのバックグラウンドタスクとして起動し、exitを「観測終了の通知」として使う。
-// exit≠完了: exit code は outcome を映す（0=done / 3=timeout=未完了 / 4=closed / 1=エラー）。
+// exit≠完了: exit code は outcome を映す（0=done / 5=running=未完了 / 3=timeout=未完了 / 4=closed / 1=エラー）。
+// --timeout 0 は待たずに一度だけ観測する照会で、未完了は running（timeout と混同させない）。
 // receipt の outcome が正で、done 以外は未完了。timeout の既定は core の DEFAULT_AGENT_DONE_TIMEOUT（600秒）。
 import { fileURLToPath } from "node:url";
 import * as fs from "node:fs";
-import { AitermError, observeAgentDone } from "./core.js";
+import { AitermError, observeAgentDone, type AgentWaitObservation } from "./core.js";
 
 interface WaitCommand {
   session: string;
@@ -18,7 +19,8 @@ interface WaitCommand {
 const SESSION_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const OPERATION_RE = /^sha256:[0-9a-f]{64}$/;
 const USAGE =
-  "usage: aiterm-wait --session <name> [--cursor <event_cursor>] [--operation sha256:<64hex>] [--timeout <sec>]";
+  "usage: aiterm-wait --session <name> [--cursor <event_cursor>] [--operation sha256:<64hex>] [--timeout <sec>]" +
+  "（--timeout 0 は待たずに一度だけ観測する照会で、未完了は outcome=running / exit 5）";
 
 export function parseArgs(argv: string[]): WaitCommand {
   let session: string | null = null;
@@ -62,7 +64,14 @@ function emit(value: unknown): void {
 }
 
 // outcome → exit code。exit status しか見えないホストでも done とそれ以外を誤読できないようにする。
-const OUTCOME_EXIT_CODES = { done: 0, timeout: 3, closed: 4 } as const;
+// Record で全 outcome を型に強制する: 語を足して対応表を直し忘れると undefined→exit 0 になり、
+// 「まだ終わっていない」が「完了」として親へ届く。その取りこぼしを compile error で止める。
+const OUTCOME_EXIT_CODES: Record<AgentWaitObservation["outcome"], number> = {
+  done: 0,
+  running: 5,
+  timeout: 3,
+  closed: 4,
+};
 
 export async function main(argv: string[]): Promise<void> {
   const cmd = parseArgs(argv);

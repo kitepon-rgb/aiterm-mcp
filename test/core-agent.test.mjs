@@ -997,7 +997,7 @@ test("openAgent agent_done: 緩い state root でも stale metadata を掃除し
       await markFakeAgentReady(session, "codex");
       const receipt = await core.dispatchAgentTurn(session, "echo LOOSE_CLEANUP_BODY");
       const observation = await core.observeAgentDone(session, { cursor: receipt.event_cursor, timeout: 0 });
-      assert.equal(observation.outcome, "timeout");
+      assert.equal(observation.outcome, "running");
       assert.equal(observation.vendor, "codex");
     } finally {
       core.closeSession(sid);
@@ -1111,7 +1111,7 @@ test("dispatch/observe: Claude timeout後は再送せず後着resultを同一ses
     await markFakeAgentReady(sid, "claude");
     const receipt = await core.dispatchAgentTurn(sid, "CLAUDE_TIMEOUT_PROMPT");
     const observation = await core.observeAgentDone(sid, { cursor: receipt.event_cursor, timeout: 0 });
-    assert.equal(observation.outcome, "timeout");
+    assert.equal(observation.outcome, "running");
     assert.equal(observation.vendor, "claude");
     assert.match(core.listSessions(), new RegExp(`(^|\\n)${sid}\\t`), "timeout後も同じsessionを残す");
 
@@ -1170,7 +1170,7 @@ test("dispatch/observe: Claude operation_idをmarker・完了suffix・timeout後
       operation_id: operationId,
       timeout: 0,
     });
-    assert.equal(observation.outcome, "timeout");
+    assert.equal(observation.outcome, "running");
     assert.equal(observation.operation_id, operationId);
     const marker = JSON.parse(fs.readFileSync(
       path.join(path.dirname(meta.result_file), `${sid}.${meta.launch_id}.claude-operation.json`),
@@ -1938,7 +1938,7 @@ test("observeAgentDone: 送信前の古い event / 初回 prompt done を follow
         `dispatch receipt に submit_residue 観測を含む: ${JSON.stringify(receipt)}`,
       );
       const observation = await core.observeAgentDone(sid, { cursor: receipt.event_cursor, timeout: 0 });
-      assert.equal(observation.outcome, "timeout", `古い event を拾っていない: ${JSON.stringify(observation)}`);
+      assert.equal(observation.outcome, "running", `古い event を拾っていない: ${JSON.stringify(observation)}`);
       assert.equal(observation.turn_id, null, `古い event を完了扱いしない: ${JSON.stringify(observation)}`);
       assert.match(fs.readFileSync(sessionLogPath(sid), "utf8"), /FOLLOWUP_BODY/, "follow-up の出力は送信されている");
     } finally {

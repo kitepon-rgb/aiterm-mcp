@@ -3139,7 +3139,9 @@ export interface AgentWaitObservation {
   session_id: string;
   launch_id: string;
   vendor: AgentKind;
-  outcome: "done" | "timeout" | "closed";
+  // running は timeout=0（待たずに一度だけ観測する照会）専用の「まだ終わっていない」。
+  // timeout は「指定秒だけ待って終わらなかった」で、両者を1語に潰さない（ADR 0018）。
+  outcome: "done" | "running" | "timeout" | "closed";
   operation_id: string | null;
   vendor_session_id: string | null;
   turn_id: string | null;
@@ -3208,7 +3210,9 @@ export async function observeAgentDone(
       }
       if (scanned.event) return observation("done", scanned.event);
     }
-    if (performance.now() >= deadline) return observation("timeout");
+    // timeout=0 は「待たずに一度だけ見る」照会＝未完了は失敗ではなく running。
+    // 1秒以上を指定した待機の未完了は従来どおり timeout で、待ち方の意味は変えない。
+    if (performance.now() >= deadline) return observation(timeout === 0 ? "running" : "timeout");
     await sleep(AGENT_DONE_POLL_MS);
   }
 }

@@ -122,12 +122,12 @@ test("observe: 待機後に届いたcodex eventでdone", { skip: !posix }, async
   });
 });
 
-test("observe: 起動前のstale eventは境界の外＝timeout", { skip: !posix }, async () => {
+test("observe: 起動前のstale eventは境界の外＝running", { skip: !posix }, async () => {
   await withStateRoot(async (agents) => {
     const { eventPath } = writeMeta(agents, "s2", "codex");
     fs.appendFileSync(eventPath, codexEvent("s2"));
     const r = await core.observeAgentDone("s2", { timeout: 0 });
-    assert.equal(r.outcome, "timeout");
+    assert.equal(r.outcome, "running");
     assert.equal(r.turn_id, null);
   });
 });
@@ -175,7 +175,7 @@ test("observe: 別operation_idのeventは回収しない（誤帰属拒否）", 
     const { eventPath } = writeMeta(agents, "s6", "claude");
     fs.appendFileSync(eventPath, claudeEvent("s6", { operation_id: OPID2 }));
     const r = await core.observeAgentDone("s6", { operation_id: OPID, timeout: 0 });
-    assert.equal(r.outcome, "timeout");
+    assert.equal(r.outcome, "running");
     assert.equal(r.operation_id, OPID);
   });
 });
@@ -258,7 +258,7 @@ test("observe: cursor境界より前のeventは不可視", { skip: !posix }, asy
     fs.appendFileSync(eventPath, codexEvent("s13"));
     const boundary = fs.statSync(eventPath).size;
     const r = await core.observeAgentDone("s13", { cursor: boundary, timeout: 0 });
-    assert.equal(r.outcome, "timeout");
+    assert.equal(r.outcome, "running");
   });
 });
 
@@ -299,13 +299,64 @@ test("cli: timeoutはreceiptを出しつつexit 3（exit≠完了）", { skip: !
   const { base, agents } = makeStateRoot();
   try {
     writeMeta(agents, "c2", "codex");
-    const r = runCli(["--session", "c2", "--timeout", "0"], base);
+    const r = runCli(["--session", "c2", "--timeout", "1"], base);
     assert.equal(r.status, 3, r.stderr);
     const out = JSON.parse(r.stdout.trim());
     assert.equal(out.outcome, "timeout");
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }
+});
+
+// --timeout 0 は「待たずに一度だけ見る」照会。未完了は失敗ではなく running で、
+// 待って終わらなかった timeout と1語に潰さない（潰すと親が異常と読んで様子見をやめる）。
+test("cli: timeout 0の未完了はrunningでexit 5（timeoutと別語）", { skip: !posix }, async () => {
+  const { base, agents } = makeStateRoot();
+  try {
+    writeMeta(agents, "c8", "codex");
+    const r = runCli(["--session", "c8", "--timeout", "0"], base);
+    assert.equal(r.status, 5, r.stderr);
+    const out = JSON.parse(r.stdout.trim());
+    assert.equal(out.outcome, "running");
+    assert.equal(out.turn_id, null);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("cli: timeout 0でも完了済みならdoneでexit 0", { skip: !posix }, async () => {
+  const { base, agents } = makeStateRoot();
+  try {
+    const { eventPath } = writeMeta(agents, "c9", "codex");
+    fs.appendFileSync(eventPath, codexEvent("c9"));
+    const r = runCli(["--session", "c9", "--cursor", "0", "--timeout", "0"], base);
+    assert.equal(r.status, 0, r.stderr);
+    const out = JSON.parse(r.stdout.trim());
+    assert.equal(out.outcome, "done");
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// 照会経路でも「知らないsession」をrunningへ倒さない。倒すと打ち間違えたsession名が
+// 永久に「まだ走ってる」と報告され、親が存在しない子を待ち続ける。
+test("cli: timeout 0でも未知sessionはエラー（runningへ倒さない）", { skip: !posix }, async () => {
+  const { base } = makeStateRoot();
+  try {
+    const r = runCli(["--session", "nosuch", "--timeout", "0"], base);
+    assert.equal(r.status, 1, r.stderr);
+    const out = JSON.parse(r.stdout.trim());
+    assert.equal(out.ok, false);
+    assert.notEqual(out.outcome, "running");
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("cli: exit codeは全outcomeで相異なる＝素通しでdoneに化けない", { skip: !posix }, async () => {
+  const codes = { done: 0, running: 5, timeout: 3, closed: 4 };
+  assert.equal(new Set(Object.values(codes)).size, Object.keys(codes).length, "exit codeの重複なし");
+  assert.ok(!Object.entries(codes).some(([k, v]) => k !== "done" && v === 0), "done以外に0を割り当てない");
 });
 
 test("cli: 待機中のsession closeはreceiptを出しつつexit 4", { skip: !posix }, async () => {

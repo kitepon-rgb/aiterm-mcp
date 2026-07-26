@@ -2,6 +2,20 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **v0.20.0（2026-07-26・公開待ち）**: `aiterm-wait`の`outcome`へ`running`（exit 5）を追加。
+> `--timeout 0`は以前から「待たずに一度だけ観測する照会」として動いていたが、未完了を
+> `timeout`（既定600秒待って終わらなかった）と同じ語で返していたため、軽い照会の答えが
+> 失敗・異常として親へ届き、「投げる→自分の作業→一度だけ様子見→まだなら作業へ戻る」が
+> 語彙として存在しなかった。`running`は`timeout=0`の未完了だけに割り当て、1秒以上の待機の
+> 未完了は`timeout`のまま＝待ち方の意味は変えない。outcome→exit codeの対応表は全outcomeを
+> 型で網羅強制する（語を足して表を直し忘れると`undefined`からexit 0になり、**未完了が完了として
+> 親へ届く**。不足させると実際にcompile errorになることを確認済み）。`closed`と未知sessionは
+> `running`へ倒さない。照会はreceipt・tool descriptionで宣伝せず、押し込み機構を持たない親向けの
+> 逃げ道としてREADMEにだけ置く＝ADR 0017で排した「親が子のお守りをする」誘惑を戻さない。
+> MCPの公開toolとschemaは不変で、影響は`aiterm-wait`のreceiptだけに閉じる。設計はADR 0018。
+> `aiterm.agent-wait-result.v1`のoutcome語彙が増えるためpatchでは出さずminor bump（0.19.3→0.20.0）。
+> 検証: local full regression 311/311（新規4件込み）。
+>
 > **v0.19.3（2026-07-26公開）**: 「非ブロックdispatchが要なのに親が待つ使い方に流れる」という
 > 実運用報告の還流。案内の文型が原因で、①全descriptionが「即返る」の直後に完了待ち手順を続けて
 > dispatch→waitを一続きの手順に見せ、「待たなくてよい」という許諾がどこにも無かった

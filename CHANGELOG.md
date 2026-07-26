@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-07-26
+
+### Added
+
+- `aiterm-wait` の outcome に `running`（まだ終わっていない）を追加。exit code は 5。
+  `--timeout 0` は以前から「待たずに一度だけ観測する照会」として動いていたが、未完了を
+  `timeout`（既定600秒待って終わらなかった）と同じ語で返していたため、軽い照会の答えが
+  失敗・異常として親へ届いていた。これで「投げる → 自分の作業をする → 一度だけ様子を見る →
+  まだなら作業へ戻る」が語彙として表現できる（ADR 0018）。
+
+### Changed
+
+- outcome → exit code の対応表を型で網羅強制。語を足して表を直し忘れると `undefined` から
+  exit 0 になり、未完了が完了として親へ届く。その取りこぼしを compile error で止める。
+
+### Unchanged
+
+- 1秒以上を指定した待機の未完了は従来どおり `timeout` / exit 3。待ち方の意味は変えない。
+- `done`=0 / `timeout`=3 / `closed`=4 / エラー=1、MCP の公開 tool と schema も変更なし。
+- 照会は receipt・tool description で宣伝しない。押し込み機構を持たない親向けの逃げ道として
+  README にだけ置き、ADR 0017 で排した「親が子のお守りをする」誘惑を戻さない。
+
 ## [0.19.3] - 2026-07-26
 
 ### Changed
