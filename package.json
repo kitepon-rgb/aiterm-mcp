@@ -46,6 +46,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "mcpb:build": "npm run build && node scripts/build-mcpb.mjs && npm ci --omit=dev --ignore-scripts --no-audit --no-fund --prefix dist/mcpb-stage/server && npx --yes @anthropic-ai/mcpb@2.1.2 validate dist/mcpb-stage/manifest.json && npx --yes @anthropic-ai/mcpb@2.1.2 pack dist/mcpb-stage dist/aiterm-mcp.mcpb",
     "prepublishOnly": "npm run build",
     "start": "node dist/index.js",
     "test": "npm run build && node --test test/*.test.mjs"

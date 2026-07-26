@@ -13,25 +13,23 @@ output) is already committed — these steps activate it.
 
 ## Status (live)
 
-> **v0.19.0（2026-07-19公開）**: managed Claude approval relayを追加し、公開面を
-> 13 toolsへ更新した。公開commit `96d461c`、tag CI `29682309390` success、npm latest=0.19.0、
-> GitHub Release公開済み、Official MCP Registry workflow `29682448833` success。registry由来
-> 隔離installとmacOS global installでversion・3 bins・13 tools・approval schema・dist一致を確認済み。
+> **v0.20.0（2026-07-26公開）**: npm・GitHub Release・Official MCP Registryで公開済み。
+> `package.json`と`server.json`は0.20.0で同期し、Official MCP Registryのlatest entryもactive。
 
 Done and verified:
 
-- ✅ **npm `0.19.0` is latest** — provenance publish completed in tag CI `29682309390`; registry and global installs verified on 2026-07-19.
-- ✅ **Official MCP Registry** — `v0.19.0` registration workflow `29682448833` completed successfully through GitHub OIDC.
-- ✅ **mcp.so** — submitted/listed (with the square `.github/avatar.png`).
-- ✅ **GitHub topic** `mcp-server` added; **v0.19.0 Release** published after npm availability was confirmed.
+- ✅ **npm `0.20.0` is latest** — provenance publish and public registry entry confirmed on 2026-07-26.
+- ✅ **Official MCP Registry** — `io.github.kitepon-rgb/aiterm-mcp` 0.20.0 is active and latest.
+- ⚠️ **mcp.so** — already listed; do not submit a duplicate. The current card is stale (6 tools / 4-layer completion), so update or refresh the existing listing.
+- ✅ **GitHub topic** `mcp-server` added; **v0.20.0 Release** is public.
 - 🔄 **awesome-mcp-servers** — PR [#7620](https://github.com/punkpeye/awesome-mcp-servers/pull/7620) open (awaiting maintainer merge).
 - ✅ **Announced** on r/mcp.
 
-Remaining — optional or passive:
+Remaining:
 
-- ⏳ **Glama / PulseMCP** — auto-ingest from the Official Registry; no action needed.
+- ⬜ **Glama** — directory search did not surface the repository on 2026-07-26. Submit with GitHub OAuth and verify ownership; `glama.json` is already present.
+- 🔄 **Smithery** — current publishing requires a public Streamable HTTP URL or a prebuilt `.mcpb` for local stdio servers. The MCPB build is now prepared and validated; authenticated publish remains.
 - ⬜ **Show HN / X / dev.to** — optional extra reach (drafts below).
-- ⬜ **Smithery** — optional (interactive CLI login).
 - ⬜ **Animated demo GIF** — needs a real SSH target + a client-UI recording; the README currently shows real captured text instead.
 
 The lettered steps below are kept as a re-run reference and for the announcement drafts.
@@ -81,28 +79,44 @@ mcp-publisher publish              # reads ./server.json
 Optional: add this as a CI step on the publish job (OIDC) so every release
 re-registers automatically.
 
-## C. mcp.so (largest marketplace, ~20K servers)
+## C. mcp.so
 
-Submit at https://mcp.so/submit (GitHub login). Lead the blurb with the
-**persistent-session / SSH** wedge, not "tmux MCP", to stand out from the 4+
-existing tmux servers.
+The server is already listed. Do **not** submit it again. Sign in and update or
+refresh the existing entry so it reflects the current 13-tool surface and
+completion model. The submission form requires a repository URL; the name is
+optional. The free route is queued review with random placement and nofollow;
+the paid route shown on 2026-07-26 was a one-time immediate/featured option.
 
 ## D. Glama (https://glama.ai/mcp/servers)
 
-`glama.json` (maintainers) is already in the repo. Submit the repo URL, then run
-**Claim ownership**. This also unlocks the Glama quality badge that the
-awesome-mcp-servers PR expects.
+`glama.json` (maintainers) is already in the repo. Submit the repo URL while
+authenticated with GitHub, then verify ownership. Glama's current methodology
+checks write/admin access through GitHub OAuth and clones, builds, runs, and
+scans the repository. A failed inferred build may leave a page present but
+withhold it from search, so a successful submit is not the final verification.
 
 ## E. Smithery (https://smithery.ai)
 
+The old GitHub-repository publishing flow is no longer sufficient for this
+stdio package. Smithery currently accepts either:
+
+- a public HTTPS Streamable HTTP endpoint, or
+- a prebuilt `.mcpb` bundle for a local stdio server.
+
+aiterm-mcp is a local stdio package. Build its bundle with:
+
 ```bash
-smithery auth login
-smithery namespace create kitepon-rgb
-smithery mcp publish ... -n kitepon-rgb/aiterm-mcp
+npm run mcpb:build
 ```
 
-Lower priority (Smithery's value peaks for hosted HTTP servers), but a cheap
-extra surface.
+The command validates `mcpb/manifest.json`, bundles the compiled server and
+production dependencies, and writes `dist/aiterm-mcp.mcpb`. The bundle's
+archive integrity and staged initialize / tools-list smoke (v0.20.0, 13 tools)
+passed on 2026-07-26. Publish after Smithery authentication:
+
+```bash
+smithery mcp publish dist/aiterm-mcp.mcpb -n kitepon-rgb/aiterm-mcp
+```
 
 ## F. awesome-mcp-servers PR (punkpeye/awesome-mcp-servers)
 
@@ -116,14 +130,14 @@ terminal/command-line category, alphabetical, then open the PR. Suggested line:
 (Legend: 🟩 = TypeScript/Node, 🏠 = local service. Confirm the current legend in
 that repo's README before submitting; add the Glama badge from step D.)
 
-## G. Add the missing GitHub topic
+## G. GitHub topic
+
+Completed on 2026-07-26. The repository now has all requested topics:
+`mcp`, `model-context-protocol`, `tmux`, `claude-code`, and `codex-cli`.
 
 ```bash
-gh repo edit kitepon-rgb/aiterm-mcp --add-topic mcp-server
+gh repo edit kitepon-rgb/aiterm-mcp --add-topic codex-cli
 ```
-
-(The canonical discovery topic many curators filter on; the other 18 are
-already set.)
 
 ## H. Backfill the v0.3.1 GitHub Release (closes the timeline gap)
 
@@ -167,7 +181,7 @@ on the SSH-persistence wedge, not "another tmux MCP".
 > token-reduced (per-command reducers for git/grep/pytest), and there's a
 > 4-layer completion detector so the AI knows when a command is actually done.
 >
-> Eleven tools (6 PTY primitives + 4 interactive agent launchers + read-only diagnostics), no clone/build
+> Thirteen tools, no clone/build
 > (`npx -y aiterm-mcp`), works on Linux/WSL2/macOS and native Windows (via a WSL
 > tmux bridge). MIT.
 >

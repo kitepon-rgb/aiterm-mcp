@@ -1,3 +1,5 @@
+> **Claude Code から Codex CLI の対話 TUI を操作する——スラッシュコマンドや [`$imagegen`](https://learn.chatgpt.com/docs/image-generation#generate-or-edit-an-image) のようなスキルまで、MCP越しに使える。**
+
 <p align="center">
   <img src=".github/og.svg" alt="aiterm-mcp — AI が握る 1 本の永続 MCP 端末。その中へ他のコーディングエージェント（Claude/Codex/Grok/Composer）を起動する（tmux ベースの stdio MCP サーバ）" width="100%">
 </p>
@@ -6,6 +8,7 @@
 
 [![CI](https://github.com/kitepon-rgb/aiterm-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/kitepon-rgb/aiterm-mcp/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/aiterm-mcp.svg)](https://www.npmjs.com/package/aiterm-mcp)
+[![週間ダウンロード](https://img.shields.io/npm/dw/aiterm-mcp.svg)](https://www.npmjs.com/package/aiterm-mcp)
 [![node](https://img.shields.io/node/v/aiterm-mcp)](https://nodejs.org)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![install size](https://packagephobia.com/badge?p=aiterm-mcp)](https://packagephobia.com/result?p=aiterm-mcp)
@@ -20,6 +23,69 @@
 >
 > *MCP = Model Context Protocol — Claude Code のようなツールが AI に機能を差し込むためのオープン標準。*
 
+[クオ（@QLyun35332）](https://x.com/QLyun35332)が開発・メンテナンスしています。
+
+## MCPクライアントへ導入
+
+cloneもビルドも不要。どのクライアントでも公開パッケージを次のコマンドで起動する:
+
+```bash
+npx -y aiterm-mcp
+```
+
+**Node.js ≥ 18** と **tmux** が必要。Codexを操作する場合は、Codex CLIの導入と認証も必要。
+
+### Claude Code
+
+ユーザー設定へ追加する:
+
+```bash
+claude mcp add --scope user --transport stdio aiterm -- npx -y aiterm-mcp
+```
+
+プロジェクト設定として共有する場合は、`.mcp.json` に次を置く:
+
+```json
+{
+  "mcpServers": {
+    "aiterm": {
+      "command": "npx",
+      "args": ["-y", "aiterm-mcp"]
+    }
+  }
+}
+```
+
+### Claude Desktop
+
+`claude_desktop_config.json` に次のサーバーを追加する:
+
+```json
+{
+  "mcpServers": {
+    "aiterm": {
+      "command": "npx",
+      "args": ["-y", "aiterm-mcp"]
+    }
+  }
+}
+```
+
+### Cursor
+
+プロジェクトでは `.cursor/mcp.json`、全体設定では `~/.cursor/mcp.json` に保存する:
+
+```json
+{
+  "mcpServers": {
+    "aiterm": {
+      "command": "npx",
+      "args": ["-y", "aiterm-mcp"]
+    }
+  }
+}
+```
+
 **工場での役割:** aiterm-mcpはdotagents開発工場が管理する自作コア10製品の一つです。
 永続PTYと外部agent実行レーンを所有し、dotagentsが製品横断の導入・統合契約を所有します。
 
@@ -27,12 +93,14 @@
 
 13 ツール: 6 つの **PTY ツール**（`pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list`）で 1 本の永続端末を開き・操作し・読む。加えて 4 つの **エージェント起動ツール**（`claude_agent` / `codex_agent` / `grok_agent` / `composer_agent`）が別のコーディングエージェントの TUI を新しい端末の中に起動し、`claude_turn`がdurable caller向けの構造化issue／recoveryを、`claude_approval`がmanaged Claudeの相関済み承認UI中継を、`diagnostics`が安全なfactory readinessを返す。バックエンドは **tmux** なので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
 
-**v0.19.2 を 2026-07-20 に公開。** v0.19系では相関済みmanaged Claude approval中継を追加し、
-複数行shell配送を維持し、native Windowsのfactory diagnosticsを拡張しました。v0.18系では
-`submit_residue`、tmux bracketed paste、busyなCodex/Claude画面をreadyと数えないgateにより
-agent dispatchを強化しました。v0.16/0.17以来、親エージェントはaiterm上で一切ブロックしません:
+**v0.20.0 を 2026-07-26 に公開。** 待たずに一度だけ観測する
+`aiterm-wait --timeout 0` の未完了を、実際に待って終わらなかった`timeout`と区別し、
+`running`（exit 5）で返すようにしました。v0.19系では相関済みmanaged Claude approval中継を追加し、
+複数行shell配送を維持し、native Windowsのfactory diagnosticsを拡張しました。
+v0.16/0.17以来、親エージェントはaiterm上で一切ブロックしません:
 agent session への send は常に非ブロック dispatch になり、完了待ちは `aiterm-wait` 一本
-（exit code が receipt の outcome を映す: 0=done / 3=timeout=未完了 / 4=closed）、初回 prompt 付き
+（exit code が receipt の outcome を映す: 0=done / 3=timeout=未完了 /
+4=closed / 5=running=待たない観測）、初回 prompt 付き
 launch は structured receipt にコピペ可能な `wait_command` を含む。factory diagnostics と local
 runtime-error store は canonical dotagents config の `collection.enabled: true` が明示された
 場合だけ収集し、既定OFF、network送信は行いません。tag起点CIのnpm provenance（OIDC Trusted
@@ -134,13 +202,7 @@ $ aiterm-wait --session codex1 --cursor <event_cursor>   # exit 0=done / 3=timeo
 
 上の採取で私が触ったのは 2 本の `⋮` 行（長い head/tail を README 用に省略）と長すぎる grep 行 1 本の truncate だけ——`〈…〉` マーカー・トークン数・各 `is_complete` はツールが出した通り。（`until` は末尾スペース無しの `">>>"` を使う——採取されるプロンプトは末尾が削られるので `">>> "` だと外れて `timeout` に落ちる。）ネスト中は `until`（内側プロンプト）か `mark: true` を渡すこと——そこでは quiescence が原理的に効かないため（[完了検出](#完了検出5-層) / [既知の制約](#既知の制約バグではなく仕様)）。同じ tmux ソケットに人が `attach` すれば、これらをライブで覗ける（[人が覗く](#人が覗く)）。
 
-## クイックスタート（約60秒）
-
-Claude Code なら 1 コマンドで登録——clone もビルドも不要、`npx` が毎回取得して起動する:
-
-```bash
-claude mcp add --scope user --transport stdio aiterm -- npx -y aiterm-mcp
-```
+## 最初の実行（約60秒）
 
 Claude Code を再起動して、接続を確認:
 
@@ -170,7 +232,7 @@ npm i -g aiterm-mcp
 claude mcp add --scope user --transport stdio aiterm -- aiterm-mcp
 ```
 
-`~/.claude.json` に登録され、初回に承認プロンプトが出る。**他の MCP クライアント**（Cursor / Cline / Claude Desktop …）でも同様に動くはず——stdio で `npx -y aiterm-mcp`（または `aiterm-mcp`）を起動するだけ。**Node ≥ 18** と **tmux** が必要——[要件](#要件)参照。
+`~/.claude.json` に登録され、初回に承認プロンプトが出る。クライアント別のJSONは[MCPクライアントへ導入](#mcpクライアントへ導入)を参照。
 
 ## ヘッドレス: 端末に人が居ない
 

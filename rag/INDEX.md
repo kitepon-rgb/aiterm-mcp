@@ -4,9 +4,10 @@ AIターミナル直接操作プロジェクトの調査一次資料。`rag/sour
 忠実 Markdown 化した版（front-matter にメタdata）。
 **設計/実装の前にまずここを読み、該当資料を再利用する（再フェッチしない）。**
 
-- 総数: **83** 件 / 更新: 2026-07-09
+- 総数: **93** 件 / 更新: 2026-07-26
 - 取り込み: `python3 rag/ingest.py <sources.json>` → `python3 rag/build_index.py`
 - 統合分析: [briefs/](briefs/)
+- [MCPディレクトリ露出調査（2026-07-26）](briefs/mcp-directory-discoverability-2026-07.md) — Glama・mcp.so・Smitheryの現行登録要件、掲載状態、README設定根拠。
 
 ## 既存実装 / 流用調査 (prior-art) — 26件
 
@@ -118,11 +119,9 @@ AIターミナル直接操作プロジェクトの調査一次資料。`rag/sour
 - [expect(1) man page (Don Libes)](sources/completion-detection/expect-man-page.md) — Don LibesによるExpect公式man。expect/spawn/sendとglob/-re/-exパターン、timeoutやprompt照合の挙動。
   - 出典: <https://www.tcl-lang.org/man/expect5.31/expect.1.html> (man, 76740 chars)
   - 効きどころ: prompt正規表現待ち受けの原典。pexpectが模した照合セマンティクスとtimeout設計の権威ソース。
-- [Grok/Composer agent_done implementation probe](sources/completion-detection/grok-agent-done-implementation-probe-2026-07-07.md) — aiterm-mcp に Grok/Composer 用 managed GROK_HOME + fake HOME + Stop hook wrapper を実装し、追加敵対的検証で GROK_HOME 全体共有案を棄却、OAuth auth.json/auth.json.lockだけを通常Grok homeと共有する実装に修正した（0.9.1当時）。この方式は2026-07-14に廃止し、現在は`GROK_AUTH_PATH`で通常正本を渡す。grok login 後に Grok/Composer TUI smoke、通常 headless 並行 smoke、同一cwdのCodex/Grok/Composer並列agent_done smoke、MCP tools/call smoke、TUI ready gate 実装、起動直後即送信 smokeが通り、v0.9.1 finalization 後の回帰は168件成功した。
-
-- [Grok auth-path atomic-replace correction](briefs/agent-cli-done-detection.md) — 2026-07-14 の実機probeでmanaged auth symlinkがatomic replaceにより切断されることを確認。managed isolationを維持し、公式`GROK_AUTH_PATH`へ検証済み通常auth正本を渡し、lock/copy-backをvendorへ委ねる契約へ更新した。
+- [Grok/Composer agent_done implementation probe](sources/completion-detection/grok-agent-done-implementation-probe-2026-07-07.md) — aiterm-mcp に Grok/Composer 用 managed GROK_HOME + fake HOME + Stop hook wrapper を実装し、追加敵対的検証で GROK_HOME 全体共有案を棄却、OAuth auth.json/auth.json.lock だけを通常 Grok home と共有する実装に修正した。grok login 後に Grok/Composer TUI smoke、通常 headless 並行 smoke、同一cwdのCodex/Grok/Composer並列agent_done smoke、MCP tools/call smoke、TUI ready gate 実装、起動直後即送信 smokeが通り、v0.9.1 finalization 後の回帰は168件成功した。
   - 出典: <local:aiterm-mcp-grok-agent-done-implementation-2026-07-07> (local_probe, 6416 chars)
-  - 効きどころ: Grok/Composer の TUI hook route 実装状況、0.9.1当時のOAuth credential/lock共有と2026-07-14の廃止理由、実 TUI smoke、TUI ready gate、agent_done 負系/race/security/schema/root-symlink 回帰を固定する。
+  - 効きどころ: Grok/Composer の TUI hook route 実装状況、OAuth credential/lock 共有の採用理由、実 TUI smoke、TUI ready gate、agent_done 負系/race/security/schema/root-symlink 回帰を固定する。
 - [Grok agent stdio ACP as persistent structured agent protocol](sources/completion-detection/grok-agent-stdio-acp.md) — Grok の `grok agent stdio` は JSON-RPC/ACP で永続agent processを操作する。docs上は `session/prompt` response をターン完了境界として扱えるが、実装スパイクは未実施。
   - 出典: <local:~/.grok/docs/user-guide/15-agent-mode.md> (local_vendor_docs, 2699 chars)
   - 効きどころ: GrokをTUIではなく構造化プロトコルで永続操作する長期候補。PTY画面スクレイピングやHook設置を避けられる可能性はあるが、現時点では docs 確認のみ。
@@ -274,7 +273,35 @@ AIターミナル直接操作プロジェクトの調査一次資料。`rag/sour
   - 出典: <https://invisible-island.net/xterm/xterm-paste64.html> (spec, 16092 chars)
   - 効きどころ: PTYへ「貼り付け相当」のテキストを送る際、ブラケットペーストの開始/終了マーカーと、その保護が制御文字混入には無力である(=送る前に我々がサニタイズ責任を持つ)という設計上の前提を一次仕様で確定できる。
 
-## tmux runtime contract — 2件
+## discoverability — 10件
 
-- [tmux 3.4 `paste-buffer` source](sources/tmux/tmux-3.4-paste-buffer-source.md) — `-S`非対応、`-r`でLFを保持し、buffer本文は無変換でpaneへ書く一次source抜粋。
-- [tmux 3.7b `paste-buffer` source](sources/tmux/tmux-3.7b-paste-buffer-source.md) — 既定は`vis(3)`変換、`-S`で無変換、`-r`でLFを保持する一次source抜粋。
+- [Build a desktop extension with MCPB](sources/discoverability/claude-build-mcpb.md) — Claude Desktop向けMCPBの公式build・install・platform guidance。
+  - 出典: <https://claude.com/docs/connectors/building/mcpb> (docs, 14121 chars)
+  - 効きどころ: ローカルstdioサーバーをMCPBで配布する現行公式手順。
+- [Connect Claude Code to tools via MCP](sources/discoverability/claude-code-mcp-configuration.md) — Claude Codeにstdio MCPサーバーを登録する公式手順。
+  - 出典: <https://docs.anthropic.com/en/docs/claude-code/mcp> (docs, 81109 chars)
+  - 効きどころ: READMEのClaude Code向け設定例の一次資料。
+- [Connect to local MCP servers](sources/discoverability/claude-desktop-local-mcp-server.md) — Claude Desktopでローカルstdio MCPサーバーを設定する公式手順。
+  - 出典: <https://modelcontextprotocol.io/docs/develop/connect-local-servers> (docs, 13983 chars)
+  - 効きどころ: READMEのClaude Desktop向け設定JSONの一次資料。
+- [Image generation in Codex](sources/discoverability/codex-imagegen-skill.md) — Codexで$imagegenを呼び出す公式資料。
+  - 出典: <https://learn.chatgpt.com/docs/image-generation#generate-or-edit-an-image> (docs, 32059 chars)
+  - 効きどころ: Claude CodeからCodex CLIの対話機能を操作する差別化表現の根拠。
+- [Glama MCP Server Review Methodology](sources/discoverability/glama-mcp-methodology.md) — GlamaのGitHub認証、所有権確認、ビルド・実行・検査方法。
+  - 出典: <https://glama.ai/mcp/methodology> (docs, 12045 chars)
+  - 効きどころ: Glama登録要件と検索掲載条件の一次資料。
+- [Submit MCP Server to mcp.so](sources/discoverability/mcp-so-submit-server.md) — mcp.soのサーバー登録フォームと掲載プラン。
+  - 出典: <https://mcp.so/submit?type=server> (web, 2350 chars)
+  - 効きどころ: mcp.soの現行必須フィールドと無料・有料掲載条件の実画面資料。
+- [MCPB Manifest Specification](sources/discoverability/mcpb-manifest-specification.md) — MCPB manifest.json v0.3の必須・任意フィールドと実行設定。
+  - 出典: <https://raw.githubusercontent.com/modelcontextprotocol/mcpb/main/MANIFEST.md> (github_readme, 24558 chars)
+  - 効きどころ: Smithery向けaiterm-mcp MCPB manifestの一次仕様。
+- [MCP Bundles README](sources/discoverability/mcpb-readme.md) — MCPBの構造、Node.js bundle、依存同梱、pack・test手順。
+  - 出典: <https://raw.githubusercontent.com/modelcontextprotocol/mcpb/main/README.md> (github_readme, 8513 chars)
+  - 効きどころ: aiterm-mcpの再現可能なMCPB buildとsmoke手順の一次資料。
+- [Smithery CLI](sources/discoverability/smithery-cli.md) — Smithery CLIの認証・公開コマンドとMCPB関連機能。
+  - 出典: <https://smithery.ai/docs/concepts/cli> (docs, 7305 chars)
+  - 効きどころ: Smithery登録の実行経路を確認する一次資料。
+- [Publish an MCP server on Smithery](sources/discoverability/smithery-publish-server.md) — SmitheryのURL公開とローカルstdio向けMCPB公開手順。
+  - 出典: <https://smithery.ai/docs/build/publish> (docs, 9482 chars)
+  - 効きどころ: aiterm-mcpをSmitheryへ登録する際の成果物要件の一次資料。

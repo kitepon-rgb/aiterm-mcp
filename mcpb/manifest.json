@@ -1,0 +1,106 @@
+{
+  "$schema": "https://raw.githubusercontent.com/modelcontextprotocol/mcpb/main/dist/mcpb-manifest-v0.3.schema.json",
+  "manifest_version": "0.3",
+  "name": "aiterm-mcp",
+  "display_name": "aiterm-mcp",
+  "version": "0.20.0",
+  "description": "A tmux-backed persistent terminal MCP server that can launch and drive interactive Claude, Codex, Grok, and Composer TUIs.",
+  "long_description": "Give an AI one persistent terminal for SSH, containers, REPLs, and interactive coding-agent TUIs. Claude Code can launch Codex CLI and drive its interactive features through the same MCP session. Reads are token-reduced, sessions survive client restarts, and humans can attach to the shared tmux session.",
+  "author": {
+    "name": "Quo",
+    "url": "https://x.com/QLyun35332"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kitepon-rgb/aiterm-mcp"
+  },
+  "homepage": "https://github.com/kitepon-rgb/aiterm-mcp#readme",
+  "documentation": "https://github.com/kitepon-rgb/aiterm-mcp#install-in-your-mcp-client",
+  "support": "https://github.com/kitepon-rgb/aiterm-mcp/issues",
+  "icon": "icon.png",
+  "server": {
+    "type": "node",
+    "entry_point": "server/dist/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/server/dist/index.js"
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "pty_open",
+      "description": "Open one persistent tmux-backed terminal session."
+    },
+    {
+      "name": "pty_send",
+      "description": "Send text to a persistent terminal or dispatch a turn to a managed agent."
+    },
+    {
+      "name": "pty_read",
+      "description": "Read token-reduced terminal output or a managed agent transcript."
+    },
+    {
+      "name": "pty_key",
+      "description": "Send a control or navigation key to a terminal session."
+    },
+    {
+      "name": "pty_close",
+      "description": "Close one persistent terminal session idempotently."
+    },
+    {
+      "name": "pty_list",
+      "description": "List the persistent terminal sessions owned by aiterm."
+    },
+    {
+      "name": "claude_agent",
+      "description": "Launch an interactive Claude Code TUI in a managed persistent terminal."
+    },
+    {
+      "name": "codex_agent",
+      "description": "Launch an interactive Codex CLI TUI in a managed persistent terminal."
+    },
+    {
+      "name": "grok_agent",
+      "description": "Launch an interactive Grok TUI in a managed persistent terminal."
+    },
+    {
+      "name": "composer_agent",
+      "description": "Launch an interactive Composer TUI in a managed persistent terminal."
+    },
+    {
+      "name": "claude_turn",
+      "description": "Issue or recover a correlated managed Claude operation."
+    },
+    {
+      "name": "claude_approval",
+      "description": "Inspect and answer a correlated managed Claude approval prompt."
+    },
+    {
+      "name": "diagnostics",
+      "description": "Return a read-only, privacy-bounded factory readiness snapshot."
+    }
+  ],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "terminal",
+    "tmux",
+    "claude-code",
+    "codex-cli",
+    "agent-orchestration"
+  ],
+  "license": "MIT",
+  "compatibility": {
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
+    "runtimes": {
+      "node": ">=18.0.0"
+    }
+  },
+  "privacy_policies": []
+}

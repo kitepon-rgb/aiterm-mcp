@@ -1,0 +1,112 @@
+[
+  {
+    "url": "https://docs.anthropic.com/en/docs/claude-code/mcp",
+    "slug": "claude-code-mcp-configuration",
+    "topic": "discoverability",
+    "title": "Connect Claude Code to tools via MCP",
+    "source_type": "docs",
+    "tags": ["claude-code", "mcp", "configuration"],
+    "summary": "Claude Codeにstdio MCPサーバーを登録する公式手順。",
+    "relevance": "READMEのClaude Code向け設定例の一次資料。"
+  },
+  {
+    "url": "https://modelcontextprotocol.io/docs/develop/connect-local-servers",
+    "slug": "claude-desktop-local-mcp-server",
+    "topic": "discoverability",
+    "title": "Connect to local MCP servers",
+    "source_type": "docs",
+    "tags": ["claude-desktop", "mcp", "configuration"],
+    "summary": "Claude Desktopでローカルstdio MCPサーバーを設定する公式手順。",
+    "relevance": "READMEのClaude Desktop向け設定JSONの一次資料。"
+  },
+  {
+    "url": "https://docs.cursor.com/context/model-context-protocol",
+    "slug": "cursor-mcp-configuration",
+    "topic": "discoverability",
+    "title": "Cursor Model Context Protocol",
+    "source_type": "docs",
+    "tags": ["cursor", "mcp", "configuration"],
+    "summary": "CursorのMCP設定とmcp.jsonの公式資料。",
+    "relevance": "READMEのCursor向け設定JSONの一次資料。"
+  },
+  {
+    "url": "https://learn.chatgpt.com/docs/image-generation#generate-or-edit-an-image",
+    "slug": "codex-imagegen-skill",
+    "topic": "discoverability",
+    "title": "Image generation in Codex",
+    "source_type": "docs",
+    "tags": ["codex", "imagegen", "skills"],
+    "summary": "Codexで$imagegenを呼び出す公式資料。",
+    "relevance": "Claude CodeからCodex CLIの対話機能を操作する差別化表現の根拠。"
+  },
+  {
+    "url": "https://glama.ai/mcp/methodology",
+    "slug": "glama-mcp-methodology",
+    "topic": "discoverability",
+    "title": "Glama MCP Server Review Methodology",
+    "source_type": "docs",
+    "tags": ["glama", "mcp-directory", "submission"],
+    "summary": "GlamaのGitHub認証、所有権確認、ビルド・実行・検査方法。",
+    "relevance": "Glama登録要件と検索掲載条件の一次資料。"
+  },
+  {
+    "url": "https://mcp.so/submit?type=server",
+    "slug": "mcp-so-submit-server",
+    "topic": "discoverability",
+    "title": "Submit MCP Server to mcp.so",
+    "source_type": "web",
+    "tags": ["mcp-so", "mcp-directory", "submission"],
+    "summary": "mcp.soのサーバー登録フォームと掲載プラン。",
+    "relevance": "mcp.soの現行必須フィールドと無料・有料掲載条件の実画面資料。"
+  },
+  {
+    "url": "https://smithery.ai/docs/build/publish",
+    "slug": "smithery-publish-server",
+    "topic": "discoverability",
+    "title": "Publish an MCP server on Smithery",
+    "source_type": "docs",
+    "tags": ["smithery", "mcp-directory", "mcpb", "submission"],
+    "summary": "SmitheryのURL公開とローカルstdio向けMCPB公開手順。",
+    "relevance": "aiterm-mcpをSmitheryへ登録する際の成果物要件の一次資料。"
+  },
+  {
+    "url": "https://smithery.ai/docs/concepts/cli",
+    "slug": "smithery-cli",
+    "topic": "discoverability",
+    "title": "Smithery CLI",
+    "source_type": "docs",
+    "tags": ["smithery", "cli", "mcpb"],
+    "summary": "Smithery CLIの認証・公開コマンドとMCPB関連機能。",
+    "relevance": "Smithery登録の実行経路を確認する一次資料。"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/modelcontextprotocol/mcpb/main/MANIFEST.md",
+    "slug": "mcpb-manifest-specification",
+    "topic": "discoverability",
+    "title": "MCPB Manifest Specification",
+    "source_type": "github_readme",
+    "tags": ["mcpb", "manifest", "stdio", "distribution"],
+    "summary": "MCPB manifest.json v0.3の必須・任意フィールドと実行設定。",
+    "relevance": "Smithery向けaiterm-mcp MCPB manifestの一次仕様。"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/modelcontextprotocol/mcpb/main/README.md",
+    "slug": "mcpb-readme",
+    "topic": "discoverability",
+    "title": "MCP Bundles README",
+    "source_type": "github_readme",
+    "tags": ["mcpb", "node", "bundle", "distribution"],
+    "summary": "MCPBの構造、Node.js bundle、依存同梱、pack・test手順。",
+    "relevance": "aiterm-mcpの再現可能なMCPB buildとsmoke手順の一次資料。"
+  },
+  {
+    "url": "https://claude.com/docs/connectors/building/mcpb",
+    "slug": "claude-build-mcpb",
+    "topic": "discoverability",
+    "title": "Build a desktop extension with MCPB",
+    "source_type": "docs",
+    "tags": ["claude-desktop", "mcpb", "distribution"],
+    "summary": "Claude Desktop向けMCPBの公式build・install・platform guidance。",
+    "relevance": "ローカルstdioサーバーをMCPBで配布する現行公式手順。"
+  }
+]

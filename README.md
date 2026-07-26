@@ -1,3 +1,5 @@
+> **Drive Codex CLI's interactive TUI from Claude Code — including slash commands and skills such as [`$imagegen`](https://learn.chatgpt.com/docs/image-generation#generate-or-edit-an-image) — through MCP.**
+
 <p align="center">
   <img src=".github/og.svg" alt="aiterm-mcp — one persistent MCP terminal your AI drives, and launches other coding agents (Claude/Codex/Grok/Composer) into (tmux-backed stdio MCP server)" width="100%">
 </p>
@@ -6,6 +8,7 @@
 
 [![CI](https://github.com/kitepon-rgb/aiterm-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/kitepon-rgb/aiterm-mcp/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/aiterm-mcp.svg)](https://www.npmjs.com/package/aiterm-mcp)
+[![weekly downloads](https://img.shields.io/npm/dw/aiterm-mcp.svg)](https://www.npmjs.com/package/aiterm-mcp)
 [![node](https://img.shields.io/node/v/aiterm-mcp)](https://nodejs.org)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![install size](https://packagephobia.com/badge?p=aiterm-mcp)](https://packagephobia.com/result?p=aiterm-mcp)
@@ -20,6 +23,69 @@
 >
 > *MCP = Model Context Protocol — the open standard that lets tools like Claude Code plug capabilities into an AI.*
 
+Built and maintained by [Quo (@QLyun35332)](https://x.com/QLyun35332).
+
+## Install in your MCP client
+
+No clone or build is required. Each client launches the published package with:
+
+```bash
+npx -y aiterm-mcp
+```
+
+Requires **Node.js ≥ 18** and **tmux**. Driving Codex also requires the Codex CLI to be installed and authenticated.
+
+### Claude Code
+
+Add it for your user account:
+
+```bash
+claude mcp add --scope user --transport stdio aiterm -- npx -y aiterm-mcp
+```
+
+Or commit this as a project-scoped `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "aiterm": {
+      "command": "npx",
+      "args": ["-y", "aiterm-mcp"]
+    }
+  }
+}
+```
+
+### Claude Desktop
+
+Add this server to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "aiterm": {
+      "command": "npx",
+      "args": ["-y", "aiterm-mcp"]
+    }
+  }
+}
+```
+
+### Cursor
+
+Save this as `.cursor/mcp.json` for the project, or `~/.cursor/mcp.json` globally:
+
+```json
+{
+  "mcpServers": {
+    "aiterm": {
+      "command": "npx",
+      "args": ["-y", "aiterm-mcp"]
+    }
+  }
+}
+```
+
 **Factory role:** aiterm-mcp is one of the ten self-owned core products managed by
 the dotagents development factory. It owns the persistent PTY and external-agent
 execution lane; dotagents owns the cross-product installation and integration
@@ -29,14 +95,15 @@ contract.
 
 Thirteen tools: six **PTY tools** — `pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list` — to open, drive, and read one persistent terminal, four **agent launchers** — `claude_agent` / `codex_agent` / `grok_agent` / `composer_agent` — that each start another coding agent's TUI inside a fresh one, `claude_turn` for durable structured issue/recovery, `claude_approval` for correlated managed-Claude approval prompts, and `diagnostics` for safe factory readiness. The backend is **tmux**, so sessions survive even if the MCP server or the AI client restarts.
 
-**v0.19.2 was published on 2026-07-20.** The v0.19 line adds the correlated
-managed-Claude approval relay, preserves multiline shell delivery, and extends
-factory diagnostics on native Windows. The v0.18 line hardened agent dispatch
-with `submit_residue`, tmux bracketed paste, and a ready gate that rejects busy
-Codex/Claude screens. As of v0.16/0.17 a parent agent never blocks on aiterm:
+**v0.20.0 was published on 2026-07-26.** It distinguishes a non-blocking
+`aiterm-wait --timeout 0` observation (`running`, exit 5) from a real timed-out
+wait. The v0.19 line added the correlated managed-Claude approval relay,
+preserved multiline shell delivery, and extended factory diagnostics on native
+Windows. As of v0.16/0.17 a parent agent never blocks on aiterm:
 every send to an agent session is a non-blocking dispatch, completion is one
 universal `aiterm-wait` waiter whose exit codes mirror the receipt outcome
-(`0`=done / `3`=timeout, not finished / `4`=closed), and a launch with an
+(`0`=done / `3`=timeout, not finished / `4`=closed / `5`=running for a
+zero-time observation), and a launch with an
 initial prompt returns a ready-made `wait_command` in its structured receipt.
 Factory diagnostics and the local runtime-error store collect only when
 canonical dotagents config explicitly sets `collection.enabled: true`;
@@ -151,13 +218,7 @@ Nesting is just text you send in — here a Python REPL *inside* the same PTY (a
 
 The only edits to the captures above are the two `⋮` lines (a long head/tail run abbreviated for the README) and one over-long grep line truncated to fit — the `⟨…⟩` marker, the token counts, and every `is_complete` verdict are exactly what the tool printed. (Use `until: ">>>"` without a trailing space — the captured prompt is trimmed, so `">>> "` would miss and fall through to `timeout`.) While nested, pass `until` (the inner prompt) or `mark: true`, because quiescence cannot fire there by design — see [Completion detection](#completion-detection-5-layers) and [Known constraints](#known-constraints-by-design-not-bugs). A human can `attach` to the same tmux socket and watch any of this live (see [A human can watch](#a-human-can-watch)).
 
-## Quickstart (≈60 seconds)
-
-One command registers it in Claude Code — no clone, no build, `npx` fetches it each run:
-
-```bash
-claude mcp add --scope user --transport stdio aiterm -- npx -y aiterm-mcp
-```
+## First run (≈60 seconds)
 
 Restart Claude Code, then verify the connection:
 
@@ -187,7 +248,7 @@ npm i -g aiterm-mcp
 claude mcp add --scope user --transport stdio aiterm -- aiterm-mcp
 ```
 
-This registers it in `~/.claude.json`; you'll get an approval prompt the first time. **Any other MCP client** (Cursor, Cline, Claude Desktop, …) should work too — just launch `npx -y aiterm-mcp` (or `aiterm-mcp`) over stdio. Needs **Node ≥ 18** and **tmux** — see [Requirements](#requirements).
+This registers it in `~/.claude.json`; you'll get an approval prompt the first time. For client-specific JSON, see [Install in your MCP client](#install-in-your-mcp-client).
 
 ## Headless: no human at the terminal
 
