@@ -23,7 +23,7 @@
 >
 > *MCP = Model Context Protocol — the open standard that lets tools like Claude Code plug capabilities into an AI.*
 
-Built and maintained by [Quo](https://x.com/QLyun35332) at kitepon.dev.
+Built and maintained by [Quo](https://x.com/QLyun35332) at [kitepon.dev](https://kitepon.dev/en).
 
 ## Install in your MCP client
 
@@ -86,10 +86,10 @@ Save this as `.cursor/mcp.json` for the project, or `~/.cursor/mcp.json` globall
 }
 ```
 
-**Factory role:** aiterm-mcp is one of the ten self-owned core products managed by
-the dotagents development factory. It owns the persistent PTY and external-agent
-execution lane; dotagents owns the cross-product installation and integration
-contract.
+**Ownership boundary:** this repository owns the persistent PTY and external-agent
+execution lane. Cross-product installation and host integration are handled by
+[dotagents](https://github.com/kitepon-rgb/dotagents), the internal development
+toolchain behind kitepon.dev's products.
 
 **Measured, not claimed:** on this repo's own 203-test suite, a `pty_read` puts **~7.1× fewer tokens** in your context than the raw log — and the pass/fail verdict survives the fold. → [When to reach for it vs. the built-in shell](#when-to-reach-for-it-vs-the-built-in-shell)
 

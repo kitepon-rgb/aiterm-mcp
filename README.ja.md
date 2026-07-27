@@ -23,7 +23,7 @@
 >
 > *MCP = Model Context Protocol — Claude Code のようなツールが AI に機能を差し込むためのオープン標準。*
 
-kitepon.devを運営する[クオ（@QLyun35332）](https://x.com/QLyun35332)が
+[kitepon.dev](https://kitepon.dev/)を運営する[クオ（@QLyun35332）](https://x.com/QLyun35332)が
 開発・メンテナンスしています。
 
 ## MCPクライアントへ導入
@@ -87,8 +87,9 @@ claude mcp add --scope user --transport stdio aiterm -- npx -y aiterm-mcp
 }
 ```
 
-**工場での役割:** aiterm-mcpはdotagents開発工場が管理する自作コア10製品の一つです。
-永続PTYと外部agent実行レーンを所有し、dotagentsが製品横断の導入・統合契約を所有します。
+**所有境界:** 本repositoryは永続PTYと外部agent実行レーンを所有します。製品横断の導入と
+host統合は、kitepon.devの製品開発を支える内部基盤
+[dotagents](https://github.com/kitepon-rgb/dotagents)が担当します。
 
 **言葉でなく実測で:** このリポジトリ自身の 203 テストで、`pty_read` はコンテキストに載るトークンを生ログの **約 7.1 分の 1** に減らす。しかも pass/fail の判定は畳んでも残る。→ [組み込みシェルツールとの使い分け](#組み込みシェルツールとの使い分け)
 
