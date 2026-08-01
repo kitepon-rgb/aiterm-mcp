@@ -1765,6 +1765,25 @@
       "fetched": "2026-06-01"
     },
     {
+      "slug": "claude-code-authentication",
+      "topic": "safety",
+      "title": "Claude Code Authentication",
+      "source_url": "https://code.claude.com/docs/en/authentication",
+      "source_type": "official_docs",
+      "path": "sources/safety/claude-code-authentication.md",
+      "tags": [
+        "claude-code",
+        "authentication",
+        "oauth",
+        "macos-keychain",
+        "credentials"
+      ],
+      "summary": "Claude Codeの認証方式、credential保存先、認証優先順位、更新・再ログイン契約を定めるAnthropic公式資料。",
+      "relevance": "managed claude_agentの複数sessionが共有する認証正本と、起動前auth status gateの設計根拠。",
+      "chars": 22729,
+      "fetched": "2026-08-01"
+    },
+    {
       "slug": "cyberark-dont-trust-this-title",
       "topic": "safety",
       "title": "Don't Trust This Title: Abusing Terminal Emulators with ANSI Escape Characters",
@@ -1928,5 +1947,5 @@
       "fetched": "2026-06-01"
     }
   ],
-  "updated": "2026-07-26"
+  "updated": "2026-08-01"
 }

@@ -984,11 +984,24 @@ function prepareSendText(text: string, o: Pick<SendOpts, "raw" | "force">): stri
   return text;
 }
 
+function assertManagedClaudeCredentialCommandNotSent(name: string, text: string): void {
+  const meta = tryLoadAgentMetadata(name);
+  if (meta?.kind !== "claude") return;
+  const normalized = text.replace(PASTE_MARKERS_RE, "").replace(ANSI_RE, "").replace(CTRL_RE, "").trim();
+  if (!/^\/(?:login|logout)$/i.test(normalized)) return;
+  throw new AitermError(
+    "managed Claude sessionでは共有認証を変更する /login と /logout を送信できません。" +
+      "認証操作は通常端末で一度だけ行い、必要ならこのsessionをcloseして起動し直してください。",
+    2,
+  );
+}
+
 export function send(name: string, text: string, o: SendOpts = {}): string {
   assertSessionName(name);
   const enter = o.enter ?? true;
   if (!sessionExists(name)) throw new AitermError(`session '${name}' が無い（open してください）`, 2);
   assertInitialPromptNotPendingForSend(name, !!o.force);
+  assertManagedClaudeCredentialCommandNotSent(name, text);
   text = prepareSendText(text, o);
   if (o.mark) {
     // mark の sentinel は POSIX シェル構文。前面が fish/csh/tcsh 等の非 POSIX 対話シェルだと "$?" が
@@ -2925,6 +2938,39 @@ function readClaudeResultText(
   return result.text;
 }
 
+const CLAUDE_COMPLETION_MARKER_SETTLE_TIMEOUT_MS = 1_000;
+
+function claudeCompletionWasPublishedAfterMarker(
+  meta: AgentMetadata,
+  marker: ClaudeOperationMarker,
+): boolean {
+  let markerStat: fs.Stats;
+  let resultStat: fs.Stats;
+  try {
+    markerStat = fs.lstatSync(agentClaudeOperationPath(meta.aiterm_session, meta.launch_id));
+    resultStat = fs.lstatSync(meta.result_file ?? "");
+  } catch {
+    return false;
+  }
+  if (resultStat.mtimeMs < markerStat.mtimeMs) return false;
+  const done = latestAgentDoneEvent(meta, marker.operationId);
+  return done !== null && done.operation_id === marker.operationId;
+}
+
+async function settlePublishedClaudeCompletionMarker(
+  meta: AgentMetadata,
+  marker: ClaudeOperationMarker,
+): Promise<ClaudeOperationMarker | null> {
+  if (!claudeCompletionWasPublishedAfterMarker(meta, marker)) return marker;
+  const deadline = performance.now() + CLAUDE_COMPLETION_MARKER_SETTLE_TIMEOUT_MS;
+  let active: ClaudeOperationMarker | null = marker;
+  while (active && performance.now() < deadline) {
+    await sleep(AGENT_DONE_POLL_MS);
+    active = readClaudeOperationMarker(meta);
+  }
+  return active;
+}
+
 /** agent vendor の構造化 transcript から直近完了ターンの最終回答を読む。 */
 export async function readAgentTranscript(
   name: string,
@@ -2936,7 +2982,8 @@ export async function readAgentTranscript(
     throw new AitermError("operation_id付き回収はClaude agent sessionだけで使用できます", 2);
   }
   if (meta.kind === "claude") {
-    const active = readClaudeOperationMarker(meta);
+    let active = readClaudeOperationMarker(meta);
+    if (active) active = await settlePublishedClaudeCompletionMarker(meta, active);
     if (active) {
       const label = active.operationId ? `operation ${active.operationId}` : "operation_idなしのClaude turn";
       throw new AitermError(`${label} はまだ完了していません。Stop完了後に同じsessionから再取得してください。${agentWaitGuide(name)}`, 2);
@@ -3589,6 +3636,7 @@ export async function dispatchAgentTurn(
 ): Promise<AgentDispatchReceipt> {
   assertSessionName(name);
   const meta = loadAgentMetadata(name);
+  assertManagedClaudeCredentialCommandNotSent(name, text);
   const operationId = o.operation_id == null ? null : validateOperationId(o.operation_id);
   if (operationId && meta.kind !== "claude") {
     throw new AitermError("operation_id はClaude agent sessionだけで使用できます", 2);
@@ -3742,6 +3790,51 @@ function resolveAgentBin(kind: AgentKind): string | null {
     if (isUsableExecutableFile(resolved)) return resolved;
   }
   return null;
+}
+
+const CLAUDE_AUTH_STATUS_TIMEOUT_MS = 5_000;
+
+function assertClaudeAuthenticationReady(bin: string): void {
+  const result = spawnSync(bin, ["auth", "status", "--json"], {
+    encoding: "utf8",
+    timeout: CLAUDE_AUTH_STATUS_TIMEOUT_MS,
+    maxBuffer: 64 * 1024,
+  });
+  let status: unknown = null;
+  try {
+    status = JSON.parse((result.stdout ?? "").trim());
+  } catch {
+    status = null;
+  }
+  if (
+    result.error == null &&
+    result.status === 0 &&
+    status !== null &&
+    typeof status === "object" &&
+    !Array.isArray(status) &&
+    (status as { loggedIn?: unknown }).loggedIn === true
+  ) {
+    return;
+  }
+  if (
+    status !== null &&
+    typeof status === "object" &&
+    !Array.isArray(status) &&
+    (status as { loggedIn?: unknown }).loggedIn === false
+  ) {
+    throw new AitermError(
+      "Claude Codeの認証を利用できません。sessionは作成していません。" +
+        "通常端末で `claude doctor` を実行し、Keychain／credential storeを直してから一度だけ `claude auth login` を実行してください。" +
+        "managed Claude session内で /login を繰り返さないでください。",
+      2,
+    );
+  }
+  const timedOut = result.error && (result.error as NodeJS.ErrnoException).code === "ETIMEDOUT";
+  throw new AitermError(
+    `Claude Codeの認証状態を起動前に確認できません${timedOut ? "（5秒でtimeout）" : ""}。sessionは作成していません。` +
+      "`claude auth status --json` と `claude doctor` が成功することを通常端末で確認してください。",
+    2,
+  );
 }
 
 function isUsableExecutableFile(candidate: string): boolean {
@@ -4052,6 +4145,7 @@ export function openAgent(
     requireMatchingClaudeLaunch(opts.session_name as string, launchOperationId, launchRequestDigest as string);
     return existingAgentLaunchResult("claude", opts.session_name as string, model, effort);
   }
+  if (kind === "claude") assertClaudeAuthenticationReady(bin);
   // Windows は起動コマンドが WSL 内 bash で走る（tmux ブリッジ）。bin/cwd を /mnt/c/... 形へ変換して
   // 渡す（ログの toWslPath と対称・A1）。前提: Windows 側に CLI を導入（resolveAgentBin が Windows
   // パスで解決）。toWslPath は session を作る前に呼ぶ＝変換失敗（非ドライブパス）で残骸 session を残さない。

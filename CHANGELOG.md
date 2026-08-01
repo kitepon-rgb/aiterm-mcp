@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.3] - 2026-08-01
+
+### Fixed
+
+- managed Claude／Fableの新規起動は、tmux sessionを作る前に同じCLIの
+  `auth status --json`を検証し、正常な共有認証だけを複数sessionから再利用する。
+  未認証・壊れた応答・失敗exit・timeoutは残骸を作らず明示失敗し、各sessionが
+  `/login`へ流れて共有credentialを奪い合う状態を作らない。
+- managed Claude内のexact `/login`・`/logout`は通常dispatchとforce送信の双方で
+  副作用前に拒否する。認証の変更は通常端末で一度だけ行い、aitermはvendor所有の
+  credentialを複製・symlink・lock・自動更新しない。
+- Stop hookのdone event公開直後にactive marker削除だけが遅れるraceでは、同じmarkerより
+  新しいresultと相関eventが揃った場合だけ回収側が短時間settleし、完了済みのexact resultを
+  誤ってactive扱いしない。
+
+### Verification
+
+- 関連test 99/99、release full regression 317/317、実Claude Code v2.1.220／Fable 5 low effortを独立process
+  3本×2波（計6 process）で同時・反復起動し、追加loginなしで全件done、exact result回収、close。
+
 ## [0.20.2] - 2026-07-26
 
 ### Fixed

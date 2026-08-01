@@ -549,6 +549,7 @@ registerAgentTool(
   "claude",
   "【Claude Code (Anthropic)】の対話エージェントTUIを永続端末に起動する。`claude -p`ではなく、" +
     "同じ利用者可視sessionへpty_sendで継続入力する。常にmanaged（isolated settingsのStop hook）で起動する。" +
+    "起動前に共有認証を構造化確認し、未認証ならsessionを作らない。managed session内の/login・/logoutは拒否する。" +
     agentCompletionDesc +
     "Claude の durable turn は claude_turn でも回収できる。",
 );

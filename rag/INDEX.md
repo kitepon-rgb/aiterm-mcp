@@ -4,10 +4,9 @@ AIターミナル直接操作プロジェクトの調査一次資料。`rag/sour
 忠実 Markdown 化した版（front-matter にメタdata）。
 **設計/実装の前にまずここを読み、該当資料を再利用する（再フェッチしない）。**
 
-- 総数: **93** 件 / 更新: 2026-07-26
+- 総数: **96** 件 / 更新: 2026-08-01
 - 取り込み: `python3 rag/ingest.py <sources.json>` → `python3 rag/build_index.py`
 - 統合分析: [briefs/](briefs/)
-- [MCPディレクトリ露出調査（2026-07-26）](briefs/mcp-directory-discoverability-2026-07.md) — Glama・mcp.so・Smitheryの現行登録要件、掲載状態、README設定根拠。
 
 ## 既存実装 / 流用調査 (prior-art) — 26件
 
@@ -243,11 +242,14 @@ AIターミナル直接操作プロジェクトの調査一次資料。`rag/sour
   - 出典: <https://invisible-island.net/xterm/ctlseqs/ctlseqs.html> (spec, 166667 chars)
   - 効きどころ: capture-pane -eで現れる生シーケンスの意味を引く辞書。どのシーケンスを保持/除去/解釈すべきかの判断材料で、トークン節約の取捨選択の典拠。
 
-## 安全性 (safety) — 9件
+## 安全性 (safety) — 10件
 
 - [CERT VU#763073: iTerm2 with tmux Integration Remote Command Execution](sources/safety/cert-vu763073-iterm2-tmux-rce.md) — CERT/CC公式注記。iTerm2のtmux control mode統合が悪性端末出力(SSH先/curl/tail -f 等)で任意コマンド実行を許す(CVSS 9.3)。修正は3.3.6以降。
   - 出典: <https://www.kb.cert.org/vuls/id/763073> (spec, 8836 chars)
   - 効きどころ: tmuxバックエンドを採用する本設計に直撃する一次CVE資料。control modeのメッセージ解析が攻撃者制御の出力で汚染されうるため、tmux制御チャネルと端末出力の境界を厳格に扱う必要性を示す。
+- [Claude Code Authentication](sources/safety/claude-code-authentication.md) — Claude Codeの認証方式、credential保存先、認証優先順位、更新・再ログイン契約を定めるAnthropic公式資料。
+  - 出典: <https://code.claude.com/docs/en/authentication> (official_docs, 22729 chars)
+  - 効きどころ: managed claude_agentの複数sessionが共有する認証正本と、起動前auth status gateの設計根拠。
 - [Don't Trust This Title: Abusing Terminal Emulators with ANSI Escape Characters](sources/safety/cyberark-dont-trust-this-title.md) — CyberArkの脅威研究。ウィンドウタイトル変更DoS、Kubernetes自由記述欄でのANSIによる表示偽装、そして貼り付けデータ先頭に ESC[201~ を仕込んでブラケットペースト保護を早期終了させるバイパスを実証。複数CVEを列挙。
   - 出典: <https://www.cyberark.com/resources/threat-research-blog/dont-trust-this-title-abusing-terminal-emulators-with-ansi-escape-characters> (article, 78493 chars)
   - 効きどころ: ブラケットペースト保護を逆手に取るバイパス手法を一次資料で確認でき、PTYへ流すペイロードから ESC[201~ 等を除去すべき具体的根拠になる。表示偽装は「画面を読む」層の信頼性にも直結。
@@ -273,7 +275,7 @@ AIターミナル直接操作プロジェクトの調査一次資料。`rag/sour
   - 出典: <https://invisible-island.net/xterm/xterm-paste64.html> (spec, 16092 chars)
   - 効きどころ: PTYへ「貼り付け相当」のテキストを送る際、ブラケットペーストの開始/終了マーカーと、その保護が制御文字混入には無力である(=送る前に我々がサニタイズ責任を持つ)という設計上の前提を一次仕様で確定できる。
 
-## discoverability — 10件
+## discoverability — 12件
 
 - [Build a desktop extension with MCPB](sources/discoverability/claude-build-mcpb.md) — Claude Desktop向けMCPBの公式build・install・platform guidance。
   - 出典: <https://claude.com/docs/connectors/building/mcpb> (docs, 14121 chars)

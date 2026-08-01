@@ -95,7 +95,9 @@ host統合は、kitepon.devの製品開発を支える内部基盤
 
 13 ツール: 6 つの **PTY ツール**（`pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list`）で 1 本の永続端末を開き・操作し・読む。加えて 4 つの **エージェント起動ツール**（`claude_agent` / `codex_agent` / `grok_agent` / `composer_agent`）が別のコーディングエージェントの TUI を新しい端末の中に起動し、`claude_turn`がdurable caller向けの構造化issue／recoveryを、`claude_approval`がmanaged Claudeの相関済み承認UI中継を、`diagnostics`が安全なfactory readinessを返す。バックエンドは **tmux** なので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
 
-**v0.20.0 を 2026-07-26 に公開。** 待たずに一度だけ観測する
+**v0.20.3では、壊れた認証から複数のmanaged Claude／Fable sessionが同時にloginへ流れる問題を修理。**
+新規Claude起動はPTY作成前にvendor所有の共有認証を検証し、正常な認証は複数sessionから並行・反復利用できる。
+v0.20では、待たずに一度だけ観測する
 `aiterm-wait --timeout 0` の未完了を、実際に待って終わらなかった`timeout`と区別し、
 `running`（exit 5）で返すようにしました。v0.19系では相関済みmanaged Claude approval中継を追加し、
 複数行shell配送を維持し、native Windowsのfactory diagnosticsを拡張しました。
@@ -152,7 +154,7 @@ $ aiterm-wait --session codex1 --cursor <event_cursor>   # exit 0=done / 3=timeo
 | `grok_agent` | Grok Build（xAI、既定`grok-4.5`、`model?`で上書き） | `prompt?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `cwd?`, `session_name?` |
 | `composer_agent` | Grok Build（xAI、既定`grok-composer-2.5-fast`、`model?`で上書き） | `prompt?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `cwd?`, `session_name?` |
 
-各ベンダーの CLI が導入・認証済みであること（`claude_agent` は `claude`、`codex_agent` は `codex`、Grok 系は `grok`）。バイナリは `CLAUDE_BIN` / `CODEX_BIN` / `GROK_BIN`、各既定path、`PATH` の順で解決する。CLI不在・不正なmodel/effort・実在しない`cwd`はsession作成前に失敗し、残骸を残さない。Claudeは通常settingsを継承しないlaunch専用settingsとStop hookを使い、本文なしeventとowner-only bounded resultを分離する。`pty_read({ agent_transcript:true })`はdigestとbyte数を検証したresultだけを返し、Claude private transcriptを読まない。後着resultは同じsessionからprompt再送なしで回収できる。managed Claudeのactive turn中はC-c以外の`pty_key`と素送信を拒否する。Claudeが`Do you want to proceed?`を表示したら、`claude_approval(action:"inspect", ...)`で画面digestを取得し、表示内容を判断してから、そのdigestと`approve_once`または`deny`を`respond`へ渡す。同じoperation・同じ画面が維持されている時だけ入力し、任意文字列や恒久許可選択肢は中継しない。中断は`C-c`、解除は`pty_close`。
+各ベンダーの CLI が導入・認証済みであること（`claude_agent` は `claude`、`codex_agent` は `codex`、Grok 系は `grok`）。バイナリは `CLAUDE_BIN` / `CODEX_BIN` / `GROK_BIN`、各既定path、`PATH` の順で解決する。CLI不在・不正なmodel/effort・実在しない`cwd`はsession作成前に失敗し、残骸を残さない。Claudeはさらに、PTY作成前に同じCLIの`auth status --json`が`loggedIn:true`を返すことを要求する。未認証・malformed・失敗exit・timeoutは残骸ゼロで失敗し、正常なvendor所有の共有認証は複数sessionから利用する。managed Claudeへのexact `/login`・`/logout`は通常dispatchとforce送信の双方で副作用前に拒否するため、認証は通常端末で一度だけ修理する。Claudeは通常settingsを継承しないlaunch専用settingsとStop hookを使い、本文なしeventとowner-only bounded resultを分離する。`pty_read({ agent_transcript:true })`はdigestとbyte数を検証したresultだけを返し、Claude private transcriptを読まない。後着resultは同じsessionからprompt再送なしで回収できる。managed Claudeのactive turn中はC-c以外の`pty_key`と素送信を拒否する。Claudeが`Do you want to proceed?`を表示したら、`claude_approval(action:"inspect", ...)`で画面digestを取得し、表示内容を判断してから、そのdigestと`approve_once`または`deny`を`respond`へ渡す。同じoperation・同じ画面が維持されている時だけ入力し、任意文字列や恒久許可選択肢は中継しない。中断は`C-c`、解除は`pty_close`。
 
 エージェント間の隠れたプロトコルは無い。起動したClaude/Codex/Grok/Composerは利用者がattachできるもう1本の永続sessionであり、MCPクライアントが通常のPTY操作で駆動する。
 
@@ -354,7 +356,7 @@ consumer は `aiterm-runtime-errors snapshot` を読み、durable ingestion 後�
 | `grok_agent` | Grok Build（xAI、既定`grok-4.5`、`model?`で上書き） | `prompt?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `cwd?`, `session_name?` |
 | `composer_agent` | Grok Build（xAI、既定`grok-composer-2.5-fast`、`model?`で上書き） | `prompt?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `cwd?`, `session_name?` |
 
-対応するCLI（`claude` / `codex` / `grok`）の導入・認証が必要。解決順は`CLAUDE_BIN` / `CODEX_BIN` / `GROK_BIN`、既定path、`PATH`。前提違反はsession作成前に明示失敗する。4 launcherすべてが同じ非ブロックdispatch契約を使い、Claude/Codexの初回promptはready gate経由で送信される。Claudeはisolated managed settingsとhook-captured resultを使い、private transcriptへ依存しない。Claude／Codex／Grok／Composerのlive smokeはすべてgreenであり、fixtureによる検証とは区別して記録する。
+対応するCLI（`claude` / `codex` / `grok`）の導入・認証が必要。解決順は`CLAUDE_BIN` / `CODEX_BIN` / `GROK_BIN`、既定path、`PATH`。前提違反はsession作成前に明示失敗する。ClaudeはPTY作成前に構造化認証statusも検証し、managed session内の`/login`・`/logout`を拒否する。4 launcherすべてが同じ非ブロックdispatch契約を使い、Claude/Codexの初回promptはready gate経由で送信される。Claudeはisolated managed settingsとhook-captured resultを使い、private transcriptへ依存しない。Claude／Codex／Grok／Composerのlive smokeはすべてgreenであり、fixtureによる検証とは区別して記録する。
 
 エージェントの回答が画面 tailより長ければ、対話callerは`pty_read({ agent_transcript:true })`で再promptなしに全文回収する。Claudeはmanaged Stop hookがowner-only resultへ保存した本文をdigest/byte数で検証して返し、private transcriptを読まない。durable machine callerは`claude_turn`を使う。`issue`は一度だけ送信し、`recover`は決して再送せず、`pending`を破損やidentity不一致と区別する。検証済みの`completed`だけがexact `raw_output`を持ち、`unknown`は未dispatchと帰属不能を区別する。不一致・破損は成功statusへ丸めずtool errorのままにする。IDなしの対話turnも匿名markerで直列化するため、現在Stop待ちの間に古い回答を返さない。CodexはStop hookの`turn_id`で構造化transcriptへjoinし、Grok/Composerは最後の実user行より後ろのassistant行を採る。不在・非agent・抽出不能は明示エラー。
 

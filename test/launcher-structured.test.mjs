@@ -21,6 +21,10 @@ test("claude_agent: text contentを維持しClaude managed launch receiptをstru
   const fakeClaude = path.join(root, "fake-claude.sh");
   fs.writeFileSync(fakeClaude, [
     "#!/bin/sh",
+    "if [ \"$1\" = auth ] && [ \"$2\" = status ] && [ \"$3\" = --json ]; then",
+    "  printf '%s\\n' '{\"loggedIn\":true,\"authMethod\":\"claude.ai\",\"apiProvider\":\"firstParty\"}'",
+    "  exit 0",
+    "fi",
     "printf 'Claude Code\\n❯ ready\\n'",
     "while IFS= read -r line; do printf '%s\\n' \"$line\"; done",
     "",

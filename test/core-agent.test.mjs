@@ -20,6 +20,7 @@ const hasTmux =
 process.env.TMPDIR = fs.mkdtempSync(path.join(os.tmpdir(), "aiterm-agt-"));
 process.env.XDG_RUNTIME_DIR = process.env.TMPDIR;
 const argvPrinterBin = path.join(process.env.TMPDIR, "print-argv.sh");
+const fakeClaudeBin = path.join(process.env.TMPDIR, "fake-claude.sh");
 if (process.platform !== "win32") {
   fs.writeFileSync(
     argvPrinterBin,
@@ -27,13 +28,28 @@ if (process.platform !== "win32") {
     { mode: 0o700 },
   );
   fs.chmodSync(argvPrinterBin, 0o700);
+  fs.writeFileSync(
+    fakeClaudeBin,
+    [
+      "#!/bin/sh",
+      "if [ \"$1\" = auth ] && [ \"$2\" = status ] && [ \"$3\" = --json ]; then",
+      "  printf '%s\\n' '{\"loggedIn\":true,\"authMethod\":\"claude.ai\",\"apiProvider\":\"firstParty\"}'",
+      "  exit 0",
+      "fi",
+      "printf '%s ' \"$@\"",
+      "printf '\\n'",
+      "",
+    ].join("\n"),
+    { mode: 0o700 },
+  );
+  fs.chmodSync(fakeClaudeBin, 0o700);
 }
 // 実 CLI を起動せず openAgent の配管だけ検証する偽 bin。resolveAgentBin は存在検証する（A3）ため、
 // 実在するパスにする必要がある。POSIX は /bin/echo（起動コマンドを echo で可視化できる）、native
 // Windows には /bin/echo が無いので node 自身（必ず存在）を使う——echo 出力を読む grok/composer/codex
 // 組立テストは { skip }（tmux 必須）で native Windows では走らないため、可視化不要な bin で足りる。
 process.env.CODEX_BIN = process.platform === "win32" ? process.execPath : "/bin/echo";
-process.env.CLAUDE_BIN = process.platform === "win32" ? process.execPath : "/bin/echo";
+process.env.CLAUDE_BIN = process.platform === "win32" ? process.execPath : fakeClaudeBin;
 const core = await import("../dist/core.js");
 core.__testSetAgentTuiReadyStableSamples(1);
 const skip = hasTmux ? undefined : "tmux 未インストール";
@@ -174,12 +190,16 @@ function makeFakeCodexTuiBin() {
   return bin;
 }
 
-function makeFakeClaudeTuiBin() {
+function makeFakeClaudeTuiBin({ authJson = '{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty"}', authExit = 0 } = {}) {
   const bin = path.join(process.env.TMPDIR, `fake-claude-tui-${Date.now().toString(36)}.sh`);
   fs.writeFileSync(
     bin,
     [
       "#!/bin/sh",
+      "if [ \"$1\" = auth ] && [ \"$2\" = status ] && [ \"$3\" = --json ]; then",
+      `  printf '%s\\n' '${authJson}'`,
+      `  exit ${authExit}`,
+      "fi",
       "printf 'Claude Code\\n❯ ready\\n'",
       "while IFS= read -r line; do",
       "  printf '%s\\n' \"$line\"",
@@ -501,6 +521,140 @@ test("openAgent codex agent_done: agents/*.toml を symlink ではなく snapsho
       core.closeSession(sid);
     }
   });
+});
+
+test("openAgent claude: 未認証はsession作成前に拒否して残骸を残さない", { skip: process.platform === "win32" ? "POSIX fake Claude専用" : undefined }, () => {
+  const savedBin = process.env.CLAUDE_BIN;
+  const fakeBin = makeFakeClaudeTuiBin({ authJson: '{"loggedIn":false}', authExit: 1 });
+  const sessionsBefore = core.listSessions();
+  const stateBefore = agentStateFiles();
+  process.env.CLAUDE_BIN = fakeBin;
+  try {
+    assert.throws(
+      () => core.openAgent("claude", { session_name: "claude_auth_rejected", agent_done: true }),
+      (error) =>
+        error.code === 2 &&
+        /認証を利用できません/.test(error.message) &&
+        /sessionは作成していません/.test(error.message) &&
+        /claude auth login/.test(error.message),
+    );
+    assert.equal(core.listSessions(), sessionsBefore, "未認証launchがtmux sessionを残さない");
+    assert.deepEqual(agentStateFiles(), stateBefore, "未認証launchがagent stateを残さない");
+  } finally {
+    if (savedBin === undefined) delete process.env.CLAUDE_BIN;
+    else process.env.CLAUDE_BIN = savedBin;
+    fs.rmSync(fakeBin, { force: true });
+  }
+});
+
+test("openAgent claude: 認証statusが壊れていれば偽成功せずsession作成前に拒否する", { skip: process.platform === "win32" ? "POSIX fake Claude専用" : undefined }, () => {
+  const savedBin = process.env.CLAUDE_BIN;
+  const fakeBin = makeFakeClaudeTuiBin({ authJson: "not-json" });
+  const sessionsBefore = core.listSessions();
+  process.env.CLAUDE_BIN = fakeBin;
+  try {
+    assert.throws(
+      () => core.openAgent("claude", { session_name: "claude_auth_unknown", agent_done: true }),
+      (error) => error.code === 2 && /認証状態を起動前に確認できません/.test(error.message),
+    );
+    assert.equal(core.listSessions(), sessionsBefore, "壊れたstatusでtmux sessionを残さない");
+  } finally {
+    if (savedBin === undefined) delete process.env.CLAUDE_BIN;
+    else process.env.CLAUDE_BIN = savedBin;
+    fs.rmSync(fakeBin, { force: true });
+  }
+});
+
+test("openAgent claude: loggedIn=trueでもauth status失敗exitを成功扱いしない", { skip: process.platform === "win32" ? "POSIX fake Claude専用" : undefined }, () => {
+  const savedBin = process.env.CLAUDE_BIN;
+  const fakeBin = makeFakeClaudeTuiBin({ authExit: 1 });
+  const sessionsBefore = core.listSessions();
+  process.env.CLAUDE_BIN = fakeBin;
+  try {
+    assert.throws(
+      () => core.openAgent("claude", { session_name: "claude_auth_failed_exit", agent_done: true }),
+      (error) => error.code === 2 && /認証状態を起動前に確認できません/.test(error.message),
+    );
+    assert.equal(core.listSessions(), sessionsBefore, "失敗exitでtmux sessionを残さない");
+  } finally {
+    if (savedBin === undefined) delete process.env.CLAUDE_BIN;
+    else process.env.CLAUDE_BIN = savedBin;
+    fs.rmSync(fakeBin, { force: true });
+  }
+});
+
+test("openAgent claude: 共有認証で複数sessionを反復起動できる", { skip: skipAgentDone }, () => {
+  const created = [];
+  try {
+    for (let wave = 0; wave < 2; wave += 1) {
+      const waveSessions = Array.from({ length: 3 }, (_, index) => {
+        const [sid] = core.openAgent("claude", {
+          session_name: `claude_parallel_${wave}_${index}_${Date.now().toString(36)}`,
+          agent_done: true,
+        });
+        created.push(sid);
+        return sid;
+      });
+      assert.equal(new Set(waveSessions).size, 3, "同じwaveのClaude sessionは一意");
+      const listed = core.listSessions();
+      for (const sid of waveSessions) assert.match(listed, new RegExp(`^${sid}\\t.*agent=claude`, "m"));
+      for (const sid of waveSessions) {
+        core.closeSession(sid);
+        created.splice(created.indexOf(sid), 1);
+      }
+    }
+  } finally {
+    for (const sid of created) {
+      try { core.closeSession(sid); } catch { /* noop */ }
+    }
+  }
+});
+
+test("managed Claude: /login と /logout はdispatch・force送信とも副作用前に拒否する", { skip: skipAgentDone }, async () => {
+  const [sid] = core.openAgent("claude", { agent_done: true });
+  try {
+    const stateBefore = agentStateFiles();
+    const metaBefore = readAgentMeta(sid);
+    await assert.rejects(
+      () => core.dispatchAgentTurn(sid, "/login"),
+      /共有認証を変更する \/login と \/logout を送信できません/,
+    );
+    await assert.rejects(
+      () => core.dispatchAgentTurn(sid, "\u001b[31m/logout\u001b[0m"),
+      /共有認証を変更する \/login と \/logout を送信できません/,
+    );
+    assert.throws(
+      () => core.send(sid, "/logout", { force: true, raw: true }),
+      /共有認証を変更する \/login と \/logout を送信できません/,
+    );
+    assert.deepEqual(agentStateFiles(), stateBefore, "認証変更拒否でoperation fileを増やさない");
+    assert.deepEqual(readAgentMeta(sid), metaBefore, "認証変更拒否でmetadataを変えない");
+  } finally {
+    core.closeSession(sid);
+  }
+});
+
+test("readAgentTranscript: Claude完了event直後のmarker削除raceを待って回収する", { skip: skipAgentDone }, async () => {
+  const savedBin = process.env.CLAUDE_BIN;
+  const fakeBin = makeFakeClaudeTuiBin();
+  process.env.CLAUDE_BIN = fakeBin;
+  const [sid] = core.openAgent("claude", { agent_done: true });
+  try {
+    await core.dispatchAgentTurn(sid, "marker raceを再現する");
+    const meta = readAgentMeta(sid);
+    const markerFile = path.join(path.dirname(meta.result_file), `${meta.aiterm_session}.${meta.launch_id}.claude-operation.json`);
+    writeClaudeDone(meta, "marker race after completion", { consume_marker: false });
+    setTimeout(() => fs.rmSync(markerFile, { force: true }), 250);
+    const started = Date.now();
+    const transcript = await core.readAgentTranscript(sid);
+    assert.match(transcript, /marker race after completion/);
+    assert.ok(Date.now() - started >= 100, "event公開直後のactive marker削除を待つ");
+  } finally {
+    core.closeSession(sid);
+    if (savedBin === undefined) delete process.env.CLAUDE_BIN;
+    else process.env.CLAUDE_BIN = savedBin;
+    fs.rmSync(fakeBin, { force: true });
+  }
 });
 
 test("openAgent claude agent_done: isolated settings、Stop hook、result pathを組み立てる", { skip: skipAgentDone }, async () => {

@@ -2,6 +2,20 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **v0.20.3（2026-08-01公開候補）**: 複数のmanaged Fable／Claude session起動時、macOS Keychain等の
+> vendor credential storeが未認証・利用不能でもTUIを先に作り、各sessionが再loginへ流れて認証状態と
+> 残骸を増やす欠陥を修理。新しいClaude launchはtmux session作成前に同じCLIの
+> `auth status --json`を5秒上限で実行し、exit 0・JSON object・`loggedIn:true`をすべて満たす時だけ進む。
+> false／malformed／失敗exit／timeoutはsession・agent stateを一切作らず明示エラー。相関済みexact replayは
+> CLIを再送しないためpreflightを再実行しない。認証正本はClaude Codeに所有させ、Aitermはcredentialの
+> copy・symlink・lock・自動loginを行わない。managed Claudeへのexact `/login`・`/logout`は通常dispatchと
+> force送信の双方で副作用前に拒否する。3 session×2波の共有認証反復起動を回帰化。実Fable smokeの
+> 第2波で、done event観測直後にactive marker cleanupだけが未完了となるraceを再現したため、同じmarkerより
+> 新しいresultと相関eventが揃った場合だけ回収側が最大1秒cleanupをsettleする。関連test 99/99、
+> release full regression 317/317、
+> 実Claude Code v2.1.220／Fable 5 low effortを独立Node/MCP相当process 3本×2波（計6 process）から
+> 同時起動し、再loginなしで全件done→exact result回収→closeまで通過。設計はADR 0020。
+
 > **v0.20.2（2026-07-26公開）**: npmと各公開面で、Claude CodeからCodex CLIの対話TUI
 > （スラッシュコマンド・`$imagegen`を含む）を操作できる差別化、現行README、作者帰属を前面化した。
 > npm authorは`Quo / クオ at kitepon.dev`、URLは`https://x.com/QLyun35332`として公開APIで確認。
