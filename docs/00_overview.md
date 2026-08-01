@@ -28,6 +28,7 @@
 - [adr/0017-non-blocking-dispatch-guidance.md](adr/0017-non-blocking-dispatch-guidance.md) - dispatch案内を「投げっぱなし」正典へ反転し、完了待ちの起動形を親ホスト別に名指しする決定。
 - [adr/0018-agent-wait-running-outcome.md](adr/0018-agent-wait-running-outcome.md) - 待たない照会の未完了をrunningとして分離し、timeoutと1語に潰さない決定。
 - [adr/0020-managed-claude-authentication-preflight.md](adr/0020-managed-claude-authentication-preflight.md) - managed Claude／Fableの共有認証をsession作成前に検証し、session内の認証変更を禁止する決定。
+- [adr/0021-release-0.20.3-acceptance.md](adr/0021-release-0.20.3-acceptance.md) - v0.20.3のtag CI、npm provenance、GitHub Release、Official Registry、global installの公開受入記録。
 
 ## 運用メモ
 

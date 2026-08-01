@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **v0.20.3（2026-08-01公開候補）**: 複数のmanaged Fable／Claude session起動時、macOS Keychain等の
+> **v0.20.3（2026-08-01公開）**: 複数のmanaged Fable／Claude session起動時、macOS Keychain等の
 > vendor credential storeが未認証・利用不能でもTUIを先に作り、各sessionが再loginへ流れて認証状態と
 > 残骸を増やす欠陥を修理。新しいClaude launchはtmux session作成前に同じCLIの
 > `auth status --json`を5秒上限で実行し、exit 0・JSON object・`loggedIn:true`をすべて満たす時だけ進む。
@@ -14,7 +14,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > 新しいresultと相関eventが揃った場合だけ回収側が最大1秒cleanupをsettleする。関連test 99/99、
 > release full regression 317/317、
 > 実Claude Code v2.1.220／Fable 5 low effortを独立Node/MCP相当process 3本×2波（計6 process）から
-> 同時起動し、再loginなしで全件done→exact result回収→closeまで通過。設計はADR 0020。
+> 同時起動し、再loginなしで全件done→exact result回収→closeまで通過。公開commit `97f2c3a`、
+> tag CI `30680336472`とmain CI `30680332796` success、npm provenance publish、GitHub Release、
+> MCP Registry workflow `30680345129` success。npm latest=0.20.3、integrity
+> `sha512-mPZ3RtuLG8eMdxvZ/ofdKYKsOSIKt8xxKuH1ye6Y+fa+j1EkNqJv+2219yYerBBR1I7toVNQ2aB/g38UHwPaZA==`。
+> Official Registryは0.20.3 active/latest。この端末のglobal installを0.20.2→0.20.3へ更新し、
+> registry由来binaryで3 bins、initialize version、13 tools、stderr 0 bytesを確認。設計はADR 0020、公開受入はADR 0021。
 
 > **v0.20.2（2026-07-26公開）**: npmと各公開面で、Claude CodeからCodex CLIの対話TUI
 > （スラッシュコマンド・`$imagegen`を含む）を操作できる差別化、現行README、作者帰属を前面化した。

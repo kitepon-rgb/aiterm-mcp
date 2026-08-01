@@ -13,23 +13,30 @@ output) is already committed — these steps activate it.
 
 ## Status (live)
 
-> **v0.20.3（2026-08-01公開候補）**: managed Claude／Fableの共有認証preflight、
+> **v0.20.3（2026-08-01公開）**: managed Claude／Fableの共有認証preflight、
 > session内の認証変更拒否、Stop完了回収race修理を含むpatch release。
-> `package.json`、lockfile、`server.json`、MCPB manifestは0.20.3で同期済み。
+> npm・GitHub Release・Official MCP Registryで公開済み。4 manifestは0.20.3で同期し、
+> Official MCP Registryのlatest entryもactive。
 
-Release-candidate verification:
+Done and verified:
 
 - ✅ related tests 99/99。
 - ✅ release full regression 317/317、npm pack 0.20.3は14 files、MCPB 0.20.3は13 toolsでarchive validation済み。
 - ✅ 実Claude Code v2.1.220／Fable 5 low effortを独立process 3本×2波で起動し、
   追加loginなしで全6件のdone・exact result・closeを確認。
-- ⏳ npm・GitHub Release・Official MCP Registry・registry由来installはtag後に確認する。
+- ✅ tag CI `30680336472`は全matrixとprovenance publishがsuccess。main CI `30680332796`もsuccess。
+- ✅ npm `0.20.3` is latest。14 files、SLSA provenance v1、integrityとshasumを公開APIで確認。
+- ✅ GitHub Release `v0.20.3`はdraft／prereleaseでなく公開済み。
+- ✅ Official MCP Registry workflow `30680345129` success。
+  `io.github.kitepon-rgb/aiterm-mcp` 0.20.3はactiveかつlatest。
+- ✅ この端末のglobal installを0.20.2→0.20.3へ更新。registry由来binaryで3 bins、
+  initialize version 0.20.3、13 tools、stderr 0 bytes。
 
 Previously verified public surfaces:
 
-- ✅ **npm `0.20.2` is latest** — Quo / クオ at kitepon.dev、X author link、
+- ✅ **npm `0.20.3` is latest** — Quo / クオ at kitepon.dev、X author link、
   Claude Code × Codex CLI lead、現行README、provenance、14-file tarballを公開APIで確認済み。
-- ✅ **Official MCP Registry** — `io.github.kitepon-rgb/aiterm-mcp` 0.20.2 is active and latest.
+- ✅ **Official MCP Registry** — `io.github.kitepon-rgb/aiterm-mcp` 0.20.3 is active and latest.
 - ⚠️ **mcp.so** — the existing listing was claimed through GitHub on 2026-07-26.
   Do not submit a duplicate. Its editor currently discards submitted changes
   (a fresh reload restores the stale 6-tool content), so the update remains blocked.
@@ -37,7 +44,7 @@ Previously verified public surfaces:
   is public with the validated MCPB, all 13 runtime tools, repository/license/icon
   metadata, and the Claude Code × Codex CLI lead. The public page scored 84/100
   immediately after metadata completion.
-- ✅ **GitHub topics** include the requested discovery set; **v0.20.2 Release** is public.
+- ✅ **GitHub topics** include the requested discovery set; **v0.20.3 Release** is public.
 - 🔄 **awesome-mcp-servers** — PR [#7620](https://github.com/punkpeye/awesome-mcp-servers/pull/7620) open (awaiting maintainer merge).
 - ✅ **Announced** on r/mcp.
 
@@ -71,10 +78,10 @@ The lettered steps below are kept as a re-run reference and for the announcement
 npm only re-indexes keywords on a new published version. Bump a patch, keep
 `server.json` `version` in lockstep, then let CI publish on the tag.
 
-Last completed with v0.20.2 on 2026-07-26. v0.20.1 published the refreshed public
-surface; v0.20.2 corrected npm's legacy author-parentheses normalization so the
-explicit X profile remains the author URL. Acceptance evidence is recorded in
-[`ADR 0019`](adr/0019-release-0.20.2-public-presentation-acceptance.md).
+Completed with v0.20.3 on 2026-08-01. It publishes the managed Claude/Fable shared-auth
+preflight and completion-marker race repair. Acceptance evidence is recorded in
+[`ADR 0021`](adr/0021-release-0.20.3-acceptance.md). The preceding public-surface correction
+remains recorded in [`ADR 0019`](adr/0019-release-0.20.2-public-presentation-acceptance.md).
 
 ```bash
 # 1. bump package.json + package-lock.json + server.json to the same new version (e.g. next patch)
