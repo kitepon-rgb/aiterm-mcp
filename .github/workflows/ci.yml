@@ -82,6 +82,11 @@ jobs:
       - run: npm install -g npm@11.6.4
       - run: npm ci
       - run: npm run build
+      - name: Verify tag commit is landed on main
+        shell: bash
+        run: |
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
       # 認証は npmjs.com 側の Trusted Publisher 設定（GitHub Actions OIDC）。
       # トークンを一切持たない＝失効による publish 失敗（2026-07-04 の E404 実被弾）が構造的に消える。
       # C11: 既に同一 version が npm に存在する場合（tag 再 push 等）は publish をスキップ＝403 で赤くしない
