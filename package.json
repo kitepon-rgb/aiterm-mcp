@@ -1,6 +1,6 @@
 {
   "name": "aiterm-mcp",
-  "version": "0.20.3",
+  "version": "0.21.0",
   "mcpName": "io.github.kitepon-rgb/aiterm-mcp",
   "description": "Persistent tmux terminal MCP that lets Claude Code drive Codex CLI's interactive TUI, including slash commands and $imagegen. Also runs durable PTY sessions for SSH, containers, REPLs, and coding agents.",
   "keywords": [
