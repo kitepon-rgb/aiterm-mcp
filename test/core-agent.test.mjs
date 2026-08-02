@@ -419,6 +419,64 @@ test("listSessions: agent 行だけに agent 情報を追加し、通常 session
   });
 });
 
+test("openAgent: write_scope をmetadataとpty_listへ記録し、Codex read-onlyにはsandboxを付与する", { skip: skipAgentDone }, async () => {
+  await withFakeCodexHome(async () => {
+    const [sid, hint] = core.openAgent("codex", { agent_done: true, write_scope: "read-only" });
+    try {
+      assert.equal(readAgentMeta(sid).write_scope, "read-only");
+      assert.match(core.listSessions(), new RegExp(`${sid}\\t.*write_scope=\\\"read-only\\\"`));
+      assert.match(hint, /--sandbox read-only を付与し、書込みを実効禁止/);
+      const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
+      assert.match(out, /--sandbox read-only/, `codex read-only sandbox: ${out}`);
+    } finally {
+      core.closeSession(sid);
+    }
+  });
+});
+
+test("openAgent: write_scope省略時はCodex起動argvとpty_list表記を変えない", { skip: skipAgentDone }, async () => {
+  await withFakeCodexHome(async () => {
+    const [sid, hint] = core.openAgent("codex", { agent_done: true });
+    try {
+      assert.equal(readAgentMeta(sid).write_scope, undefined);
+      assert.doesNotMatch(core.listSessions(), new RegExp(`${sid}\\t.*write_scope=`));
+      assert.doesNotMatch(hint, /能力宣言/);
+      const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
+      assert.doesNotMatch(out, /--sandbox read-only/);
+    } finally {
+      core.closeSession(sid);
+    }
+  });
+});
+
+test("openAgent: Codexのパス説明write_scopeはunsupportedを明示してsandboxへ偽変換しない", { skip: skipAgentDone }, async () => {
+  await withFakeCodexHome(async () => {
+    const [sid, hint] = core.openAgent("codex", { agent_done: true, write_scope: "/repo/src と /repo/test のみ書込み可" });
+    try {
+      assert.equal(readAgentMeta(sid).write_scope, "/repo/src と /repo/test のみ書込み可");
+      assert.match(hint, /パス単位のsandbox allowlistに対応するCLI引数がないため宣言の記録のみ（構造的unsupported）/);
+      const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
+      assert.doesNotMatch(out, /--sandbox read-only/);
+    } finally {
+      core.closeSession(sid);
+    }
+  });
+});
+
+test("openAgent: Grok/Composerのwrite_scopeは構造的unsupportedを明示して記録だけする", { skip: skipAgentDone }, async () => {
+  await withFakeGrokHome(async () => {
+    for (const kind of ["grok", "composer"]) {
+      const [sid, hint] = core.openAgent(kind, { agent_done: true, write_scope: "/repo/docs のみ書込み可" });
+      try {
+        assert.equal(readAgentMeta(sid).write_scope, "/repo/docs のみ書込み可");
+        assert.match(hint, /宣言の記録のみ（構造的unsupported）/);
+      } finally {
+        core.closeSession(sid);
+      }
+    }
+  });
+});
+
 // A-test: grok/composer 経路の組立コマンドを実検証（従来は codex 経路のみで未カバー）。
 // 偽 bin を /bin/echo にすると起動コマンドがそのまま echo で出力され、組立内容を観測できる。
 test("openAgent codex: -c model_reasoning_effort=<effort> を組み立てる", { skip }, async () => {

@@ -1283,6 +1283,7 @@ export function listSessions(): string {
         const agent = [
           `agent=${meta.kind}`,
           "agent_done=true",
+          meta.write_scope === undefined ? null : `write_scope=${JSON.stringify(meta.write_scope)}`,
           meta.vendor_session_id ? `vendor_session_id=${meta.vendor_session_id}` : null,
         ]
           .filter(Boolean)
@@ -1452,6 +1453,8 @@ interface AgentMetadata {
   event_file: string;
   created_at: string;
   cwd: string | null;
+  // launcher の能力宣言。省略時は旧metadataとの後方互換のため field 自体を持たない。
+  write_scope?: string;
   vendor_session_id: string | null;
   initial_prompt: InitialPromptState;
   launch_operation_id?: string | null;
@@ -2467,6 +2470,7 @@ function createCodexAgentMetadata(
   cwd: string | null,
   initialPrompt: InitialPromptState,
   overrides: { model?: string | null; effort?: string | null } = {},
+  writeScope?: string,
 ): AgentMetadata {
   const launchId = randomBytes(16).toString("hex");
   const eventFile = agentEventPath(name, launchId);
@@ -2479,6 +2483,7 @@ function createCodexAgentMetadata(
     event_file: eventFile,
     created_at: new Date().toISOString(),
     cwd,
+    ...(writeScope === undefined ? {} : { write_scope: writeScope }),
     vendor_session_id: null,
     initial_prompt: initialPrompt,
     hook_route: "managed_codex_home",
@@ -2495,6 +2500,7 @@ function createGrokAgentMetadata(
   cwd: string | null,
   initialPrompt: InitialPromptState,
   authPath: string | null,
+  writeScope?: string,
 ): AgentMetadata {
   const launchId = randomBytes(16).toString("hex");
   const eventFile = agentEventPath(name, launchId);
@@ -2507,6 +2513,7 @@ function createGrokAgentMetadata(
     event_file: eventFile,
     created_at: new Date().toISOString(),
     cwd,
+    ...(writeScope === undefined ? {} : { write_scope: writeScope }),
     vendor_session_id: null,
     initial_prompt: initialPrompt,
     hook_route: "managed_grok_home",
@@ -2575,6 +2582,7 @@ function loadAgentMetadata(name: string): AgentMetadata {
       event_file: expectedEvent,
       created_at: typeof m.created_at === "string" ? m.created_at : "",
       cwd: typeof m.cwd === "string" ? m.cwd : null,
+      ...(typeof m.write_scope === "string" ? { write_scope: m.write_scope } : {}),
       vendor_session_id: typeof m.vendor_session_id === "string" ? m.vendor_session_id : null,
       initial_prompt: normalizeInitialPromptState(m.initial_prompt),
       launch_operation_id: launchOperationId,
@@ -2597,6 +2605,7 @@ function loadAgentMetadata(name: string): AgentMetadata {
       event_file: expectedEvent,
       created_at: typeof m.created_at === "string" ? m.created_at : "",
       cwd: typeof m.cwd === "string" ? m.cwd : null,
+      ...(typeof m.write_scope === "string" ? { write_scope: m.write_scope } : {}),
       vendor_session_id: typeof m.vendor_session_id === "string" ? m.vendor_session_id : null,
       initial_prompt: normalizeInitialPromptState(m.initial_prompt),
       hook_route: "managed_codex_home",
@@ -2620,6 +2629,7 @@ function loadAgentMetadata(name: string): AgentMetadata {
     event_file: expectedEvent,
     created_at: typeof m.created_at === "string" ? m.created_at : "",
     cwd: typeof m.cwd === "string" ? m.cwd : null,
+    ...(typeof m.write_scope === "string" ? { write_scope: m.write_scope } : {}),
     vendor_session_id: typeof m.vendor_session_id === "string" ? m.vendor_session_id : null,
     initial_prompt: normalizeInitialPromptState(m.initial_prompt),
     hook_route: "managed_grok_home",
@@ -3887,6 +3897,9 @@ function buildAgentCmd(
     if (effort) parts.push("--effort", shq(effort));
   } else if (kind === "codex") {
     if (meta?.kind === "codex") parts.push("--dangerously-bypass-hook-trust");
+    // `codex --help` で確認した実在フラグ。read-only 宣言だけはCLI sandboxへ落とし、
+    // launcher自身が実効能力壁を作る。パス説明はCodex CLIに同等のallowlist引数がないため宣言のまま残す。
+    if (meta?.kind === "codex" && meta.write_scope === "read-only") parts.push("--sandbox", "read-only");
     // model/effort は CLI 引数で明示（config 継承より優先）。agent_done 時は managed home 側
     // config.toml も同値で上書き済み（applyCodexConfigOverrides）。
     if (model) parts.push("-m", shq(model));
@@ -3956,13 +3969,18 @@ function buildAgentLaunchNote(
   effort: string | null,
   meta: AgentMetadata | null,
 ): string {
+  const writeScopeNote = meta?.write_scope === undefined
+    ? ""
+    : kind === "codex" && meta.write_scope === "read-only"
+      ? `\n能力宣言: write_scope=${JSON.stringify(meta.write_scope)}。Codex CLIへ --sandbox read-only を付与し、書込みを実効禁止。`
+      : `\n能力宣言: write_scope=${JSON.stringify(meta.write_scope)}。${kind === "grok" || kind === "composer" ? "このCLIには起動sandbox機構がないため" : "パス単位のsandbox allowlistに対応するCLI引数がないため"}宣言の記録のみ（構造的unsupported）。`;
   if (kind === "claude") {
-    return `起動設定: model=${model ?? "CLI既定"} effort=${effort ?? "CLI既定"}。`;
+    return `起動設定: model=${model ?? "CLI既定"} effort=${effort ?? "CLI既定"}。${writeScopeNote}`;
   }
   if (kind !== "codex") {
     return (
       `起動設定: model=${model ?? GROK_MODEL_DEFAULTS[kind]}（${model ? "引数" : "ツール既定"}）。` +
-      "reasoning effort は対話 TUI 非対応＝未指定で起動。"
+      "reasoning effort は対話 TUI 非対応＝未指定で起動。" + writeScopeNote
     );
   }
   const configPath =
@@ -3985,7 +4003,7 @@ function buildAgentLaunchNote(
       ? "⚠ effort=ultra は max 推論＋proactive 自動委譲 ON（子エージェント自動生成・使用量急増に注意）。"
       : "");
   const summary = meta?.kind === "codex" && meta.codex_home ? managedCodexConfigSummary(configPath, true) : "";
-  return summary ? `${launch}\n${summary}\n` : launch;
+  return (summary ? `${launch}\n${summary}\n` : launch) + writeScopeNote;
 }
 
 function claudeLaunchRequestDigest({
@@ -4050,6 +4068,7 @@ export function openAgent(
     prompt?: string | null;
     agent_done?: boolean | null;
     launch_operation_id?: string | null;
+    write_scope?: string;
   } = {},
 ): [string, string] {
   const label = agentLabel(kind);
@@ -4061,6 +4080,7 @@ export function openAgent(
     if (!model) throw new AitermError("model が空文字です（省略するか有効なモデル名を指定してください）", 2);
   }
   const effort = opts.reasoning_effort ?? null;
+  const writeScope = opts.write_scope;
   if (effort && kind === "claude" && !CLAUDE_EFFORTS.has(effort)) {
     throw new AitermError("Claude Code の reasoning_effort は low/medium/high/xhigh/max のいずれかです", 2);
   }
@@ -4178,8 +4198,8 @@ export function openAgent(
             launchRequestDigest,
           )
         : kind === "codex"
-        ? createCodexAgentMetadata(sid, cwd, opts.prompt ? "pending" : "none", { model, effort })
-        : createGrokAgentMetadata(kind, sid, cwd, opts.prompt ? "pending" : "none", grokAuthPath)
+        ? createCodexAgentMetadata(sid, cwd, opts.prompt ? "pending" : "none", { model, effort }, writeScope)
+        : createGrokAgentMetadata(kind, sid, cwd, opts.prompt ? "pending" : "none", grokAuthPath, writeScope)
       : null;
     if (meta) agentMetadataNegativeCache.delete(sid);
     launchNote = buildAgentLaunchNote(kind, model, effort, meta);
@@ -4234,6 +4254,7 @@ export async function openAgentWithInitialPrompt(
     prompt?: string | null;
     ready_timeout?: number | null;
     launch_operation_id?: string | null;
+    write_scope?: string;
   } = {},
 ): Promise<[string, string, number | null, boolean | null]> {
   const prompt = opts.prompt ?? null;
@@ -4253,6 +4274,7 @@ export async function openAgentWithInitialPrompt(
       prompt,
       agent_done: true,
       launch_operation_id: opts.launch_operation_id ?? null,
+      write_scope: opts.write_scope,
     });
     // argv prompt（grok/composer）は composer を経由しないため submit 座礁観測の対象外。
     return [sid, hint, prompt ? 0 : null, null];
@@ -4265,6 +4287,7 @@ export async function openAgentWithInitialPrompt(
     prompt: null,
     agent_done: true,
     launch_operation_id: opts.launch_operation_id ?? null,
+    write_scope: opts.write_scope,
   });
   try {
     const initial = await sendInitialAgentPrompt(sid, prompt, {

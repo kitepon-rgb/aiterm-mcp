@@ -123,11 +123,24 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 13 ツール公�
   assert.equal(ptyClose.outputSchema.properties.session_id.pattern, "^[A-Za-z0-9_-]{1,64}$", "pty_close session ID schema");
   assert.deepEqual(ptyClose.outputSchema.properties.outcome.enum, ["closed", "already_closed"], "pty_close outcome schema");
   const codexAgent = toolsResp.result.tools.find((t) => t.name === "codex_agent");
+  const claudeAgent = toolsResp.result.tools.find((t) => t.name === "claude_agent");
+  assert.equal(claudeAgent.inputSchema.properties.write_scope, undefined, "claude_agent はwrite_scope対象外");
+  assert.equal(claudeAgent.outputSchema.properties.write_scope, undefined, "claude_agent receiptは不変");
+  for (const name of ["codex_agent", "grok_agent", "composer_agent"]) {
+    const tool = toolsResp.result.tools.find((t) => t.name === name);
+    assert.equal(tool.inputSchema.properties.write_scope.type, "string", `${name} write_scope schema`);
+    assert.equal(tool.inputSchema.properties.write_scope.minLength, 1, `${name} write_scope must be non-empty`);
+    assert.ok(tool.outputSchema.properties.write_scope, `${name} write_scope result schema`);
+    assert.deepEqual(
+      tool.outputSchema.properties.write_scope_enforcement.enum,
+      ["enforced_read_only", "declaration_only_unsupported"],
+      `${name} capability result schema`,
+    );
+  }
   assert.ok(
     codexAgent.inputSchema.properties.model.anyOf?.some((v) => v.type === "string"),
     "codex_agent model schema",
   );
-  const claudeAgent = toolsResp.result.tools.find((t) => t.name === "claude_agent");
   assert.ok(claudeAgent.inputSchema.properties.model.anyOf?.some((v) => v.type === "string"), "claude_agent model schema");
   assert.equal(claudeAgent.inputSchema.properties.agent_done, undefined, "v0.16: launcher は常に managed");
   assert.equal(claudeAgent.inputSchema.properties.launch_operation_id.pattern, "^sha256:[0-9a-f]{64}$", "claude_agent launch replay schema");

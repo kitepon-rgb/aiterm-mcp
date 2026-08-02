@@ -479,6 +479,19 @@ function registerAgentTool(
   desc: string,
 ): void {
   const correlatedLaunchSchema: Record<string, z.ZodTypeAny> = {};
+  const supportsWriteScope = kind === "codex" || kind === "grok" || kind === "composer";
+  const writeScopeInputSchema: Record<string, z.ZodTypeAny> = supportsWriteScope
+    ? {
+        write_scope: z.string().min(1).optional().describe("能力宣言。read-only、または書込みを許可するパスの説明文字列。Codexのread-onlyだけはCLI sandboxで実効禁止する"),
+      }
+    : {};
+  const writeScopeOutputSchema: Record<string, z.ZodTypeAny> = supportsWriteScope
+    ? {
+        // write_scope省略時は既存launch receiptを完全に保つため両fieldを出さない。
+        write_scope: z.string().optional(),
+        write_scope_enforcement: z.enum(["enforced_read_only", "declaration_only_unsupported"]).optional(),
+      }
+    : {};
   if (kind === "claude") {
     correlatedLaunchSchema.launch_operation_id = z
       .string()
@@ -498,6 +511,7 @@ function registerAgentTool(
         reasoning_effort: z.string().nullish().describe(agentEffortDesc(kind)),
         cwd: z.string().nullish().describe("作業ディレクトリ（対象リポのルート等・任意）"),
         session_name: z.string().nullish().describe("セッション名（省略で自動採番）"),
+        ...writeScopeInputSchema,
         ...correlatedLaunchSchema,
       },
       outputSchema: {
@@ -512,9 +526,10 @@ function registerAgentTool(
         // 初回prompt dispatch後のsubmit座礁観測（additive）。true=composerに残存を確認（submit未成立の疑い）/
         // false=残存を観測せず（submit成立の保証ではない）/ null=promptなし・argv prompt・判定不能。
         submit_residue: z.boolean().nullable(),
+        ...writeScopeOutputSchema,
       },
     },
-    async ({ prompt, model, reasoning_effort, cwd, session_name, launch_operation_id }: any) => {
+    async ({ prompt, model, reasoning_effort, cwd, session_name, launch_operation_id, write_scope }: any) => {
       try {
         const [sid, hint, eventCursor, submitResidue] = await core.openAgentWithInitialPrompt(kind, {
           prompt: prompt ?? undefined,
@@ -523,6 +538,7 @@ function registerAgentTool(
           cwd: cwd ?? undefined,
           session_name: session_name ?? undefined,
           launch_operation_id: launch_operation_id ?? undefined,
+          ...(supportsWriteScope ? { write_scope } : {}),
         });
         const structured = {
           schema: "aiterm.agent-launch-result.v1" as const,
@@ -532,6 +548,15 @@ function registerAgentTool(
           event_cursor: eventCursor,
           wait_command: eventCursor === null ? null : `aiterm-wait --session ${sid} --cursor ${eventCursor}`,
           submit_residue: submitResidue,
+          ...(supportsWriteScope && write_scope !== undefined
+            ? {}
+            : supportsWriteScope ? {
+                write_scope,
+                write_scope_enforcement:
+                  kind === "codex" && write_scope === "read-only"
+                    ? "enforced_read_only" as const
+                    : "declaration_only_unsupported" as const,
+              } : {}),
         };
         return {
           content: [{ type: "text" as const, text: `session_id: ${sid}\n${hint}` }],
