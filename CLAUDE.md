@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **Unreleased（2026-08-02）**: `codex_agent`/`grok_agent`/`composer_agent`に任意の`write_scope`能力宣言を追加。指定値はlaunch receipt・per-launch metadata・`pty_list`へ保存する。ローカル`codex --help`で`--sandbox`の`read-only`値を確認し、Codexの`write_scope:"read-only"`だけは`--sandbox read-only`で実効書込み禁止にする。Grok/Composerには対応sandboxがなく、Codexのパス説明にもallowlist CLI引数がないため、`write_scope_enforcement:"declaration_only_unsupported"`を返して宣言の記録だけであることを明示する。省略時のargv・receipt・metadata表記は不変。
+
 > **v0.20.3（2026-08-01公開）**: 複数のmanaged Fable／Claude session起動時、macOS Keychain等の
 > vendor credential storeが未認証・利用不能でもTUIを先に作り、各sessionが再loginへ流れて認証状態と
 > 残骸を増やす欠陥を修理。新しいClaude launchはtmux session作成前に同じCLIの

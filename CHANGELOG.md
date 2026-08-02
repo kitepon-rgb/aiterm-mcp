@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `codex_agent`、`grok_agent`、`composer_agent`へ任意の`write_scope`能力宣言を追加。
+  指定値はlaunch receipt、per-launch metadata、`pty_list`へ保存する。Codexの
+  `write_scope:"read-only"`はCLIの`--sandbox read-only`で実効禁止する。Grok/Composerと
+  Codexのパス説明は対応するsandbox/allowlist CLI機構がないため、
+  `write_scope_enforcement:"declaration_only_unsupported"`で宣言記録だけであることを明示する。
+
+### Unchanged
+
+- `write_scope`省略時のagent launcher argv、launch receipt、metadata表示は従来どおり。
+
 ## [0.20.3] - 2026-08-01
 
 ### Fixed
