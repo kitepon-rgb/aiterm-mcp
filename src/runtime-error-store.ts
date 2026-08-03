@@ -294,7 +294,7 @@ function validateState(value: unknown, maxRecords = 256): StoreState | null {
   };
 }
 
-function processStartIdentity(pid: number, platform: NodeJS.Platform): string | null {
+function processStartIdentity(pid: number, platform: NodeJS.Platform, timeoutMs = 1000): string | null {
   if (!Number.isInteger(pid) || pid < 1) return null;
   if (platform === "linux") {
     try {
@@ -307,7 +307,7 @@ function processStartIdentity(pid: number, platform: NodeJS.Platform): string | 
   if (platform === "win32") {
     const script = "$p=Get-Process -Id $env:AITERMMCP_PROCESS_ID -ErrorAction Stop; $p.StartTime.ToUniversalTime().Ticks";
     const result = spawnSync("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script], {
-      encoding: "utf8", timeout: 1000, maxBuffer: 4096, windowsHide: true,
+      encoding: "utf8", timeout: timeoutMs, maxBuffer: 4096, windowsHide: true,
       env: { ...process.env, AITERMMCP_PROCESS_ID: String(pid) },
     });
     const value = result.status === 0 ? (result.stdout ?? "").trim() : "";
@@ -464,7 +464,8 @@ export class RuntimeErrorStore {
       if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== process.getuid!()
         || (info.mode & 0o777) !== 0o700) throw new Error("runtime error lock queue のowner/modeが不正です");
     }
-    const startId = processStartIdentity(process.pid, this.platform);
+    const identityTimeoutMs = this.platform === "win32" ? this.windowsAclTimeoutMs : 1000;
+    const startId = processStartIdentity(process.pid, this.platform, identityTimeoutMs);
     if (!startId) throw new Error("process start identity を取得できません");
     const owner = { pid: process.pid, start_id: startId, token: randomBytes(16).toString("hex") };
     const ticketPattern = /^(\d{16})-([0-9a-f]{32})\.ticket$/;
@@ -503,7 +504,7 @@ export class RuntimeErrorStore {
             throw error;
           }
           if (name !== `choosing-${current.token}.json`) throw new Error("runtime error choosing entry が不正です");
-          const identity = processStartIdentity(current.pid, this.platform);
+          const identity = processStartIdentity(current.pid, this.platform, identityTimeoutMs);
           const live = identity === current.start_id || (!identity && processExists(current.pid));
           if (live) hasLiveChoosing = true;
           else {
@@ -528,7 +529,7 @@ export class RuntimeErrorStore {
             throw error;
           }
           if (!name.endsWith(`-${current.token}.ticket`)) throw new Error("runtime error lock ticket が不正です");
-          const identity = processStartIdentity(current.pid, this.platform);
+          const identity = processStartIdentity(current.pid, this.platform, identityTimeoutMs);
           const live = identity === current.start_id || (!identity && processExists(current.pid));
           if (!live) {
             try { fs.unlinkSync(currentPath); } catch (error) {

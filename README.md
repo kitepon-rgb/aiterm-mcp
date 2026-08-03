@@ -95,11 +95,11 @@ toolchain behind kitepon.dev's products.
 
 Thirteen tools: six **PTY tools** — `pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list` — to open, drive, and read one persistent terminal, four **agent launchers** — `claude_agent` / `codex_agent` / `grok_agent` / `composer_agent` — that each start another coding agent's TUI inside a fresh one, `claude_turn` for durable structured issue/recovery, `claude_approval` for correlated managed-Claude approval prompts, and `diagnostics` for safe factory readiness. The backend is **tmux**, so sessions survive even if the MCP server or the AI client restarts.
 
-**v0.21.2 removes Codex Stop hooks from the completion path.** Codex completion and
+**v0.21.3 removes Codex Stop hooks from the completion path.** Codex completion and
 final-message attribution now come from the root rollout transcript's durable
 `task_complete.turn_id`, observed after the dispatch byte boundary. A broken or stale
 hook executable can no longer strand `aiterm-wait`. v0.21.0 added explicit
-`write_scope` declarations for external-agent launchers; v0.21.2 also fixes their
+`write_scope` declarations for external-agent launchers; v0.21.3 also fixes their
 structured launch receipts so a supplied scope and its enforcement status are retained.
 v0.20.3 prevents concurrent
 managed Claude/Fable sessions from turning one broken login into many competing login

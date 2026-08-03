@@ -95,10 +95,10 @@ host統合は、kitepon.devの製品開発を支える内部基盤
 
 13 ツール: 6 つの **PTY ツール**（`pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list`）で 1 本の永続端末を開き・操作し・読む。加えて 4 つの **エージェント起動ツール**（`claude_agent` / `codex_agent` / `grok_agent` / `composer_agent`）が別のコーディングエージェントの TUI を新しい端末の中に起動し、`claude_turn`がdurable caller向けの構造化issue／recoveryを、`claude_approval`がmanaged Claudeの相関済み承認UI中継を、`diagnostics`が安全なfactory readinessを返す。バックエンドは **tmux** なので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
 
-**v0.21.2ではCodexの完了経路からStop hookを撤去。** Codexの完了通知と最終回答の帰属は、
+**v0.21.3ではCodexの完了経路からStop hookを撤去。** Codexの完了通知と最終回答の帰属は、
 root rollout transcriptへ永続化される`task_complete.turn_id`をdispatch byte境界以後から観測する。
 hookの実行ファイルが壊れたり消えたりしても`aiterm-wait`は座礁しない。v0.21.0では外部agent launcherへ
-明示的な`write_scope`能力宣言を追加し、v0.21.2で指定したscopeと実効性がstructured launch receiptへ
+明示的な`write_scope`能力宣言を追加し、v0.21.3で指定したscopeと実効性がstructured launch receiptへ
 確実に残るよう修正した。v0.20.3では、壊れた認証から複数のmanaged Claude／Fable
 sessionが同時にloginへ流れる問題を修理し、新規Claude起動はPTY作成前にvendor所有の共有認証を検証する。
 v0.20では、待たずに一度だけ観測する

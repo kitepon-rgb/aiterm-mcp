@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.21.2] - 2026-08-03
+## [0.21.3] - 2026-08-03
 
 ### Added
 
@@ -32,13 +32,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   実MCP境界で回帰化し、宣言値・実効性の表示と既存receipt shapeを両立する。
 - Grok/Composerの`write_scope`回帰が開発端末の実Grok CLIを暗黙利用し、clean CI runnerでは
   CLI不在で失敗する非hermetic fixtureを偽binへ固定した。
+- Windowsのruntime-error-storeがlock ownerのPID再利用を防ぐprocess start identity取得だけ
+  PowerShellを1秒で打ち切り、clean runnerのcold startで失敗する不整合を修正。DACL適用と同じ
+  設定済みWindows command timeout（既定5秒）へ統一した。
+
+## [0.21.2] - 2026-08-03
+
+### Release status
+
+- Git tagのCIでWindows 20のprocess start identity取得が1秒上限を超え、publish jobは実行前にskipされた。
+  npm、GitHub Release、Official MCP Registryへは公開せず、tagを動かさず0.21.3で置き換える。
 
 ## [0.21.1] - 2026-08-03
 
 ### Release status
 
 - Git tagのCIが上記非hermetic fixtureで失敗し、publish jobは実行前にskipされた。npm、GitHub Release、
-  Official MCP Registryへは公開せず、tagを動かさず0.21.2で置き換える。
+  Official MCP Registryへは公開せず、tagを動かさずfixtureを0.21.2で修正した。0.21.2もpublish前に
+  Windows gateで止まったため、公開成果は0.21.3へ継承する。
 
 ## [0.21.0] - 2026-08-02
 
@@ -829,7 +840,8 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.21.2...HEAD
+[Unreleased]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.21.3...HEAD
+[0.21.3]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.21.2...v0.21.3
 [0.21.2]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.21.1...v0.21.2
 [0.21.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/b8c4dbc...v0.21.1
 [0.21.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.20.3...b8c4dbc
