@@ -66,6 +66,7 @@ const AGENT_DONE_SCREEN_SETTLE_MIN_SAMPLES = 3;
 const AGENT_SUBMIT_DELAY_MS = 250;
 const AGENT_EVENT_MAX_BYTES = 1024 * 1024;
 const AGENT_EVENT_TAIL_BYTES = 64 * 1024;
+const CODEX_TRANSCRIPT_INCREMENT_MAX_BYTES = 16 * 1024 * 1024;
 const AGENT_METADATA_NEGATIVE_CACHE_TTL_MS = 2_000;
 const AGENT_TUI_READY_TIMEOUT_MS = 30_000;
 const AGENT_TUI_READY_POLL_MS = 500;
@@ -1445,7 +1446,7 @@ export function killAll(): string {
   return "killed all sessions on this socket";
 }
 
-// ── agent_done: agent CLI の Stop hook を PTY 送信の完了境界として使う最小ルート ────
+// ── agent_done: vendor の構造化完了記録を PTY 送信の完了境界として使う ────
 interface AgentMetadata {
   kind: AgentKind;
   aiterm_session: string;
@@ -1460,6 +1461,8 @@ interface AgentMetadata {
   launch_operation_id?: string | null;
   launch_request_digest?: string | null;
   hook_route: "managed_claude_settings" | "managed_codex_home" | "managed_grok_home";
+  // 省略は v0.21.0 以前のCodex Stop hook event route。
+  completion_route?: "codex_transcript";
   node_platform: NodeJS.Platform;
   codex_home?: string;
   claude_settings?: string;
@@ -1557,16 +1560,19 @@ const agentMetadataNegativeCache = new Map<string, number>();
 let agentTuiReadyStableSamplesTestOverride: number | null = null;
 
 
-function codexHookScriptPath(): string {
-  return path.join(path.dirname(fileURLToPath(import.meta.url)), "codex-stop-hook.js");
-}
-
 function grokHookScriptPath(): string {
   return path.join(path.dirname(fileURLToPath(import.meta.url)), "grok-stop-hook.js");
 }
 
 function claudeHookScriptPath(): string {
   return path.join(path.dirname(fileURLToPath(import.meta.url)), "claude-stop-hook.js");
+}
+
+// process.execPath は Homebrew 等では Cellar の版付き実体を指す。長寿命 MCP server の起動後に
+// runtime が更新されるとその実体だけが消え、既に生成済みの hook が exit 127 になる。
+// hook は server と同じ継承 PATH から node を毎回解決し、安定した package script を実行する。
+function nodeHookCommand(hookScript: string): string {
+  return `${shq("node")} ${shq(hookScript)}`;
 }
 
 function safeStatSize(p: string): number {
@@ -1696,7 +1702,7 @@ function readCodexConfigPins(configPath: string): { model: CodexConfigPin; effor
   return { model: pick("model"), effort: pick("model_reasoning_effort") };
 }
 
-function managedCodexConfigSummary(configPath: string, hookTrustBypass: boolean): string {
+function managedCodexConfigSummary(configPath: string): string {
   let body: string;
   try {
     body = fs.readFileSync(configPath, "utf8");
@@ -1720,7 +1726,6 @@ function managedCodexConfigSummary(configPath: string, hookTrustBypass: boolean)
   const sandboxMode = valueOf("sandbox_mode");
   if (approvalPolicy) bits.push(`approval_policy=${approvalPolicy}`);
   if (sandboxMode) bits.push(`sandbox_mode=${sandboxMode}`);
-  if (hookTrustBypass) bits.push("hook trust bypass 有効");
   return `managed config: ${bits.join(" / ")}`;
 }
 
@@ -1804,27 +1809,9 @@ function createManagedCodexHome(
 
   snapshotCodexAgentDefinitions(srcHome, managedHome);
 
-  const hookScript = codexHookScriptPath();
-  if (!fs.existsSync(hookScript)) {
-    throw new AitermError(`Codex Stop hook wrapper が見つかりません。npm run build を実行してください: ${hookScript}`, 2);
-  }
-  writeJson0600(path.join(managedHome, "hooks.json"), {
-    hooks: {
-      Stop: [
-        {
-          hooks: [
-            {
-              type: "command",
-              command: `${shq(process.execPath)} ${shq(hookScript)}`,
-              timeoutSec: 10,
-              async: false,
-              statusMessage: null,
-            },
-          ],
-        },
-      ],
-    },
-  });
+  // Codex 自身の rollout transcript に task_complete が永続化されるため、完了検出用の
+  // Stop hook は作らない。hook と transcript の二重正本、および hook failure の単一障害点を
+  // ここでなくす。
   return managedHome;
 }
 
@@ -1841,7 +1828,7 @@ function createManagedClaudeSettings(name: string, launchId: string): string {
           hooks: [
             {
               type: "command",
-              command: `${shq(process.execPath)} ${shq(hookScript)}`,
+              command: nodeHookCommand(hookScript),
               timeout: 10,
             },
           ],
@@ -1952,7 +1939,7 @@ function createManagedGrokHome(name: string, launchId: string, authPath: string 
           hooks: [
             {
               type: "command",
-              command: `${shq(process.execPath)} ${shq(hookScript)}`,
+              command: nodeHookCommand(hookScript),
               timeout: 10,
             },
           ],
@@ -2487,6 +2474,7 @@ function createCodexAgentMetadata(
     vendor_session_id: null,
     initial_prompt: initialPrompt,
     hook_route: "managed_codex_home",
+    completion_route: "codex_transcript",
     node_platform: process.platform,
     codex_home: codexHome,
   };
@@ -2609,6 +2597,7 @@ function loadAgentMetadata(name: string): AgentMetadata {
       vendor_session_id: typeof m.vendor_session_id === "string" ? m.vendor_session_id : null,
       initial_prompt: normalizeInitialPromptState(m.initial_prompt),
       hook_route: "managed_codex_home",
+      ...(m.completion_route === "codex_transcript" ? { completion_route: "codex_transcript" as const } : {}),
       node_platform: process.platform,
       codex_home: expectedHome,
     };
@@ -2740,6 +2729,18 @@ function bindAgentVendorSession(meta: AgentMetadata, ev: AgentDoneEvent): void {
 // per-launch 新規作成＋launch_id フィルタ付き走査なので、0 起点は取りこぼしゼロかつ安全。
 function bindCompletedInitialPrompt(meta: AgentMetadata): void {
   if (meta.initial_prompt !== "pending" && meta.initial_prompt !== "sent") return;
+  if (meta.kind === "codex") {
+    const done = latestCodexCompletion(meta);
+    if (!done) {
+      throw new AitermError(
+        `agent session '${meta.aiterm_session}' は起動時 prompt の完了待ちです。${agentWaitGuide(meta.aiterm_session)}`,
+        2,
+      );
+    }
+    bindAgentVendorSession(meta, done);
+    setInitialPromptState(meta, "done");
+    return;
+  }
   if (meta.vendor_session_id) {
     setInitialPromptState(meta, "done");
     return;
@@ -2779,6 +2780,7 @@ function tryLoadAgentMetadata(name: string): AgentMetadata | null {
 }
 
 function latestAgentDoneEvent(meta: AgentMetadata, expectedOperationId: string | null = null): AgentDoneEvent | null {
+  if (meta.kind === "codex") return latestCodexCompletion(meta);
   const size = safeStatSize(meta.event_file);
   if (size === 0) return null;
   const isTailRead = size > AGENT_EVENT_TAIL_BYTES;
@@ -2824,6 +2826,12 @@ function completedClaudeOperationEvent(meta: AgentMetadata, operationId: string)
 
 function recoverAgentVendorSession(meta: AgentMetadata): void {
   if (meta.vendor_session_id) return;
+  if (meta.kind === "codex") {
+    const transcript = bindCodexTranscriptSession(meta);
+    if (!transcript) return;
+    if (meta.initial_prompt === "pending" && latestCodexCompletion(meta)) setInitialPromptState(meta, "done");
+    return;
+  }
   const size = safeStatSize(meta.event_file);
   if (size === 0) return;
   if (size > AGENT_EVENT_MAX_BYTES) {
@@ -2878,6 +2886,115 @@ function findLatestCodexTranscript(codexHome: string, vendorSessionId: string): 
   };
   visit(sessionsDir);
   return latestFile;
+}
+
+function listCodexTranscripts(codexHome: string): string[] {
+  const sessionsDir = path.join(codexHome, "sessions");
+  const files: string[] = [];
+  const visit = (dir: string): void => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const file = path.join(dir, entry.name);
+      if (entry.isDirectory()) visit(file);
+      else if (entry.isFile() && entry.name.startsWith("rollout-") && entry.name.endsWith(".jsonl")) files.push(file);
+    }
+  };
+  visit(sessionsDir);
+  // managed CODEX_HOME では root TUI の rollout が最初に作られる。後から同じ home に
+  // sub-agent rollout が増えても root を取り違えないよう、未bind時は最古を選べる順にする。
+  return files.sort();
+}
+
+function codexTranscriptSessionId(file: string): string | null {
+  const size = Math.min(safeStatSize(file), AGENT_EVENT_TAIL_BYTES);
+  if (size === 0) return null;
+  const text = readFileRange(file, 0, size).toString("utf8");
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const record = JSON.parse(line);
+      if (record?.type === "session_meta" && typeof record?.payload?.id === "string" && record.payload.id) {
+        return record.payload.id;
+      }
+    } catch {
+      // startup中の未完結行は後のpollで読み直す。
+    }
+  }
+  return null;
+}
+
+function codexRootTranscript(meta: AgentMetadata): string | null {
+  if (meta.kind !== "codex" || !meta.codex_home) return null;
+  if (meta.vendor_session_id) return findLatestCodexTranscript(meta.codex_home, meta.vendor_session_id);
+  return listCodexTranscripts(meta.codex_home)[0] ?? null;
+}
+
+function bindCodexTranscriptSession(meta: AgentMetadata): string | null {
+  const transcript = codexRootTranscript(meta);
+  if (!transcript) return null;
+  const vendorSessionId = codexTranscriptSessionId(transcript);
+  if (vendorSessionId && !meta.vendor_session_id) {
+    meta.vendor_session_id = vendorSessionId;
+    writeAgentMetadata(meta);
+  }
+  return transcript;
+}
+
+function codexCompletionEvent(
+  meta: AgentMetadata,
+  vendorSessionId: string | null,
+  record: any,
+): AgentDoneEvent | null {
+  if (
+    record?.type !== "event_msg" ||
+    record?.payload?.type !== "task_complete" ||
+    typeof record?.payload?.turn_id !== "string" ||
+    !record.payload.turn_id
+  ) return null;
+  return {
+    type: "agent_done",
+    vendor: "codex",
+    aiterm_session: meta.aiterm_session,
+    launch_id: meta.launch_id,
+    vendor_session_id: vendorSessionId,
+    turn_id: record.payload.turn_id,
+    operation_id: null,
+    reason: "Codex transcript task_complete",
+    done_status: "turn_done",
+    stop_hook_active: false,
+    at: typeof record.timestamp === "string" ? record.timestamp : new Date().toISOString(),
+  };
+}
+
+function latestCodexCompletion(meta: AgentMetadata): AgentDoneEvent | null {
+  const transcript = codexRootTranscript(meta);
+  if (!transcript) return null;
+  const vendorSessionId = meta.vendor_session_id ?? codexTranscriptSessionId(transcript);
+  let latest: AgentDoneEvent | null = null;
+  for (const line of readTranscriptLines(transcript)) {
+    if (!line.trim()) continue;
+    try {
+      latest = codexCompletionEvent(meta, vendorSessionId, JSON.parse(line)) ?? latest;
+    } catch {
+      // Codexが末尾を書込み中なら、その行は次の観測で完結してから読む。
+    }
+  }
+  return latest;
+}
+
+function agentCompletionCursor(meta: AgentMetadata): number {
+  if (meta.kind !== "codex") return safeStatSize(meta.event_file);
+  const transcript = bindCodexTranscriptSession(meta);
+  if (meta.completion_route !== "codex_transcript") {
+    meta.completion_route = "codex_transcript";
+    writeAgentMetadata(meta);
+  }
+  return transcript ? safeStatSize(transcript) : 0;
 }
 
 function transcriptUnavailable(): never {
@@ -3206,9 +3323,87 @@ export interface AgentWaitObservation {
   at: string | null;
 }
 
+async function observeCodexDone(
+  meta: AgentMetadata,
+  timeout: number,
+  requestedCursor: number | null | undefined,
+): Promise<AgentWaitObservation> {
+  const metadataFile = agentMetadataPath(meta.aiterm_session, meta.launch_id);
+  let transcript = codexRootTranscript(meta);
+  const startOffset = requestedCursor ?? (transcript ? safeStatSize(transcript) : 0);
+  let cursor = startOffset;
+  let carry = "";
+  let malformedEvents = 0;
+  let discardLeadingFragment = false;
+  let initializedBoundary = false;
+  const deadline = performance.now() + timeout * 1000;
+  const observation = (
+    outcome: AgentWaitObservation["outcome"],
+    ev: AgentDoneEvent | null = null,
+  ): AgentWaitObservation => ({
+    schema: "aiterm.agent-wait-result.v1",
+    session_id: meta.aiterm_session,
+    launch_id: meta.launch_id,
+    vendor: "codex",
+    outcome,
+    operation_id: null,
+    vendor_session_id: ev?.vendor_session_id ?? meta.vendor_session_id ?? null,
+    turn_id: ev?.turn_id ?? null,
+    malformed_events: malformedEvents,
+    at: ev?.at ?? null,
+  });
+
+  for (;;) {
+    if (!fs.existsSync(metadataFile)) return observation("closed");
+    transcript ??= codexRootTranscript(meta);
+    if (transcript) {
+      if (!initializedBoundary) {
+        if (cursor > 0) {
+          const previous = readFileRange(transcript, cursor - 1, cursor).toString("utf8");
+          discardLeadingFragment = previous !== "\n";
+        }
+        initializedBoundary = true;
+      }
+      const size = safeStatSize(transcript);
+      if (size < cursor) {
+        throw new AitermError("Codex transcript が完了待機中に短くなりました。該当セッションを閉じて起動し直してください。", 2);
+      }
+      if (size - startOffset > CODEX_TRANSCRIPT_INCREMENT_MAX_BYTES) {
+        throw new AitermError("Codex transcript のturn増分が大きすぎます。該当セッションを閉じて起動し直してください。", 2);
+      }
+      if (size > cursor) {
+        carry += readFileRange(transcript, cursor, size).toString("utf8");
+        cursor = size;
+        const parts = carry.split("\n");
+        carry = parts.pop() ?? "";
+        if (discardLeadingFragment && parts.length > 0) {
+          parts.shift();
+          discardLeadingFragment = false;
+        }
+        const vendorSessionId = meta.vendor_session_id ?? codexTranscriptSessionId(transcript);
+        for (const line of parts) {
+          if (!line.trim()) continue;
+          if (Buffer.byteLength(line, "utf8") > AGENT_EVENT_MAX_BYTES) {
+            malformedEvents++;
+            continue;
+          }
+          try {
+            const done = codexCompletionEvent(meta, vendorSessionId, JSON.parse(line));
+            if (done) return observation("done", done);
+          } catch {
+            malformedEvents++;
+          }
+        }
+      }
+    }
+    if (performance.now() >= deadline) return observation(timeout === 0 ? "running" : "timeout");
+    await sleep(AGENT_DONE_POLL_MS);
+  }
+}
+
 // 外部waiterプロセス用の純リーダー観測。lock・PTY・metadata書込・dispatch状態には一切触れない。
-// event fileのtail規律（未終端行保持・増分上限）はwaitAgentDoneEventと同一だが、
-// vendor_session_idのbind永続化を行わない点だけ意図的に異なる（waiterは観測者であって所有者でない）。
+// Codexはrollout transcript、他vendorはevent fileを増分走査し、vendor_session_idのbind永続化を
+// 行わない（waiterは観測者であって所有者でない）。
 export async function observeAgentDone(
   name: string,
   o: { operation_id?: string | null; timeout?: number; cursor?: number | null } = {},
@@ -3222,6 +3417,9 @@ export async function observeAgentDone(
     throw new AitermError("cursor は0以上の整数byte offsetで指定してください", 2);
   }
   const timeout = o.timeout ?? DEFAULT_AGENT_DONE_TIMEOUT;
+  if (meta.kind === "codex" && meta.completion_route === "codex_transcript") {
+    return observeCodexDone(meta, timeout, o.cursor);
+  }
   const metadataFile = agentMetadataPath(meta.aiterm_session, meta.launch_id);
   // 境界の優先順: dispatch receipt の event_cursor（起動順序に依存しない）→ operation相関
   // （operation_idの一意性で先頭から全走査できる）→ waiter起動時EOF（waiter先行起動が前提）。
@@ -3563,7 +3761,7 @@ async function sendAgentPromptText(name: string, text: string): Promise<void> {
 
 export interface InitialAgentPromptResult {
   text: string;
-  // 初回 prompt を dispatch した場合の event file 境界。ready 失敗で未送信なら null。
+  // 初回 prompt を dispatch した場合のvendor完了正本境界。ready 失敗で未送信なら null。
   event_cursor: number | null;
   // submit座礁観測。true=composerに残存を確認（未submitの疑い）/ false=残存を観測せず / null=判定不能・未実施。
   submit_residue: boolean | null;
@@ -3596,7 +3794,7 @@ export async function sendInitialAgentPrompt(
       submit_residue: null,
     };
   }
-  const startOffset = safeStatSize(meta.event_file);
+  const startOffset = agentCompletionCursor(meta);
   try {
     if (meta.kind === "claude") {
       prepareSendText(text, { raw: false, force: true });
@@ -3629,6 +3827,7 @@ export interface AgentDispatchReceipt {
   session_id: string;
   launch_id: string;
   vendor: AgentKind;
+  // vendor別完了正本のbyte境界（Codex=rollout transcript、他vendor=event file）。
   event_cursor: number;
   operation_id: string | null;
   // submit座礁観測。true=composerに残存を確認（未submitの疑い）/ false=残存を観測せず
@@ -3637,7 +3836,7 @@ export interface AgentDispatchReceipt {
 }
 
 // v0.16.0: 親をブロックする wait 経路は廃止した。send は ready gate と submit 分離を内蔵した
-// dispatch として即返り、event_cursor（送信直前の event file 境界）を receipt で返す。
+// dispatch として即返り、event_cursor（送信直前のvendor完了正本境界）を receipt で返す。
 // 完了通知は aiterm-wait（--cursor で境界を渡す）、回収は pty_read / claude_turn recover が担う。
 export async function dispatchAgentTurn(
   name: string,
@@ -3652,7 +3851,9 @@ export async function dispatchAgentTurn(
     throw new AitermError("operation_id はClaude agent sessionだけで使用できます", 2);
   }
   bindCompletedInitialPrompt(meta);
-  if (!meta.vendor_session_id) {
+  // Codexはbind済みのfollow-upでも毎回idleを確認してからtranscript境界を切る。同じcursorへ
+  // 複数turnを帰属させる余地を作らない。他vendorの既存dispatch条件は変えない。
+  if (meta.kind === "codex" || !meta.vendor_session_id) {
     const ready = await waitAgentTuiReady(name, meta, o.ready_timeout ?? AGENT_TUI_READY_TIMEOUT_MS);
     if (!ready.ready) {
       throw new AitermError(
@@ -3662,7 +3863,7 @@ export async function dispatchAgentTurn(
       );
     }
   }
-  const startOffset = safeStatSize(meta.event_file);
+  const startOffset = agentCompletionCursor(meta);
   if (meta.kind === "claude") {
     // durable／anonymousを分岐する前に同じsend preflightを通す。拒否されるpromptの
     // receipt／active markerだけを残して、来ないStopを待つ状態を作らない。
@@ -3896,7 +4097,6 @@ function buildAgentCmd(
     if (model) parts.push("--model", shq(model));
     if (effort) parts.push("--effort", shq(effort));
   } else if (kind === "codex") {
-    if (meta?.kind === "codex") parts.push("--dangerously-bypass-hook-trust");
     // `codex --help` で確認した実在フラグ。read-only 宣言だけはCLI sandboxへ落とし、
     // launcher自身が実効能力壁を作る。パス説明はCodex CLIに同等のallowlist引数がないため宣言のまま残す。
     if (meta?.kind === "codex" && meta.write_scope === "read-only") parts.push("--sandbox", "read-only");
@@ -4002,7 +4202,7 @@ function buildAgentLaunchNote(
     (effectiveEffort === "ultra"
       ? "⚠ effort=ultra は max 推論＋proactive 自動委譲 ON（子エージェント自動生成・使用量急増に注意）。"
       : "");
-  const summary = meta?.kind === "codex" && meta.codex_home ? managedCodexConfigSummary(configPath, true) : "";
+  const summary = meta?.kind === "codex" && meta.codex_home ? managedCodexConfigSummary(configPath) : "";
   return (summary ? `${launch}\n${summary}\n` : launch) + writeScopeNote;
 }
 

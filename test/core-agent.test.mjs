@@ -161,6 +161,39 @@ function writeCodexTranscript(meta, vendorSessionId, records) {
   return file;
 }
 
+function appendCodexTranscript(meta, vendorSessionId, records) {
+  const sessions = path.join(meta.codex_home, "sessions");
+  let file = null;
+  const visit = (dir) => {
+    if (file || !fs.existsSync(dir)) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const candidate = path.join(dir, entry.name);
+      if (entry.isDirectory()) visit(candidate);
+      else if (entry.isFile() && entry.name.includes(vendorSessionId) && entry.name.endsWith(".jsonl")) file = candidate;
+      if (file) return;
+    }
+  };
+  visit(sessions);
+  if (!file) {
+    file = writeCodexTranscript(meta, vendorSessionId, [{ type: "session_meta", payload: { id: vendorSessionId } }]);
+  }
+  fs.appendFileSync(file, records.map((record) => JSON.stringify(record)).join("\n") + "\n");
+  return file;
+}
+
+function appendCodexDone(meta, {
+  vendor_session_id: vendorSessionId = "codex-session-test",
+  turn_id: turnId = "turn-test",
+} = {}) {
+  return appendCodexTranscript(meta, vendorSessionId, [
+    { type: "event_msg", payload: { type: "task_complete", turn_id: turnId }, timestamp: new Date().toISOString() },
+  ]);
+}
+
+function scheduleCodexDone(meta, overrides = {}, delay = 200) {
+  setTimeout(() => appendCodexDone(meta, overrides), delay);
+}
+
 function writeGrokTranscript(meta, vendorSessionId, records) {
   const dir = path.join(meta.grok_home, "sessions", encodeURIComponent(meta.cwd), vendorSessionId);
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -518,7 +551,7 @@ test("openAgent codex: 複数行日本語 prompt は argv に残るが shell con
   }
 });
 
-test("openAgent codex agent_done: managed CODEX_HOME と Stop hook を組み立てる", { skip: skipAgentDone }, async () => {
+test("openAgent codex agent_done: managed CODEX_HOME は transcript 完了正本だけを使う", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async (fakeHome) => {
     const [sid, hint] = core.openAgent("codex", { reasoning_effort: "high", agent_done: true });
     try {
@@ -529,10 +562,9 @@ test("openAgent codex agent_done: managed CODEX_HOME と Stop hook を組み立�
       const meta = JSON.parse(fs.readFileSync(path.join(dir, metas[0]), "utf8"));
       assert.equal(meta.kind, "codex");
       assert.equal(meta.aiterm_session, sid);
+      assert.equal(meta.completion_route, "codex_transcript");
       assert.ok(fs.existsSync(meta.event_file), "event file を作る");
-      const hooks = JSON.parse(fs.readFileSync(path.join(meta.codex_home, "hooks.json"), "utf8"));
-      assert.equal(hooks.hooks.Stop[0].hooks[0].type, "command");
-      assert.match(hooks.hooks.Stop[0].hooks[0].command, /codex-stop-hook\.js/);
+      assert.equal(fs.existsSync(path.join(meta.codex_home, "hooks.json")), false, "Codex Stop hookを二重正本にしない");
       assert.equal(fs.readlinkSync(path.join(meta.codex_home, "auth.json")), path.join(fakeHome, "auth.json"));
       assert.equal(fs.lstatSync(path.join(meta.codex_home, "config.toml")).isSymbolicLink(), false);
       const config = fs.readFileSync(path.join(meta.codex_home, "config.toml"), "utf8");
@@ -540,10 +572,10 @@ test("openAgent codex agent_done: managed CODEX_HOME と Stop hook を組み立�
       assert.equal(fs.existsSync(path.join(meta.codex_home, "history.jsonl")), false);
       assert.equal(fs.existsSync(path.join(meta.codex_home, "sessions")), false);
       assert.match(hint, /起動設定: model=test-model（端末config継承） effort=high（引数）/);
-      assert.match(hint, /managed config: mcp_servers 1 個継承 \/ approval_policy=never \/ sandbox_mode=danger-full-access \/ hook trust bypass 有効/);
+      assert.match(hint, /managed config: mcp_servers 1 個継承 \/ approval_policy=never \/ sandbox_mode=danger-full-access/);
 
       const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
-      assert.match(out, /--dangerously-bypass-hook-trust/, `codex managed command: ${out}`);
+      assert.doesNotMatch(out, /--dangerously-bypass-hook-trust/, `不要なhook trust bypassを付けない: ${out}`);
       assert.match(out, /model_reasoning_effort=high/, `codex managed effort: ${out}`);
     } finally {
       core.closeSession(sid);
@@ -732,6 +764,8 @@ test("openAgent claude agent_done: isolated settings、Stop hook、result path�
     const settings = JSON.parse(fs.readFileSync(meta.claude_settings, "utf8"));
     assert.deepEqual(Object.keys(settings), ["hooks"]);
     assert.match(settings.hooks.Stop[0].hooks[0].command, /claude-stop-hook\.js/);
+    assert.ok(settings.hooks.Stop[0].hooks[0].command.startsWith("'node' "), "hook実行時にPATHからnodeを解決する");
+    assert.equal(settings.hooks.Stop[0].hooks[0].command.includes(process.execPath), false, "版付きnode実体を焼き付けない");
     const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
     assert.match(out, /--setting-sources\s+(?:''\s+)?--settings/);
     assert.match(out, /--settings/);
@@ -848,6 +882,8 @@ test("openAgent grok agent_done: isolated HOME と managed GROK_HOME/Stop hook/G
         const hooks = JSON.parse(fs.readFileSync(path.join(meta.grok_home, "hooks", "aiterm-stop.json"), "utf8"));
         assert.equal(hooks.hooks.Stop[0].hooks[0].type, "command");
         assert.match(hooks.hooks.Stop[0].hooks[0].command, /grok-stop-hook\.js/);
+        assert.ok(hooks.hooks.Stop[0].hooks[0].command.startsWith("'node' "), "hook実行時にPATHからnodeを解決する");
+        assert.equal(hooks.hooks.Stop[0].hooks[0].command.includes(process.execPath), false, "版付きnode実体を焼き付けない");
 
         const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
         assert.match(out, /GROK_AUTH_PATH=/, `grok auth canonical path is passed: ${out}`);
@@ -1217,7 +1253,7 @@ test("openAgent agent_done: 緩い state root でも stale metadata を掃除し
   });
 });
 
-test("dispatch/observe: event 到着まで待って結果へ agent_done suffix を付ける", { skip: skipAgentDone }, async () => {
+test("dispatch/observe: Codex task_complete 到着まで transcript 正本を待つ", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const [sid] = core.openAgent("codex", { agent_done: true });
     try {
@@ -1226,22 +1262,7 @@ test("dispatch/observe: event 到着まで待って結果へ agent_done suffix �
       const meta = JSON.parse(fs.readFileSync(path.join(agentStateDir(), metaFile), "utf8"));
       await markFakeAgentReady(sid, "codex");
       const receipt = await core.dispatchAgentTurn(sid, "echo AGENT_DONE_BODY");
-      setTimeout(() => {
-        fs.appendFileSync(
-          meta.event_file,
-          JSON.stringify({
-            type: "agent_done",
-            vendor: "codex",
-            aiterm_session: sid,
-            launch_id: meta.launch_id,
-            vendor_session_id: "codex-session-test",
-            turn_id: "turn-test",
-            reason: "Stop",
-            done_status: "turn_done",
-            at: new Date().toISOString(),
-          }) + "\n",
-        );
-      }, 200);
+      scheduleCodexDone(meta);
       const observation = await core.observeAgentDone(sid, { cursor: receipt.event_cursor, timeout: 3 });
       assert.equal(observation.outcome, "done");
       assert.equal(observation.vendor, "codex");
@@ -1905,7 +1926,7 @@ test("openAgentWithInitialPrompt: prompt を shell argv に載せず pending eve
         assert.equal(meta.initial_prompt, "pending");
         assert.equal(typeof launchCursor, "number", "構造化 event_cursor を返す");
         assert.match(out, new RegExp(`event_cursor=${launchCursor}\\b`), "hint と構造化 cursor が一致する");
-        appendAgentDone(meta, { turn_id: "open-agent-initial", vendor_session_id: "open-agent-vendor" });
+        appendCodexDone(meta, { turn_id: "open-agent-initial", vendor_session_id: "open-agent-vendor" });
         const observation = await core.observeAgentDone(sid, { cursor: launchCursor, timeout: 3 });
         assert.equal(observation.outcome, "done");
         assert.equal(observation.turn_id, "open-agent-initial");
@@ -2005,7 +2026,7 @@ test("sendInitialAgentPrompt: 初回 prompt を専用 boundary で送信し dest
       const out = await core.sendInitialAgentPrompt(sid, "explain what rm -rf / does");
       assert.match(out.text, /initial_prompt=pending vendor=codex event_cursor=\d+/, `pending hint: ${out.text}`);
       assert.equal(typeof out.event_cursor, "number", "構造化 event_cursor を返す");
-      appendAgentDone(meta, { turn_id: "initial-turn", vendor_session_id: "initial-vendor" });
+      appendCodexDone(meta, { turn_id: "initial-turn", vendor_session_id: "initial-vendor" });
       const observation = await core.observeAgentDone(sid, { cursor: out.event_cursor, timeout: 3 });
       assert.equal(observation.outcome, "done");
       assert.equal(observation.turn_id, "initial-turn");
@@ -2063,7 +2084,7 @@ test("readOutput: agent event は補助 metadata に出すが completion には�
     try {
       await markFakeAgentReady(sid);
       const meta = readAgentMeta(sid);
-      appendAgentDone(meta, { turn_id: "stale-read-turn", vendor_session_id: "stale-vendor" });
+      appendCodexDone(meta, { turn_id: "stale-read-turn", vendor_session_id: "stale-vendor" });
       const out = await core.readOutput(sid, { screen: true, timeout: 0 });
       assert.match(out, /agent vendor=codex/, `agent metadata: ${out}`);
       assert.match(out, /agent_event_seen=true/, `agent event seen: ${out}`);
@@ -2082,8 +2103,9 @@ test("readOutput: 1MB 超の agent event tail でも最新 metadata を表示す
     try {
       await markFakeAgentReady(sid);
       const meta = readAgentMeta(sid);
-      fs.appendFileSync(meta.event_file, "not-json\n".repeat(140_000));
-      appendAgentDone(meta, { turn_id: "tail-read-turn", vendor_session_id: "tail-vendor" });
+      const transcript = appendCodexTranscript(meta, "tail-vendor", []);
+      fs.appendFileSync(transcript, "not-json\n".repeat(140_000));
+      appendCodexDone(meta, { turn_id: "tail-read-turn", vendor_session_id: "tail-vendor" });
       const out = await core.readOutput(sid, { screen: true, timeout: 0 });
       assert.match(out, /agent_event_seen=true/, `agent event seen: ${out}`);
       assert.match(out, /last_turn_id=tail-read-turn/, `agent turn id: ${out}`);
@@ -2109,7 +2131,7 @@ test("readOutput: 非 agent metadata negative-cache は close/openAgent で無�
     try {
       await markFakeAgentReady(sid);
       const meta = readAgentMeta(sid);
-      appendAgentDone(meta, { turn_id: "cache-cleared-turn", vendor_session_id: "cache-cleared-vendor" });
+      appendCodexDone(meta, { turn_id: "cache-cleared-turn", vendor_session_id: "cache-cleared-vendor" });
       const out = await core.readOutput(sid, { screen: true, timeout: 0 });
       assert.match(out, /agent_event_seen=true/, `agent event seen: ${out}`);
       assert.match(out, /last_turn_id=cache-cleared-turn/, `agent turn id: ${out}`);
@@ -2135,15 +2157,16 @@ test("dispatchAgentTurn: agent TUI ready 前は送信前に拒否し文字を流
   });
 });
 
-test("observeAgentDone: 送信前の古い event / 初回 prompt done を follow-up done と誤認しない", { skip: skipAgentDone }, async () => {
+test("observeAgentDone: 送信前の古い task_complete を follow-up done と誤認しない", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const [sid] = core.openAgent("codex", { agent_done: true, prompt: "Reply READY." });
     try {
       const meta = readAgentMeta(sid);
-      appendAgentDone(meta, {
+      appendCodexDone(meta, {
         vendor_session_id: "codex-session-initial",
         turn_id: "initial-turn",
       });
+      await markFakeAgentReady(sid, "codex");
       const receipt = await core.dispatchAgentTurn(sid, "echo FOLLOWUP_BODY");
       assert.ok(
         receipt.submit_residue === null || typeof receipt.submit_residue === "boolean",
@@ -2159,14 +2182,14 @@ test("observeAgentDone: 送信前の古い event / 初回 prompt done を follow
   });
 });
 
-test("observeAgentDone: 送信直後に到着した event を race で落とさず、done 後の増分も重複させない", { skip: skipAgentDone }, async () => {
+test("observeAgentDone: 送信直後の task_complete を transcript cursor から回収する", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const [sid] = core.openAgent("codex", { agent_done: true });
     try {
       const meta = readAgentMeta(sid);
       await markFakeAgentReady(sid, "codex");
       const receipt = await core.dispatchAgentTurn(sid, "echo IMMEDIATE_DONE_BODY");
-      scheduleAgentDone(meta, {
+      scheduleCodexDone(meta, {
         vendor_session_id: "codex-session-race",
         turn_id: "race-turn",
       });
@@ -2189,111 +2212,50 @@ test("observeAgentDone: 送信直後に到着した event を race で落とさ�
 // wait しないため二重waitという概念自体が消滅）。「同一 session の二重 wait は busy reject する」
 // テストは削除。
 
-test("observeAgentDone: launch_id 不一致 event を無視する", { skip: skipAgentDone }, async () => {
-  await withFakeCodexHome(async () => {
-    const [sid] = core.openAgent("codex", { agent_done: true });
-    try {
-      const meta = readAgentMeta(sid);
-      await markFakeAgentReady(sid, "codex");
-      const receipt = await core.dispatchAgentTurn(sid, "echo WRONG_LAUNCH_BODY");
-      scheduleAgentDone(meta, {
-        launch_id: "ffffffffffffffffffffffffffffffff",
-        turn_id: "wrong-launch",
-      });
-      const observation = await core.observeAgentDone(sid, { cursor: receipt.event_cursor, timeout: 1 });
-      assert.equal(observation.outcome, "timeout", `launch_id 不一致を拾っていない: ${JSON.stringify(observation)}`);
-      assert.notEqual(observation.turn_id, "wrong-launch");
-    } finally {
-      core.closeSession(sid);
-    }
-  });
-});
-
-test("observeAgentDone: vendor_session_id bind 後は不一致 event を無視する", { skip: skipAgentDone }, async () => {
+test("observeAgentDone: follow-up は前turn後の transcript cursorだけを回収する", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const [sid] = core.openAgent("codex", { agent_done: true });
     try {
       const meta = readAgentMeta(sid);
       await markFakeAgentReady(sid, "codex");
       const receipt1 = await core.dispatchAgentTurn(sid, "echo BIND_ONE");
-      scheduleAgentDone(meta, {
+      appendCodexDone(meta, {
         vendor_session_id: "vendor-session-a",
         turn_id: "bind-one",
       });
       const first = await core.observeAgentDone(sid, { cursor: receipt1.event_cursor, timeout: 3 });
       assert.equal(first.outcome, "done");
       assert.equal(first.turn_id, "bind-one");
-      // v0.16.0: observeAgentDone は純粋readerでmetadataへ書き戻さない（aiterm-wait.test.mjs
-      // 「observe: metadata書き戻しをしない」と同じ契約）。bindは呼び出し元が担う責務のため、
-      // ここではテストヘルパで明示的にbindを永続化する。
-      const bound = readAgentMeta(sid);
-      bound.vendor_session_id = first.vendor_session_id;
-      writeAgentMeta(sid, bound);
-      assert.equal(bound.vendor_session_id, "vendor-session-a");
+
       const receipt2 = await core.dispatchAgentTurn(sid, "echo BIND_TWO");
-      scheduleAgentDone(bound, {
-        vendor_session_id: "vendor-session-b",
-        turn_id: "wrong-vendor-session",
-      });
-      const second = await core.observeAgentDone(sid, { cursor: receipt2.event_cursor, timeout: 1 });
-      assert.equal(second.outcome, "timeout", `vendor_session_id 不一致を拾っていない: ${JSON.stringify(second)}`);
-      assert.notEqual(second.turn_id, "wrong-vendor-session");
+      const beforeSecond = await core.observeAgentDone(sid, { cursor: receipt2.event_cursor, timeout: 0 });
+      assert.equal(beforeSecond.outcome, "running", "前turnのtask_completeを再利用しない");
+      appendCodexDone(readAgentMeta(sid), { vendor_session_id: "vendor-session-a", turn_id: "bind-two" });
+      const second = await core.observeAgentDone(sid, { cursor: receipt2.event_cursor, timeout: 3 });
+      assert.equal(second.outcome, "done");
+      assert.equal(second.turn_id, "bind-two");
     } finally {
       core.closeSession(sid);
     }
   });
 });
 
-test("observeAgentDone: bind 後の vendor_session_id 欠落 event は無視する", { skip: skipAgentDone }, async () => {
+test("observeAgentDone: 後発sub-agent transcriptのtask_completeをroot turnへ誤帰属しない", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const [sid] = core.openAgent("codex", { agent_done: true });
     try {
       const meta = readAgentMeta(sid);
       await markFakeAgentReady(sid, "codex");
-      const receipt1 = await core.dispatchAgentTurn(sid, "echo NULL_BIND_ONE");
-      scheduleAgentDone(meta, {
-        vendor_session_id: "vendor-session-a",
-        turn_id: "bind-one",
-      });
-      const first = await core.observeAgentDone(sid, { cursor: receipt1.event_cursor, timeout: 3 });
-      assert.equal(first.outcome, "done");
-      assert.equal(first.turn_id, "bind-one");
-      // v0.16.0: observeAgentDone は metadata へ書き戻さないため、bindはテストヘルパで明示的に行う。
-      const bound = readAgentMeta(sid);
-      bound.vendor_session_id = first.vendor_session_id;
-      writeAgentMeta(sid, bound);
-      const receipt2 = await core.dispatchAgentTurn(sid, "echo NULL_BIND_TWO");
-      scheduleAgentDone(bound, {
-        vendor_session_id: null,
-        turn_id: "null-vendor-session",
-      });
-      const second = await core.observeAgentDone(sid, { cursor: receipt2.event_cursor, timeout: 1 });
-      assert.equal(second.outcome, "timeout", `vendor_session_id 欠落を拾っていない: ${JSON.stringify(second)}`);
-      assert.notEqual(second.turn_id, "null-vendor-session");
-    } finally {
-      core.closeSession(sid);
-    }
-  });
-});
-
-test("observeAgentDone: bind 前に複数 vendor_session_id が混在したら曖昧成功にしない", { skip: skipAgentDone }, async () => {
-  await withFakeCodexHome(async () => {
-    const [sid] = core.openAgent("codex", { agent_done: true });
-    try {
-      const meta = readAgentMeta(sid);
-      await markFakeAgentReady(sid, "codex");
-      const receipt = await core.dispatchAgentTurn(sid, "echo AMBIGUOUS_VENDOR_BODY");
-      setTimeout(() => {
-        fs.appendFileSync(
-          meta.event_file,
-          agentDoneLine(meta, { vendor_session_id: "vendor-session-b", turn_id: "ambiguous-b" }) +
-            agentDoneLine(meta, { vendor_session_id: "vendor-session-a", turn_id: "ambiguous-a" }),
-        );
-      }, 200);
-      await assert.rejects(
-        core.observeAgentDone(sid, { cursor: receipt.event_cursor, timeout: 3 }),
-        (e) => e.code === 2 && /複数の vendor_session_id/.test(e.message),
-      );
+      appendCodexDone(meta, { vendor_session_id: "root-session", turn_id: "root-first" });
+      await core.readAgentTranscript(sid).catch(() => {});
+      const receipt = await core.dispatchAgentTurn(sid, "echo ROOT_SECOND");
+      writeCodexTranscript(meta, "zzzz-subagent-session", [
+        { type: "session_meta", payload: { id: "zzzz-subagent-session" } },
+        { type: "event_msg", payload: { type: "task_complete", turn_id: "subagent-turn" } },
+      ]);
+      const observation = await core.observeAgentDone(sid, { cursor: receipt.event_cursor, timeout: 0 });
+      assert.equal(observation.outcome, "running");
+      assert.notEqual(observation.turn_id, "subagent-turn");
     } finally {
       core.closeSession(sid);
     }
@@ -2340,21 +2302,23 @@ test("agent wait lock: 生きた別プロセスの lock は pid 診断付きで 
   });
 });
 
-test("observeAgentDone: partial JSONL fragment は次 poll まで保持する", { skip: skipAgentDone }, async () => {
+test("observeAgentDone: partial transcript JSONL fragment は次 poll まで保持する", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const [sid] = core.openAgent("codex", { agent_done: true });
     try {
       const meta = readAgentMeta(sid);
-      const line = agentDoneLine(meta, {
-        vendor_session_id: "codex-session-partial",
-        turn_id: "partial-turn",
-      });
+      const transcript = appendCodexTranscript(meta, "codex-session-partial", []);
+      const line = JSON.stringify({
+        type: "event_msg",
+        payload: { type: "task_complete", turn_id: "partial-turn" },
+        timestamp: new Date().toISOString(),
+      }) + "\n";
       await markFakeAgentReady(sid, "codex");
       const receipt = await core.dispatchAgentTurn(sid, "echo PARTIAL_BODY");
       setTimeout(() => {
-        fs.appendFileSync(meta.event_file, line.slice(0, 20));
+        fs.appendFileSync(transcript, line.slice(0, 20));
         setTimeout(() => {
-          fs.appendFileSync(meta.event_file, line.slice(20));
+          fs.appendFileSync(transcript, line.slice(20));
         }, 350);
       }, 200);
       const observation = await core.observeAgentDone(sid, { cursor: receipt.event_cursor, timeout: 3 });
@@ -2366,14 +2330,15 @@ test("observeAgentDone: partial JSONL fragment は次 poll まで保持する", 
   });
 });
 
-test("observeAgentDone: malformed 完結 JSONL は timeout の malformed_events に数える", { skip: skipAgentDone }, async () => {
+test("observeAgentDone: malformed 完結 transcript JSONL は malformed_events に数える", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const [sid] = core.openAgent("codex", { agent_done: true });
     try {
       const meta = readAgentMeta(sid);
+      const transcript = appendCodexTranscript(meta, "codex-session-malformed", []);
       await markFakeAgentReady(sid, "codex");
       const receipt = await core.dispatchAgentTurn(sid, "echo MALFORMED_BODY");
-      setTimeout(() => fs.appendFileSync(meta.event_file, '{"type":"agent_done"\n'), 200);
+      setTimeout(() => fs.appendFileSync(transcript, '{"type":"event_msg"\n'), 200);
       const observation = await core.observeAgentDone(sid, { cursor: receipt.event_cursor, timeout: 1 });
       assert.equal(observation.outcome, "timeout");
       assert.equal(observation.malformed_events, 1, `malformed 診断: ${JSON.stringify(observation)}`);
@@ -2383,14 +2348,15 @@ test("observeAgentDone: malformed 完結 JSONL は timeout の malformed_events 
   });
 });
 
-test("observeAgentDone: oversized JSONL 行も malformed_events に数える", { skip: skipAgentDone }, async () => {
+test("observeAgentDone: oversized transcript JSONL 行も malformed_events に数える", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const [sid] = core.openAgent("codex", { agent_done: true });
     try {
       const meta = readAgentMeta(sid);
+      const transcript = appendCodexTranscript(meta, "codex-session-oversized", []);
       await markFakeAgentReady(sid, "codex");
       const receipt = await core.dispatchAgentTurn(sid, "echo OVERSIZED_BODY");
-      setTimeout(() => fs.appendFileSync(meta.event_file, "x".repeat(70 * 1024) + "\n"), 200);
+      setTimeout(() => fs.appendFileSync(transcript, "x".repeat(1024 * 1024 + 1) + "\n"), 200);
       const observation = await core.observeAgentDone(sid, { cursor: receipt.event_cursor, timeout: 1 });
       assert.equal(observation.outcome, "timeout");
       assert.equal(observation.malformed_events, 1, `oversized 診断: ${JSON.stringify(observation)}`);
@@ -2595,6 +2561,7 @@ test("readAgentTranscript: Codex の単一 output_text を直近完了 turn か�
       const turnId = "transcript-turn-single";
       const meta = bindTranscriptTurn(sid, vendorSessionId, turnId);
       writeCodexTranscript(meta, vendorSessionId, [
+        { type: "session_meta", payload: { id: vendorSessionId } },
         "{ malformed jsonl line",
         {
           type: "response_item",
@@ -2605,6 +2572,7 @@ test("readAgentTranscript: Codex の単一 output_text を直近完了 turn か�
             internal_chat_message_metadata_passthrough: { turn_id: turnId },
           },
         },
+        { type: "event_msg", payload: { type: "task_complete", turn_id: turnId } },
       ]);
       const out = await core.readAgentTranscript(sid);
       assert.match(out, /Codex single answer/);
@@ -2666,6 +2634,7 @@ test("readAgentTranscript: Codex の複数 assistant block を join し lines �
       const turnId = "transcript-turn-blocks";
       const meta = bindTranscriptTurn(sid, vendorSessionId, turnId);
       writeCodexTranscript(meta, vendorSessionId, [
+        { type: "session_meta", payload: { id: vendorSessionId } },
         {
           type: "response_item",
           payload: {
@@ -2684,6 +2653,7 @@ test("readAgentTranscript: Codex の複数 assistant block を join し lines �
             internal_chat_message_metadata_passthrough: { turn_id: turnId },
           },
         },
+        { type: "event_msg", payload: { type: "task_complete", turn_id: turnId } },
       ]);
       const out = await core.readAgentTranscript(sid, { lines: 2 });
       assert.doesNotMatch(out, /first/);
@@ -2759,6 +2729,7 @@ test("readAgentTranscript: 巨大回答は既存 reduceOutput の行数 bound �
       const meta = bindTranscriptTurn(sid, vendorSessionId, turnId);
       const answer = Array.from({ length: 70 }, (_, i) => `line-${i + 1}`).join("\n");
       writeCodexTranscript(meta, vendorSessionId, [
+        { type: "session_meta", payload: { id: vendorSessionId } },
         {
           type: "response_item",
           payload: {
@@ -2768,6 +2739,7 @@ test("readAgentTranscript: 巨大回答は既存 reduceOutput の行数 bound �
             internal_chat_message_metadata_passthrough: { turn_id: turnId },
           },
         },
+        { type: "event_msg", payload: { type: "task_complete", turn_id: turnId } },
       ]);
       const out = await core.readAgentTranscript(sid);
       assert.match(out, /〈20 行省略。全文は full=true、範囲は line_range="A:B"〉/);

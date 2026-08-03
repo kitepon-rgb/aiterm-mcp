@@ -123,6 +123,10 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 13 ツール公�
   assert.equal(ptyClose.outputSchema.properties.session_id.pattern, "^[A-Za-z0-9_-]{1,64}$", "pty_close session ID schema");
   assert.deepEqual(ptyClose.outputSchema.properties.outcome.enum, ["closed", "already_closed"], "pty_close outcome schema");
   const codexAgent = toolsResp.result.tools.find((t) => t.name === "codex_agent");
+  assert.match(codexAgent.description, /完全な呼び出し例/, "codex_agent: 委譲guard前に完全形を提示する");
+  for (const field of ["prompt", "model", "reasoning_effort", "cwd", "write_scope"]) {
+    assert.match(codexAgent.description, new RegExp(`\\"${field}\\"`), `codex_agent complete example: ${field}`);
+  }
   const claudeAgent = toolsResp.result.tools.find((t) => t.name === "claude_agent");
   assert.equal(claudeAgent.inputSchema.properties.write_scope, undefined, "claude_agent はwrite_scope対象外");
   assert.equal(claudeAgent.outputSchema.properties.write_scope, undefined, "claude_agent receiptは不変");

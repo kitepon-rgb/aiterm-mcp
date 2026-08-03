@@ -14,6 +14,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `write_scope:"read-only"`はCLIの`--sandbox read-only`で実効禁止する。Grok/Composerと
   Codexのパス説明は対応するsandbox/allowlist CLI機構がないため、
   `write_scope_enforcement:"declaration_only_unsupported"`で宣言記録だけであることを明示する。
+- `codex_agent`のtool descriptionへ、委譲時に`prompt`・`model`・`reasoning_effort`・
+  `cwd`・`write_scope`を揃えた完全な呼び出し例を追加。
+
+### Fixed
+
+- Codex完了検出の正本をmanaged Stop hookからCodex自身のrollout transcript
+  `task_complete.turn_id`へ変更。dispatch直前のtranscript byte境界を既存`event_cursor`で返し、
+  `aiterm-wait`と`agent_transcript`が同じ構造化記録からturnを帰属する。Codex managed homeには
+  Stop hookを生成せず、hook失敗・hook trust・Node実行パスをCodex完了の依存から除去した。
+- follow-up dispatchも毎回TUI idleを確認してから完了境界を切り、同じcursorへ複数turnが
+  帰属する経路を閉じた。後発sub-agent rolloutはroot TUIの完了へ誤帰属しない。
+- Claude/Grokのmanaged Stop hookは、長寿命server起動時の`process.execPath`（Homebrew Cellarの
+  版付き実体）を設定へ焼き付けず、hook実行時に継承`PATH`から`node`を解決する。Node更新で
+  旧Cellar実体が消えた後の`exit 127`を防ぐ。
 
 ### Unchanged
 

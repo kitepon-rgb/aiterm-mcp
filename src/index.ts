@@ -583,6 +583,9 @@ registerAgentTool(
   "codex_agent",
   "codex",
   "【Codex (OpenAI)】の対話エージェント TUI を永続端末に起動する。実装・レビュー・調査を対話で回す。" +
+    "委譲契約を使う完全な呼び出し例: " +
+    '`codex_agent({"prompt":"<依頼>","model":"gpt-5.6-sol","reasoning_effort":"high",' +
+    '"cwd":"/absolute/path/to/repo","write_scope":"read-only"})`。' +
     "turn は pty_send で送る（自動で非ブロック dispatch になる）。" +
     agentCompletionDesc +
     "model / reasoning_effort を引数で指定可" +

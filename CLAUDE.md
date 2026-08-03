@@ -104,6 +104,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 現状: Node/TS の npm パッケージ `aiterm-mcp`（stdio MCP サーバ）
 
+> **2026-08-03 source修理**: Codex完了正本をmanaged Stop hookからroot rollout transcriptの
+> `task_complete.turn_id`へ移した。実障害は長寿命serverがHomebrew Cellarの版付き`process.execPath`を
+> hook設定へ固定し、Node更新後に旧実体が消えて`exit 127`、`aiterm-wait`が600秒timeoutを反復したもの。
+> Codex managed homeはStop hookと`--dangerously-bypass-hook-trust`を作らず、既存`event_cursor`を
+> dispatch直前のtranscript byte境界として使う。Claude/Grok hookは継承PATHの`node`を実行時解決する。
+> `codex_agent`説明にはmodel/effort/cwd/write_scopeを揃えた委譲呼出し完全例を載せる。
+
 > **v0.12.2（2026-07-13公開）**: 公開面は `diagnostics` を加えた計10ツール。factory向けread-only診断と製品所有のoffline runtime error aggregateを追加した。
 > collectionはschema-exact canonical dotagents configの`collection.enabled`がJSON boolean `true`の時だけ有効で既定OFF、network送信は行わない。raw exception/stderr/stack/prompt/PTY/transcript/event/pathはAPIで拒否する。
 > 公開commit `239e7e4`、tag CI `29245251184`、npm `latest`、tag / GitHub Release、MCP Registry workflow `29245462227`、registry由来隔離installから10-tool MCP diagnosticsとruntime snapshotまで確認済み。
