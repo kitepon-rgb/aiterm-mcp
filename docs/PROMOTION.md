@@ -13,31 +13,33 @@ output) is already committed — these steps activate it.
 
 ## Status (live)
 
-> **v0.21.1 release in progress（2026-08-03）**: Codex完了正本をStop hookからroot rollout
+> **v0.21.2 release in progress（2026-08-03）**: Codex完了正本をStop hookからroot rollout
 > transcriptの`task_complete.turn_id`へ移し、hook `exit 127`で`aiterm-wait`とtranscript回収が
 > 同時に永久待ちになる単一障害点を除去するpatch release。未使用のCodex hook実装も配布物から撤去し、
 > clean buildで旧`dist`からの再混入を防ぐ。0.21.0の`write_scope`指定時だけstructured receiptから
 > scope／enforcementが消える逆条件も修理する。0.21.0はnpmへ公開済みだがtag／GitHub
-> Releaseがなく、server.json／MCPBが0.20.3に残ったため、0.21.1で公開連鎖と4 manifestを再同期する。
+> Releaseがなく、server.json／MCPBが0.20.3に残ったため、0.21.2で公開連鎖と4 manifestを再同期する。
 
 Release gates:
 
 - ✅ 根本原因を実障害sessionで再現し、root rolloutの`task_complete`がhook失敗より先に永続化されることを確認。
 - ✅ 実障害session 2件の完了・最終回答を再送なしで回収。
-- ✅ package／lock／server／MCPBを0.21.1へ同期し、日英README・設計・履歴・RAG・ADR・
+- ✅ package／lock／server／MCPBを0.21.2へ同期し、日英README・設計・履歴・RAG・ADR・
   廃止hookのソース／配布物撤去を更新。
-- ✅ full regression 322/322、release metadata 2/2、MCPB validate、npm pack 13 files、
-  旧Codex hook非同梱、write_scope structured receipt実MCP回帰、changed-doc local link check、
-  diff hygiene、独立反証と修正後再反証。
+- ✅ fixture修正後のfull regression 322/322、write_scope structured receipt実MCP回帰、
+  release metadata 2/2、MCPB validate、npm pack 13 files、旧Codex hook非同梱、
+  changed-doc local link check、diff hygiene。
+- ⚠️ v0.21.1 tag CIはGrok fixtureが実CLIを暗黙利用してLinux/macOSで失敗し、publish jobはskip。
+  tagは動かさず、偽binへ固定したv0.21.2で再公開する。
 - ⬜ release commit／main push／tag CI。
 - ⬜ npm provenance、GitHub Release、Official MCP Registry、registry／global install smoke。
 
 直前の完全公開済みchainはv0.20.3。v0.21.0はnpm-onlyの不完全な公開履歴として保持し、
-後付けtagで成功を捏造しない。0.21.1の公開receiptはADR 0023へ固定する。
+後付けtagで成功を捏造しない。0.21.2の公開receiptはADR 0023へ固定する。
 
 Previously verified public surfaces:
 
-- ✅ **npm `0.21.0` is latest（0.21.1公開前）** — Quo / クオ at kitepon.dev、X author link、
+- ✅ **npm `0.21.0` is latest（0.21.2公開前）** — Quo / クオ at kitepon.dev、X author link、
   Claude Code × Codex CLI lead、現行README、provenance、14-file tarballを公開APIで確認済み。
 - ✅ **Official MCP Registry** — `io.github.kitepon-rgb/aiterm-mcp` 0.20.3 is active and latest.
 - ⚠️ **mcp.so** — the existing listing was claimed through GitHub on 2026-07-26.
@@ -81,8 +83,8 @@ The lettered steps below are kept as a re-run reference and for the announcement
 npm only re-indexes keywords on a new published version. Bump a patch, keep
 `server.json` `version` in lockstep, then let CI publish on the tag.
 
-v0.21.1 is the active release described by
-[`release plan 22`](22_release-0.21.1-plan.md) and [`ADR 0022`](adr/0022-codex-rollout-completion.md).
+v0.21.2 is the active release described by
+[`release plan 22`](22_release-0.21.2-plan.md) and [`ADR 0022`](adr/0022-codex-rollout-completion.md).
 The last fully accepted public chain, v0.20.3, remains recorded in
 [`ADR 0021`](adr/0021-release-0.20.3-acceptance.md).
 

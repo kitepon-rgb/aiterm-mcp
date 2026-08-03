@@ -1,9 +1,9 @@
-# v0.21.1 Codex rollout completion release plan
+# v0.21.2 Codex rollout completion release plan
 
 ## 目的
 
 Codexの完了通知をStop hookからroot rollout transcriptの`task_complete.turn_id`へ移した修理を、
-`aiterm-mcp@0.21.1`として全現行文書・4 manifest・npm・GitHub Release・Official MCP Registry・
+`aiterm-mcp@0.21.2`として全現行文書・4 manifest・npm・GitHub Release・Official MCP Registry・
 この端末のglobal installまで同じrelease commitから届ける。npmだけが0.21.0、server／MCPB／GitHubが
 0.20.3に残った公開面分裂と、0.21.0の`write_scope`指定時だけstructured launch receiptから
 scope／enforcementが消える逆条件も本releaseで解消する。
@@ -19,17 +19,17 @@ scope／enforcementが消える逆条件も本releaseで解消する。
 
 - [x] 日英README、CHANGELOG、CLAUDE、overview、design、agent-done／prompt UX履歴、RAG brief、
   PROMOTION、release plan、ADRが現行仕様と履歴の境界を同じ言葉で示す。
-- [x] package.json、package-lock.json、server.json、mcpb/manifest.jsonが0.21.1で一致する。
+- [x] package.json、package-lock.json、server.json、mcpb/manifest.jsonが0.21.2で一致する。
 - [x] full regression 322/322、release metadata 2/2、MCPB build／validate、npm pack 13 files、
-  changed-doc local link check、diff hygiene、独立反証と修正後再反証がgreen。
+  changed-doc local link check、diff hygieneがfixture修正後の0.21.2 stateでgreen。
 - [x] npm tarballとMCPBに廃止済み`codex-stop-hook.js`がなく、dirtyな既存`dist`からも再混入しない。
 - [x] Codex/Grok/Composerの`write_scope`指定時にscope／enforcementをstructured receiptへ返し、
   省略時は既存shapeへfieldを足さないことを実MCP境界で固定する。
-- [ ] release commitをmainへpushし、その祖先性を確認して`v0.21.1` tagをpushする。
+- [ ] release commitをmainへpushし、その祖先性を確認して`v0.21.2` tagをpushする。
 - [ ] tag CIの全必須jobとnpm provenance publish、GitHub Release、Official Registry workflowがgreen。
-- [ ] npm公開APIで0.21.1のlatest／integrity／shasum／provenanceを確認する。
+- [ ] npm公開APIで0.21.2のlatest／integrity／shasum／provenanceを確認する。
 - [ ] registry由来の隔離installでversion、3 bins、13 tools、stderr 0、Codex completion説明を確認する。
-- [ ] この端末へ`aiterm-mcp@0.21.1`をglobal installし、registry実体と公開tarballの同一性を確認する。
+- [ ] この端末へ`aiterm-mcp@0.21.2`をglobal installし、registry実体と公開tarballの同一性を確認する。
 - [ ] 公開receiptをCLAUDE、PROMOTION、不変release ADRへ還流し、planをarchiveしてdocs commitをpushする。
 
 ## 非目標
@@ -45,9 +45,11 @@ scope／enforcementが消える逆条件も本releaseで解消する。
 - npm公開は`v*` tag CIのOIDC Trusted Publishingが正規経路。local `npm publish`へ切り替えない。
 - publish対象commitは先にorigin/mainへ着地させる。tagはrelease commitへ固定し、receipt追記commitへ動かさない。
 - GitHub Release起点のRegistry workflowはnpm版の出現を待つ。npm確認前のRegistry成功を主張しない。
-- 0.21.0はnpmに存在するがtag／GitHub Release／Registryがない。0.21.1のgreen chainで修復し、
+- 0.21.0はnpmに存在するがtag／GitHub Release／Registryがない。0.21.2のgreen chainで修復し、
   過去版へ後付けtagを作ってgreenを捏造しない。
-- 稼働中MCP processはglobal install後も旧版のまま。次回MCP再接続から0.21.1が有効になる。
+- v0.21.1 tag CIは非hermetic Grok fixtureで失敗し、publish jobはskipされた。tagを移動・削除せず、
+  fixtureを偽binへ固定した新commitをv0.21.2として公開する。
+- 稼働中MCP processはglobal install後も旧版のまま。次回MCP再接続から0.21.2が有効になる。
 - 公開後の修正は履歴改変でなく新しいpatch releaseで行う。
 
 ## 並列化裁定
@@ -63,7 +65,7 @@ node --test test/release-metadata.test.mjs
 npm run mcpb:build
 npm pack --dry-run --json
 git diff --check
-npm view aiterm-mcp@0.21.1 version dist.integrity dist.shasum --json
+npm view aiterm-mcp@0.21.2 version dist.integrity dist.shasum --json
 gh run list --workflow ci.yml
 gh run list --workflow registry.yml
 ```

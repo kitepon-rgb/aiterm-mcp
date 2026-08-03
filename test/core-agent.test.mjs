@@ -49,6 +49,7 @@ if (process.platform !== "win32") {
 // Windows には /bin/echo が無いので node 自身（必ず存在）を使う——echo 出力を読む grok/composer/codex
 // 組立テストは { skip }（tmux 必須）で native Windows では走らないため、可視化不要な bin で足りる。
 process.env.CODEX_BIN = process.platform === "win32" ? process.execPath : "/bin/echo";
+process.env.GROK_BIN = process.platform === "win32" ? process.execPath : "/bin/echo";
 process.env.CLAUDE_BIN = process.platform === "win32" ? process.execPath : fakeClaudeBin;
 const core = await import("../dist/core.js");
 core.__testSetAgentTuiReadyStableSamples(1);

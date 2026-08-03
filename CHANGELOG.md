@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.21.1] - 2026-08-03
+## [0.21.2] - 2026-08-03
 
 ### Added
 
@@ -30,6 +30,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `write_scope`指定時だけMCP structured launch receiptから`write_scope`と
   `write_scope_enforcement`が欠落していた逆条件を修正。Codex/Grok/Composerの指定時と省略時を
   実MCP境界で回帰化し、宣言値・実効性の表示と既存receipt shapeを両立する。
+- Grok/Composerの`write_scope`回帰が開発端末の実Grok CLIを暗黙利用し、clean CI runnerでは
+  CLI不在で失敗する非hermetic fixtureを偽binへ固定した。
+
+## [0.21.1] - 2026-08-03
+
+### Release status
+
+- Git tagのCIが上記非hermetic fixtureで失敗し、publish jobは実行前にskipされた。npm、GitHub Release、
+  Official MCP Registryへは公開せず、tagを動かさず0.21.2で置き換える。
 
 ## [0.21.0] - 2026-08-02
 
@@ -820,7 +829,8 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.21.1...HEAD
+[Unreleased]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.21.2...HEAD
+[0.21.2]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.21.1...v0.21.2
 [0.21.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/b8c4dbc...v0.21.1
 [0.21.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.20.3...b8c4dbc
 [0.20.3]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.20.2...v0.20.3
