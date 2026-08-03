@@ -13,12 +13,12 @@ output) is already committed — these steps activate it.
 
 ## Status (live)
 
-> **v0.21.3 release in progress（2026-08-03）**: Codex完了正本をStop hookからroot rollout
+> **v0.21.3公開完了（2026-08-03）**: Codex完了正本をStop hookからroot rollout
 > transcriptの`task_complete.turn_id`へ移し、hook `exit 127`で`aiterm-wait`とtranscript回収が
-> 同時に永久待ちになる単一障害点を除去するpatch release。未使用のCodex hook実装も配布物から撤去し、
+> 同時に永久待ちになる単一障害点を除去したpatch release。未使用のCodex hook実装も配布物から撤去し、
 > clean buildで旧`dist`からの再混入を防ぐ。0.21.0の`write_scope`指定時だけstructured receiptから
-> scope／enforcementが消える逆条件も修理する。0.21.0はnpmへ公開済みだがtag／GitHub
-> Releaseがなく、server.json／MCPBが0.20.3に残ったため、0.21.3で公開連鎖と4 manifestを再同期する。
+> scope／enforcementが消える逆条件も修理した。0.21.0はnpmへ公開済みだがtag／GitHub
+> Releaseがなく、server.json／MCPBが0.20.3に残った公開面分裂も、0.21.3で公開連鎖と4 manifestを再同期した。
 
 Release gates:
 
@@ -32,18 +32,22 @@ Release gates:
 - ⚠️ v0.21.1 tag CIはGrok fixtureが実CLIを暗黙利用してLinux/macOSで失敗し、publish jobはskip。
   tagは動かさず、偽binへ固定した。
 - ⚠️ v0.21.2 tag CIはWindows 20のprocess identity用PowerShellが1秒上限を超えて失敗し、publish
-  jobはskip。tagは動かさず、DACLと同じ5秒予算へ統一したv0.21.3で再公開する。
-- ⬜ release commit／main push／tag CI。
-- ⬜ npm provenance、GitHub Release、Official MCP Registry、registry／global install smoke。
+  jobはskip。tagは動かさず、DACLと同じ5秒予算へ統一したv0.21.3で公開を完遂した。
+- ✅ release commit `902379325c947030d5b6a8eb79e963e3f6f99c51`をmainへpush。main CI
+  `30813089848`とtag CI `30813318513`は全必須job success。
+- ✅ npm 0.21.3をSLSA provenance付きで公開。GitHub Release `v0.21.3 — Codex completion recovery`、
+  Official Registry workflow `30813724499`、Registry active/latestを確認。
+- ✅ npm由来の隔離installとこの端末のglobal installを0.21.3へ更新。3 bins、13 tools、stderr 0、
+  Codexの5引数完全例、廃止Codex hook非同梱を実配布物で確認。
 
-直前の完全公開済みchainはv0.20.3。v0.21.0はnpm-onlyの不完全な公開履歴として保持し、
-後付けtagで成功を捏造しない。0.21.3の公開receiptはADR 0023へ固定する。
+最新の完全公開済みchainはv0.21.3。v0.21.0はnpm-only、v0.21.1／v0.21.2はpublish前に
+tag CIが停止した履歴として保持し、tag移動や後付け成功を捏造しない。公開receiptは
+[ADR 0023](adr/0023-release-0.21.3-acceptance.md)へ固定した。
 
 Previously verified public surfaces:
 
-- ✅ **npm `0.21.0` is latest（0.21.3公開前）** — Quo / クオ at kitepon.dev、X author link、
-  Claude Code × Codex CLI lead、現行README、provenance、14-file tarballを公開APIで確認済み。
-- ✅ **Official MCP Registry** — `io.github.kitepon-rgb/aiterm-mcp` 0.20.3 is active and latest.
+- ✅ **npm `0.21.3` is latest** — SLSA provenance v1、13-file tarball、integrity／shasumを公開APIで確認済み。
+- ✅ **Official MCP Registry** — `io.github.kitepon-rgb/aiterm-mcp` 0.21.3 is active and latest.
 - ⚠️ **mcp.so** — the existing listing was claimed through GitHub on 2026-07-26.
   Do not submit a duplicate. Its editor currently discards submitted changes
   (a fresh reload restores the stale 6-tool content), so the update remains blocked.
@@ -85,10 +89,9 @@ The lettered steps below are kept as a re-run reference and for the announcement
 npm only re-indexes keywords on a new published version. Bump a patch, keep
 `server.json` `version` in lockstep, then let CI publish on the tag.
 
-v0.21.3 is the active release described by
-[`release plan 22`](22_release-0.21.3-plan.md) and [`ADR 0022`](adr/0022-codex-rollout-completion.md).
-The last fully accepted public chain, v0.20.3, remains recorded in
-[`ADR 0021`](adr/0021-release-0.20.3-acceptance.md).
+v0.21.3の設計は[`ADR 0022`](adr/0022-codex-rollout-completion.md)、公開receiptは
+[`ADR 0023`](adr/0023-release-0.21.3-acceptance.md)、完了工程は
+[`archived release plan 22`](archive/22_release-0.21.3-plan.md)を正とする。
 
 ```bash
 # 1. bump package.json + package-lock.json + server.json to the same new version (e.g. next patch)

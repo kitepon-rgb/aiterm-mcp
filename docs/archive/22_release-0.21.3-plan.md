@@ -25,12 +25,21 @@ scope／enforcementが消える逆条件も本releaseで解消する。
 - [x] npm tarballとMCPBに廃止済み`codex-stop-hook.js`がなく、dirtyな既存`dist`からも再混入しない。
 - [x] Codex/Grok/Composerの`write_scope`指定時にscope／enforcementをstructured receiptへ返し、
   省略時は既存shapeへfieldを足さないことを実MCP境界で固定する。
-- [ ] release commitをmainへpushし、main CI全matrixのgreenを確認してから`v0.21.3` tagをpushする。
-- [ ] tag CIの全必須jobとnpm provenance publish、GitHub Release、Official Registry workflowがgreen。
-- [ ] npm公開APIで0.21.3のlatest／integrity／shasum／provenanceを確認する。
-- [ ] registry由来の隔離installでversion、3 bins、13 tools、stderr 0、Codex completion説明を確認する。
-- [ ] この端末へ`aiterm-mcp@0.21.3`をglobal installし、registry実体と公開tarballの同一性を確認する。
-- [ ] 公開receiptをCLAUDE、PROMOTION、不変release ADRへ還流し、planをarchiveしてdocs commitをpushする。
+- [x] release commitをmainへpushし、main CI全matrixのgreenを確認してから`v0.21.3` tagをpushする。
+- [x] tag CIの全必須jobとnpm provenance publish、GitHub Release、Official Registry workflowがgreen。
+- [x] npm公開APIで0.21.3のlatest／integrity／shasum／provenanceを確認する。
+- [x] registry由来の隔離installでversion、3 bins、13 tools、stderr 0、Codex completion説明を確認する。
+- [x] この端末へ`aiterm-mcp@0.21.3`をglobal installし、registry実体と公開tarballの同一性を確認する。
+- [x] 公開receiptをCLAUDE、PROMOTION、不変release ADRへ還流し、planをarchiveしてdocs commitをpushする。
+
+## 完了receipt
+
+- release commit: `902379325c947030d5b6a8eb79e963e3f6f99c51`
+- main CI: `30813089848` success
+- tag CI／npm publish: `30813318513` success
+- GitHub Release: `v0.21.3 — Codex completion recovery`
+- Official Registry: workflow `30813724499` success、0.21.3 active/latest
+- npm／install受入: [ADR 0023](../adr/0023-release-0.21.3-acceptance.md)
 
 ## 非目標
 

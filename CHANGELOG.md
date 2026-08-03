@@ -36,6 +36,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   PowerShellを1秒で打ち切り、clean runnerのcold startで失敗する不整合を修正。DACL適用と同じ
   設定済みWindows command timeout（既定5秒）へ統一した。
 
+### Verification
+
+- full regression 322/322。main CI `30813089848`、tag CI／npm provenance publish
+  `30813318513`、Official MCP Registry workflow `30813724499`がsuccess。
+- npm由来の隔離installとglobal installでversion 0.21.3、3 bins、13 tools、stderr 0、
+  Codex launcherの5引数完全例、廃止Codex hook非同梱を確認。公開receiptは
+  [ADR 0023](docs/adr/0023-release-0.21.3-acceptance.md)に固定した。
+
 ## [0.21.2] - 2026-08-03
 
 ### Release status
