@@ -709,10 +709,14 @@ function forceKill(child: ReturnType<typeof spawn>): void {
     try { child.kill("SIGKILL"); } catch { /* already exited */ }
     return;
   }
+  // taskkill 自体の起動が混雑した Windows runner で遅れても、deadline を越えた
+  // worker 本体の副作用を許さない。まず Node のハンドルから即時停止し、その後に
+  // taskkill /T で worker が残した子孫だけを回収する。
+  try { child.kill("SIGKILL"); } catch { /* already exited */ }
   const killer = spawn("taskkill.exe", ["/pid", String(child.pid), "/T", "/F"], {
     stdio: "ignore", windowsHide: true,
   });
-  killer.once("error", () => { try { child.kill("SIGKILL"); } catch { /* already exited */ } });
+  killer.once("error", () => { /* parent は上で停止済み。子孫回収失敗は記録側の固定診断へ集約する */ });
   killer.unref();
 }
 
