@@ -13,7 +13,6 @@
 [![weekly downloads](https://img.shields.io/npm/dw/aiterm-mcp.svg)](https://www.npmjs.com/package/aiterm-mcp)
 [![node](https://img.shields.io/node/v/aiterm-mcp)](https://nodejs.org)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![install size](https://packagephobia.com/badge?p=aiterm-mcp)](https://packagephobia.com/result?p=aiterm-mcp)
 
 > *(日本語: [README.ja.md](README.ja.md))*
 
