@@ -7,13 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.1] - 2026-08-03
+
 ### Added
 
-- `codex_agent`、`grok_agent`、`composer_agent`へ任意の`write_scope`能力宣言を追加。
-  指定値はlaunch receipt、per-launch metadata、`pty_list`へ保存する。Codexの
-  `write_scope:"read-only"`はCLIの`--sandbox read-only`で実効禁止する。Grok/Composerと
-  Codexのパス説明は対応するsandbox/allowlist CLI機構がないため、
-  `write_scope_enforcement:"declaration_only_unsupported"`で宣言記録だけであることを明示する。
 - `codex_agent`のtool descriptionへ、委譲時に`prompt`・`model`・`reasoning_effort`・
   `cwd`・`write_scope`を揃えた完全な呼び出し例を追加。
 
@@ -22,12 +19,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Codex完了検出の正本をmanaged Stop hookからCodex自身のrollout transcript
   `task_complete.turn_id`へ変更。dispatch直前のtranscript byte境界を既存`event_cursor`で返し、
   `aiterm-wait`と`agent_transcript`が同じ構造化記録からturnを帰属する。Codex managed homeには
-  Stop hookを生成せず、hook失敗・hook trust・Node実行パスをCodex完了の依存から除去した。
+  Stop hookを生成せず、未使用になったCodex hook実装も配布物から撤去して、hook失敗・hook trust・
+  Node実行パスをCodex完了の依存から除去した。build前に既存`dist/*.js`を消すことで、旧hookが
+  dirty workspaceのtarballやMCPBへ残留する経路も閉じた。
 - follow-up dispatchも毎回TUI idleを確認してから完了境界を切り、同じcursorへ複数turnが
   帰属する経路を閉じた。後発sub-agent rolloutはroot TUIの完了へ誤帰属しない。
 - Claude/Grokのmanaged Stop hookは、長寿命server起動時の`process.execPath`（Homebrew Cellarの
   版付き実体）を設定へ焼き付けず、hook実行時に継承`PATH`から`node`を解決する。Node更新で
   旧Cellar実体が消えた後の`exit 127`を防ぐ。
+- `write_scope`指定時だけMCP structured launch receiptから`write_scope`と
+  `write_scope_enforcement`が欠落していた逆条件を修正。Codex/Grok/Composerの指定時と省略時を
+  実MCP境界で回帰化し、宣言値・実効性の表示と既存receipt shapeを両立する。
+
+## [0.21.0] - 2026-08-02
+
+### Added
+
+- `codex_agent`、`grok_agent`、`composer_agent`へ任意の`write_scope`能力宣言を追加。
+  指定値はlaunch receipt、per-launch metadata、`pty_list`へ保存する。Codexの
+  `write_scope:"read-only"`はCLIの`--sandbox read-only`で実効禁止する。Grok/Composerと
+  Codexのパス説明は対応するsandbox/allowlist CLI機構がないため、
+  `write_scope_enforcement:"declaration_only_unsupported"`で宣言記録だけであることを明示する。
 
 ### Unchanged
 
@@ -808,7 +820,25 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.12.2...HEAD
+[Unreleased]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.21.1...HEAD
+[0.21.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/b8c4dbc...v0.21.1
+[0.21.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.20.3...b8c4dbc
+[0.20.3]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.20.2...v0.20.3
+[0.20.2]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.20.1...v0.20.2
+[0.20.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.20.0...v0.20.1
+[0.20.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.19.3...v0.20.0
+[0.19.3]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.19.2...v0.19.3
+[0.19.2]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.19.1...v0.19.2
+[0.19.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.19.0...v0.19.1
+[0.19.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.18.2...v0.19.0
+[0.18.2]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.18.1...v0.18.2
+[0.18.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.18.0...v0.18.1
+[0.18.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.17.0...v0.18.0
+[0.17.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.16.0...v0.17.0
+[0.16.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.15.1...v0.16.0
+[0.15.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.15.0...v0.15.1
+[0.15.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.12.3...v0.15.0
+[0.12.3]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.12.2...v0.12.3
 [0.12.2]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.12.1...v0.12.2
 [0.10.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.9.0...v0.9.1

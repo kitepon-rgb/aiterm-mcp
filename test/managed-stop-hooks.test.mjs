@@ -7,7 +7,6 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const HOOK = path.join(HERE, "..", "dist", "codex-stop-hook.js");
 const GROK_HOOK = path.join(HERE, "..", "dist", "grok-stop-hook.js");
 const CLAUDE_HOOK = path.join(HERE, "..", "dist", "claude-stop-hook.js");
 const skip = typeof process.getuid === "function" ? undefined : "POSIX getuid が無い";
@@ -31,17 +30,6 @@ function makeHookState(prefix) {
   return { tmp, root, agents };
 }
 
-function spawnCodexHook(tmp, env, payload = {}) {
-  return spawnSync(process.execPath, [HOOK], {
-    input: JSON.stringify(payload),
-    encoding: "utf8",
-    env: {
-      ...baseHookEnv(tmp),
-      ...env,
-    },
-  });
-}
-
 function spawnGrokHook(tmp, env, payload = {}) {
   return spawnSync(process.execPath, [GROK_HOOK], {
     input: JSON.stringify(payload),
@@ -63,43 +51,6 @@ function spawnClaudeHook(tmp, env, payload = {}) {
     },
   });
 }
-
-test("codex-stop-hook: Stop payload を agent_done event に正規化し continue:false を返す", { skip }, () => {
-  const { tmp, agents } = makeHookState("aiterm-hook-");
-
-  const session = "hooktest";
-  const launchId = "0123456789abcdef0123456789abcdef";
-  const payload = {
-    session_id: "codex-session-1",
-    turn_id: "turn-1",
-    hook_event_name: "Stop",
-    stop_hook_active: false,
-  };
-  const r = spawnCodexHook(tmp, {
-    AITERM_AGENT_KIND: "codex",
-    AITERM_SESSION_ID: session,
-    AITERM_AGENT_LAUNCH_ID: launchId,
-  }, payload);
-
-  try {
-    assert.equal(r.status, 0, r.stderr);
-    assert.equal(r.stderr, "");
-    assert.deepEqual(JSON.parse(r.stdout), { continue: false });
-    const eventFile = path.join(agents, `${session}.${launchId}.events.jsonl`);
-    const lines = fs.readFileSync(eventFile, "utf8").trim().split("\n");
-    assert.equal(lines.length, 1);
-    const event = JSON.parse(lines[0]);
-    assert.equal(event.type, "agent_done");
-    assert.equal(event.vendor, "codex");
-    assert.equal(event.aiterm_session, session);
-    assert.equal(event.launch_id, launchId);
-    assert.equal(event.vendor_session_id, "codex-session-1");
-    assert.equal(event.turn_id, "turn-1");
-    assert.equal(event.done_status, "turn_done");
-  } finally {
-    fs.rmSync(tmp, { recursive: true, force: true });
-  }
-});
 
 test("grok-stop-hook: Stop payload を agent_done event に正規化する", { skip }, () => {
   const { tmp, agents } = makeHookState("aiterm-grok-hook-");
@@ -334,14 +285,9 @@ test("claude-stop-hook: 既存result symlinkを辿らず原子的に置換する
   }
 });
 
-test("agent stop hooks: aiterm env が全く無ければ state に触らず no-op", { skip }, () => {
+test("managed stop hooks: aiterm env が全く無ければ state に触らず no-op", { skip }, () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "aiterm-hook-noenv-"));
   try {
-    const codex = spawnCodexHook(tmp, {}, { hook_event_name: "Stop" });
-    assert.equal(codex.status, 0, codex.stderr);
-    assert.equal(codex.stderr, "");
-    assert.deepEqual(JSON.parse(codex.stdout), { continue: false });
-
     const grok = spawnGrokHook(tmp, {}, { hookEventName: "stop" });
     assert.equal(grok.status, 0, grok.stderr);
     assert.equal(grok.stdout, "");
@@ -356,54 +302,26 @@ test("agent stop hooks: aiterm env が全く無ければ state に触らず no-o
   }
 });
 
-test("agent stop hooks: 存在しない XDG_RUNTIME_DIR は TMPDIR へ戻す", { skip }, () => {
+test("grok-stop-hook: 存在しない XDG_RUNTIME_DIR は TMPDIR へ戻す", { skip }, () => {
   const { tmp, agents } = makeHookState("aiterm-hook-bad-xdg-");
   const session = "badxdg";
   const launchId = "99999999999999999999999999999999";
-  const r = spawnCodexHook(
+  const r = spawnGrokHook(
     tmp,
     {
       XDG_RUNTIME_DIR: path.join(tmp, "missing-runtime-dir"),
-      AITERM_AGENT_KIND: "codex",
+      AITERM_AGENT_KIND: "grok",
       AITERM_SESSION_ID: session,
       AITERM_AGENT_LAUNCH_ID: launchId,
     },
-    { session_id: "codex-session", turn_id: "turn-1", hook_event_name: "Stop" },
+    { hookEventName: "stop", sessionId: "grok-session", promptId: "prompt-1" },
   );
   try {
     assert.equal(r.status, 0, r.stderr);
     assert.equal(r.stderr, "");
-    assert.deepEqual(JSON.parse(r.stdout), { continue: false });
+    assert.equal(r.stdout, "");
     const eventFile = path.join(agents, `${session}.${launchId}.events.jsonl`);
     assert.equal(fs.existsSync(eventFile), true);
-  } finally {
-    fs.rmSync(tmp, { recursive: true, force: true });
-  }
-});
-
-test("codex-stop-hook: event file symlink と env の任意 path を拒否する", { skip }, () => {
-  const { tmp, agents } = makeHookState("aiterm-hook-symlink-");
-  const session = "hooklink";
-  const launchId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-  const eventFile = path.join(agents, `${session}.${launchId}.events.jsonl`);
-  const malicious = path.join(tmp, "malicious.jsonl");
-  fs.writeFileSync(malicious, "");
-  fs.symlinkSync(malicious, eventFile);
-  try {
-    const r = spawnCodexHook(
-      tmp,
-      {
-        AITERM_AGENT_KIND: "codex",
-        AITERM_SESSION_ID: session,
-        AITERM_AGENT_LAUNCH_ID: launchId,
-        AITERM_AGENT_EVENT_FILE: malicious,
-      },
-      { session_id: "codex-session", turn_id: "turn-1", hook_event_name: "Stop" },
-    );
-    assert.equal(r.status, 0);
-    assert.match(r.stderr, /ELOOP|symbolic link|too many levels|symlink/i);
-    assert.deepEqual(JSON.parse(r.stdout), { continue: false });
-    assert.equal(fs.readFileSync(malicious, "utf8"), "", "env 任意 path へ追記してはいけない");
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
@@ -437,32 +355,7 @@ test("grok-stop-hook: event file symlink と env の任意 path を拒否する"
   }
 });
 
-test("agent stop hooks: event file hard link を拒否する", { skip }, () => {
-  const codexState = makeHookState("aiterm-hook-hardlink-");
-  try {
-    const session = "hardlink";
-    const launchId = "11111111111111111111111111111111";
-    const eventFile = path.join(codexState.agents, `${session}.${launchId}.events.jsonl`);
-    const victim = path.join(codexState.tmp, "victim.jsonl");
-    fs.writeFileSync(victim, "", { mode: 0o600 });
-    fs.linkSync(victim, eventFile);
-    const r = spawnCodexHook(
-      codexState.tmp,
-      {
-        AITERM_AGENT_KIND: "codex",
-        AITERM_SESSION_ID: session,
-        AITERM_AGENT_LAUNCH_ID: launchId,
-      },
-      { session_id: "codex-session", turn_id: "turn-1", hook_event_name: "Stop" },
-    );
-    assert.equal(r.status, 0);
-    assert.match(r.stderr, /event file が安全ではありません/);
-    assert.deepEqual(JSON.parse(r.stdout), { continue: false });
-    assert.equal(fs.readFileSync(victim, "utf8"), "", "hard link 先へ追記してはいけない");
-  } finally {
-    fs.rmSync(codexState.tmp, { recursive: true, force: true });
-  }
-
+test("grok-stop-hook: event file hard link を拒否する", { skip }, () => {
   const grokState = makeHookState("aiterm-grok-hook-hardlink-");
   try {
     const session = "grokhard";
@@ -489,23 +382,23 @@ test("agent stop hooks: event file hard link を拒否する", { skip }, () => {
   }
 });
 
-test("agent stop hooks: secure state root/agents dir が symlink や緩い mode なら拒否する", { skip }, () => {
+test("managed stop hooks: secure state root/agents dir が symlink や緩い mode なら拒否する", { skip }, () => {
   const uid = process.getuid();
 
   const loose = makeHookState("aiterm-hook-loose-");
   try {
     fs.chmodSync(loose.root, 0o777);
-    const r = spawnCodexHook(
+    const r = spawnGrokHook(
       loose.tmp,
       {
-        AITERM_AGENT_KIND: "codex",
+        AITERM_AGENT_KIND: "grok",
         AITERM_SESSION_ID: "loose",
         AITERM_AGENT_LAUNCH_ID: "cccccccccccccccccccccccccccccccc",
       },
-      { session_id: "codex-session", turn_id: "turn-1" },
+      { hookEventName: "stop", sessionId: "grok-session", promptId: "prompt-1" },
     );
     assert.match(r.stderr, /agent state root が安全ではありません/);
-    assert.deepEqual(JSON.parse(r.stdout), { continue: false });
+    assert.equal(r.stdout, "");
   } finally {
     fs.chmodSync(loose.root, 0o700);
     fs.rmSync(loose.tmp, { recursive: true, force: true });
@@ -535,17 +428,17 @@ test("agent stop hooks: secure state root/agents dir が symlink や緩い mode 
     fs.rmSync(agentsLink.agents, { recursive: true, force: true });
     fs.mkdirSync(path.join(agentsLink.tmp, "elsewhere"));
     fs.symlinkSync(path.join(agentsLink.tmp, "elsewhere"), agentsLink.agents);
-    const r = spawnCodexHook(
+    const r = spawnClaudeHook(
       agentsLink.tmp,
       {
-        AITERM_AGENT_KIND: "codex",
+        AITERM_AGENT_KIND: "claude",
         AITERM_SESSION_ID: "agentlink",
         AITERM_AGENT_LAUNCH_ID: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
       },
-      { session_id: "codex-session", turn_id: "turn-1" },
+      { session_id: "claude-session", hook_event_name: "Stop", last_assistant_message: "answer" },
     );
     assert.match(r.stderr, /agent state dir が安全ではありません/);
-    assert.deepEqual(JSON.parse(r.stdout), { continue: false });
+    assert.equal(r.stdout, "");
   } finally {
     fs.rmSync(agentsLink.tmp, { recursive: true, force: true });
   }

@@ -125,6 +125,96 @@ test("claude_agent: text contentを維持しClaude managed launch receiptをstru
   }
 });
 
+test("agent launch receipt: write_scope指定時だけ能力宣言を返し、省略時は既存shapeを保つ", { skip }, async () => {
+  const root = fs.mkdtempSync(path.join("/tmp", "aiterm-write-scope-receipt-"));
+  const codexHome = path.join(root, "codex-home");
+  // macOSでは /tmp が /private/tmp へのsymlink。Grok認証正本はpath成分のsymlinkを拒否するため、
+  // fixtureも実pathへ置いてno-follow契約を崩さない。
+  const grokHome = path.join(fs.realpathSync(root), "grok-home");
+  fs.mkdirSync(codexHome, { mode: 0o700 });
+  fs.writeFileSync(path.join(codexHome, "auth.json"), "{}\n", { mode: 0o600 });
+  fs.writeFileSync(
+    path.join(codexHome, "config.toml"),
+    'model = "test-model"\napproval_policy = "never"\nsandbox_mode = "danger-full-access"\n',
+    { mode: 0o600 },
+  );
+  fs.mkdirSync(grokHome, { mode: 0o700 });
+  fs.writeFileSync(path.join(grokHome, "auth.json"), "{}\n", { mode: 0o600 });
+  fs.writeFileSync(path.join(grokHome, "config.toml"), "[cli]\nauto_update = false\n", { mode: 0o600 });
+
+  const child = spawn(process.execPath, [ENTRY], {
+    stdio: ["pipe", "pipe", "pipe"],
+    env: {
+      ...process.env,
+      CODEX_BIN: "/bin/echo",
+      CODEX_HOME: codexHome,
+      GROK_BIN: "/bin/echo",
+      GROK_HOME: grokHome,
+      HOME: root,
+      TMPDIR: root,
+      XDG_RUNTIME_DIR: root,
+    },
+  });
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => { stdout += chunk; });
+  child.stderr.on("data", (chunk) => { stderr += chunk; });
+
+  let requestId = 1;
+  const call = async (name, args) => {
+    const id = requestId++;
+    child.stdin.write(`${JSON.stringify({
+      jsonrpc: "2.0",
+      id,
+      method: "tools/call",
+      params: { name, arguments: args },
+    })}\n`);
+    return waitForResponse(child, () => responseFor(stdout, id), () => stdout, () => stderr);
+  };
+
+  try {
+    child.stdin.write([
+      { jsonrpc: "2.0", id: requestId++, method: "initialize", params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "write-scope-receipt", version: "0" } } },
+      { jsonrpc: "2.0", method: "notifications/initialized" },
+    ].map((message) => JSON.stringify(message)).join("\n") + "\n");
+    await waitForResponse(child, () => responseFor(stdout, 1), () => stdout, () => stderr);
+
+    for (const [tool, scope, enforcement] of [
+      ["codex_agent", "read-only", "enforced_read_only"],
+      ["grok_agent", "/repo/docs のみ書込み可", "declaration_only_unsupported"],
+      ["composer_agent", "/repo/test のみ書込み可", "declaration_only_unsupported"],
+    ]) {
+      const specifiedSession = `scope_${tool}_${Date.now().toString(36)}`;
+      const specified = await call(tool, { session_name: specifiedSession, write_scope: scope });
+      assert.equal(specified.result.isError, undefined, JSON.stringify(specified.result));
+      assert.equal(specified.result.structuredContent.write_scope, scope, `${tool}: 指定値をreceiptへ保持する`);
+      assert.equal(
+        specified.result.structuredContent.write_scope_enforcement,
+        enforcement,
+        `${tool}: enforcementをreceiptへ保持する`,
+      );
+      await call("pty_close", { session_id: specifiedSession });
+
+      const omittedSession = `noscope_${tool}_${Date.now().toString(36)}`;
+      const omitted = await call(tool, { session_name: omittedSession });
+      assert.equal(omitted.result.isError, undefined, JSON.stringify(omitted.result));
+      assert.equal(Object.hasOwn(omitted.result.structuredContent, "write_scope"), false, `${tool}: 省略時shapeを変えない`);
+      assert.equal(
+        Object.hasOwn(omitted.result.structuredContent, "write_scope_enforcement"),
+        false,
+        `${tool}: 省略時shapeを変えない`,
+      );
+      await call("pty_close", { session_id: omittedSession });
+    }
+  } finally {
+    child.kill();
+    await onceExit(child);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 function responseFor(stdout, id) {
   for (const line of stdout.split("\n")) {
     if (!line.trim()) continue;

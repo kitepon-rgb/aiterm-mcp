@@ -549,14 +549,14 @@ function registerAgentTool(
           wait_command: eventCursor === null ? null : `aiterm-wait --session ${sid} --cursor ${eventCursor}`,
           submit_residue: submitResidue,
           ...(supportsWriteScope && write_scope !== undefined
-            ? {}
-            : supportsWriteScope ? {
+            ? {
                 write_scope,
                 write_scope_enforcement:
                   kind === "codex" && write_scope === "read-only"
                     ? "enforced_read_only" as const
                     : "declaration_only_unsupported" as const,
-              } : {}),
+              }
+            : {}),
         };
         return {
           content: [{ type: "text" as const, text: `session_id: ${sid}\n${hint}` }],

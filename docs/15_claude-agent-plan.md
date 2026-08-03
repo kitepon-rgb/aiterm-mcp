@@ -1,5 +1,10 @@
 # Claude対話エージェント追加計画
 
+> **現行API追補（2026-08-03）**: 本文の`pty_send(wait:"agent_done")`はv0.15以前の実装史。
+> v0.16以降のagent sendは非ブロックdispatchで`event_cursor`を返し、完了通知は別processの
+> `aiterm-wait --cursor`、回答回収は`pty_read(agent_transcript:true)`または`claude_turn recover`が担う。
+> Claudeのmanaged Stop hook／bounded result／operation相関自体は現行のまま。
+
 ## 目的
 
 Claude CodeをAiterm所有の永続PTYへ起動する`claude_agent`を追加し、Codex／Grok／Composerと同じ

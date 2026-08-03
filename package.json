@@ -1,6 +1,6 @@
 {
   "name": "aiterm-mcp",
-  "version": "0.21.0",
+  "version": "0.21.1",
   "mcpName": "io.github.kitepon-rgb/aiterm-mcp",
   "description": "Persistent tmux terminal MCP that lets Claude Code drive Codex CLI's interactive TUI, including slash commands and $imagegen. Also runs durable PTY sessions for SSH, containers, REPLs, and coding agents.",
   "keywords": [
@@ -52,7 +52,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "node scripts/clean-build.mjs && tsc",
     "mcpb:build": "npm run build && node scripts/build-mcpb.mjs && npm ci --omit=dev --ignore-scripts --no-audit --no-fund --prefix dist/mcpb-stage/server && npx --yes @anthropic-ai/mcpb@2.1.2 validate dist/mcpb-stage/manifest.json && npx --yes @anthropic-ai/mcpb@2.1.2 pack dist/mcpb-stage dist/aiterm-mcp.mcpb",
     "verify:release-commit": "node scripts/verify-release-commit.mjs",
     "prepublishOnly": "npm run verify:release-commit && npm run build",

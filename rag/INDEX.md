@@ -89,7 +89,11 @@ AIターミナル直接操作プロジェクトの調査一次資料。`rag/sour
   - 出典: <https://raw.githubusercontent.com/rusiaaman/wcgw/main/README.md> (github_readme, 14491 chars)
   - 効きどころ: 完了検出が二段(短timeoutで即抜け+出力ストリーム継続を見て待ち時間調整)で、純粋quiescenceとexit-codeの中間設計の実例。screen -xで人間が同一端末にアタッチ、背景コマンド多重化は我々のバックエンド選定(tmux代替案)とsend設計の比較対象。
 
-## 完了境界の検出 (completion-detection) — 24件
+## 完了境界の検出 (completion-detection) — 25件
+
+- [Agent CLI done detection — current conclusion](briefs/agent-cli-done-detection.md) — 旧Stop hook実測を履歴として保持しつつ、2026-08-03時点の現行Codex完了正本をroot rollout transcriptの`task_complete.turn_id`へ更新した統合brief。
+  - 出典: <local:aiterm-mcp-runtime-incident-2026-08-03> (local_probe_and_repository_evidence)
+  - 効きどころ: Codexのhook `exit 127`が完了通知と回答回収を同時に失わせた実障害、byte cursorによるturn帰属、後発sub-agent rollout除外、旧hook実装撤去を再調査せず参照する現行入口。
 
 - [Phase 0 multi-agent smoke: AI CLI TUI done detection](sources/completion-detection/agent-cli-done-phase0-smoke-2026-07-07.md) — Codex/Grok/Composer の TUI Stop hook をマルチエージェントで実測した。hook 発火自体は確認できたが、Codex continuation と temporary home 差分が実装前ブロッカーとして残った。
   - 出典: <local:multi-agent-smoke-2026-07-07> (local_probe, 7446 chars)

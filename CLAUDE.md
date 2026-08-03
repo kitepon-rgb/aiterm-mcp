@@ -2,7 +2,23 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **Unreleased（2026-08-02）**: `codex_agent`/`grok_agent`/`composer_agent`に任意の`write_scope`能力宣言を追加。指定値はlaunch receipt・per-launch metadata・`pty_list`へ保存する。ローカル`codex --help`で`--sandbox`の`read-only`値を確認し、Codexの`write_scope:"read-only"`だけは`--sandbox read-only`で実効書込み禁止にする。Grok/Composerには対応sandboxがなく、Codexのパス説明にもallowlist CLI引数がないため、`write_scope_enforcement:"declaration_only_unsupported"`を返して宣言の記録だけであることを明示する。省略時のargv・receipt・metadata表記は不変。
+> **v0.21.1 release candidate（2026-08-03）**: Codexの完了正本をmanaged Stop hookからroot rollout
+> transcriptの`task_complete.turn_id`へ移す。長寿命serverがHomebrew Cellarの版付き`process.execPath`を
+> hook設定へ固定し、Node更新後に旧実体が消えて`exit 127`、`aiterm-wait`が600秒timeoutを反復した
+> 実障害を根本修理する。Codex managed homeはStop hookを生成せず、dispatch直前のtranscript byte境界を
+> `event_cursor`として返す。`aiterm-wait`と`agent_transcript`は同じturnを読み、後発sub-agent rolloutを
+> root TUIへ誤帰属しない。未使用のCodex hook実装は配布物から撤去し、buildは既存`dist/*.js`を
+> 消してから生成する。Claude/Grok hookは実行時PATHの`node`を使う。あわせて0.21.0の`write_scope`
+> 指定時だけstructured launch receiptからscope／enforcementが消える逆条件を修理し、3 launcherの
+> 指定時／省略時を実MCP境界で固定する。設計はADR 0022、公開工程は
+> `docs/22_release-0.21.1-plan.md`を正とする。
+
+> **v0.21.0（2026-08-02 npm公開）**: `codex_agent`/`grok_agent`/`composer_agent`に任意の
+> `write_scope`能力宣言を追加。指定値はlaunch receipt・per-launch metadata・`pty_list`へ保存する。
+> Codexの`write_scope:"read-only"`だけは`--sandbox read-only`で実効書込み禁止にする。Grok/Composerと
+> Codexのパス説明は`write_scope_enforcement:"declaration_only_unsupported"`で宣言記録だけと明示する。
+> この版はnpmへ公開された一方、tag／GitHub Release／server.json／MCPBが0.20.3のまま残った。
+> v0.21.1でreceipt欠陥、4 manifest、公開連鎖を再同期し、0.21.0の公開面分裂を解消する。
 
 > **v0.20.3（2026-08-01公開）**: 複数のmanaged Fable／Claude session起動時、macOS Keychain等の
 > vendor credential storeが未認証・利用不能でもTUIを先に作り、各sessionが再loginへ流れて認証状態と
@@ -104,12 +120,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 現状: Node/TS の npm パッケージ `aiterm-mcp`（stdio MCP サーバ）
 
-> **2026-08-03 source修理**: Codex完了正本をmanaged Stop hookからroot rollout transcriptの
+> **2026-08-03 v0.21.1設計**: Codex完了正本をmanaged Stop hookからroot rollout transcriptの
 > `task_complete.turn_id`へ移した。実障害は長寿命serverがHomebrew Cellarの版付き`process.execPath`を
 > hook設定へ固定し、Node更新後に旧実体が消えて`exit 127`、`aiterm-wait`が600秒timeoutを反復したもの。
 > Codex managed homeはStop hookと`--dangerously-bypass-hook-trust`を作らず、既存`event_cursor`を
 > dispatch直前のtranscript byte境界として使う。Claude/Grok hookは継承PATHの`node`を実行時解決する。
 > `codex_agent`説明にはmodel/effort/cwd/write_scopeを揃えた委譲呼出し完全例を載せる。
+> 不変Decisionと因果は[ADR 0022](docs/adr/0022-codex-rollout-completion.md)を正とする。
 
 > **v0.12.2（2026-07-13公開）**: 公開面は `diagnostics` を加えた計10ツール。factory向けread-only診断と製品所有のoffline runtime error aggregateを追加した。
 > collectionはschema-exact canonical dotagents configの`collection.enabled`がJSON boolean `true`の時だけ有効で既定OFF、network送信は行わない。raw exception/stderr/stack/prompt/PTY/transcript/event/pathはAPIで拒否する。
@@ -180,7 +197,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `docs/02_mcp-plan.md` — MCP 化計画の履歴文書。現状の正は CLAUDE.md と README.md。
 - `prototype/python/` — 旧 Python 実装（最初の MVP・CLI＋FastMCP）。設計と reducer の**移植元／検証基準**（pytest reducer は rtk **0.42.0** と一致。ただし `FAILED` 要約行の理由は可読性優先で**全文保持**＝意図的に rtk と相違）。成果物は Node 版で、こちらは参照専用。lint は未整備。
 - `test/` — **Node 版の回帰テスト**（`node:test`、`npm test` で build→実行・tmux 必須）。`test/rtk.test.mjs`（pytest は実機 rtk 0.42.0 採取の golden と一致を `test/fixtures/pytest/*` で固定。`proj_ra` の `FAILED` 要約行のみ理由全文保持＝意図的に rtk 非一致／grep・git・filters は Python プロトタイプ生成の `test/fixtures/reducers.json` で固定／classify・truncate・stripShellFrame）、`test/core-pure.test.mjs`（stripControl・reduceOutput・agent_done screen settle fake・早期安定防止・TUI ready gate 判定）、`test/core-readoutput.test.mjs`（readOutput の full/range/lines/offset/raw/rtk を tmux 非依存で）、`test/core-tmux.test.mjs`（破壊ゲート10種・サニタイズ・sendKey・完了検出。専用ソケットで隔離）、`test/smoke.test.mjs`（stdout が JSON-RPC のみ・10 ツール・`pty_send.wait` schema）、`test/core-space-path.test.mjs`（空白入り一時パスでも pipe-pane が出力を捕捉＝tmux 内部 /bin/sh のクオート回帰）。クロスプラットフォーム対応に伴い session 名検証（トラバーサル/インジェクション遮断・全入口）・`toWslPath`・offset クランプの回帰も追加。`test/core-resolve.test.mjs`（POSIX の tmux 解決負経路: `AITERM_TMUX` 不正時に空 stderr でなく明確な code2＝Windows は WSL ブリッジ経由のため skip）も追加。`test/core-agent.test.mjs`（openAgent の前提検証・残骸ゼロ保証、Codex/Grok/Composer agent_done managed home、Codex managed home allowlist、Grok OAuth `GROK_AUTH_PATH`正本検証（no-follow/hardlink/mode/size/JSON/API-key分岐）、managed home credential非生成、cleanupが通常auth/configを変えないこと、core cleanup が root symlink を辿らないこと、緩い state root でも stale metadata を掃除してから再作成すること、fake event wait、stale/初回 prompt done 誤認防止、起動時 prompt pending 拒否、TUI ready 前の送信前拒否、同時 wait busy reject、cross-process wait lock、即時 event race、`launch_id`/`vendor_session_id` 不一致、bind 後の vendor_session_id 欠落、bind 前 vendor_session_id 混在、partial/malformed/oversized JSONL、done後 offset consume、普通PTY/enter:false拒否、model 引数（codex `-m`／grok・composer `--model` 上書き・空 model 拒否）、grok/composer effort 拒否、managed config ピン上書き）、`test/codex-stop-hook.test.mjs`（Codex/Grok Stop payload 正規化、env 無し no-op、存在しない `XDG_RUNTIME_DIR` の fallback、任意 path env 無視、symlink/hard link event file 拒否、secure root/dir 負系）、`test/release-metadata.test.mjs`（`package.json` と `server.json` の version 同期）で計 **183 件**。CI は `.github/workflows/ci.yml`（**ubuntu-latest と macos-latest** の Node 18/20/22 で build+test、tag で publish --provenance。**windows-latest（Node 20/22）を非ブロッキング（continue-on-error）で追加＝純粋層を検証**。WSL ブリッジ統合経路は手動 Windows 検証ゲートに残す）。
-- **現行テスト補足（v0.19.0候補）**: 直前の詳細一覧にある「10ツール・`pty_send.wait` schema・183件・Windows非ブロッキング」は当時の履歴。現行`test/smoke.test.mjs`は13ツールと`claude_approval` input/output schemaを固定し、CIのWindows純粋層はpublish必須gate。件数は固定値として文書化せず、`npm test`の実行receiptを採用する。
+- **現行テスト補足（v0.21.1候補）**: 直前の詳細一覧にある「10ツール・`pty_send.wait` schema・183件・`test/codex-stop-hook.test.mjs`・Windows非ブロッキング」は当時の履歴。現行`test/smoke.test.mjs`は13ツールと`claude_approval` input/output schemaを固定し、Codex完了は`test/core-agent.test.mjs`のrollout fixture、現役のClaude/Grok hookは`test/managed-stop-hooks.test.mjs`で回帰する。CIのWindows純粋層はpublish必須gate。件数は固定値として文書化せず、`npm test`の実行receiptを採用する。
 - `rag/` — **調査資産の RAG コーパス**。一次資料を MarkItDown で Markdown 化して蓄積する。`rag/ingest.py` が取り込みツール、`rag/INDEX.md` が総目次、`rag/manifest.json` が機械可読索引。詳細は後述「調査資産: RAG コーパス」。
 - `.vscode/tasks.json` — Throughline が自動生成した token-monitor 自動起動設定。このプロジェクトの成果物ではなく編集対象外。
 - `docs/*.md:Zone.Identifier` は WSL の Windows 由来メタデータ。中身に関係しないノイズ。

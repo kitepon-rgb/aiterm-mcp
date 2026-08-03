@@ -1,7 +1,12 @@
 # Brief: Codex / Grok Build の done 検知
 
+> **2026-08-03現行結論**: 以下はv0.9.1時点の調査・実測履歴。Codex Stop hookは完了正本から撤去した。
+> 現行Codexはmanaged homeのroot rollout transcriptに永続化される`task_complete.turn_id`を、dispatch直前の
+> byte境界以後から観測する。Claude/Grokのmanaged hook routeは維持する。現在の不変Decisionは
+> [`ADR 0022`](../../docs/adr/0022-codex-rollout-completion.md)を正とし、一次実測記録は改変しない。
+
 作成日: 2026-07-06  
-更新日: 2026-07-07  
+更新日: 2026-08-03
 対象: `codex_agent` / `grok_agent` / `composer_agent` の永続PTY TUI done 検知  
 結論の強さ: Codex exec JSONL・Codex Stop hook・Grok headless streaming JSON・Grok headless Stop hook・Codex/Grok/Composer TUI Stop hook は実測済み。Codex/Grok/Composer は managed home route で `pty_send(wait:"agent_done")` の実 smoke まで成功。Grok/Composer は fake `HOME` + per-launch managed `GROK_HOME` + OAuth `auth.json`/`auth.json.lock` 共有で通過したが、この0.9.1方式は2026-07-14に廃止され、現在は`GROK_AUTH_PATH`正本経路となり、Grok TUI・Composer TUI・通常 headless `grok -p` の並行 smoke でも login 再要求なし。同一 cwd の Codex/Grok/Composer 並列 agent_done smoke と普通PTYの Python REPL smoke も通過。さらに MCP stdio server を実起動した JSON-RPC `tools/call` 経由で、3 vendor 同時 agent_done と普通PTY Python REPL が通過。リリース前 smoke で起動直後送信による入力落ちを再現し、未 bind の初回 send には vendor TUI ready gate を追加した。ready gate 実装後は、明示的な read ready 待ちなしの起動直後即送信 smoke も通過。v0.9.1 finalization 後の CI/local 回帰は 168 pass。Grok ACP は vendor docs 確認のみ。
 
@@ -15,7 +20,9 @@
 
 画面スクレイピングで Codex/Grok の done を捕まえる案は採らない。各CLIが持つ構造化イベントを使う。
 
-ただし、永続PTYを維持する現在の実装計画では、公開ツールを増やさず `pty_send(wait:"agent_done")` に寄せる。以前この brief に書いた `codex_run` / `grok_run` を短期MVPにする案は、現在の正本では採らない。structured run は将来の別レーン候補として残す。
+当時の永続PTY実装は公開ツールを増やさず`pty_send(wait:"agent_done")`へ寄せた。その同期wait APIは
+v0.16で撤去済みで、現行sendは非ブロックdispatch、完了通知は`aiterm-wait --cursor`で受ける。
+以前このbriefに書いた`codex_run` / `grok_run`案は現在も採らない。
 
 確度:
 

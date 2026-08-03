@@ -91,12 +91,19 @@ execution lane. Cross-product installation and host integration are handled by
 [dotagents](https://github.com/kitepon-rgb/dotagents), the internal development
 toolchain behind kitepon.dev's products.
 
-**Measured, not claimed:** on this repo's own 203-test suite, a `pty_read` puts **~7.1× fewer tokens** in your context than the raw log — and the pass/fail verdict survives the fold. → [When to reach for it vs. the built-in shell](#when-to-reach-for-it-vs-the-built-in-shell)
+**Measured, not claimed:** in the recorded 203-test benchmark, a `pty_read` puts **~7.1× fewer tokens** in your context than the raw log — and the pass/fail verdict survives the fold. → [When to reach for it vs. the built-in shell](#when-to-reach-for-it-vs-the-built-in-shell)
 
 Thirteen tools: six **PTY tools** — `pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list` — to open, drive, and read one persistent terminal, four **agent launchers** — `claude_agent` / `codex_agent` / `grok_agent` / `composer_agent` — that each start another coding agent's TUI inside a fresh one, `claude_turn` for durable structured issue/recovery, `claude_approval` for correlated managed-Claude approval prompts, and `diagnostics` for safe factory readiness. The backend is **tmux**, so sessions survive even if the MCP server or the AI client restarts.
 
-**v0.20.3 prevents concurrent managed Claude/Fable sessions from turning one broken
-login into many competing login flows.** Every new Claude launch verifies the
+**v0.21.1 removes Codex Stop hooks from the completion path.** Codex completion and
+final-message attribution now come from the root rollout transcript's durable
+`task_complete.turn_id`, observed after the dispatch byte boundary. A broken or stale
+hook executable can no longer strand `aiterm-wait`. v0.21.0 added explicit
+`write_scope` declarations for external-agent launchers; v0.21.1 also fixes their
+structured launch receipts so a supplied scope and its enforcement status are retained.
+v0.20.3 prevents concurrent
+managed Claude/Fable sessions from turning one broken login into many competing login
+flows. Every new Claude launch verifies the
 vendor-owned shared credential store before creating a PTY, while healthy credentials
 remain reusable across concurrent and repeated sessions. The v0.20 line also distinguishes
 a non-blocking `aiterm-wait --timeout 0` observation (`running`, exit 5) from a real timed-out
@@ -124,7 +131,7 @@ A lot of 2026's agent tooling is converging on orchestration: a lead model deleg
 
 aiterm predates Build Week, so the event work is kept visible in dated commits. During the submission window (July 14–16, 2026), I extended it with safe serialized delivery for long PTY input, correlated operation IDs and bounded result recovery, machine-readable launch and idempotent close receipts, and a hardened readiness gate that prevents prompts from disappearing during TUI startup redraws. The public comparison from the pre-event release is [`v0.12.2...main`](https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.12.2...main).
 
-I used **Codex with GPT-5.6** as an engineering collaborator: it inspected the implementation, challenged the API and recovery contracts, generated focused regression cases, and helped verify race, security, timeout, and malformed-event paths. I reviewed the diffs and test evidence and retained the final product and architecture decisions. The result is a 262-test regression suite covering normal operation as well as failure and recovery behavior.
+I used **Codex with GPT-5.6** as an engineering collaborator: it inspected the implementation, challenged the API and recovery contracts, generated focused regression cases, and helped verify race, security, timeout, and malformed-event paths. I reviewed the diffs and test evidence and retained the final product and architecture decisions. At that Build Week checkpoint, the regression suite contained 262 tests covering normal operation as well as failure and recovery behavior; current release receipts live in the [CHANGELOG](CHANGELOG.md) and release ADRs.
 
 ## Two ways to use it
 
@@ -168,8 +175,8 @@ One call per model, so the tool name itself tells you which model you get:
 | --- | --- | --- |
 | `claude_agent` | Claude Code CLI (Anthropic) | `prompt?`, `model?`, `reasoning_effort?` (`low`/`medium`/`high`/`xhigh`/`max`), `cwd?`, `session_name?`, `launch_operation_id?` |
 | `codex_agent` | Codex CLI (OpenAI; terminal config/CLI default unless overridden) | `prompt?`, `model?`, `reasoning_effort?` (`low`/`medium`/`high`/`xhigh`/`max`/`ultra`; ultra enables proactive automatic delegation), `cwd?`, `session_name?`, `write_scope?` |
-| `grok_agent` | Grok Build, model `grok-4.5` by default (`model?` overrides) (xAI) | `prompt?`, `model?`, `reasoning_effort?` unsupported (an explicit value is an error; Grok CLI `--effort` is headless-only), `cwd?`, `session_name?` |
-| `composer_agent` | Grok Build, model `grok-composer-2.5-fast` by default (`model?` overrides) (xAI) | `prompt?`, `model?`, `reasoning_effort?` unsupported (an explicit value is an error), `cwd?`, `session_name?` |
+| `grok_agent` | Grok Build, model `grok-4.5` by default (`model?` overrides) (xAI) | `prompt?`, `model?`, `reasoning_effort?` unsupported (an explicit value is an error; Grok CLI `--effort` is headless-only), `cwd?`, `session_name?`, `write_scope?` |
+| `composer_agent` | Grok Build, model `grok-composer-2.5-fast` by default (`model?` overrides) (xAI) | `prompt?`, `model?`, `reasoning_effort?` unsupported (an explicit value is an error), `cwd?`, `session_name?`, `write_scope?` |
 
 The vendor CLI must be installed and authenticated (`claude` for `claude_agent`; `codex` for `codex_agent`; `grok` for both Grok tools). aiterm resolves the binary via `CLAUDE_BIN` / `CODEX_BIN` / `GROK_BIN`, then `~/.local/bin/claude` / `~/.local/bin/codex` / `~/.grok/bin/grok`, then `PATH`. Prerequisites are checked **before** a session exists: empty `model` values and unsupported effort values are rejected up front; a missing CLI binary or a nonexistent `cwd` fails for all four. Before creating a Claude session, aiterm also requires a successful structured `claude auth status --json` result with `loggedIn: true`; unavailable, malformed, or failed authentication leaves **zero leftover session**. Claude sessions share the vendor-owned credential store rather than copying credentials per launch, so multiple sessions can reuse one healthy login. Managed Claude rejects exact `/login` and `/logout` dispatches, including forced sends: repair authentication once in a normal terminal, then relaunch any stale unauthenticated sessions. Claude and Codex launchers forward `model` and `reasoning_effort` through their vendor CLI's public flags; Grok/Composer reject `reasoning_effort` because it is headless-only. Pass an absolute path for `cwd` — `~` is not expanded. Durable callers can make a promptless Claude launch exactly replayable by passing an explicit `session_name` and a `launch_operation_id` formatted as `sha256:<64 lowercase hex>`. Repeating the identical launch returns the same structured session receipt without starting the CLI twice; a different correlation ID or launch argument for that session fails explicitly. Claude uses launch-local managed settings containing only aiterm's Stop hook: normal user/project/local hooks are not inherited, the hook event contains no answer body, and the bounded owner-only result is returned by `pty_read({ agent_transcript:true })` without reading Claude's private transcript. A late result remains recoverable from the same session without re-sending the prompt. While a managed Claude turn is active, raw sends and non-interrupt keys are rejected. If Claude displays `Do you want to proceed?`, call `claude_approval(action:"inspect", ...)`, decide from the visible prompt, then call `respond` with the returned digest and either `approve_once` or `deny`. The response is accepted only while the same operation and screen digest remain current; arbitrary text and persistent-allow choices are never relayed. Use `pty_key("C-c")` to interrupt and `pty_close` to abandon the session. For unconstrained manual key-by-key driving, open a plain `pty_open` session and start the vendor CLI yourself. Codex uses a managed `CODEX_HOME`; Grok/Composer isolate their managed homes and pass validated OAuth state through `GROK_AUTH_PATH`. Before the first unbound dispatch, aiterm waits for the vendor TUI's input prompt and fails before sending if it is not ready. Managed completion requires POSIX filesystem semantics (Linux, WSL2, macOS).
 
@@ -295,7 +302,7 @@ The second round-trip pays for itself once the output runs long, or the state ha
 | `find node_modules -type f` | ~500 tok¹ | ~456 tok | tokens tie; aiterm keeps head and tail + `line_range` |
 | `grep -rn "session" src/` | ~2,989 tok | ~1,096 tok | **aiterm** (~2.7×; long lines get clipped²) |
 
-On the repo's own 203-test suite the reduction is real and safe. The built-in tool drops the whole 223-line log — ~4,292 tokens — into context. aiterm folds its own capture of the run down to ~607:
+In the recorded 203-test benchmark the reduction is real and safe. The built-in tool drops the whole 223-line log — ~4,292 tokens — into context. aiterm folds its own capture of the run down to ~607:
 
 ```text
 [aiterm demo: 51 行 / ~607 tok (raw 223 行 / ~4292 tok); 172 行 hidden] [is_complete=True via mark]
@@ -373,9 +380,9 @@ Each launcher starts a specific vendor's interactive coding-agent TUI inside a f
 | Tool | Launches | Key args |
 | --- | --- | --- |
 | `claude_agent` | Claude Code CLI (Anthropic) | `prompt?`, `model?`, `reasoning_effort?` (`low`/`medium`/`high`/`xhigh`/`max`), `cwd?`, `session_name?`, `launch_operation_id?` |
-| `codex_agent` | Codex CLI (OpenAI; terminal config/CLI default unless overridden) | `prompt?`, `model?`, `reasoning_effort?` (`low`/`medium`/`high`/`xhigh`/`max`/`ultra`; ultra enables proactive automatic delegation), `cwd?`, `session_name?` |
-| `grok_agent` | Grok Build, model `grok-4.5` by default (`model?` overrides) (xAI) | `prompt?`, `model?`, `reasoning_effort?` unsupported (an explicit value is an error; Grok CLI `--effort` is headless-only), `cwd?`, `session_name?` |
-| `composer_agent` | Grok Build, model `grok-composer-2.5-fast` by default (`model?` overrides) (xAI) | `prompt?`, `model?`, `reasoning_effort?` unsupported (an explicit value is an error), `cwd?`, `session_name?` |
+| `codex_agent` | Codex CLI (OpenAI; terminal config/CLI default unless overridden) | `prompt?`, `model?`, `reasoning_effort?` (`low`/`medium`/`high`/`xhigh`/`max`/`ultra`; ultra enables proactive automatic delegation), `cwd?`, `session_name?`, `write_scope?` |
+| `grok_agent` | Grok Build, model `grok-4.5` by default (`model?` overrides) (xAI) | `prompt?`, `model?`, `reasoning_effort?` unsupported (an explicit value is an error; Grok CLI `--effort` is headless-only), `cwd?`, `session_name?`, `write_scope?` |
+| `composer_agent` | Grok Build, model `grok-composer-2.5-fast` by default (`model?` overrides) (xAI) | `prompt?`, `model?`, `reasoning_effort?` unsupported (an explicit value is an error), `cwd?`, `session_name?`, `write_scope?` |
 
 The vendor CLI must be installed and authenticated (`claude` for `claude_agent`; `codex` for `codex_agent`; `grok` for both Grok tools). Binary resolution uses `CLAUDE_BIN` / `CODEX_BIN` / `GROK_BIN`, then each documented default location, then `PATH`. Missing binaries, invalid model/effort values, and nonexistent `cwd` fail before a session is created. Claude additionally requires a structured healthy authentication status before any PTY exists, and managed Claude rejects `/login` and `/logout`; repair authentication once in a normal terminal. All four share the same non-blocking dispatch contract for follow-up turns; `claude_agent`/`codex_agent` submit an initial `prompt` through the ready gate. Claude uses isolated managed settings and a hook-captured bounded result rather than private transcript access. Claude, Codex, Grok, and Composer live smokes are green; fixture coverage remains a separate claim. Native Windows can launch agents but managed completion is not supported yet.
 

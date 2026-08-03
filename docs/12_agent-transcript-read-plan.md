@@ -1,5 +1,9 @@
 # 12 — agent transcript 読取（B5: 長い TUI 回答の構造的回収）
 
+> **2026-08-03現行追補**: 本文の`pty_send(wait:"agent_done")`とCodex Stop event joinは実装当時の履歴。
+> 現行sendは非ブロックdispatchで、Codexはroot rollout transcriptの`task_complete.turn_id`を完了正本とし、
+> 同じturnのassistant `output_text`を回収する。Grok/ComposerとClaudeの回収契約は本文の後続追補どおり。
+
 <!-- 前提: Fable 級統括（2026-07-11 時点）。docs/11 の確定指摘 B5 の設計正本＝実装 TODO を兼ねる -->
 
 ## 問題（docs/11 B5）
@@ -18,7 +22,9 @@
 - 最終回答レコード（いずれかを使う。両方確認済み）:
   - `{"type":"event_msg","payload":{"type":"agent_message","message":"<平文>","phase":"final_answer",...}}`
   - `{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"<平文>"}],"phase":"final_answer","internal_chat_message_metadata_passthrough":{"turn_id":"<UUID>"}}}`
-- **turn_id 完全一致 join が可能**: `response_item` assistant の `internal_chat_message_metadata_passthrough.turn_id` が aiterm の agent_done event の `turn_id` と一致（実測: `019f4f85-34d5-...`）。
+- **turn_id 完全一致 join が可能**: `response_item` assistant の`turn_id`と、同じroot rolloutに後続する
+  `event_msg.payload.type="task_complete"`の`turn_id`が一致する。現行実装はStop eventを使わず、この
+  vendor-owned completion recordで完了と最終回答を同じturnへ帰属する。
 
 ### Grok / Composer（managed `GROK_HOME`・同一構造）
 - パス: `<grok_home>/sessions/<URLエンコード cwd>/<vendor_session_id>/chat_history.jsonl`
@@ -33,8 +39,9 @@
 `pty_read` に **`agent_transcript: true`**（boolean・既定 false）を追加する。
 
 - 意味: session の vendor transcript から**直近の完了ターンの最終 assistant メッセージ**を平文で返す。
-- 対象ターンの決定: `latestAgentDoneEvent(meta)`（既存関数・core.ts:1889）の `turn_id` を使う。
-  - Codex: rollout JSONL を走査し、`turn_id` 一致の assistant `output_text` を全収集して join（複数ブロックのターンに対応）。event が無い/未 bind なら最後の `phase=="final_answer"` の `agent_message` を採用。
+- 対象ターンの決定: vendorごとの構造化完了正本を使う。
+  - Codex: bound済みroot rollout JSONLの最新`task_complete.turn_id`を採り、同じturnのassistant
+    `output_text`を全収集してjoinする（複数ブロック対応）。Stop eventや画面文字列へfallbackしない。
   - Grok/Composer: chat_history.jsonl の「最後の非 synthetic user 行より後の assistant 行」の content を全収集して join。
 - 返り: 抽出テキストを既存 `reduceOutput` に通して bound（行構造は本物の改行なので 60行 elide＋行内ガードが正しく効く＝screen tail の dumb な下24行切りより厳密に良い）。メタ行に `vendor` / `turn_id` / 生文字数を出す。
 - 排他: `agent_transcript:true` は `screen`/`full`/`rtk`/`line_range`/`wait` と併用不可（明示エラー）。`lines` のみ許容（末尾 N 行）。
@@ -50,7 +57,8 @@
 
 - [x] core.ts: `readAgentTranscript(name, {lines?}) : Promise<string>` を追加。
   - metadata から kind/cwd/codex_home|grok_home/vendor_session_id を取得。
-  - Codex: `sessions/**/rollout-*-<vendor_session_id>.jsonl` を glob（複数日跨ぎは mtime 最新）。JSONL を行ごとに parse（malformed 行は skip・既存の carry 不要＝完結ファイル）。target turn_id で assistant text 収集。
+  - Codex: managed homeで最初に作られたroot rolloutを`session_meta.payload.id`でbindし、後発sub-agent
+    rolloutを除外する。最新`task_complete.turn_id`でassistant textを収集する。
   - Grok/Composer: `sessions/<encodeURIComponent(cwd)>/<vendor_session_id>/chat_history.jsonl` を読む。最後の非 synthetic user 以降の assistant content を収集。
   - 抽出テキスト→ reduceOutput でメタ付与して返す。
 - [x] index.ts: `pty_read` に `agent_transcript` boolean を追加。併用禁止の検証。describe を書く。
