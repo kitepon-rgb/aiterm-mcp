@@ -1,15 +1,20 @@
 {
-  "base": "og.svg",
+  "base": "og-art.png",
   "logo": "kitepon-dev-on-night.png",
   "output": "og.png",
-  "endorsement": {
-    "x": 82,
-    "y": 12,
-    "width": 120,
-    "height": 36
+  "social_preview": {
+    "output": "social-preview.jpg",
+    "quality": 90
   },
-  "output_size": {
+  "title": "Aiterm",
+  "canvas": {
     "width": 1280,
     "height": 640
+  },
+  "endorsement": {
+    "x": 72,
+    "y": 40,
+    "width": 160,
+    "height": 48
   }
 }

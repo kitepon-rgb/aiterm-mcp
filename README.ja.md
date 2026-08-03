@@ -1,10 +1,12 @@
 > **Claude Code から Codex CLI の対話 TUI を操作する——スラッシュコマンドや [`$imagegen`](https://learn.chatgpt.com/docs/image-generation#generate-or-edit-an-image) のようなスキルまで、MCP越しに使える。**
 
 <p align="center">
-  <img src=".github/og.svg" alt="aiterm-mcp — AI が握る 1 本の永続 MCP 端末。その中へ他のコーディングエージェント（Claude/Codex/Grok/Composer）を起動する（tmux ベースの stdio MCP サーバ）" width="100%">
+  <img src=".github/og.png" alt="Aiterm — 異なる知性が一つの持続する実行現場を共有する森の観測拠点" width="100%">
+  <br>
+  <sub><em>この画像は、異なる知性がひとつの持続する実行現場を共有し、それぞれの視点から同じ仕事を前へ進める姿を表しています。</em></sub>
 </p>
 
-# aiterm-mcp
+# Aiterm
 
 [![CI](https://github.com/kitepon-rgb/aiterm-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/kitepon-rgb/aiterm-mcp/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/aiterm-mcp.svg)](https://www.npmjs.com/package/aiterm-mcp)

@@ -1,10 +1,12 @@
 > **Drive Codex CLI's interactive TUI from Claude Code — including slash commands and skills such as [`$imagegen`](https://learn.chatgpt.com/docs/image-generation#generate-or-edit-an-image) — through MCP.**
 
 <p align="center">
-  <img src=".github/og.svg" alt="aiterm-mcp — one persistent MCP terminal your AI drives, and launches other coding agents (Claude/Codex/Grok/Composer) into (tmux-backed stdio MCP server)" width="100%">
+  <img src=".github/og.png" alt="Aiterm — a shared forest observatory where different intelligences work in one persistent execution space" width="100%">
+  <br>
+  <sub><em>This image represents different intelligences sharing one persistent workspace and advancing the same work from their own perspectives.</em></sub>
 </p>
 
-# aiterm-mcp
+# Aiterm
 
 [![CI](https://github.com/kitepon-rgb/aiterm-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/kitepon-rgb/aiterm-mcp/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/aiterm-mcp.svg)](https://www.npmjs.com/package/aiterm-mcp)
