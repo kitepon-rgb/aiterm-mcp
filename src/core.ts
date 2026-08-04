@@ -451,12 +451,6 @@ function agentManagedClaudeSettingsPath(name: string, launchId: string): string 
   return path.join(agentsDir(), `${name}.${launchId}.claude-settings.json`);
 }
 
-function agentManagedClaudeMcpConfigPath(name: string, launchId: string): string {
-  assertSessionName(name);
-  if (!LAUNCH_ID_RE.test(launchId)) throw new AitermError(`launch_id が不正です: ${launchId}`, 2);
-  return path.join(agentsDir(), `${name}.${launchId}.claude-mcp.json`);
-}
-
 function agentClaudeResultPath(name: string, launchId: string): string {
   assertSessionName(name);
   if (!LAUNCH_ID_RE.test(launchId)) throw new AitermError(`launch_id が不正です: ${launchId}`, 2);
@@ -480,24 +474,6 @@ function agentClaudeDispatchReceiptPath(name: string, launchId: string, operatio
   if (!LAUNCH_ID_RE.test(launchId)) throw new AitermError(`launch_id が不正です: ${launchId}`, 2);
   const validated = validateOperationId(operationId);
   return path.join(agentsDir(), `${name}.${launchId}.${validated.slice("sha256:".length)}.claude-dispatch`);
-}
-
-function agentManagedCodexHomePath(name: string, launchId: string): string {
-  assertSessionName(name);
-  if (!LAUNCH_ID_RE.test(launchId)) throw new AitermError(`launch_id が不正です: ${launchId}`, 2);
-  return path.join(agentsDir(), `${name}.${launchId}.codex-home`);
-}
-
-function agentManagedGrokHomePath(name: string, launchId: string): string {
-  assertSessionName(name);
-  if (!LAUNCH_ID_RE.test(launchId)) throw new AitermError(`launch_id が不正です: ${launchId}`, 2);
-  return path.join(agentsDir(), `${name}.${launchId}.grok-home`);
-}
-
-function agentManagedGrokUserHomePath(name: string, launchId: string): string {
-  assertSessionName(name);
-  if (!LAUNCH_ID_RE.test(launchId)) throw new AitermError(`launch_id が不正です: ${launchId}`, 2);
-  return path.join(agentsDir(), `${name}.${launchId}.home`);
 }
 
 function existingAgentsDir(): string | null {
@@ -1465,20 +1441,13 @@ interface AgentMetadata {
   event_file: string;
   created_at: string;
   cwd: string | null;
-  // launcher の能力宣言。省略時は旧metadataとの後方互換のため field 自体を持たない。
+  // launcher の能力宣言。省略時は能力制限なし。
   write_scope?: string;
   vendor_session_id: string | null;
   initial_prompt: InitialPromptState;
   launch_operation_id?: string | null;
   launch_request_digest?: string | null;
-  hook_route:
-    | "managed_claude_settings"
-    | "managed_codex_home"
-    | "managed_grok_home"
-    | "shared_claude_settings"
-    | "shared_codex_home"
-    | "shared_grok_home";
-  // 省略は v0.21.0 以前のCodex Stop hook event route。
+  hook_route: "shared_claude_settings" | "shared_codex_home" | "shared_grok_home";
   completion_route?: "codex_transcript" | "grok_transcript";
   agent_role?: "subagent";
   parent_session_id?: string;
@@ -1488,10 +1457,8 @@ interface AgentMetadata {
   node_platform: NodeJS.Platform;
   codex_home?: string;
   claude_settings?: string;
-  claude_mcp_config?: string | null;
   result_file?: string;
   grok_home?: string;
-  home?: string;
   grok_auth_path?: string | null;
 }
 
@@ -2503,7 +2470,7 @@ function loadAgentMetadata(name: string): AgentMetadata {
     .filter((f) => f.startsWith(`${name}.`) && f.endsWith(".agent.json"));
   if (files.length === 0) {
     throw new AitermError(
-      `session '${name}' は agent_done 管理セッションではありません。claude_agent／codex_agent 等の launcher で起動してください（launcher は常に managed）。`,
+      `session '${name}' は agent_done 管理セッションではありません。claude_agent／codex_agent 等の launcher で起動してください。`,
       2,
     );
   }
@@ -2531,18 +2498,14 @@ function loadAgentMetadata(name: string): AgentMetadata {
   }
   if (m.kind === "claude") {
     const expectedSettings = agentManagedClaudeSettingsPath(name, m.launch_id);
-    const expectedMcpConfig = agentManagedClaudeMcpConfigPath(name, m.launch_id);
     const expectedResult = agentClaudeResultPath(name, m.launch_id);
-    const shared = m.hook_route === "shared_claude_settings";
-    const claudeMcpConfig = m.claude_mcp_config ?? null;
     const launchOperationId = m.launch_operation_id ?? null;
     const launchRequestDigest = m.launch_request_digest ?? null;
     if (
-      (m.hook_route !== "managed_claude_settings" && !shared) ||
+      m.hook_route !== "shared_claude_settings" ||
       m.claude_settings !== expectedSettings ||
-      (!shared && claudeMcpConfig !== null && claudeMcpConfig !== expectedMcpConfig) ||
-      (shared && claudeMcpConfig !== null) ||
-      (shared && (typeof m.vendor_session_id !== "string" || !UUID_RE.test(m.vendor_session_id))) ||
+      typeof m.vendor_session_id !== "string" ||
+      !UUID_RE.test(m.vendor_session_id) ||
       m.result_file !== expectedResult ||
       ((launchOperationId === null) !== (launchRequestDigest === null)) ||
       (launchOperationId !== null && !OPERATION_ID_RE.test(launchOperationId)) ||
@@ -2558,22 +2521,20 @@ function loadAgentMetadata(name: string): AgentMetadata {
       created_at: typeof m.created_at === "string" ? m.created_at : "",
       cwd: typeof m.cwd === "string" ? m.cwd : null,
       ...(typeof m.write_scope === "string" ? { write_scope: m.write_scope } : {}),
-      vendor_session_id: typeof m.vendor_session_id === "string" ? m.vendor_session_id : null,
+      vendor_session_id: m.vendor_session_id,
       initial_prompt: normalizeInitialPromptState(m.initial_prompt),
       launch_operation_id: launchOperationId,
       launch_request_digest: launchRequestDigest,
-      hook_route: shared ? "shared_claude_settings" : "managed_claude_settings",
-      ...loadAgentLineageFields(m, shared),
+      hook_route: "shared_claude_settings",
+      ...loadAgentLineageFields(m, true),
       node_platform: process.platform,
       claude_settings: expectedSettings,
-      ...(shared ? {} : { claude_mcp_config: claudeMcpConfig === expectedMcpConfig ? expectedMcpConfig : null }),
       result_file: expectedResult,
     };
   }
   if (m.kind === "codex") {
-    const shared = m.hook_route === "shared_codex_home";
-    const expectedHome = shared ? realCodexHome() : agentManagedCodexHomePath(name, m.launch_id);
-    if ((m.hook_route !== "managed_codex_home" && !shared) || m.codex_home !== expectedHome) {
+    const expectedHome = realCodexHome();
+    if (m.hook_route !== "shared_codex_home" || m.completion_route !== "codex_transcript" || m.codex_home !== expectedHome) {
       throw new AitermError("agent metadata の path が現在の secure state root と一致しません", 2);
     }
     return {
@@ -2586,21 +2547,20 @@ function loadAgentMetadata(name: string): AgentMetadata {
       ...(typeof m.write_scope === "string" ? { write_scope: m.write_scope } : {}),
       vendor_session_id: typeof m.vendor_session_id === "string" ? m.vendor_session_id : null,
       initial_prompt: normalizeInitialPromptState(m.initial_prompt),
-      hook_route: shared ? "shared_codex_home" : "managed_codex_home",
-      ...(m.completion_route === "codex_transcript" ? { completion_route: "codex_transcript" as const } : {}),
-      ...loadAgentLineageFields(m, shared),
+      hook_route: "shared_codex_home",
+      completion_route: "codex_transcript",
+      ...loadAgentLineageFields(m, true),
       node_platform: process.platform,
       codex_home: expectedHome,
     };
   }
-  const shared = m.hook_route === "shared_grok_home";
-  const expectedGrokHome = shared ? realGrokHome() : agentManagedGrokHomePath(name, m.launch_id);
-  const expectedHome = shared ? undefined : agentManagedGrokUserHomePath(name, m.launch_id);
+  const expectedGrokHome = realGrokHome();
   if (
-    (m.hook_route !== "managed_grok_home" && !shared) ||
+    m.hook_route !== "shared_grok_home" ||
+    m.completion_route !== "grok_transcript" ||
     m.grok_home !== expectedGrokHome ||
-    (shared ? m.home !== undefined : m.home !== expectedHome) ||
-    (shared && (typeof m.vendor_session_id !== "string" || !UUID_RE.test(m.vendor_session_id)))
+    typeof m.vendor_session_id !== "string" ||
+    !UUID_RE.test(m.vendor_session_id)
   ) {
     throw new AitermError("agent metadata の path が現在の secure state root と一致しません", 2);
   }
@@ -2616,14 +2576,13 @@ function loadAgentMetadata(name: string): AgentMetadata {
     created_at: typeof m.created_at === "string" ? m.created_at : "",
     cwd: typeof m.cwd === "string" ? m.cwd : null,
     ...(typeof m.write_scope === "string" ? { write_scope: m.write_scope } : {}),
-    vendor_session_id: typeof m.vendor_session_id === "string" ? m.vendor_session_id : null,
+    vendor_session_id: m.vendor_session_id,
     initial_prompt: normalizeInitialPromptState(m.initial_prompt),
-    hook_route: shared ? "shared_grok_home" : "managed_grok_home",
-    ...(shared ? { completion_route: "grok_transcript" as const } : {}),
-    ...loadAgentLineageFields(m, shared),
+    hook_route: "shared_grok_home",
+    completion_route: "grok_transcript",
+    ...loadAgentLineageFields(m, true),
     node_platform: process.platform,
     grok_home: expectedGrokHome,
-    ...(expectedHome ? { home: expectedHome } : {}),
     grok_auth_path: expectedAuthPath,
   };
 }
@@ -4280,21 +4239,16 @@ function buildAgentCmd(
   const parts: string[] = [shq(bin)];
   if (kind === "claude") {
     if (meta?.kind === "claude") {
-      if (meta.hook_route === "shared_claude_settings") {
-        parts.push(
-          "--setting-sources",
-          shq("user,project,local"),
-          "--settings",
-          shq(meta.claude_settings ?? ""),
-          "--session-id",
-          shq(meta.vendor_session_id ?? ""),
-          "--append-system-prompt",
-          shq(subagentInstruction(meta)),
-        );
-      } else {
-        parts.push("--setting-sources", shq(""), "--settings", shq(meta.claude_settings ?? ""));
-        if (meta.claude_mcp_config) parts.push("--mcp-config", shq(meta.claude_mcp_config));
-      }
+      parts.push(
+        "--setting-sources",
+        shq("user,project,local"),
+        "--settings",
+        shq(meta.claude_settings ?? ""),
+        "--session-id",
+        shq(meta.vendor_session_id ?? ""),
+        "--append-system-prompt",
+        shq(subagentInstruction(meta)),
+      );
     }
     if (model) parts.push("--model", shq(model));
     if (effort) parts.push("--effort", shq(effort));
@@ -4340,34 +4294,11 @@ function agentEnvPrefix(meta: AgentMetadata | null, sid: string): string {
     return common.join(" ") + " ";
   }
   if (meta.kind === "codex") {
-    return [
-      ...(meta.hook_route === "managed_codex_home" ? [`CODEX_HOME=${shq(meta.codex_home ?? "")}`] : []),
-      ...common,
-    ].join(" ") + " ";
-  }
-  if (meta.hook_route === "shared_grok_home") {
-    return [
-      ...(meta.grok_auth_path ? [`GROK_AUTH_PATH=${shq(meta.grok_auth_path)}`] : []),
-      "GROK_DISABLE_AUTOUPDATER=1",
-      ...common,
-    ].join(" ") + " ";
+    return common.join(" ") + " ";
   }
   return [
-    `HOME=${shq(meta.home ?? "")}`,
-    `GROK_HOME=${shq(meta.grok_home ?? "")}`,
     ...(meta.grok_auth_path ? [`GROK_AUTH_PATH=${shq(meta.grok_auth_path)}`] : []),
     "GROK_DISABLE_AUTOUPDATER=1",
-    "GROK_CLAUDE_HOOKS_ENABLED=false",
-    "GROK_CURSOR_HOOKS_ENABLED=false",
-    "GROK_CLAUDE_SKILLS_ENABLED=false",
-    "GROK_CURSOR_SKILLS_ENABLED=false",
-    "GROK_CLAUDE_RULES_ENABLED=false",
-    "GROK_CURSOR_RULES_ENABLED=false",
-    "GROK_CLAUDE_AGENTS_ENABLED=false",
-    "GROK_CURSOR_AGENTS_ENABLED=false",
-    "GROK_CLAUDE_MCPS_ENABLED=false",
-    "GROK_CURSOR_MCPS_ENABLED=false",
-    `AITERM_REAL_HOME=${shq(process.env.HOME ?? os.homedir())}`,
     ...common,
   ].join(" ") + " ";
 }

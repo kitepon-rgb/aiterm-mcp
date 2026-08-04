@@ -11,6 +11,7 @@ const posix = typeof process.getuid === "function";
 const CLI = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "dist", "aiterm-wait-cli.js");
 
 const LAUNCH = "0123456789abcdef0123456789abcdef";
+const VENDOR_SESSION = "11111111-2222-4333-8444-555555555555";
 const OPID = `sha256:${"ab".repeat(32)}`;
 const OPID2 = `sha256:${"cd".repeat(32)}`;
 
@@ -31,39 +32,48 @@ function writeMeta(agents, name, kind, extra = {}) {
     event_file: path.join(agents, `${name}.${LAUNCH}.events.jsonl`),
     created_at: new Date().toISOString(),
     cwd: null,
-    vendor_session_id: null,
+    vendor_session_id: VENDOR_SESSION,
     initial_prompt: "done",
+    agent_role: "subagent",
+    parent_session_id: "host-root",
+    delegation_depth: 1,
+    lineage: `host-root>${kind}:${name}`,
+    delegation_allowed: true,
     node_platform: process.platform,
   };
   const byKind =
     kind === "claude"
       ? {
-          hook_route: "managed_claude_settings",
+          hook_route: "shared_claude_settings",
           claude_settings: path.join(agents, `${name}.${LAUNCH}.claude-settings.json`),
           result_file: path.join(agents, `${name}.${LAUNCH}.claude-result.json`),
           launch_operation_id: null,
           launch_request_digest: null,
         }
       : {
-          hook_route: "managed_codex_home",
-          codex_home: path.join(agents, `${name}.${LAUNCH}.codex-home`),
+          hook_route: "shared_codex_home",
+          completion_route: "codex_transcript",
+          codex_home: process.env.CODEX_HOME,
         };
   const metaPath = path.join(agents, `${name}.${LAUNCH}.agent.json`);
   fs.writeFileSync(metaPath, JSON.stringify({ ...common, ...byKind, ...extra }), { mode: 0o600 });
   return { metaPath, eventPath: common.event_file };
 }
 
-function codexEvent(name, over = {}) {
+function waitEvent(name, over = {}) {
   return (
     JSON.stringify({
       type: "agent_done",
-      vendor: "codex",
+      vendor: "claude",
       aiterm_session: name,
       launch_id: LAUNCH,
-      vendor_session_id: "vs-1",
+      vendor_session_id: VENDOR_SESSION,
       turn_id: "turn-1",
+      operation_id: null,
       reason: "Stop",
       done_status: "turn_done",
+      result_digest: "0".repeat(64),
+      result_bytes: 0,
       at: "2026-07-18T00:00:00.000Z",
       ...over,
     }) + "\n"
@@ -77,7 +87,7 @@ function claudeEvent(name, over = {}) {
       vendor: "claude",
       aiterm_session: name,
       launch_id: LAUNCH,
-      vendor_session_id: "claude-vs-1",
+      vendor_session_id: VENDOR_SESSION,
       turn_id: null,
       operation_id: OPID,
       reason: "Stop",
@@ -93,12 +103,17 @@ function claudeEvent(name, over = {}) {
 async function withStateRoot(fn) {
   const { base, agents } = makeStateRoot();
   const prev = process.env.XDG_RUNTIME_DIR;
+  const prevCodexHome = process.env.CODEX_HOME;
   process.env.XDG_RUNTIME_DIR = base;
+  process.env.CODEX_HOME = path.join(base, "codex-home");
+  fs.mkdirSync(process.env.CODEX_HOME, { mode: 0o700 });
   try {
     return await fn(agents);
   } finally {
     if (prev === undefined) delete process.env.XDG_RUNTIME_DIR;
     else process.env.XDG_RUNTIME_DIR = prev;
+    if (prevCodexHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = prevCodexHome;
     fs.rmSync(base, { recursive: true, force: true });
   }
 }
@@ -106,26 +121,26 @@ async function withStateRoot(fn) {
 const core = posix ? await import("../dist/core.js") : null;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-test("observe: 待機後に届いたcodex eventでdone", { skip: !posix }, async () => {
+test("observe: 待機後に届いたClaude eventでdone", { skip: !posix }, async () => {
   await withStateRoot(async (agents) => {
-    const { eventPath } = writeMeta(agents, "s1", "codex");
+    const { eventPath } = writeMeta(agents, "s1", "claude");
     const p = core.observeAgentDone("s1", { timeout: 5 });
     await sleep(250);
-    fs.appendFileSync(eventPath, codexEvent("s1"));
+    fs.appendFileSync(eventPath, waitEvent("s1"));
     const r = await p;
     assert.equal(r.schema, "aiterm.agent-wait-result.v1");
     assert.equal(r.outcome, "done");
-    assert.equal(r.vendor, "codex");
+    assert.equal(r.vendor, "claude");
     assert.equal(r.turn_id, "turn-1");
-    assert.equal(r.vendor_session_id, "vs-1");
+    assert.equal(r.vendor_session_id, VENDOR_SESSION);
     assert.equal(r.launch_id, LAUNCH);
   });
 });
 
 test("observe: 起動前のstale eventは境界の外＝running", { skip: !posix }, async () => {
   await withStateRoot(async (agents) => {
-    const { eventPath } = writeMeta(agents, "s2", "codex");
-    fs.appendFileSync(eventPath, codexEvent("s2"));
+    const { eventPath } = writeMeta(agents, "s2", "claude");
+    fs.appendFileSync(eventPath, waitEvent("s2"));
     const r = await core.observeAgentDone("s2", { timeout: 0 });
     assert.equal(r.outcome, "running");
     assert.equal(r.turn_id, null);
@@ -134,12 +149,12 @@ test("observe: 起動前のstale eventは境界の外＝running", { skip: !posix
 
 test("observe: 他launch・他vendor・他sessionのeventは無視", { skip: !posix }, async () => {
   await withStateRoot(async (agents) => {
-    const { eventPath } = writeMeta(agents, "s3", "codex");
+    const { eventPath } = writeMeta(agents, "s3", "claude");
     const p = core.observeAgentDone("s3", { timeout: 1 });
     await sleep(100);
-    fs.appendFileSync(eventPath, codexEvent("s3", { launch_id: "f".repeat(32) }));
-    fs.appendFileSync(eventPath, codexEvent("s3", { vendor: "grok" }));
-    fs.appendFileSync(eventPath, codexEvent("s3", { aiterm_session: "other" }));
+    fs.appendFileSync(eventPath, waitEvent("s3", { launch_id: "f".repeat(32) }));
+    fs.appendFileSync(eventPath, waitEvent("s3", { vendor: "grok" }));
+    fs.appendFileSync(eventPath, waitEvent("s3", { aiterm_session: "other" }));
     const r = await p;
     assert.equal(r.outcome, "timeout");
   });
@@ -147,12 +162,12 @@ test("observe: 他launch・他vendor・他sessionのeventは無視", { skip: !po
 
 test("observe: malformed lineはカウントして待機継続", { skip: !posix }, async () => {
   await withStateRoot(async (agents) => {
-    const { eventPath } = writeMeta(agents, "s4", "codex");
+    const { eventPath } = writeMeta(agents, "s4", "claude");
     const p = core.observeAgentDone("s4", { timeout: 5 });
     await sleep(100);
     fs.appendFileSync(eventPath, "{not json\n");
     await sleep(250);
-    fs.appendFileSync(eventPath, codexEvent("s4"));
+    fs.appendFileSync(eventPath, waitEvent("s4"));
     const r = await p;
     assert.equal(r.outcome, "done");
     assert.equal(r.malformed_events, 1);
@@ -166,7 +181,7 @@ test("observe: claude operation相関はwaiter起動より前のeventも回収�
     const r = await core.observeAgentDone("s5", { operation_id: OPID, timeout: 5 });
     assert.equal(r.outcome, "done");
     assert.equal(r.operation_id, OPID);
-    assert.equal(r.vendor_session_id, "claude-vs-1");
+    assert.equal(r.vendor_session_id, VENDOR_SESSION);
   });
 });
 
@@ -182,7 +197,7 @@ test("observe: 別operation_idのeventは回収しない（誤帰属拒否）", 
 
 test("observe: 待機中のsession closeはoutcome=closed", { skip: !posix }, async () => {
   await withStateRoot(async (agents) => {
-    const { metaPath, eventPath } = writeMeta(agents, "s7", "codex");
+    const { metaPath, eventPath } = writeMeta(agents, "s7", "claude");
     const p = core.observeAgentDone("s7", { timeout: 10 });
     await sleep(250);
     fs.rmSync(eventPath, { force: true });
@@ -202,24 +217,24 @@ test("observe: 非Claudeへのoperation_id指定は拒否", { skip: !posix }, as
   });
 });
 
-test("observe: bind前に複数vendor_session_id混在はエラー", { skip: !posix }, async () => {
+test("observe: 既知vendor_session_idと違うeventは非該当として無視", { skip: !posix }, async () => {
   await withStateRoot(async (agents) => {
-    const { eventPath } = writeMeta(agents, "s9", "codex");
+    const { eventPath } = writeMeta(agents, "s9", "claude");
     const p = core.observeAgentDone("s9", { timeout: 5 });
     await sleep(100);
-    fs.appendFileSync(eventPath, codexEvent("s9", { vendor_session_id: "vs-a" }) + codexEvent("s9", { vendor_session_id: "vs-b" }));
-    await assert.rejects(() => p, /vendor_session_id が混在/);
+    fs.appendFileSync(eventPath, waitEvent("s9", { vendor_session_id: "vs-a" }) + waitEvent("s9", { vendor_session_id: "vs-b" }));
+    assert.equal((await p).outcome, "timeout");
   });
 });
 
 test("observe: 純リーダー＝wait.lockを作らず・既存lockとも競合しない", { skip: !posix }, async () => {
   await withStateRoot(async (agents) => {
-    const { eventPath } = writeMeta(agents, "s10", "codex");
+    const { eventPath } = writeMeta(agents, "s10", "claude");
     const lockPath = path.join(agents, `s10.${LAUNCH}.wait.lock`);
     fs.writeFileSync(lockPath, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }), { mode: 0o600 });
     const p = core.observeAgentDone("s10", { timeout: 5 });
     await sleep(250);
-    fs.appendFileSync(eventPath, codexEvent("s10"));
+    fs.appendFileSync(eventPath, waitEvent("s10"));
     const r = await p;
     assert.equal(r.outcome, "done");
     assert.equal(fs.readFileSync(lockPath, "utf8").includes(`${process.pid}`), true, "既存lockは無傷");
@@ -230,11 +245,11 @@ test("observe: 純リーダー＝wait.lockを作らず・既存lockとも競合�
 
 test("observe: metadata書き戻しをしない（vendor_session_id bindを永続化しない）", { skip: !posix }, async () => {
   await withStateRoot(async (agents) => {
-    const { metaPath, eventPath } = writeMeta(agents, "s11", "codex");
+    const { metaPath, eventPath } = writeMeta(agents, "s11", "claude");
     const before = fs.readFileSync(metaPath, "utf8");
     const p = core.observeAgentDone("s11", { timeout: 5 });
     await sleep(250);
-    fs.appendFileSync(eventPath, codexEvent("s11"));
+    fs.appendFileSync(eventPath, waitEvent("s11"));
     await p;
     assert.equal(fs.readFileSync(metaPath, "utf8"), before);
   });
@@ -242,10 +257,10 @@ test("observe: metadata書き戻しをしない（vendor_session_id bindを永�
 
 test("observe: cursor指定はwaiter起動より前のeventも境界から回収する", { skip: !posix }, async () => {
   await withStateRoot(async (agents) => {
-    const { eventPath } = writeMeta(agents, "s12", "codex");
-    fs.appendFileSync(eventPath, codexEvent("s12", { turn_id: "old-turn" }));
+    const { eventPath } = writeMeta(agents, "s12", "claude");
+    fs.appendFileSync(eventPath, waitEvent("s12", { turn_id: "old-turn" }));
     const boundary = fs.statSync(eventPath).size;
-    fs.appendFileSync(eventPath, codexEvent("s12", { turn_id: "new-turn" }));
+    fs.appendFileSync(eventPath, waitEvent("s12", { turn_id: "new-turn" }));
     const r = await core.observeAgentDone("s12", { cursor: boundary, timeout: 5 });
     assert.equal(r.outcome, "done");
     assert.equal(r.turn_id, "new-turn", "cursor以降のeventだけを見る");
@@ -254,8 +269,8 @@ test("observe: cursor指定はwaiter起動より前のeventも境界から回収
 
 test("observe: cursor境界より前のeventは不可視", { skip: !posix }, async () => {
   await withStateRoot(async (agents) => {
-    const { eventPath } = writeMeta(agents, "s13", "codex");
-    fs.appendFileSync(eventPath, codexEvent("s13"));
+    const { eventPath } = writeMeta(agents, "s13", "claude");
+    fs.appendFileSync(eventPath, waitEvent("s13"));
     const boundary = fs.statSync(eventPath).size;
     const r = await core.observeAgentDone("s13", { cursor: boundary, timeout: 0 });
     assert.equal(r.outcome, "running");
@@ -264,7 +279,7 @@ test("observe: cursor境界より前のeventは不可視", { skip: !posix }, asy
 
 test("observe: 不正cursorは拒否", { skip: !posix }, async () => {
   await withStateRoot(async (agents) => {
-    writeMeta(agents, "s14", "codex");
+    writeMeta(agents, "s14", "claude");
     await assert.rejects(() => core.observeAgentDone("s14", { cursor: -1, timeout: 0 }), /cursor/);
     await assert.rejects(() => core.observeAgentDone("s14", { cursor: 1.5, timeout: 0 }), /cursor/);
   });
@@ -298,7 +313,7 @@ test("cli: 完了済みclaude operationをreceiptで返しexit 0", { skip: !posi
 test("cli: timeoutはreceiptを出しつつexit 3（exit≠完了）", { skip: !posix }, async () => {
   const { base, agents } = makeStateRoot();
   try {
-    writeMeta(agents, "c2", "codex");
+    writeMeta(agents, "c2", "claude");
     const r = runCli(["--session", "c2", "--timeout", "1"], base);
     assert.equal(r.status, 3, r.stderr);
     const out = JSON.parse(r.stdout.trim());
@@ -313,7 +328,7 @@ test("cli: timeoutはreceiptを出しつつexit 3（exit≠完了）", { skip: !
 test("cli: timeout 0の未完了はrunningでexit 5（timeoutと別語）", { skip: !posix }, async () => {
   const { base, agents } = makeStateRoot();
   try {
-    writeMeta(agents, "c8", "codex");
+    writeMeta(agents, "c8", "claude");
     const r = runCli(["--session", "c8", "--timeout", "0"], base);
     assert.equal(r.status, 5, r.stderr);
     const out = JSON.parse(r.stdout.trim());
@@ -327,8 +342,8 @@ test("cli: timeout 0の未完了はrunningでexit 5（timeoutと別語）", { sk
 test("cli: timeout 0でも完了済みならdoneでexit 0", { skip: !posix }, async () => {
   const { base, agents } = makeStateRoot();
   try {
-    const { eventPath } = writeMeta(agents, "c9", "codex");
-    fs.appendFileSync(eventPath, codexEvent("c9"));
+    const { eventPath } = writeMeta(agents, "c9", "claude");
+    fs.appendFileSync(eventPath, waitEvent("c9"));
     const r = runCli(["--session", "c9", "--cursor", "0", "--timeout", "0"], base);
     assert.equal(r.status, 0, r.stderr);
     const out = JSON.parse(r.stdout.trim());
@@ -362,7 +377,7 @@ test("cli: exit codeは全outcomeで相異なる＝素通しでdoneに化けな�
 test("cli: 待機中のsession closeはreceiptを出しつつexit 4", { skip: !posix }, async () => {
   const { base, agents } = makeStateRoot();
   try {
-    const { metaPath } = writeMeta(agents, "c5", "codex");
+    const { metaPath } = writeMeta(agents, "c5", "claude");
     const child = spawn(process.execPath, [CLI, "--session", "c5", "--timeout", "30"], {
       env: { PATH: process.env.PATH, XDG_RUNTIME_DIR: base, HOME: process.env.HOME, TMPDIR: process.env.TMPDIR },
     });
@@ -382,14 +397,14 @@ test("cli: 待機中のsession closeはreceiptを出しつつexit 4", { skip: !p
 test("cli: 待機中にeventが届くとexitして完了通知になる", { skip: !posix }, async () => {
   const { base, agents } = makeStateRoot();
   try {
-    const { eventPath } = writeMeta(agents, "c3", "codex");
+    const { eventPath } = writeMeta(agents, "c3", "claude");
     const child = spawn(process.execPath, [CLI, "--session", "c3", "--timeout", "30"], {
       env: { PATH: process.env.PATH, XDG_RUNTIME_DIR: base, HOME: process.env.HOME, TMPDIR: process.env.TMPDIR },
     });
     let stdout = "";
     child.stdout.on("data", (d) => (stdout += d));
     await sleep(500);
-    fs.appendFileSync(eventPath, codexEvent("c3"));
+    fs.appendFileSync(eventPath, waitEvent("c3"));
     const status = await new Promise((res) => child.on("close", res));
     assert.equal(status, 0);
     const out = JSON.parse(stdout.trim());
@@ -431,10 +446,10 @@ test("cli: 未管理sessionはAitermErrorの文言つきでexit 1", { skip: !pos
 test("cli: --cursor で境界指定して回収できる", { skip: !posix }, async () => {
   const { base, agents } = makeStateRoot();
   try {
-    const { eventPath } = writeMeta(agents, "c4", "codex");
-    fs.appendFileSync(eventPath, codexEvent("c4", { turn_id: "old" }));
+    const { eventPath } = writeMeta(agents, "c4", "claude");
+    fs.appendFileSync(eventPath, waitEvent("c4", { turn_id: "old" }));
     const boundary = fs.statSync(eventPath).size;
-    fs.appendFileSync(eventPath, codexEvent("c4", { turn_id: "target" }));
+    fs.appendFileSync(eventPath, waitEvent("c4", { turn_id: "target" }));
     const r = runCli(["--session", "c4", "--cursor", String(boundary), "--timeout", "5"], base);
     assert.equal(r.status, 0, r.stderr);
     const out = JSON.parse(r.stdout.trim());
