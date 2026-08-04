@@ -30,8 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Claude／Codex／Grok／Composerのdepth 1 live smokeで、sub-agent自己認識、親session、depth、lineage、
   再委譲可を回収。Claude親がaitermの`claude_agent`を1回使うnested smokeで、孫のdepth 2と伸びた
   lineageを実回収し、親子session残骸ゼロを確認。
-- focused ready-gate回帰と関連testを追加。公開受入のfull regression、package smoke、CI／Registry receiptは
-  リリース完了時にADR 0026へ固定する。
+- focused ready-gate回帰と関連testを追加。最終full regressionは329/329 green。公開package、CI／Registry
+  receiptはリリース完了時にADR 0026へ固定する。
 
 ## [0.21.4] - 2026-08-04
 
