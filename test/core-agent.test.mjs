@@ -244,6 +244,23 @@ function makeFakeCodexTuiBin() {
   return bin;
 }
 
+function makeFakeGrokTuiBin() {
+  const bin = path.join(process.env.TMPDIR, `fake-grok-tui-${Date.now().toString(36)}.sh`);
+  fs.writeFileSync(
+    bin,
+    [
+      "#!/bin/sh",
+      "printf 'Grok Build\\n❯ ready\\n'",
+      "while IFS= read -r line; do",
+      "  printf '%s\\n' \"$line\"",
+      "done",
+      "",
+    ].join("\n"),
+    { mode: 0o700 },
+  );
+  return bin;
+}
+
 function makeFakeClaudeTuiBin({ authJson = '{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty"}', authExit = 0 } = {}) {
   const bin = path.join(process.env.TMPDIR, `fake-claude-tui-${Date.now().toString(36)}.sh`);
   fs.writeFileSync(
@@ -385,6 +402,15 @@ function appendClaudeDoneWhenLogContains(sid, needle, text, overrides = {}) {
 }
 
 async function markFakeAgentReady(sid, kind = "codex") {
+  if (kind === "grok" || kind === "composer") {
+    const meta = readAgentMeta(sid);
+    const dir = path.join(meta.grok_home, "sessions", encodeURIComponent(meta.cwd ?? process.cwd()), meta.vendor_session_id);
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    fs.appendFileSync(path.join(dir, "events.jsonl"), JSON.stringify({
+      type: "mcp_init_completed",
+      ts: new Date().toISOString(),
+    }) + "\n", { mode: 0o600 });
+  }
   const marker =
     kind === "codex" ? "OpenAI Codex\n› ready\n" : kind === "claude" ? "Claude Code\n❯ ready\n" : "Grok Build\n❯ ready\n";
   core.send(sid, `printf '${marker.replace(/'/g, "'\\''").replace(/\n/g, "\\n")}'`, {
@@ -2337,6 +2363,31 @@ test("dispatchAgentTurn: agent TUI ready 前は送信前に拒否し文字を流
       core.closeSession(sid);
     }
   });
+});
+
+test("dispatchAgentTurn: Grokは入力欄が見えてもMCP初期化完了前には送信しない", { skip: skipAgentDone }, async () => {
+  const savedBin = process.env.GROK_BIN;
+  const fakeBin = makeFakeGrokTuiBin();
+  process.env.GROK_BIN = fakeBin;
+  try {
+    await withFakeGrokHome(async () => {
+      const [sid] = core.openAgent("grok", { agent_done: true });
+      try {
+        await core.readOutput(sid, { wait: true, until: "ready", timeout: 5, raw: true });
+        await assert.rejects(
+          () => core.dispatchAgentTurn(sid, "MUST_NOT_SEND_BEFORE_MCP_INIT", { ready_timeout: 0 }),
+          (e) => e.code === 2 && /入力受付状態/.test(e.message),
+        );
+        assert.doesNotMatch(fs.readFileSync(sessionLogPath(sid), "utf8"), /MUST_NOT_SEND_BEFORE_MCP_INIT/);
+      } finally {
+        core.closeSession(sid);
+      }
+    });
+  } finally {
+    if (savedBin === undefined) delete process.env.GROK_BIN;
+    else process.env.GROK_BIN = savedBin;
+    fs.rmSync(fakeBin, { force: true });
+  }
 });
 
 test("observeAgentDone: 送信前の古い task_complete を follow-up done と誤認しない", { skip: skipAgentDone }, async () => {

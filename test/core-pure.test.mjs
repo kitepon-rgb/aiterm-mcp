@@ -163,6 +163,8 @@ test("agent_done ready gate: Claude/Codex/Grok/Composer の入力欄を判定す
   assert.equal(core.__testIsAgentTuiReady("codex", "╭─╮\n│ >_ OpenAI Codex │\n› "), true);
   assert.equal(core.__testIsAgentTuiReady("grok", "Grok Build  0.2.87 Beta\n  │ ❯"), true);
   assert.equal(core.__testIsAgentTuiReady("composer", "Grok Build  0.2.87 Beta\n  │ ❯"), true);
+  assert.equal(core.__testIsAgentTuiReady("grok", "2.7K / 500K\n│ ❯ │\nGrok 4.5 (high) · always-approve"), true);
+  assert.equal(core.__testIsAgentTuiReady("composer", "2.7K / 500K\n│ ❯ │\nComposer 2.5 Fast · always-approve"), true);
   assert.equal(core.__testIsAgentTuiReady("codex", "OpenAI Codex\n◦ Starting MCP servers"), false);
   assert.equal(core.__testIsAgentTuiReady("grok", "Grok Build\nChangelog"), false);
   assert.equal(core.__testIsAgentTuiReady("claude", "Claude Code\nConnecting…"), false);

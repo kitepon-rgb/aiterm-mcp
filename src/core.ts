@@ -3050,6 +3050,27 @@ function latestGrokCompletion(meta: AgentMetadata): AgentDoneEvent | null {
   return latest;
 }
 
+function grokInitializationComplete(meta: AgentMetadata): boolean {
+  const transcript = grokEventsTranscript(meta);
+  if (!transcript || !fs.existsSync(transcript)) return false;
+  const size = safeStatSize(transcript);
+  const from = Math.max(0, size - GROK_TRANSCRIPT_INCREMENT_MAX_BYTES);
+  const lines = readFileRange(transcript, from, size).toString("utf8").split("\n");
+  if (from > 0) lines.shift();
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index].trim();
+    if (!line) continue;
+    try {
+      const record = JSON.parse(line);
+      if (record?.type === "mcp_init_completed") return true;
+      if (record?.type === "mcp_init_started") return false;
+    } catch {
+      // 末尾書込み中や無関係な破損lineはready判定を進めない。
+    }
+  }
+  return false;
+}
+
 function agentCompletionCursor(meta: AgentMetadata): number {
   if ((meta.kind === "grok" || meta.kind === "composer") && meta.completion_route === "grok_transcript") {
     const transcript = grokEventsTranscript(meta);
@@ -3627,7 +3648,10 @@ function isAgentTuiReady(kind: AgentKind, screen: string): boolean {
   if (kind === "codex") {
     return screen.includes("OpenAI Codex") && /(^|\n)\s*[›>]/.test(screen);
   }
-  return screen.includes("Grok Build") && /(^|\n|\s)❯/.test(screen);
+  // Grok Build 0.2.117 は起動完了後に製品名を消し、model footerだけを残す。
+  // Composerも同じfrontendでmodel名だけが異なるため、両方をvendor UIの根拠にする。
+  const grokFrontend = screen.includes("Grok Build") || /\b(?:Grok|Composer)\s+[\w.()-]+/.test(screen);
+  return grokFrontend && /(^|\n|\s)❯/.test(screen);
 }
 
 // Codex/Claude は実行中に「(esc to interrupt)」を表示する（実機採取）。startup 側の処理
@@ -3681,7 +3705,10 @@ async function waitAgentTuiReady(
 ): Promise<AgentTuiReadyWaitResult> {
   return waitAgentTuiReadyImpl(
     meta.kind,
-    () => captureScreen(name, AGENT_TUI_READY_LINES),
+    () => {
+      if ((meta.kind === "grok" || meta.kind === "composer") && !grokInitializationComplete(meta)) return "";
+      return captureScreen(name, AGENT_TUI_READY_LINES);
+    },
     sleep,
     { timeoutMs },
   );
@@ -3998,9 +4025,10 @@ export async function dispatchAgentTurn(
     throw new AitermError("operation_id はClaude agent sessionだけで使用できます", 2);
   }
   bindCompletedInitialPrompt(meta);
-  // Codexはbind済みのfollow-upでも毎回idleを確認してからtranscript境界を切る。同じcursorへ
-  // 複数turnを帰属させる余地を作らない。他vendorの既存dispatch条件は変えない。
-  if (meta.kind === "codex" || !meta.vendor_session_id) {
+  // Codex/Grok/Composerはbind済みのfollow-upでも毎回idleを確認してからtranscript境界を切る。
+  // Grok/Composerはsession IDが起動前から既知でも、共有MCPの初期化完了前には送信しない。
+  // 同じcursorへ複数turnを帰属させる余地や、初期化中TUIへの早送信を作らない。
+  if (meta.kind !== "claude" || !meta.vendor_session_id) {
     const ready = await waitAgentTuiReady(name, meta, o.ready_timeout ?? AGENT_TUI_READY_TIMEOUT_MS);
     if (!ready.ready) {
       throw new AitermError(
