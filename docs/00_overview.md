@@ -14,6 +14,7 @@
 - [13_native-factory-diagnostics-plan.md](13_native-factory-diagnostics-plan.md) - factory 向け read-only diagnostics の公開契約・privacy 境界・検証 TODO。
 - [15_claude-agent-plan.md](15_claude-agent-plan.md) - 永続PTY上の対話型`claude_agent`、managed Stop hook、operation相関、構造化`claude_turn`、権限確認用`claude_approval`の設計履歴。
 - [23_managed-claude-user-mcp-plan.md](23_managed-claude-user-mcp-plan.md) - managed Claudeのhook隔離を維持しつつuser scope MCPを復元し、0.21.4として届ける工程。
+- [24_shared-agent-environment-plan.md](24_shared-agent-environment-plan.md) - 4つのagent launcherを通常CLIと同じproject／user環境へ戻し、aiterm固有の完了相関だけをlaunch単位で隔離するLattice工程の判断正本。
 
 ## 決定記録
 
