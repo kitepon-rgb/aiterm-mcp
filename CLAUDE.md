@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **v0.23.0（2026-08-04）**: 4つのagent launcherへ任意の`throughline_source_session`を追加。
+> 指定時だけローカルの`throughline handoff-context --session <id> --json`をPTY作成前に呼び、
+> 読み取り専用contextを新ミッションの前へそのまま注入する。元sessionのDB所属は変更しない。
+> `prompt`必須、`launch_operation_id`併用不可、Throughline不在／不正／空はfallbackせず失敗する。
+> 省略時は従来どおりclean launch。設計と受入条件は`docs/26-throughline-portable-fork-plan.md`。
+
 > **v0.22.0（2026-08-04）**: 4つのagent launcherを通常project／user環境の完全共有へ移行。
 > `HOME`、vendor home、project/user/local設定、MCP、plugin、skill、permission、trust、memory、historyを
 > 直接CLI起動と同じ正本から読む。fake home、private vendor home、設定snapshotは廃止し、aitermは

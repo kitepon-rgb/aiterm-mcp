@@ -96,6 +96,12 @@ host統合は、kitepon.devの製品開発を支える内部基盤
 
 13 ツール: 6 つの **PTY ツール**（`pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list`）で 1 本の永続端末を開き・操作し・読む。加えて 4 つの **エージェント起動ツール**（`claude_agent` / `codex_agent` / `grok_agent` / `composer_agent`）が別のコーディングエージェントの TUI を新しい端末の中に起動し、`claude_turn`がdurable caller向けの構造化issue／recoveryを、`claude_approval`が相関済みClaude承認UI中継を、`diagnostics`が安全なfactory readinessを返す。バックエンドは **tmux** なので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
 
+**v0.23.0では、ローカル完結の別vendor向けportable forkを追加した。** どのlauncherでも
+`throughline_source_session`と新しいミッションを`prompt`へ渡すと、PTY作成前にローカルの
+Throughlineから対象sessionの読み取り専用handoff contextを取得する。返された記憶はそのまま
+ミッションの前へ置かれ、元sessionのDB所属は移動もcopyもされない。Throughlineが無い、または
+結果が不正／空ならclean launchへfallbackせず明示失敗する。引数を省略した通常起動は従来どおり。
+
 **v0.22.0では4 launcherを完全なプロジェクト共同作業員へ戻した。** 直接CLIを起動した時と同じ
 `HOME`、作業tree、vendor home、project/user/local設定、MCP、plugin、skill、permission、trust、memory、
 session historyをそのまま使う。aitermがlaunchごとに分離するのは完了相関stateだけ。子には
@@ -167,12 +173,18 @@ $ aiterm-wait --session codex1 --cursor <event_cursor>   # exit 0=done / 3=timeo
 
 | ツール | 起動するもの | 主な引数 |
 | --- | --- | --- |
-| `claude_agent` | Claude Code CLI（Anthropic） | `prompt?`, `model?`, `reasoning_effort?`（`low`/`medium`/`high`/`xhigh`/`max`）, `cwd?`, `session_name?` |
-| `codex_agent` | Codex CLI（OpenAI・端末設定／CLI既定、`model?`で上書き） | `prompt?`, `model?`, `reasoning_effort?`（`low`/`medium`/`high`/`xhigh`/`max`/`ultra`）, `cwd?`, `session_name?`, `write_scope?` |
-| `grok_agent` | Grok Build（xAI、既定`grok-4.5`、`model?`で上書き） | `prompt?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `cwd?`, `session_name?`, `write_scope?` |
-| `composer_agent` | Grok Build（xAI、既定`grok-composer-2.5-fast`、`model?`で上書き） | `prompt?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `cwd?`, `session_name?`, `write_scope?` |
+| `claude_agent` | Claude Code CLI（Anthropic） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`（`low`/`medium`/`high`/`xhigh`/`max`）, `cwd?`, `session_name?` |
+| `codex_agent` | Codex CLI（OpenAI・端末設定／CLI既定、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`（`low`/`medium`/`high`/`xhigh`/`max`/`ultra`）, `cwd?`, `session_name?`, `write_scope?` |
+| `grok_agent` | Grok Build（xAI、既定`grok-4.5`、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `cwd?`, `session_name?`, `write_scope?` |
+| `composer_agent` | Grok Build（xAI、既定`grok-composer-2.5-fast`、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `cwd?`, `session_name?`, `write_scope?` |
 
 各ベンダーのCLIが導入・認証済みであること。CLI不在・不正なmodel/effort・実在しない`cwd`はsession作成前に失敗し、残骸を残さない。ClaudeはさらにPTY作成前に同じCLIの`auth status --json`が`loggedIn:true`を返すことを要求する。4 launcherは通常のvendor credential/config storeをその場で使い、fake `HOME`、private `CODEX_HOME`/`GROK_HOME`、project/user config snapshotを作らない。Claudeだけは完了相関用Stop hook settingsを通常の`user,project,local` settingsへ加算する。Grok/Composerは画面入力欄だけでなく通常sessionの`mcp_init_completed` eventも確認してから送信し、共有MCP初期化中の早送信を防ぐ。相関付きClaudeのactive turn中はC-c以外の`pty_key`と素送信を拒否し、承認UIは`claude_approval`で単発Yes/Noだけを相関付きで中継する。
+
+portable forkは任意である。`throughline_source_session`を使う場合、`prompt`は必須の新ミッションとなり、
+`launch_operation_id`とは併用できない。aitermは`THROUGHLINE_BIN`、次に`PATH`からThroughlineを解決し、
+`throughline handoff-context --session <id> --json`のcontextを固定区切りとミッションの前へそのまま置く。
+この経路だけ`throughline >= 0.9.0`が必要で、元sessionのDB所属は変わらない。引数省略時には
+Throughline自体が不要である。
 
 エージェント間の隠れたプロトコルは無い。起動したClaude/Codex/Grok/Composerは利用者がattachできるもう1本の永続sessionであり、MCPクライアントが通常のPTY操作で駆動する。
 
@@ -369,12 +381,17 @@ consumer は `aiterm-runtime-errors snapshot` を読み、durable ingestion 後�
 
 | ツール | 起動するもの | 主な引数 |
 | --- | --- | --- |
-| `claude_agent` | Claude Code CLI（Anthropic） | `prompt?`, `model?`, `reasoning_effort?`（`low`/`medium`/`high`/`xhigh`/`max`）, `cwd?`, `session_name?` |
-| `codex_agent` | Codex CLI（OpenAI・端末設定／CLI既定、`model?`で上書き） | `prompt?`, `model?`, `reasoning_effort?`（`low`/`medium`/`high`/`xhigh`/`max`/`ultra`）, `cwd?`, `session_name?`, `write_scope?` |
-| `grok_agent` | Grok Build（xAI、既定`grok-4.5`、`model?`で上書き） | `prompt?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `cwd?`, `session_name?`, `write_scope?` |
-| `composer_agent` | Grok Build（xAI、既定`grok-composer-2.5-fast`、`model?`で上書き） | `prompt?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `cwd?`, `session_name?`, `write_scope?` |
+| `claude_agent` | Claude Code CLI（Anthropic） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`（`low`/`medium`/`high`/`xhigh`/`max`）, `cwd?`, `session_name?` |
+| `codex_agent` | Codex CLI（OpenAI・端末設定／CLI既定、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`（`low`/`medium`/`high`/`xhigh`/`max`/`ultra`）, `cwd?`, `session_name?`, `write_scope?` |
+| `grok_agent` | Grok Build（xAI、既定`grok-4.5`、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `cwd?`, `session_name?`, `write_scope?` |
+| `composer_agent` | Grok Build（xAI、既定`grok-composer-2.5-fast`、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `cwd?`, `session_name?`, `write_scope?` |
 
 対応するCLI（`claude` / `codex` / `grok`）の導入・認証が必要。前提違反はsession作成前に明示失敗する。4 launcherすべてが通常project/user環境と同じ非ブロックdispatch契約を使う。Claude／Codex／Grok／Composerのdepth 1 live smokeと、Claude親→Claude孫のdepth 2 nested delegation smokeはgreenであり、fixtureによる検証とは区別して記録する。
+
+`throughline_source_session`と空でない新ミッション`prompt`を指定すると、Throughlineの読み取り専用
+handoff contextを前置きできる。この任意経路は`throughline >= 0.9.0`を必要とし、
+`launch_operation_id`とは併用不可で、元sessionのDB所属を変更しない。Throughlineは
+`THROUGHLINE_BIN`、次に`PATH`から解決し、不在・不正・空のexportはPTY作成前に明示失敗する。
 
 エージェントの回答が画面 tailより長ければ、対話callerは`pty_read({ agent_transcript:true })`で再promptなしに全文回収する。Claudeはlaunch相関付きStop hookのowner-only resultを検証し、private transcriptを読まない。Codexは通常rollout transcript、Grok/Composerは通常session historyから同じturnを回収する。不在・非agent・抽出不能は明示エラー。
 
@@ -404,7 +421,7 @@ consumer は `aiterm-runtime-errors snapshot` を読み、durable ingestion 後�
 - **tmux**（実行時の前提。`tmux -V` で確認。未導入なら `apt install tmux` / `brew install tmux`）
   - **macOS / Linux / WSL2** は tmux を直接使う。macOS は同梱されないので `brew install tmux` で導入する。MCP クライアントがターミナルでなく **GUI から起動**された場合、Homebrew の bin（Apple Silicon: `/opt/homebrew/bin`、Intel: `/usr/local/bin`）が `PATH` に入らないことがある。その場合 aiterm が自動で探索するか、**`AITERM_TMUX=/path/to/tmux`** で明示指定する。
   - **Windows ネイティブ**には tmux が無いため、aiterm は裏で **WSL の中の tmux** を透過的に使う。[WSL](https://learn.microsoft.com/ja-jp/windows/wsl/) を導入・初期化し、**WSL のディストリ内に tmux を入れる**こと（`sudo apt install tmux`）。`wsl tmux -V` で確認できる。セッション・ソケット・人の `attach` はすべて WSL 側にあり、AI は Windows 側のコマンドから操作するだけ。（Windows のツールは SSH と同じく入れ子で握る: `pty_send "powershell.exe …"` で PowerShell に入る。）
-- **エージェント起動ツール**を使う場合: 対応するベンダー CLI が導入・認証済みであること——`claude_agent` は `claude`、`codex_agent` は `codex`、`grok_agent` / `composer_agent` は `grok`。（PTY ツールだけ使うなら不要。）
+- **エージェント起動ツール**を使う場合: 対応するベンダー CLI が導入・認証済みであること——`claude_agent` は `claude`、`codex_agent` は `codex`、`grok_agent` / `composer_agent` は `grok`。portable forkだけは追加で`throughline >= 0.9.0`が必要だが、通常のclean launchには不要。（PTY ツールだけ使うなら不要。）
 - 任意: [`rtk`](https://github.com/rtk-ai/rtk) バイナリ（`pty_send` の `rtk: true` 委譲で使う。無くても動く）
 
 ## 既知の制約（バグではなく仕様）

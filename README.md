@@ -96,6 +96,13 @@ toolchain behind kitepon.dev's products.
 
 Thirteen tools: six **PTY tools** — `pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list` — to open, drive, and read one persistent terminal, four **agent launchers** — `claude_agent` / `codex_agent` / `grok_agent` / `composer_agent` — that each start another coding agent's TUI inside a fresh one, `claude_turn` for durable structured issue/recovery, `claude_approval` for correlated Claude approval prompts, and `diagnostics` for safe factory readiness. The backend is **tmux**, so sessions survive even if the MCP server or the AI client restarts.
 
+**v0.23.0 adds a local, cross-vendor portable fork.** Pass `throughline_source_session`
+with a mission in `prompt` to any launcher, and aiterm asks the locally installed Throughline
+for that session's read-only handoff context before creating the PTY. The exact returned memory
+is prepended to the mission without moving or copying the source session's database ownership.
+If Throughline is missing or returns an invalid/empty result, launch fails visibly with no clean
+fallback. Omitting the field preserves the ordinary clean launch.
+
 **v0.22.0 makes launched agents full project collaborators.** All four launchers now use the
 same normal `HOME`, working tree, vendor home, project/user/local configuration, MCP servers,
 plugins, skills, permissions, trust, memory, and session history as a direct CLI launch. Aiterm
@@ -185,12 +192,19 @@ One call per model, so the tool name itself tells you which model you get:
 
 | Tool | Launches | Key args |
 | --- | --- | --- |
-| `claude_agent` | Claude Code CLI (Anthropic) | `prompt?`, `model?`, `reasoning_effort?` (`low`/`medium`/`high`/`xhigh`/`max`), `cwd?`, `session_name?`, `launch_operation_id?` |
-| `codex_agent` | Codex CLI (OpenAI; terminal config/CLI default unless overridden) | `prompt?`, `model?`, `reasoning_effort?` (`low`/`medium`/`high`/`xhigh`/`max`/`ultra`; ultra enables proactive automatic delegation), `cwd?`, `session_name?`, `write_scope?` |
-| `grok_agent` | Grok Build, model `grok-4.5` by default (`model?` overrides) (xAI) | `prompt?`, `model?`, `reasoning_effort?` unsupported (an explicit value is an error; Grok CLI `--effort` is headless-only), `cwd?`, `session_name?`, `write_scope?` |
-| `composer_agent` | Grok Build, model `grok-composer-2.5-fast` by default (`model?` overrides) (xAI) | `prompt?`, `model?`, `reasoning_effort?` unsupported (an explicit value is an error), `cwd?`, `session_name?`, `write_scope?` |
+| `claude_agent` | Claude Code CLI (Anthropic) | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?` (`low`/`medium`/`high`/`xhigh`/`max`), `cwd?`, `session_name?`, `launch_operation_id?` |
+| `codex_agent` | Codex CLI (OpenAI; terminal config/CLI default unless overridden) | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?` (`low`/`medium`/`high`/`xhigh`/`max`/`ultra`; ultra enables proactive automatic delegation), `cwd?`, `session_name?`, `write_scope?` |
+| `grok_agent` | Grok Build, model `grok-4.5` by default (`model?` overrides) (xAI) | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?` unsupported (an explicit value is an error; Grok CLI `--effort` is headless-only), `cwd?`, `session_name?`, `write_scope?` |
+| `composer_agent` | Grok Build, model `grok-composer-2.5-fast` by default (`model?` overrides) (xAI) | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?` unsupported (an explicit value is an error), `cwd?`, `session_name?`, `write_scope?` |
 
 The vendor CLI must be installed and authenticated (`claude` for `claude_agent`; `codex` for `codex_agent`; `grok` for both Grok tools). aiterm resolves the binary via `CLAUDE_BIN` / `CODEX_BIN` / `GROK_BIN`, then each documented default location, then `PATH`. Prerequisites are checked **before** a session exists: empty `model` values and unsupported effort values are rejected up front; a missing CLI binary or a nonexistent `cwd` fails for all four. Before creating a Claude session, aiterm also requires a successful structured `claude auth status --json` result with `loggedIn: true`; unavailable, malformed, or failed authentication leaves **zero leftover session**. All launchers use the normal vendor-owned credential and configuration stores in place. No launcher creates a fake `HOME`, a private `CODEX_HOME`/`GROK_HOME`, or a snapshot of project/user configuration.
+
+Portable fork is optional. When `throughline_source_session` is present, `prompt` is the required
+new mission and `launch_operation_id` cannot be combined with it. aiterm resolves Throughline via
+`THROUGHLINE_BIN` and then `PATH`, runs `throughline handoff-context --session <id> --json`, and
+places its returned context before a fixed separator and the mission. This route requires
+`throughline >= 0.9.0`; it reads the source memory without changing that database's session
+ownership. No Throughline dependency is needed when the field is omitted.
 
 Claude and Codex launchers forward `model` and `reasoning_effort` through public CLI flags; Grok/Composer reject `reasoning_effort` because it is headless-only. Pass an absolute path for `cwd` — `~` is not expanded. Durable callers can make a promptless Claude launch exactly replayable by passing an explicit `session_name` and `launch_operation_id`. Claude adds a launch-local settings file only for the correlated Stop hook and loads it together with normal `user,project,local` setting sources; it does not replace normal hooks, MCPs, plugins, permissions, or trust state. The hook event contains no answer body, and the bounded owner-only result is returned by `pty_read({ agent_transcript:true })` without reading Claude's private transcript. While a correlated Claude turn is active, raw sends and non-interrupt keys are rejected. Exact `/login` and `/logout` dispatches are rejected so shared authentication is repaired once in a normal terminal. Codex reads its normal rollout store; Grok/Composer read their normal session event/history files. Before dispatch, Codex waits for an idle TUI, while Grok/Composer additionally require the vendor's structured `mcp_init_completed` event so a visible input box cannot accept a prompt too early. Correlated completion requires POSIX filesystem semantics (Linux, WSL2, macOS).
 
@@ -391,12 +405,18 @@ Each launcher starts a specific vendor's interactive coding-agent TUI inside a f
 
 | Tool | Launches | Key args |
 | --- | --- | --- |
-| `claude_agent` | Claude Code CLI (Anthropic) | `prompt?`, `model?`, `reasoning_effort?` (`low`/`medium`/`high`/`xhigh`/`max`), `cwd?`, `session_name?`, `launch_operation_id?` |
-| `codex_agent` | Codex CLI (OpenAI; terminal config/CLI default unless overridden) | `prompt?`, `model?`, `reasoning_effort?` (`low`/`medium`/`high`/`xhigh`/`max`/`ultra`; ultra enables proactive automatic delegation), `cwd?`, `session_name?`, `write_scope?` |
-| `grok_agent` | Grok Build, model `grok-4.5` by default (`model?` overrides) (xAI) | `prompt?`, `model?`, `reasoning_effort?` unsupported (an explicit value is an error; Grok CLI `--effort` is headless-only), `cwd?`, `session_name?`, `write_scope?` |
-| `composer_agent` | Grok Build, model `grok-composer-2.5-fast` by default (`model?` overrides) (xAI) | `prompt?`, `model?`, `reasoning_effort?` unsupported (an explicit value is an error), `cwd?`, `session_name?`, `write_scope?` |
+| `claude_agent` | Claude Code CLI (Anthropic) | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?` (`low`/`medium`/`high`/`xhigh`/`max`), `cwd?`, `session_name?`, `launch_operation_id?` |
+| `codex_agent` | Codex CLI (OpenAI; terminal config/CLI default unless overridden) | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?` (`low`/`medium`/`high`/`xhigh`/`max`/`ultra`; ultra enables proactive automatic delegation), `cwd?`, `session_name?`, `write_scope?` |
+| `grok_agent` | Grok Build, model `grok-4.5` by default (`model?` overrides) (xAI) | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?` unsupported (an explicit value is an error; Grok CLI `--effort` is headless-only), `cwd?`, `session_name?`, `write_scope?` |
+| `composer_agent` | Grok Build, model `grok-composer-2.5-fast` by default (`model?` overrides) (xAI) | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?` unsupported (an explicit value is an error), `cwd?`, `session_name?`, `write_scope?` |
 
 The vendor CLI must be installed and authenticated (`claude` for `claude_agent`; `codex` for `codex_agent`; `grok` for both Grok tools). Binary resolution uses `CLAUDE_BIN` / `CODEX_BIN` / `GROK_BIN`, then each documented default location, then `PATH`. Missing binaries, invalid model/effort values, and nonexistent `cwd` fail before a session is created. Claude additionally requires a structured healthy authentication status before any PTY exists, and correlated Claude sessions reject `/login` and `/logout`; repair authentication once in a normal terminal. All four launchers share the normal project/user environment and the same non-blocking dispatch contract. Claude, Codex, Grok, and Composer depth-1 live smokes and a Claude depth-2 nested-delegation smoke are green; fixture coverage remains a separate claim. Native Windows can launch agents but correlated completion is not supported yet.
+
+Set `throughline_source_session` together with a non-empty mission in `prompt` to prepend
+Throughline's read-only handoff context. This optional route requires `throughline >= 0.9.0`,
+cannot be combined with `launch_operation_id`, and leaves the source session's database ownership
+unchanged. Throughline is resolved through `THROUGHLINE_BIN` and then `PATH`; a missing or invalid
+export fails before the PTY exists instead of silently launching clean.
 
 When an agent's answer is longer than the on-screen tail (pane height ≈ 24 lines), callers recover it in full with `pty_read({ agent_transcript: true })`. It returns the most recently completed turn's final assistant message in plain text with no re-prompting. Claude reads the bounded owner-only result captured by the launch-correlated Stop hook and verifies its digest/byte count; it never reads Claude's private transcript. Durable machine callers should use `claude_turn`: `issue` sends once, `recover` never sends, `pending` is distinct from unsafe or malformed state, and only `completed` carries the exact verified `raw_output`. Codex uses the normal rollout transcript's `task_complete.turn_id`; Grok/Composer use their normal session history after the last real user row. Missing or ambiguous attribution remains an explicit error.
 
@@ -439,7 +459,7 @@ Sessions live on a shared tmux socket. The `tmux -S … attach -t <id>` line pri
 - **tmux** (runtime prerequisite; check with `tmux -V`. Install with `apt install tmux` / `brew install tmux`)
   - **macOS / Linux / WSL2** run tmux directly. On macOS install it with `brew install tmux` (stock macOS ships none). If your MCP client is launched from the **GUI** rather than a terminal, Homebrew's bin (`/opt/homebrew/bin` on Apple Silicon, `/usr/local/bin` on Intel) may be off its `PATH`; aiterm auto-searches those locations, or set **`AITERM_TMUX=/path/to/tmux`** to point at it explicitly.
   - **Native Windows** has no tmux, so aiterm transparently runs tmux **inside WSL**. It needs [WSL](https://learn.microsoft.com/windows/wsl/) installed and initialized, with **tmux installed inside your WSL distro** (`sudo apt install tmux`); verify with `wsl tmux -V`. Sessions, the socket, and human `attach` all live on the WSL side — the AI just drives them from the Windows-side command. (You reach Windows tools the same way you reach SSH: `pty_send "powershell.exe …"` nests into PowerShell.)
-- For the **agent launchers**: the corresponding vendor CLI, installed and authenticated — `claude` for `claude_agent`, `codex` for `codex_agent`, `grok` for `grok_agent` / `composer_agent`. (Not needed if you only use the PTY tools.)
+- For the **agent launchers**: the corresponding vendor CLI, installed and authenticated — `claude` for `claude_agent`, `codex` for `codex_agent`, `grok` for `grok_agent` / `composer_agent`. Portable fork additionally needs `throughline >= 0.9.0`; ordinary clean launch does not. (Not needed if you only use the PTY tools.)
 - Optional: the [`rtk`](https://github.com/rtk-ai/rtk) binary (used by `pty_send`'s `rtk: true` delegation; works fine without it)
 
 ## Known constraints (by design, not bugs)

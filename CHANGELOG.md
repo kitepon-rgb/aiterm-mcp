@@ -13,6 +13,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   旧managed home／設定snapshotの本文は歴史的証拠として保持しつつ、現行契約ではない文書をADR 0025による
   superseded／historicalとして明示した。runtime、package version、公開成果物に変更はない。
 
+## [0.23.0] - 2026-08-04
+
+### Added
+
+- `claude_agent`／`codex_agent`／`grok_agent`／`composer_agent`へ任意の
+  `throughline_source_session`を追加。指定時はローカルの`throughline >= 0.9.0`から対象sessionの
+  読み取り専用handoff contextをPTY作成前に取得し、context＋固定区切り＋必須の新ミッションを
+  そのまま初回promptにする。Throughline側のDB row所属、`merged_into`、batonは変更しない。
+- portable forkは`launch_operation_id`と併用不可。Throughline不在、非zero、不正schema、空contextは
+  clean launchへfallbackせず、session残骸ゼロで明示失敗する。引数を省略した通常clean launchは不変。
+
+### Verification
+
+- Codex型TUI後送経路とGrok型argv経路で、contextがmissionより前へ一度だけ入ることをfocused testで固定。
+  外部Throughlineのmissing／nonzero／invalid schema／empty contextと、clean launch非依存も回帰した。
+  最終full regressionは335/335 green。
+
 ## [0.22.0] - 2026-08-04
 
 ### Changed
@@ -897,7 +914,8 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.21.4...v0.22.0
 [0.21.4]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.21.3...v0.21.4
 [0.21.3]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.21.2...v0.21.3
