@@ -11,7 +11,7 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import * as rtk from "./rtk.js";
 import { recordRuntimeError, type RuntimeErrorCode } from "./runtime-error-store.js";
@@ -55,6 +55,8 @@ const NON_POSIX_MARK_SHELLS = new Set(["fish", "csh", "tcsh"]);
 const MARK_DONE_RE = /<<<AITERM_DONE rc=[0-9]+>>>/;
 const LAUNCH_ID_RE = /^[0-9a-f]{32}$/;
 const OPERATION_ID_RE = /^sha256:[0-9a-f]{64}$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const AGENT_LINEAGE_RE = /^[A-Za-z0-9_.:-]+(?:>[A-Za-z0-9_.:-]+)*$/;
 export type AgentKind = "claude" | "codex" | "grok" | "composer";
 type InitialPromptState = "none" | "not_sent" | "sent" | "pending" | "done" | "failed";
 
@@ -67,6 +69,7 @@ const AGENT_SUBMIT_DELAY_MS = 250;
 const AGENT_EVENT_MAX_BYTES = 1024 * 1024;
 const AGENT_EVENT_TAIL_BYTES = 64 * 1024;
 const CODEX_TRANSCRIPT_INCREMENT_MAX_BYTES = 16 * 1024 * 1024;
+const GROK_TRANSCRIPT_INCREMENT_MAX_BYTES = 16 * 1024 * 1024;
 const AGENT_METADATA_NEGATIVE_CACHE_TTL_MS = 2_000;
 const AGENT_TUI_READY_TIMEOUT_MS = 30_000;
 const AGENT_TUI_READY_POLL_MS = 500;
@@ -1468,9 +1471,20 @@ interface AgentMetadata {
   initial_prompt: InitialPromptState;
   launch_operation_id?: string | null;
   launch_request_digest?: string | null;
-  hook_route: "managed_claude_settings" | "managed_codex_home" | "managed_grok_home";
+  hook_route:
+    | "managed_claude_settings"
+    | "managed_codex_home"
+    | "managed_grok_home"
+    | "shared_claude_settings"
+    | "shared_codex_home"
+    | "shared_grok_home";
   // 省略は v0.21.0 以前のCodex Stop hook event route。
-  completion_route?: "codex_transcript";
+  completion_route?: "codex_transcript" | "grok_transcript";
+  agent_role?: "subagent";
+  parent_session_id?: string;
+  delegation_depth?: number;
+  lineage?: string;
+  delegation_allowed?: true;
   node_platform: NodeJS.Platform;
   codex_home?: string;
   claude_settings?: string;
@@ -1479,6 +1493,106 @@ interface AgentMetadata {
   grok_home?: string;
   home?: string;
   grok_auth_path?: string | null;
+}
+
+interface AgentLineageContext {
+  agentRole: "subagent";
+  parentSessionId: string;
+  delegationDepth: number;
+  lineage: string;
+  delegationAllowed: true;
+}
+
+interface AgentLineageSeed {
+  parentSessionId: string;
+  delegationDepth: number;
+  lineagePrefix: string;
+}
+
+function readAgentLineageSeed(): AgentLineageSeed {
+  const role = process.env.AITERM_AGENT_ROLE;
+  const session = process.env.AITERM_AGENT_SESSION_ID;
+  const depthRaw = process.env.AITERM_AGENT_DEPTH;
+  const lineage = process.env.AITERM_AGENT_LINEAGE;
+  const delegationAllowed = process.env.AITERM_AGENT_DELEGATION_ALLOWED;
+  const nested = [role, session, depthRaw, lineage, delegationAllowed].some((value) => value !== undefined);
+  if (!nested) {
+    return { parentSessionId: "host-root", delegationDepth: 1, lineagePrefix: "host-root" };
+  }
+  if (
+    role !== "subagent" ||
+    delegationAllowed !== "true" ||
+    !session ||
+    !/^[A-Za-z0-9_-]{1,64}$/.test(session) ||
+    !depthRaw ||
+    !/^\d+$/.test(depthRaw) ||
+    !lineage ||
+    lineage.length > 4096 ||
+    !AGENT_LINEAGE_RE.test(lineage)
+  ) {
+    throw new AitermError("継承したAITERM sub-agent lineage環境が不正です", 2);
+  }
+  const parentDepth = Number(depthRaw);
+  if (!Number.isSafeInteger(parentDepth) || parentDepth < 1 || parentDepth >= 1_000_000) {
+    throw new AitermError("継承したAITERM_AGENT_DEPTHが不正です", 2);
+  }
+  return { parentSessionId: session, delegationDepth: parentDepth + 1, lineagePrefix: lineage };
+}
+
+function createAgentLineageContext(
+  kind: AgentKind,
+  sessionId: string,
+  seed: AgentLineageSeed,
+): AgentLineageContext {
+  const lineage = `${seed.lineagePrefix}>${kind}:${sessionId}`;
+  if (lineage.length > 4096 || !AGENT_LINEAGE_RE.test(lineage)) {
+    throw new AitermError("AITERM sub-agent lineageが上限または形式に違反しました", 2);
+  }
+  return {
+    agentRole: "subagent",
+    parentSessionId: seed.parentSessionId,
+    delegationDepth: seed.delegationDepth,
+    lineage,
+    delegationAllowed: true,
+  };
+}
+
+function agentLineageFields(context: AgentLineageContext): Pick<
+  AgentMetadata,
+  "agent_role" | "parent_session_id" | "delegation_depth" | "lineage" | "delegation_allowed"
+> {
+  return {
+    agent_role: context.agentRole,
+    parent_session_id: context.parentSessionId,
+    delegation_depth: context.delegationDepth,
+    lineage: context.lineage,
+    delegation_allowed: context.delegationAllowed,
+  };
+}
+
+function subagentInstruction(meta: AgentMetadata): string {
+  if (
+    meta.agent_role !== "subagent" ||
+    !meta.parent_session_id ||
+    !Number.isSafeInteger(meta.delegation_depth) ||
+    !meta.lineage ||
+    meta.delegation_allowed !== true
+  ) {
+    throw new AitermError("sub-agent instructionに必要なlineage metadataがありません", 2);
+  }
+  return [
+    "<aiterm_subagent_context>",
+    "あなたはaitermから起動されたsub-agentであり、root agentではありません。",
+    `AITERM_AGENT_LAUNCH_ID=${meta.launch_id}`,
+    `role=${meta.agent_role}`,
+    `parent_session_id=${meta.parent_session_id}`,
+    `delegation_depth=${meta.delegation_depth}`,
+    `lineage=${meta.lineage}`,
+    "delegation_allowed=true",
+    "任務の所有権を保ち、結果を親へ返してください。必要なら追加のsub-agentへ委譲してよいです。",
+    "ただし、同じ任務全体を同型agentへ反射的に丸投げして自己複製ループを作らないでください。",
+    "</aiterm_subagent_context>",
+  ].join("\n");
 }
 
 interface AgentDoneEvent {
@@ -1569,10 +1683,6 @@ const agentMetadataNegativeCache = new Map<string, number>();
 let agentTuiReadyStableSamplesTestOverride: number | null = null;
 
 
-function grokHookScriptPath(): string {
-  return path.join(path.dirname(fileURLToPath(import.meta.url)), "grok-stop-hook.js");
-}
-
 function claudeHookScriptPath(): string {
   return path.join(path.dirname(fileURLToPath(import.meta.url)), "claude-stop-hook.js");
 }
@@ -1658,32 +1768,6 @@ function realCodexHome(): string {
   return process.env.CODEX_HOME || path.join(process.env.HOME ?? os.homedir(), ".codex");
 }
 
-// 引数で model/effort を渡された時は managed config のピンを上書きする（端末 config の
-// model/model_reasoning_effort ピン——例: effort=ultra は proactive 自動委譲 ON——が対話子へ
-// 黙って波及するのを防ぐ）。TOML の top-level キーは最初のテーブルヘッダより前にしか置けないため、
-// 既存行の除去は先頭領域に限定し、上書き行はファイル先頭へ置く。
-function applyCodexConfigOverrides(
-  body: string | null,
-  overrides: { model?: string | null; effort?: string | null },
-): string | null {
-  const lines: string[] = [];
-  if (overrides.model) lines.push(`model = ${JSON.stringify(overrides.model)}`);
-  if (overrides.effort) lines.push(`model_reasoning_effort = ${JSON.stringify(overrides.effort)}`);
-  if (!lines.length) return body;
-  if (body == null) return lines.join("\n") + "\n";
-  const rows = body.split(/\r?\n/);
-  let firstTable = rows.findIndex((l) => /^\s*\[/.test(l));
-  if (firstTable === -1) firstTable = rows.length;
-  const head = rows.slice(0, firstTable).filter((l) => {
-    if (overrides.model && /^\s*(?:"model"|'model'|model)\s*=/.test(l)) return false;
-    if (overrides.effort && /^\s*(?:"model_reasoning_effort"|'model_reasoning_effort'|model_reasoning_effort)\s*=/.test(l)) return false;
-    return true;
-  });
-  let out = [...lines, ...head, ...rows.slice(firstTable)].join("\n");
-  if (!out.endsWith("\n")) out += "\n";
-  return out;
-}
-
 // config.toml の top-level model / model_reasoning_effort ピンを起動報告用に読む。TOML パーサは
 // 持ち込まず基本形（key = "値"）だけ解決する。行はあるが値を解析できない場合も「継承あり」として
 // 正直に報告する（黙って CLI 既定扱いにしない）。
@@ -1711,7 +1795,7 @@ function readCodexConfigPins(configPath: string): { model: CodexConfigPin; effor
   return { model: pick("model"), effort: pick("model_reasoning_effort") };
 }
 
-function managedCodexConfigSummary(configPath: string): string {
+function codexConfigSummary(configPath: string): string {
   let body: string;
   try {
     body = fs.readFileSync(configPath, "utf8");
@@ -1735,96 +1819,10 @@ function managedCodexConfigSummary(configPath: string): string {
   const sandboxMode = valueOf("sandbox_mode");
   if (approvalPolicy) bits.push(`approval_policy=${approvalPolicy}`);
   if (sandboxMode) bits.push(`sandbox_mode=${sandboxMode}`);
-  return `managed config: ${bits.join(" / ")}`;
+  return `共有 config: ${bits.join(" / ")}`;
 }
 
-// Custom agent definitions are configuration, not mutable Codex state. Copy only direct
-// agents/*.toml entries into the per-launch home so role discovery matches the source home while
-// sessions/cache remain isolated. Source symlinks are resolved and their contents are snapshotted;
-// the managed home never points back to the source definition.
-function snapshotCodexAgentDefinitions(srcHome: string, managedHome: string): void {
-  const srcDir = path.join(srcHome, "agents");
-  let srcDirSt: fs.Stats;
-  try {
-    srcDirSt = fs.statSync(srcDir);
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "ENOENT") return;
-    throw e;
-  }
-  if (!srcDirSt.isDirectory()) {
-    throw new AitermError(`Codex agents が directory ではありません: ${srcDir}`, 2);
-  }
-
-  const names = fs.readdirSync(srcDir).filter((name) => name.endsWith(".toml")).sort();
-  if (!names.length) return;
-  const dstDir = path.join(managedHome, "agents");
-  fs.mkdirSync(dstDir, { mode: 0o700 });
-  fs.chmodSync(dstDir, 0o700);
-  for (const name of names) {
-    const src = path.join(srcDir, name);
-    const resolved = fs.realpathSync(src);
-    const st = fs.statSync(resolved);
-    if (!st.isFile()) {
-      throw new AitermError(`Codex agent definition が通常ファイルではありません: ${src}`, 2);
-    }
-    writeText0600(path.join(dstDir, name), fs.readFileSync(resolved, "utf8"));
-  }
-}
-
-function createManagedCodexHome(
-  name: string,
-  launchId: string,
-  overrides: { model?: string | null; effort?: string | null } = {},
-): string {
-  const srcHome = realCodexHome();
-  let srcSt: fs.Stats;
-  try {
-    srcSt = fs.statSync(srcHome);
-  } catch {
-    throw new AitermError(`Codex home が見つかりません: ${srcHome}`, 2);
-  }
-  if (!srcSt.isDirectory()) throw new AitermError(`Codex home が directory ではありません: ${srcHome}`, 2);
-
-  const managedHome = agentManagedCodexHomePath(name, launchId);
-  fs.mkdirSync(managedHome, { recursive: false, mode: 0o700 });
-  fs.chmodSync(managedHome, 0o700);
-
-  const authSrc = path.join(srcHome, "auth.json");
-  try {
-    const st = fs.statSync(authSrc);
-    if (!st.isFile()) throw new AitermError(`Codex auth.json が通常ファイルではありません: ${authSrc}`, 2);
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new AitermError(`Codex auth.json が見つかりません。先に codex login が必要です: ${srcHome}`, 2);
-    }
-    throw e;
-  }
-  fs.symlinkSync(authSrc, path.join(managedHome, "auth.json"));
-
-  const configSrc = path.join(srcHome, "config.toml");
-  let configBody: string | null = null;
-  try {
-    const st = fs.statSync(configSrc);
-    if (st.isFile()) configBody = fs.readFileSync(configSrc, "utf8");
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
-  }
-  const configOut = applyCodexConfigOverrides(configBody, overrides);
-  if (configOut != null) {
-    const configDst = path.join(managedHome, "config.toml");
-    fs.writeFileSync(configDst, configOut, { mode: 0o600 });
-    fs.chmodSync(configDst, 0o600);
-  }
-
-  snapshotCodexAgentDefinitions(srcHome, managedHome);
-
-  // Codex 自身の rollout transcript に task_complete が永続化されるため、完了検出用の
-  // Stop hook は作らない。hook と transcript の二重正本、および hook failure の単一障害点を
-  // ここでなくす。
-  return managedHome;
-}
-
-function createManagedClaudeSettings(name: string, launchId: string): string {
+function createClaudeCorrelationSettings(name: string, launchId: string): string {
   const hookScript = claudeHookScriptPath();
   if (!fs.existsSync(hookScript)) {
     throw new AitermError(`Claude Stop hook wrapper が見つかりません。npm run build を実行してください: ${hookScript}`, 2);
@@ -1846,48 +1844,6 @@ function createManagedClaudeSettings(name: string, launchId: string): string {
     },
   });
   return settings;
-}
-
-function createManagedClaudeMcpConfig(name: string, launchId: string): string | null {
-  const home = process.env.HOME?.trim() || os.homedir();
-  const source = path.join(home, ".claude.json");
-  let canonical: string;
-  try {
-    canonical = fs.realpathSync(source);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw new AitermError(`Claude user MCP設定を読めません: ${(error as Error).message}`, 2);
-  }
-
-  let fd: number | undefined;
-  let parsed: unknown;
-  try {
-    fd = fs.openSync(canonical, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
-    const st = fs.fstatSync(fd);
-    if (!st.isFile() || st.uid !== currentUid() || st.size > 16 * 1024 * 1024) {
-      throw new AitermError("Claude user MCP設定の安全検証に失敗しました", 2);
-    }
-    parsed = JSON.parse(fs.readFileSync(fd, "utf8"));
-  } catch (error) {
-    if (error instanceof AitermError) throw error;
-    throw new AitermError(`Claude user MCP設定を読めません: ${(error as Error).message}`, 2);
-  } finally {
-    if (fd !== undefined) fs.closeSync(fd);
-  }
-
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new AitermError("Claude user MCP設定のtop-level JSONはobjectである必要があります", 2);
-  }
-  const servers = (parsed as Record<string, unknown>).mcpServers;
-  if (servers === undefined) return null;
-  if (!servers || typeof servers !== "object" || Array.isArray(servers)) {
-    throw new AitermError("Claude user MCP設定のmcpServersはobjectである必要があります", 2);
-  }
-  if (Object.keys(servers).length === 0) return null;
-
-  const destination = agentManagedClaudeMcpConfigPath(name, launchId);
-  writeJson0600(destination, { mcpServers: servers });
-  return destination;
 }
 
 function realGrokHome(): string {
@@ -1940,68 +1896,6 @@ function resolveAndValidateGrokAuth(srcHome: string): string | null {
   } finally {
     if (fd !== undefined) fs.closeSync(fd);
   }
-}
-
-function writeManagedGrokConfig(grokHome: string): void {
-  fs.mkdirSync(path.join(grokHome, "hooks"), { recursive: false, mode: 0o700 });
-  writeText0600(path.join(grokHome, "config.toml"), [
-    "[cli]",
-    "auto_update = false",
-    "",
-    "[features]",
-    "remote_fetch = false",
-    "managed_config = false",
-    "",
-    "[compat.claude]",
-    "skills = false",
-    "rules = false",
-    "agents = false",
-    "mcps = false",
-    "hooks = false",
-    "",
-    "[compat.cursor]",
-    "skills = false",
-    "rules = false",
-    "agents = false",
-    "mcps = false",
-    "hooks = false",
-    "",
-  ].join("\n"));
-}
-
-function createManagedGrokHome(name: string, launchId: string, authPath: string | null): { grokHome: string; home: string; authPath: string | null } {
-  const grokHome = agentManagedGrokHomePath(name, launchId);
-  const fakeHome = agentManagedGrokUserHomePath(name, launchId);
-  fs.mkdirSync(grokHome, { recursive: false, mode: 0o700 });
-  fs.mkdirSync(fakeHome, { recursive: false, mode: 0o700 });
-  fs.chmodSync(grokHome, 0o700);
-  fs.chmodSync(fakeHome, 0o700);
-  fs.symlinkSync(grokHome, path.join(fakeHome, ".grok"));
-
-  const hookScript = grokHookScriptPath();
-  if (!fs.existsSync(hookScript)) {
-    throw new AitermError(`Grok Stop hook wrapper が見つかりません。npm run build を実行してください: ${hookScript}`, 2);
-  }
-  writeManagedGrokConfig(grokHome);
-  writeJson0600(path.join(grokHome, "hooks", "aiterm-stop.json"), {
-    hooks: {
-      Stop: [
-        {
-          hooks: [
-            {
-              type: "command",
-              command: nodeHookCommand(hookScript),
-              timeout: 10,
-            },
-          ],
-        },
-      ],
-    },
-  });
-
-  // Grok 0.2.87 は compat false でも ~/.claude/plugins の hook file を拾う。HOME を一時化して
-  // plugin/hook source を完全に 0 にする。実 HOME は必要なら hook/agent 側で参照できるよう env で渡す。
-  return { grokHome, home: fakeHome, authPath };
 }
 
 function writeAgentMetadata(meta: AgentMetadata): void {
@@ -2476,14 +2370,14 @@ function createClaudeAgentMetadata(
   initialPrompt: InitialPromptState,
   launchOperationId: string | null,
   launchRequestDigest: string | null,
+  lineageContext: AgentLineageContext,
 ): AgentMetadata {
   const launchId = randomBytes(16).toString("hex");
   const eventFile = agentEventPath(name, launchId);
   const resultFile = agentClaudeResultPath(name, launchId);
   createEmpty0600NoFollow(eventFile);
   createEmpty0600NoFollow(resultFile);
-  const claudeSettings = createManagedClaudeSettings(name, launchId);
-  const claudeMcpConfig = createManagedClaudeMcpConfig(name, launchId);
+  const claudeSettings = createClaudeCorrelationSettings(name, launchId);
   const meta: AgentMetadata = {
     kind: "claude",
     aiterm_session: name,
@@ -2491,14 +2385,14 @@ function createClaudeAgentMetadata(
     event_file: eventFile,
     created_at: new Date().toISOString(),
     cwd,
-    vendor_session_id: null,
+    vendor_session_id: randomUUID(),
     initial_prompt: initialPrompt,
     launch_operation_id: launchOperationId,
     launch_request_digest: launchRequestDigest,
-    hook_route: "managed_claude_settings",
+    hook_route: "shared_claude_settings",
+    ...agentLineageFields(lineageContext),
     node_platform: process.platform,
     claude_settings: claudeSettings,
-    claude_mcp_config: claudeMcpConfig,
     result_file: resultFile,
   };
   writeAgentMetadata(meta);
@@ -2511,11 +2405,12 @@ function createCodexAgentMetadata(
   initialPrompt: InitialPromptState,
   overrides: { model?: string | null; effort?: string | null } = {},
   writeScope?: string,
+  lineageContext?: AgentLineageContext,
 ): AgentMetadata {
   const launchId = randomBytes(16).toString("hex");
   const eventFile = agentEventPath(name, launchId);
   createEmpty0600NoFollow(eventFile);
-  const codexHome = createManagedCodexHome(name, launchId, overrides);
+  const codexHome = realCodexHome();
   const meta: AgentMetadata = {
     kind: "codex",
     aiterm_session: name,
@@ -2526,8 +2421,9 @@ function createCodexAgentMetadata(
     ...(writeScope === undefined ? {} : { write_scope: writeScope }),
     vendor_session_id: null,
     initial_prompt: initialPrompt,
-    hook_route: "managed_codex_home",
+    hook_route: "shared_codex_home",
     completion_route: "codex_transcript",
+    ...(lineageContext ? agentLineageFields(lineageContext) : {}),
     node_platform: process.platform,
     codex_home: codexHome,
   };
@@ -2542,11 +2438,12 @@ function createGrokAgentMetadata(
   initialPrompt: InitialPromptState,
   authPath: string | null,
   writeScope?: string,
+  lineageContext?: AgentLineageContext,
 ): AgentMetadata {
   const launchId = randomBytes(16).toString("hex");
   const eventFile = agentEventPath(name, launchId);
   createEmpty0600NoFollow(eventFile);
-  const managed = createManagedGrokHome(name, launchId, authPath);
+  const grokHome = realGrokHome();
   const meta: AgentMetadata = {
     kind,
     aiterm_session: name,
@@ -2555,16 +2452,47 @@ function createGrokAgentMetadata(
     created_at: new Date().toISOString(),
     cwd,
     ...(writeScope === undefined ? {} : { write_scope: writeScope }),
-    vendor_session_id: null,
+    vendor_session_id: randomUUID(),
     initial_prompt: initialPrompt,
-    hook_route: "managed_grok_home",
+    hook_route: "shared_grok_home",
+    completion_route: "grok_transcript",
+    ...(lineageContext ? agentLineageFields(lineageContext) : {}),
     node_platform: process.platform,
-    grok_home: managed.grokHome,
-    home: managed.home,
-    grok_auth_path: managed.authPath,
+    grok_home: grokHome,
+    grok_auth_path: authPath,
   };
   writeAgentMetadata(meta);
   return meta;
+}
+
+function loadAgentLineageFields(m: Partial<AgentMetadata>, required: boolean): ReturnType<typeof agentLineageFields> | {} {
+  const present =
+    m.agent_role !== undefined ||
+    m.parent_session_id !== undefined ||
+    m.delegation_depth !== undefined ||
+    m.lineage !== undefined ||
+    m.delegation_allowed !== undefined;
+  if (!present && !required) return {};
+  if (
+    m.agent_role !== "subagent" ||
+    typeof m.parent_session_id !== "string" ||
+    !/^[A-Za-z0-9_-]{1,64}$/.test(m.parent_session_id) ||
+    !Number.isSafeInteger(m.delegation_depth) ||
+    (m.delegation_depth as number) < 1 ||
+    typeof m.lineage !== "string" ||
+    m.lineage.length > 4096 ||
+    !AGENT_LINEAGE_RE.test(m.lineage) ||
+    m.delegation_allowed !== true
+  ) {
+    throw new AitermError("agent metadata のsub-agent lineageが不正です", 2);
+  }
+  return agentLineageFields({
+    agentRole: "subagent",
+    parentSessionId: m.parent_session_id,
+    delegationDepth: m.delegation_depth as number,
+    lineage: m.lineage,
+    delegationAllowed: true,
+  });
 }
 
 function loadAgentMetadata(name: string): AgentMetadata {
@@ -2605,13 +2533,16 @@ function loadAgentMetadata(name: string): AgentMetadata {
     const expectedSettings = agentManagedClaudeSettingsPath(name, m.launch_id);
     const expectedMcpConfig = agentManagedClaudeMcpConfigPath(name, m.launch_id);
     const expectedResult = agentClaudeResultPath(name, m.launch_id);
+    const shared = m.hook_route === "shared_claude_settings";
     const claudeMcpConfig = m.claude_mcp_config ?? null;
     const launchOperationId = m.launch_operation_id ?? null;
     const launchRequestDigest = m.launch_request_digest ?? null;
     if (
-      m.hook_route !== "managed_claude_settings" ||
+      (m.hook_route !== "managed_claude_settings" && !shared) ||
       m.claude_settings !== expectedSettings ||
-      (claudeMcpConfig !== null && claudeMcpConfig !== expectedMcpConfig) ||
+      (!shared && claudeMcpConfig !== null && claudeMcpConfig !== expectedMcpConfig) ||
+      (shared && claudeMcpConfig !== null) ||
+      (shared && (typeof m.vendor_session_id !== "string" || !UUID_RE.test(m.vendor_session_id))) ||
       m.result_file !== expectedResult ||
       ((launchOperationId === null) !== (launchRequestDigest === null)) ||
       (launchOperationId !== null && !OPERATION_ID_RE.test(launchOperationId)) ||
@@ -2631,16 +2562,18 @@ function loadAgentMetadata(name: string): AgentMetadata {
       initial_prompt: normalizeInitialPromptState(m.initial_prompt),
       launch_operation_id: launchOperationId,
       launch_request_digest: launchRequestDigest,
-      hook_route: "managed_claude_settings",
+      hook_route: shared ? "shared_claude_settings" : "managed_claude_settings",
+      ...loadAgentLineageFields(m, shared),
       node_platform: process.platform,
       claude_settings: expectedSettings,
-      claude_mcp_config: claudeMcpConfig === expectedMcpConfig ? expectedMcpConfig : null,
+      ...(shared ? {} : { claude_mcp_config: claudeMcpConfig === expectedMcpConfig ? expectedMcpConfig : null }),
       result_file: expectedResult,
     };
   }
   if (m.kind === "codex") {
-    const expectedHome = agentManagedCodexHomePath(name, m.launch_id);
-    if (m.hook_route !== "managed_codex_home" || m.codex_home !== expectedHome) {
+    const shared = m.hook_route === "shared_codex_home";
+    const expectedHome = shared ? realCodexHome() : agentManagedCodexHomePath(name, m.launch_id);
+    if ((m.hook_route !== "managed_codex_home" && !shared) || m.codex_home !== expectedHome) {
       throw new AitermError("agent metadata の path が現在の secure state root と一致しません", 2);
     }
     return {
@@ -2653,15 +2586,22 @@ function loadAgentMetadata(name: string): AgentMetadata {
       ...(typeof m.write_scope === "string" ? { write_scope: m.write_scope } : {}),
       vendor_session_id: typeof m.vendor_session_id === "string" ? m.vendor_session_id : null,
       initial_prompt: normalizeInitialPromptState(m.initial_prompt),
-      hook_route: "managed_codex_home",
+      hook_route: shared ? "shared_codex_home" : "managed_codex_home",
       ...(m.completion_route === "codex_transcript" ? { completion_route: "codex_transcript" as const } : {}),
+      ...loadAgentLineageFields(m, shared),
       node_platform: process.platform,
       codex_home: expectedHome,
     };
   }
-  const expectedGrokHome = agentManagedGrokHomePath(name, m.launch_id);
-  const expectedHome = agentManagedGrokUserHomePath(name, m.launch_id);
-  if (m.hook_route !== "managed_grok_home" || m.grok_home !== expectedGrokHome || m.home !== expectedHome) {
+  const shared = m.hook_route === "shared_grok_home";
+  const expectedGrokHome = shared ? realGrokHome() : agentManagedGrokHomePath(name, m.launch_id);
+  const expectedHome = shared ? undefined : agentManagedGrokUserHomePath(name, m.launch_id);
+  if (
+    (m.hook_route !== "managed_grok_home" && !shared) ||
+    m.grok_home !== expectedGrokHome ||
+    (shared ? m.home !== undefined : m.home !== expectedHome) ||
+    (shared && (typeof m.vendor_session_id !== "string" || !UUID_RE.test(m.vendor_session_id)))
+  ) {
     throw new AitermError("agent metadata の path が現在の secure state root と一致しません", 2);
   }
   const expectedAuthPath = resolveAndValidateGrokAuth(realGrokHome());
@@ -2678,10 +2618,12 @@ function loadAgentMetadata(name: string): AgentMetadata {
     ...(typeof m.write_scope === "string" ? { write_scope: m.write_scope } : {}),
     vendor_session_id: typeof m.vendor_session_id === "string" ? m.vendor_session_id : null,
     initial_prompt: normalizeInitialPromptState(m.initial_prompt),
-    hook_route: "managed_grok_home",
+    hook_route: shared ? "shared_grok_home" : "managed_grok_home",
+    ...(shared ? { completion_route: "grok_transcript" as const } : {}),
+    ...loadAgentLineageFields(m, shared),
     node_platform: process.platform,
     grok_home: expectedGrokHome,
-    home: expectedHome,
+    ...(expectedHome ? { home: expectedHome } : {}),
     grok_auth_path: expectedAuthPath,
   };
 }
@@ -2798,7 +2740,13 @@ function bindCompletedInitialPrompt(meta: AgentMetadata): void {
     setInitialPromptState(meta, "done");
     return;
   }
-  if (meta.vendor_session_id) {
+  if ((meta.kind === "grok" || meta.kind === "composer") && meta.completion_route === "grok_transcript") {
+    if (!latestGrokCompletion(meta)) {
+      throw new AitermError(
+        `agent session '${meta.aiterm_session}' は起動時 prompt の完了待ちです。${agentWaitGuide(meta.aiterm_session)}`,
+        2,
+      );
+    }
     setInitialPromptState(meta, "done");
     return;
   }
@@ -2838,6 +2786,9 @@ function tryLoadAgentMetadata(name: string): AgentMetadata | null {
 
 function latestAgentDoneEvent(meta: AgentMetadata, expectedOperationId: string | null = null): AgentDoneEvent | null {
   if (meta.kind === "codex") return latestCodexCompletion(meta);
+  if ((meta.kind === "grok" || meta.kind === "composer") && meta.completion_route === "grok_transcript") {
+    return latestGrokCompletion(meta);
+  }
   const size = safeStatSize(meta.event_file);
   if (size === 0) return null;
   const isTailRead = size > AGENT_EVENT_TAIL_BYTES;
@@ -2962,9 +2913,50 @@ function listCodexTranscripts(codexHome: string): string[] {
     }
   };
   visit(sessionsDir);
-  // managed CODEX_HOME では root TUI の rollout が最初に作られる。後から同じ home に
-  // sub-agent rollout が増えても root を取り違えないよう、未bind時は最古を選べる順にする。
   return files.sort();
+}
+
+function codexTranscriptMatchesLaunch(file: string, meta: AgentMetadata): boolean {
+  const createdAt = Date.parse(meta.created_at);
+  try {
+    const st = fs.statSync(file);
+    if (Number.isFinite(createdAt) && st.mtimeMs + 5_000 < createdAt) return false;
+  } catch {
+    return false;
+  }
+  const size = Math.min(safeStatSize(file), 1024 * 1024);
+  if (size === 0) return false;
+  const marker = `AITERM_AGENT_LAUNCH_ID=${meta.launch_id}`;
+  let rootCli = false;
+  let launchMarker = false;
+  for (const line of readFileRange(file, 0, size).toString("utf8").split("\n")) {
+    if (!line.trim()) continue;
+    let record: any;
+    try {
+      record = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (record?.type === "session_meta") {
+      rootCli = record?.payload?.originator === "codex-tui" && record?.payload?.source === "cli";
+      if (!rootCli) return false;
+    }
+    if (
+      record?.type === "response_item" &&
+      record?.payload?.type === "message" &&
+      record?.payload?.role === "developer" &&
+      Array.isArray(record?.payload?.content)
+    ) {
+      launchMarker ||= record.payload.content.some(
+        (item: any) =>
+          (item?.type === "input_text" || item?.type === "output_text") &&
+          typeof item?.text === "string" &&
+          item.text.includes(marker),
+      );
+    }
+    if (rootCli && launchMarker) return true;
+  }
+  return false;
 }
 
 function codexTranscriptSessionId(file: string): string | null {
@@ -2988,6 +2980,13 @@ function codexTranscriptSessionId(file: string): string | null {
 function codexRootTranscript(meta: AgentMetadata): string | null {
   if (meta.kind !== "codex" || !meta.codex_home) return null;
   if (meta.vendor_session_id) return findLatestCodexTranscript(meta.codex_home, meta.vendor_session_id);
+  if (meta.hook_route === "shared_codex_home") {
+    const matches = listCodexTranscripts(meta.codex_home).filter((file) => codexTranscriptMatchesLaunch(file, meta));
+    if (matches.length > 1) {
+      throw new AitermError("共有CODEX_HOMEに同じlaunch markerのroot rolloutが複数あります。sessionを閉じて起動し直してください。", 2);
+    }
+    return matches[0] ?? null;
+  }
   return listCodexTranscripts(meta.codex_home)[0] ?? null;
 }
 
@@ -3044,7 +3043,59 @@ function latestCodexCompletion(meta: AgentMetadata): AgentDoneEvent | null {
   return latest;
 }
 
+function grokSessionDirectory(meta: AgentMetadata): string | null {
+  if ((meta.kind !== "grok" && meta.kind !== "composer") || !meta.grok_home || !meta.vendor_session_id) return null;
+  const cwd = meta.cwd ?? process.cwd();
+  return path.join(meta.grok_home, "sessions", encodeURIComponent(cwd), meta.vendor_session_id);
+}
+
+function grokEventsTranscript(meta: AgentMetadata): string | null {
+  const dir = grokSessionDirectory(meta);
+  return dir ? path.join(dir, "events.jsonl") : null;
+}
+
+function grokCompletionEvent(meta: AgentMetadata, record: any): AgentDoneEvent | null {
+  if (
+    (meta.kind !== "grok" && meta.kind !== "composer") ||
+    record?.type !== "turn_ended" ||
+    (record?.outcome !== "completed" && record?.outcome !== "cancelled")
+  ) return null;
+  const turnId = typeof record?.ts === "string" || typeof record?.ts === "number" ? String(record.ts) : null;
+  return {
+    type: "agent_done",
+    vendor: meta.kind,
+    aiterm_session: meta.aiterm_session,
+    launch_id: meta.launch_id,
+    vendor_session_id: meta.vendor_session_id,
+    turn_id: turnId,
+    operation_id: null,
+    reason: `Grok transcript turn_ended:${record.outcome}`,
+    done_status: "turn_done",
+    stop_hook_active: false,
+    at: typeof record?.ts === "string" ? record.ts : new Date().toISOString(),
+  };
+}
+
+function latestGrokCompletion(meta: AgentMetadata): AgentDoneEvent | null {
+  const transcript = grokEventsTranscript(meta);
+  if (!transcript || !fs.existsSync(transcript)) return null;
+  let latest: AgentDoneEvent | null = null;
+  for (const line of readTranscriptLines(transcript)) {
+    if (!line.trim()) continue;
+    try {
+      latest = grokCompletionEvent(meta, JSON.parse(line)) ?? latest;
+    } catch {
+      // 末尾書込み中のlineは次の観測で完結してから読む。
+    }
+  }
+  return latest;
+}
+
 function agentCompletionCursor(meta: AgentMetadata): number {
+  if ((meta.kind === "grok" || meta.kind === "composer") && meta.completion_route === "grok_transcript") {
+    const transcript = grokEventsTranscript(meta);
+    return transcript ? safeStatSize(transcript) : 0;
+  }
   if (meta.kind !== "codex") return safeStatSize(meta.event_file);
   const transcript = bindCodexTranscriptSession(meta);
   if (meta.completion_route !== "codex_transcript") {
@@ -3458,6 +3509,83 @@ async function observeCodexDone(
   }
 }
 
+async function observeGrokDone(
+  meta: AgentMetadata,
+  timeout: number,
+  requestedCursor: number | null | undefined,
+): Promise<AgentWaitObservation> {
+  const metadataFile = agentMetadataPath(meta.aiterm_session, meta.launch_id);
+  const transcript = grokEventsTranscript(meta);
+  if (!transcript) throw new AitermError("Grok transcriptのsession相関情報がありません", 2);
+  const startOffset = requestedCursor ?? safeStatSize(transcript);
+  let cursor = startOffset;
+  let carry = "";
+  let malformedEvents = 0;
+  let discardLeadingFragment = false;
+  let initializedBoundary = false;
+  const deadline = performance.now() + timeout * 1000;
+  const observation = (
+    outcome: AgentWaitObservation["outcome"],
+    ev: AgentDoneEvent | null = null,
+  ): AgentWaitObservation => ({
+    schema: "aiterm.agent-wait-result.v1",
+    session_id: meta.aiterm_session,
+    launch_id: meta.launch_id,
+    vendor: meta.kind,
+    outcome,
+    operation_id: null,
+    vendor_session_id: meta.vendor_session_id,
+    turn_id: ev?.turn_id ?? null,
+    malformed_events: malformedEvents,
+    at: ev?.at ?? null,
+  });
+
+  for (;;) {
+    if (!fs.existsSync(metadataFile)) return observation("closed");
+    if (fs.existsSync(transcript)) {
+      if (!initializedBoundary) {
+        if (cursor > 0) {
+          const previous = readFileRange(transcript, cursor - 1, cursor).toString("utf8");
+          discardLeadingFragment = previous !== "\n";
+        }
+        initializedBoundary = true;
+      }
+      const size = safeStatSize(transcript);
+      if (size < cursor) {
+        throw new AitermError("Grok transcript が完了待機中に短くなりました。該当セッションを閉じて起動し直してください。", 2);
+      }
+      if (size - startOffset > GROK_TRANSCRIPT_INCREMENT_MAX_BYTES) {
+        throw new AitermError("Grok transcript のturn増分が大きすぎます。該当セッションを閉じて起動し直してください。", 2);
+      }
+      if (size > cursor) {
+        carry += readFileRange(transcript, cursor, size).toString("utf8");
+        cursor = size;
+        const parts = carry.split("\n");
+        carry = parts.pop() ?? "";
+        if (discardLeadingFragment && parts.length > 0) {
+          parts.shift();
+          discardLeadingFragment = false;
+        }
+        for (const line of parts) {
+          if (!line.trim()) continue;
+          if (Buffer.byteLength(line, "utf8") > AGENT_EVENT_MAX_BYTES) {
+            malformedEvents++;
+            continue;
+          }
+          try {
+            const done = grokCompletionEvent(meta, JSON.parse(line));
+            if (done) return observation("done", done);
+          } catch {
+            malformedEvents++;
+          }
+        }
+      }
+    }
+    if (performance.now() >= deadline) return observation(timeout === 0 ? "running" : "timeout");
+    await sleep(AGENT_DONE_POLL_MS);
+  }
+}
+
 // 外部waiterプロセス用の純リーダー観測。lock・PTY・metadata書込・dispatch状態には一切触れない。
 // Codexはrollout transcript、他vendorはevent fileを増分走査し、vendor_session_idのbind永続化を
 // 行わない（waiterは観測者であって所有者でない）。
@@ -3476,6 +3604,9 @@ export async function observeAgentDone(
   const timeout = o.timeout ?? DEFAULT_AGENT_DONE_TIMEOUT;
   if (meta.kind === "codex" && meta.completion_route === "codex_transcript") {
     return observeCodexDone(meta, timeout, o.cursor);
+  }
+  if ((meta.kind === "grok" || meta.kind === "composer") && meta.completion_route === "grok_transcript") {
+    return observeGrokDone(meta, timeout, o.cursor);
   }
   const metadataFile = agentMetadataPath(meta.aiterm_session, meta.launch_id);
   // 境界の優先順: dispatch receipt の event_cursor（起動順序に依存しない）→ operation相関
@@ -4149,8 +4280,21 @@ function buildAgentCmd(
   const parts: string[] = [shq(bin)];
   if (kind === "claude") {
     if (meta?.kind === "claude") {
-      parts.push("--setting-sources", shq(""), "--settings", shq(meta.claude_settings ?? ""));
-      if (meta.claude_mcp_config) parts.push("--mcp-config", shq(meta.claude_mcp_config));
+      if (meta.hook_route === "shared_claude_settings") {
+        parts.push(
+          "--setting-sources",
+          shq("user,project,local"),
+          "--settings",
+          shq(meta.claude_settings ?? ""),
+          "--session-id",
+          shq(meta.vendor_session_id ?? ""),
+          "--append-system-prompt",
+          shq(subagentInstruction(meta)),
+        );
+      } else {
+        parts.push("--setting-sources", shq(""), "--settings", shq(meta.claude_settings ?? ""));
+        if (meta.claude_mcp_config) parts.push("--mcp-config", shq(meta.claude_mcp_config));
+      }
     }
     if (model) parts.push("--model", shq(model));
     if (effort) parts.push("--effort", shq(effort));
@@ -4158,16 +4302,21 @@ function buildAgentCmd(
     // `codex --help` で確認した実在フラグ。read-only 宣言だけはCLI sandboxへ落とし、
     // launcher自身が実効能力壁を作る。パス説明はCodex CLIに同等のallowlist引数がないため宣言のまま残す。
     if (meta?.kind === "codex" && meta.write_scope === "read-only") parts.push("--sandbox", "read-only");
-    // model/effort は CLI 引数で明示（config 継承より優先）。agent_done 時は managed home 側
-    // config.toml も同値で上書き済み（applyCodexConfigOverrides）。
+    // model/effort は共有configを書き換えず、CLI引数で明示して起動単位に優先する。
     if (model) parts.push("-m", shq(model));
     if (effort) parts.push("-c", `model_reasoning_effort=${shq(effort)}`);
+    if (meta?.kind === "codex" && meta.hook_route === "shared_codex_home") {
+      parts.push("-c", `developer_instructions=${shq(subagentInstruction(meta))}`);
+    }
   } else {
     // grok / composer は同じ grok CLI をモデル違いで起動。--effort は headless（grok -p）専用で
     // 対話 TUI では警告の上無視されるため渡さない（openAgent が指定を事前拒否する）。
     parts.push("--no-auto-update");
     if (meta?.kind === "grok" || meta?.kind === "composer") parts.push("--no-alt-screen");
     parts.push("--model", shq(model ?? GROK_MODEL_DEFAULTS[kind]));
+    if ((meta?.kind === "grok" || meta?.kind === "composer") && meta.hook_route === "shared_grok_home") {
+      parts.push("--session-id", shq(meta.vendor_session_id ?? ""), "--rules", shq(subagentInstruction(meta)));
+    }
     if ((meta?.kind === "grok" || meta?.kind === "composer") && prompt) parts.push("--verbatim");
   }
   if (prompt) parts.push(shq(prompt)); // 初手プロンプト（任意）
@@ -4181,12 +4330,27 @@ function agentEnvPrefix(meta: AgentMetadata | null, sid: string): string {
     `AITERM_SESSION_ID=${shq(sid)}`,
     `AITERM_AGENT_SESSION_ID=${shq(sid)}`,
     `AITERM_AGENT_LAUNCH_ID=${shq(meta.launch_id)}`,
+    `AITERM_AGENT_ROLE=${shq(meta.agent_role ?? "subagent")}`,
+    `AITERM_AGENT_PARENT_SESSION_ID=${shq(meta.parent_session_id ?? "host-root")}`,
+    `AITERM_AGENT_DEPTH=${shq(String(meta.delegation_depth ?? 1))}`,
+    `AITERM_AGENT_LINEAGE=${shq(meta.lineage ?? `host-root>${meta.kind}:${sid}`)}`,
+    `AITERM_AGENT_DELEGATION_ALLOWED=${shq(meta.delegation_allowed === true ? "true" : "false")}`,
   ];
   if (meta.kind === "claude") {
     return common.join(" ") + " ";
   }
   if (meta.kind === "codex") {
-    return [`CODEX_HOME=${shq(meta.codex_home ?? "")}`, ...common].join(" ") + " ";
+    return [
+      ...(meta.hook_route === "managed_codex_home" ? [`CODEX_HOME=${shq(meta.codex_home ?? "")}`] : []),
+      ...common,
+    ].join(" ") + " ";
+  }
+  if (meta.hook_route === "shared_grok_home") {
+    return [
+      ...(meta.grok_auth_path ? [`GROK_AUTH_PATH=${shq(meta.grok_auth_path)}`] : []),
+      "GROK_DISABLE_AUTOUPDATER=1",
+      ...common,
+    ].join(" ") + " ";
   }
   return [
     `HOME=${shq(meta.home ?? "")}`,
@@ -4260,7 +4424,7 @@ function buildAgentLaunchNote(
     (effectiveEffort === "ultra"
       ? "⚠ effort=ultra は max 推論＋proactive 自動委譲 ON（子エージェント自動生成・使用量急増に注意）。"
       : "");
-  const summary = meta?.kind === "codex" && meta.codex_home ? managedCodexConfigSummary(configPath) : "";
+  const summary = meta?.kind === "codex" && meta.codex_home ? codexConfigSummary(configPath) : "";
   return (summary ? `${launch}\n${summary}\n` : launch) + writeScopeNote;
 }
 
@@ -4379,6 +4543,8 @@ export function openAgent(
       throw new AitermError("launch_operation_id付きlaunchにpromptは指定できません", 2);
     }
   }
+  // 継承lineageの破損はsession作成前にfail loudする。root callerにはhost-root/depth 1を割り当てる。
+  const lineageSeed = readAgentLineageSeed();
   let bin: string | null;
   try {
     bin = resolveAgentBin(kind);
@@ -4446,6 +4612,7 @@ export function openAgent(
   }
   let launchNote = "";
   try {
+    const lineageContext = createAgentLineageContext(kind, sid, lineageSeed);
     const meta = agentDone
       ? kind === "claude"
         ? createClaudeAgentMetadata(
@@ -4454,10 +4621,11 @@ export function openAgent(
             opts.prompt ? "pending" : "none",
             launchOperationId,
             launchRequestDigest,
+            lineageContext,
           )
         : kind === "codex"
-        ? createCodexAgentMetadata(sid, cwd, opts.prompt ? "pending" : "none", { model, effort }, writeScope)
-        : createGrokAgentMetadata(kind, sid, cwd, opts.prompt ? "pending" : "none", grokAuthPath, writeScope)
+        ? createCodexAgentMetadata(sid, cwd, opts.prompt ? "pending" : "none", { model, effort }, writeScope, lineageContext)
+        : createGrokAgentMetadata(kind, sid, cwd, opts.prompt ? "pending" : "none", grokAuthPath, writeScope, lineageContext)
       : null;
     if (meta) agentMetadataNegativeCache.delete(sid);
     launchNote = buildAgentLaunchNote(kind, model, effort, meta);
@@ -4495,7 +4663,7 @@ export function openAgent(
   return [
     sid,
     `${label} を session ${sid} で起動した。${launchNote}${agentDone ? "agent_done 待機が有効。" : ""}` +
-      `${agentDone && (kind === "grok" || kind === "composer") ? " hook 汚染防止のため Grok 実行中は一時 HOME を使う。" : ""}\n${hint}\n` +
+      `${agentDone ? " 通常のproject／user環境を共有し、aiterm所有の完了相関とsub-agent lineageだけを加算。" : ""}\n${hint}\n` +
       driveHint +
       `起動直後に増分 pty_read すると空/半描画になり得るので screen:true を使う。`,
   ];

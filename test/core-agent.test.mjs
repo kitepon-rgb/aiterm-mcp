@@ -160,7 +160,23 @@ function writeCodexTranscript(meta, vendorSessionId, records) {
   const dir = path.join(meta.codex_home, "sessions", "2026", "07", "11");
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   const file = path.join(dir, `rollout-2026-07-11T00-00-00-${vendorSessionId}.jsonl`);
-  fs.writeFileSync(file, records.map((record) => (typeof record === "string" ? record : JSON.stringify(record))).join("\n") + "\n", {
+  let normalized = records;
+  if (meta.hook_route === "shared_codex_home") {
+    const markerRecord = {
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "developer",
+        content: [{ type: "input_text", text: `AITERM_AGENT_LAUNCH_ID=${meta.launch_id}` }],
+      },
+    };
+    const first = records[0];
+    const sessionMeta = typeof first !== "string" && first?.type === "session_meta"
+      ? { ...first, payload: { ...first.payload, id: vendorSessionId, originator: "codex-tui", source: "cli" } }
+      : { type: "session_meta", payload: { id: vendorSessionId, originator: "codex-tui", source: "cli" } };
+    normalized = [sessionMeta, markerRecord, ...(typeof first !== "string" && first?.type === "session_meta" ? records.slice(1) : records)];
+  }
+  fs.writeFileSync(file, normalized.map((record) => (typeof record === "string" ? record : JSON.stringify(record))).join("\n") + "\n", {
     mode: 0o600,
   });
   return file;
@@ -271,7 +287,7 @@ function agentDoneLine(meta, overrides = {}) {
       vendor: meta.kind,
       aiterm_session: meta.aiterm_session,
       launch_id: meta.launch_id,
-      vendor_session_id: "agent-session-test",
+      vendor_session_id: meta.vendor_session_id ?? "agent-session-test",
       turn_id: "turn-test",
       reason: "Stop",
       done_status: "turn_done",
@@ -282,6 +298,16 @@ function agentDoneLine(meta, overrides = {}) {
 }
 
 function appendAgentDone(meta, overrides = {}) {
+  if ((meta.kind === "grok" || meta.kind === "composer") && meta.completion_route === "grok_transcript") {
+    const dir = path.join(meta.grok_home, "sessions", encodeURIComponent(meta.cwd ?? process.cwd()), meta.vendor_session_id);
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    fs.appendFileSync(path.join(dir, "events.jsonl"), JSON.stringify({
+      type: "turn_ended",
+      outcome: "completed",
+      ts: overrides.turn_id ?? new Date().toISOString(),
+    }) + "\n", { mode: 0o600 });
+    return;
+  }
   fs.appendFileSync(meta.event_file, agentDoneLine(meta, overrides));
 }
 
@@ -291,7 +317,7 @@ function scheduleAgentDone(meta, overrides = {}, delay = 200) {
 
 function writeClaudeDone(meta, text, overrides = {}) {
   const { consume_marker: consumeMarker = true, ...eventOverrides } = overrides;
-  const vendorSessionId = eventOverrides.vendor_session_id ?? "claude-session-test";
+  const vendorSessionId = eventOverrides.vendor_session_id ?? meta.vendor_session_id ?? "claude-session-test";
   const operationId = eventOverrides.operation_id ?? null;
   const digest = createHash("sha256").update(text, "utf8").digest("hex");
   const bytes = Buffer.byteLength(text, "utf8");
@@ -320,7 +346,7 @@ function writeClaudeDone(meta, text, overrides = {}) {
   }
 }
 
-function invokeClaudeStopHook(meta, text, vendorSessionId = "claude-stop-fixture-session") {
+function invokeClaudeStopHook(meta, text, vendorSessionId = meta.vendor_session_id ?? "claude-stop-fixture-session") {
   return spawnSync(process.execPath, [path.join(process.cwd(), "dist", "claude-stop-hook.js")], {
     input: JSON.stringify({
       session_id: vendorSessionId,
@@ -576,7 +602,7 @@ test("target contract: Codexは通常CODEX_HOMEを共有しsub-agent lineageだ�
       const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
       assert.doesNotMatch(out, /CODEX_HOME=/, "通常CODEX_HOMEを置換しない");
       assert.match(out, /developer_instructions=/);
-      assert.match(out, /AITERM_AGENT_ROLE='subagent'/);
+      assert.match(out, /AITERM_AGENT_R\s*OLE='subagent'/);
       assert.match(out, /AITERM_AGENT_DEPTH='1'/);
       assert.match(out, /delegation_allowed=true/);
     } finally {
@@ -640,11 +666,13 @@ test("target contract: nested launcherはdepthとlineageを1段だけ進め、�
     session: process.env.AITERM_AGENT_SESSION_ID,
     depth: process.env.AITERM_AGENT_DEPTH,
     lineage: process.env.AITERM_AGENT_LINEAGE,
+    delegationAllowed: process.env.AITERM_AGENT_DELEGATION_ALLOWED,
   };
   process.env.AITERM_AGENT_ROLE = "subagent";
   process.env.AITERM_AGENT_SESSION_ID = "parent-session";
   process.env.AITERM_AGENT_DEPTH = "1";
   process.env.AITERM_AGENT_LINEAGE = "host-root>claude:parent-session";
+  process.env.AITERM_AGENT_DELEGATION_ALLOWED = "true";
   try {
     await withFakeCodexHome(async () => {
       const [sid] = core.openAgent("codex", { agent_done: true });
@@ -655,7 +683,7 @@ test("target contract: nested launcherはdepthとlineageを1段だけ進め、�
         assert.equal(meta.lineage, `host-root>claude:parent-session>codex:${sid}`);
         assert.equal(meta.delegation_allowed, true);
         const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
-        assert.match(out, /AITERM_AGENT_DEPTH='2'/);
+        assert.match(out, /AITERM_AGENT_DEPT\s*H='2'/);
         assert.match(out, /追加のsub-agentへ委譲してよい/);
         assert.doesNotMatch(out, /再委譲.*禁止/);
       } finally {
@@ -668,6 +696,7 @@ test("target contract: nested launcherはdepthとlineageを1段だけ進め、�
       AITERM_AGENT_SESSION_ID: saved.session,
       AITERM_AGENT_DEPTH: saved.depth,
       AITERM_AGENT_LINEAGE: saved.lineage,
+      AITERM_AGENT_DELEGATION_ALLOWED: saved.delegationAllowed,
     })) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
@@ -675,8 +704,9 @@ test("target contract: nested launcherはdepthとlineageを1段だけ進め、�
   }
 });
 
-test("openAgent codex agent_done: managed CODEX_HOME は transcript 完了正本だけを使う", { skip: skipAgentDone }, async () => {
+test("openAgent codex agent_done: 通常CODEX_HOMEのroot transcriptだけを完了正本にする", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async (fakeHome) => {
+    const configBefore = fs.readFileSync(path.join(fakeHome, "config.toml"), "utf8");
     const [sid, hint] = core.openAgent("codex", { reasoning_effort: "high", agent_done: true });
     try {
       assert.match(hint, /agent_done 待機が有効/);
@@ -687,27 +717,26 @@ test("openAgent codex agent_done: managed CODEX_HOME は transcript 完了正本
       assert.equal(meta.kind, "codex");
       assert.equal(meta.aiterm_session, sid);
       assert.equal(meta.completion_route, "codex_transcript");
+      assert.equal(meta.hook_route, "shared_codex_home");
+      assert.equal(meta.codex_home, fakeHome);
       assert.ok(fs.existsSync(meta.event_file), "event file を作る");
       assert.equal(fs.existsSync(path.join(meta.codex_home, "hooks.json")), false, "Codex Stop hookを二重正本にしない");
-      assert.equal(fs.readlinkSync(path.join(meta.codex_home, "auth.json")), path.join(fakeHome, "auth.json"));
-      assert.equal(fs.lstatSync(path.join(meta.codex_home, "config.toml")).isSymbolicLink(), false);
-      const config = fs.readFileSync(path.join(meta.codex_home, "config.toml"), "utf8");
-      assert.match(config, /^model_reasoning_effort = "high"\nmodel = "test-model"\n/);
-      assert.equal(fs.existsSync(path.join(meta.codex_home, "history.jsonl")), false);
-      assert.equal(fs.existsSync(path.join(meta.codex_home, "sessions")), false);
+      assert.equal(fs.readFileSync(path.join(meta.codex_home, "config.toml"), "utf8"), configBefore);
+      assert.equal(fs.existsSync(path.join(meta.codex_home, "history.jsonl")), true);
+      assert.equal(fs.existsSync(path.join(meta.codex_home, "sessions")), true);
       assert.match(hint, /起動設定: model=test-model（端末config継承） effort=high（引数）/);
-      assert.match(hint, /managed config: mcp_servers 1 個継承 \/ approval_policy=never \/ sandbox_mode=danger-full-access/);
+      assert.match(hint, /共有 config: mcp_servers 1 個継承 \/ approval_policy=never \/ sandbox_mode=danger-full-access/);
 
       const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
       assert.doesNotMatch(out, /--dangerously-bypass-hook-trust/, `不要なhook trust bypassを付けない: ${out}`);
-      assert.match(out, /model_reasoning_effort=high/, `codex managed effort: ${out}`);
+      assert.match(out, /model_reasoning_effort=high/, `codex CLI effort: ${out}`);
     } finally {
       core.closeSession(sid);
     }
   });
 });
 
-test("openAgent codex agent_done: agents/*.toml を symlink ではなく snapshot 継承する", { skip: skipAgentDone }, async () => {
+test("openAgent codex agent_done: agents discoveryは通常CODEX_HOMEを直接共有する", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async (fakeHome) => {
     const sourceAgents = path.join(fakeHome, "agents");
     fs.mkdirSync(sourceAgents, { mode: 0o700 });
@@ -721,16 +750,13 @@ test("openAgent codex agent_done: agents/*.toml を symlink ではなく snapsho
     const [sid] = core.openAgent("codex", { agent_done: true });
     try {
       const meta = readAgentMeta(sid);
-      const managedAgents = path.join(meta.codex_home, "agents");
-      assert.deepEqual(fs.readdirSync(managedAgents).sort(), ["implementer.toml", "refuter.toml"]);
-      for (const [name, expected] of [["implementer.toml", implementer], ["refuter.toml", refuter]]) {
-        const copied = path.join(managedAgents, name);
-        assert.equal(fs.lstatSync(copied).isSymbolicLink(), false, `${name} は実体copy`);
-        assert.equal(fs.readFileSync(copied, "utf8"), expected);
-        if (process.platform !== "win32") assert.equal(fs.statSync(copied).mode & 0o777, 0o600);
-      }
+      assert.equal(meta.codex_home, fakeHome);
+      assert.equal(path.join(meta.codex_home, "agents"), sourceAgents);
+      assert.equal(fs.lstatSync(path.join(sourceAgents, "refuter.toml")).isSymbolicLink(), true, "vendor自身が通常定義を読む");
+      assert.equal(fs.readFileSync(path.join(sourceAgents, "implementer.toml"), "utf8"), implementer);
+      assert.equal(fs.readFileSync(path.join(sourceAgents, "refuter.toml"), "utf8"), refuter);
       fs.writeFileSync(path.join(fakeHome, "refuter-source.toml"), 'name = "changed"\n', { mode: 0o600 });
-      assert.equal(fs.readFileSync(path.join(managedAgents, "refuter.toml"), "utf8"), refuter, "起動後はsource変更から独立する");
+      assert.equal(fs.readFileSync(path.join(sourceAgents, "refuter.toml"), "utf8"), 'name = "changed"\n', "起動後も通常定義を共有する");
     } finally {
       core.closeSession(sid);
     }
@@ -871,7 +897,7 @@ test("readAgentTranscript: Claude完了event直後のmarker削除raceを待っ�
   }
 });
 
-test("openAgent claude agent_done: isolated settings、Stop hook、result pathを組み立てる", { skip: skipAgentDone }, async () => {
+test("openAgent claude agent_done: 通常settingsへStop hookとlineageを追加する", { skip: skipAgentDone }, async () => {
   const [sid, hint] = core.openAgent("claude", {
     model: "claude-sonnet-4-6",
     reasoning_effort: "high",
@@ -882,17 +908,17 @@ test("openAgent claude agent_done: isolated settings、Stop hook、result path�
     assert.match(hint, /agent_done 待機が有効/);
     const meta = readAgentMeta(sid);
     assert.equal(meta.kind, "claude");
-    assert.equal(meta.hook_route, "managed_claude_settings");
+    assert.equal(meta.hook_route, "shared_claude_settings");
     assert.ok(fs.existsSync(meta.event_file));
     assert.ok(fs.existsSync(meta.result_file));
-    assert.equal(meta.claude_mcp_config, null, "user MCP未登録なら追加configを作らない");
+    assert.equal(meta.claude_mcp_config, undefined, "user MCP snapshotを作らない");
     const settings = JSON.parse(fs.readFileSync(meta.claude_settings, "utf8"));
     assert.deepEqual(Object.keys(settings), ["hooks"]);
     assert.match(settings.hooks.Stop[0].hooks[0].command, /claude-stop-hook\.js/);
     assert.ok(settings.hooks.Stop[0].hooks[0].command.startsWith("'node' "), "hook実行時にPATHからnodeを解決する");
     assert.equal(settings.hooks.Stop[0].hooks[0].command.includes(process.execPath), false, "版付きnode実体を焼き付けない");
     const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
-    assert.match(out, /--setting-sources\s+(?:''\s+)?--settings/);
+    assert.match(out, /--setting-sources\s+user,project,local\s+--settings/);
     assert.match(out, /--settings/);
     assert.doesNotMatch(out, /--mcp-config/, "user MCP未登録ならflagを渡さない");
     assert.match(out, /--model\s+claude-sonnet-4-6/);
@@ -903,7 +929,7 @@ test("openAgent claude agent_done: isolated settings、Stop hook、result path�
   }
 });
 
-test("openAgent claude agent_done: user scope MCPだけを0600 snapshotで継承する", { skip: skipAgentDone }, async () => {
+test("openAgent claude agent_done: user MCPをsnapshotせず通常configへ委ねる", { skip: skipAgentDone }, async () => {
   const userConfig = path.join(fakeHome, ".claude.json");
   fs.writeFileSync(userConfig, JSON.stringify({
     theme: "dark",
@@ -914,33 +940,19 @@ test("openAgent claude agent_done: user scope MCPだけを0600 snapshotで継承
       },
     },
   }) + "\n", { mode: 0o600 });
+  const before = fs.readFileSync(userConfig, "utf8");
   const [sid] = core.openAgent("claude", { agent_done: true });
   try {
     const meta = readAgentMeta(sid);
-    assert.ok(meta.claude_mcp_config);
-    assert.equal(fs.statSync(meta.claude_mcp_config).mode & 0o777, 0o600);
-    assert.deepEqual(JSON.parse(fs.readFileSync(meta.claude_mcp_config, "utf8")), {
-      mcpServers: {
-        aishell: {
-          command: "aishell-mcp",
-          env: { AISHELL_CAPABILITY_SET: "expanded-v1", TEST_SECRET: "fixture-only" },
-        },
-      },
-    });
+    assert.equal(meta.claude_mcp_config, undefined);
     const settings = JSON.parse(fs.readFileSync(meta.claude_settings, "utf8"));
-    assert.deepEqual(Object.keys(settings), ["hooks"], "通常settingsとhooksは引き続き隔離する");
+    assert.deepEqual(Object.keys(settings), ["hooks"], "aiterm所有fileは追加Stop hookだけを持つ");
     const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
-    assert.match(out, /--mcp-config/);
+    assert.doesNotMatch(out, /--mcp-config/);
     assert.doesNotMatch(out, /fixture-only/, "MCP定義や秘密値をargvへ展開しない");
-    writeAgentMeta(sid, { ...meta, claude_mcp_config: path.join(fakeHome, "foreign.json") });
-    await assert.rejects(
-      () => core.readAgentTranscript(sid),
-      /agent metadata の path が現在の secure state root と一致しません/,
-    );
-    writeAgentMeta(sid, meta);
-    const mcpPath = meta.claude_mcp_config;
+    assert.equal(fs.readFileSync(userConfig, "utf8"), before);
     core.closeSession(sid);
-    assert.equal(fs.existsSync(mcpPath), false, "session closeでsnapshotを削除する");
+    assert.equal(fs.readFileSync(userConfig, "utf8"), before, "close後も通常configを維持する");
   } finally {
     fs.rmSync(userConfig, { force: true });
     try {
@@ -951,28 +963,17 @@ test("openAgent claude agent_done: user scope MCPだけを0600 snapshotで継承
   }
 });
 
-test("openAgent claude agent_done: malformed user MCP設定はsessionとstateを残さず拒否する", { skip: skipAgentDone }, () => {
+test("openAgent claude agent_done: 通常user configをlauncher自身はparseも書換えもしない", { skip: skipAgentDone }, () => {
   const userConfig = path.join(fakeHome, ".claude.json");
   fs.writeFileSync(userConfig, "{ broken\n", { mode: 0o600 });
   const sid = `claude_bad_mcp_${Date.now().toString(36)}`;
-  const before = agentStateFiles();
-  const sessionsBefore = core.listSessions();
+  let created = null;
   try {
-    assert.throws(
-      () => core.openAgent("claude", { session_name: sid, agent_done: true }),
-      /Claude user MCP設定を読めません/,
-    );
-    assert.deepEqual(agentStateFiles(), before, "失敗したlaunchのstateを残さない");
-    assert.equal(core.listSessions(), sessionsBefore, "失敗したsessionを残さない");
-
-    fs.writeFileSync(userConfig, JSON.stringify({ mcpServers: [] }) + "\n", { mode: 0o600 });
-    assert.throws(
-      () => core.openAgent("claude", { session_name: `${sid}_type`, agent_done: true }),
-      /mcpServersはobjectである必要があります/,
-    );
-    assert.deepEqual(agentStateFiles(), before, "型不正launchのstateを残さない");
-    assert.equal(core.listSessions(), sessionsBefore, "型不正launchのsessionを残さない");
+    [created] = core.openAgent("claude", { session_name: sid, agent_done: true });
+    assert.equal(created, sid);
+    assert.equal(fs.readFileSync(userConfig, "utf8"), "{ broken\n");
   } finally {
+    if (created) core.closeSession(created);
     fs.rmSync(userConfig, { force: true });
   }
 });
@@ -1049,7 +1050,7 @@ test("openAgent claude: launch_operation_idのpromptless managed条件を固定�
   );
 });
 
-test("openAgent grok agent_done: isolated HOME と managed GROK_HOME/Stop hook/GROK_AUTH_PATH を組み立てる", { skip: skipAgentDone }, async () => {
+test("openAgent grok agent_done: 通常 GROK_HOME を共有し相関・lineage引数だけを加える", { skip: skipAgentDone }, async () => {
   const savedBin = process.env.GROK_BIN;
   process.env.GROK_BIN = "/bin/echo";
   try {
@@ -1060,38 +1061,40 @@ test("openAgent grok agent_done: isolated HOME と managed GROK_HOME/Stop hook/G
       });
       try {
         assert.match(hint, /agent_done 待機が有効/);
-        assert.match(hint, /一時 HOME/);
+        assert.match(hint, /project／user環境を共有/);
         const dir = agentStateDir();
         const metas = fs.readdirSync(dir).filter((f) => f.startsWith(`${sid}.`) && f.endsWith(".agent.json"));
         assert.equal(metas.length, 1);
         const meta = JSON.parse(fs.readFileSync(path.join(dir, metas[0]), "utf8"));
         assert.equal(meta.kind, "grok");
-        assert.equal(meta.hook_route, "managed_grok_home");
+        assert.equal(meta.hook_route, "shared_grok_home");
+        assert.equal(meta.completion_route, "grok_transcript");
+        assert.equal(meta.grok_home, fakeHome);
+        assert.equal(meta.agent_role, "subagent");
+        assert.equal(meta.parent_session_id, "host-root");
+        assert.equal(meta.delegation_depth, 1);
+        assert.equal(meta.delegation_allowed, true);
         assert.ok(fs.existsSync(meta.event_file), "event file を作る");
         assert.equal(meta.grok_auth_path, path.join(fakeHome, "auth.json"));
-        assert.equal(fs.existsSync(path.join(meta.grok_home, "auth.json")), false);
-        assert.equal(fs.existsSync(path.join(meta.grok_home, "auth.json.lock")), false);
         const replacement = path.join(fakeHome, "auth.replacement");
         fs.writeFileSync(replacement, '{"rotated":true}\n', { mode: 0o600 });
         fs.renameSync(replacement, meta.grok_auth_path);
         assert.match(fs.readFileSync(meta.grok_auth_path, "utf8"), /rotated/);
-        assert.equal(fs.existsSync(path.join(meta.grok_home, "auth.json")), false, "atomic replace後もmanaged credentialを作らない");
-        assert.ok(fs.existsSync(path.join(meta.home)), "fake HOME を作る");
-        assert.equal(fs.readlinkSync(path.join(meta.home, ".grok")), meta.grok_home);
-        assert.match(fs.readFileSync(path.join(meta.grok_home, "config.toml"), "utf8"), /auto_update = false/);
-        const hooks = JSON.parse(fs.readFileSync(path.join(meta.grok_home, "hooks", "aiterm-stop.json"), "utf8"));
-        assert.equal(hooks.hooks.Stop[0].hooks[0].type, "command");
-        assert.match(hooks.hooks.Stop[0].hooks[0].command, /grok-stop-hook\.js/);
-        assert.ok(hooks.hooks.Stop[0].hooks[0].command.startsWith("'node' "), "hook実行時にPATHからnodeを解決する");
-        assert.equal(hooks.hooks.Stop[0].hooks[0].command.includes(process.execPath), false, "版付きnode実体を焼き付けない");
+        assert.match(fs.readFileSync(path.join(meta.grok_home, "config.toml"), "utf8"), /auto_update = true/);
 
         const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
         assert.match(out, /GROK_AUTH_PATH=/, `grok auth canonical path is passed: ${out}`);
-        assert.match(out, /--no-auto-update/, `grok managed command: ${out}`);
-        assert.match(out, /--no-alt-screen/, `grok managed no-alt-screen: ${out}`);
-        assert.match(out, /--verbatim/, `grok managed verbatim: ${out}`);
-        assert.match(out, /--model grok-4\.5/, `grok managed model: ${out}`);
-        assert.doesNotMatch(out, /--effort/, `grok managed effort: ${out}`);
+        assert.match(out, /--session-id/, `grok correlation id: ${out}`);
+        assert.match(out, new RegExp(meta.vendor_session_id), `grok vendor session: ${out}`);
+        assert.match(out, /--rules/, `grok subagent instruction: ${out}`);
+        assert.match(out, /AITERM_AGENT_ROLE=/, `grok lineage env: ${out}`);
+        assert.match(out, /--no-auto-update/, `grok command: ${out}`);
+        assert.match(out, /--no-alt-screen/, `grok no-alt-screen: ${out}`);
+        assert.match(out, /--verbatim/, `grok verbatim: ${out}`);
+        assert.match(out, /--model grok-4\.5/, `grok model: ${out}`);
+        assert.doesNotMatch(out, /(^| )HOME=/, `grok HOME must be inherited: ${out}`);
+        assert.doesNotMatch(out, /(^| )GROK_HOME=/, `grok GROK_HOME must be inherited: ${out}`);
+        assert.doesNotMatch(out, /--effort/, `grok effort: ${out}`);
       } finally {
         core.closeSession(sid);
       }
@@ -1342,7 +1345,7 @@ test("openAgent composer agent_done: vendor=composer の metadata を作る", { 
   }
 });
 
-test("openAgent codex agent_done: cleanup は managed home の symlink 先 auth/config を変えない", { skip: skipAgentDone }, async () => {
+test("openAgent codex agent_done: cleanup は共有 CODEX_HOME の auth/config を残す", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async (fakeHome) => {
     const authPath = path.join(fakeHome, "auth.json");
     const configPath = path.join(fakeHome, "config.toml");
@@ -1350,15 +1353,16 @@ test("openAgent codex agent_done: cleanup は managed home の symlink 先 auth/
     const configBefore = fileSnapshot(configPath);
     const [sid] = core.openAgent("codex", { agent_done: true });
     const meta = readAgentMeta(sid);
-    assert.ok(fs.lstatSync(path.join(meta.codex_home, "auth.json")).isSymbolicLink());
+    assert.equal(meta.codex_home, fakeHome);
+    assert.equal(fs.lstatSync(path.join(meta.codex_home, "auth.json")).isSymbolicLink(), false);
     core.closeSession(sid);
     assert.deepEqual(fileSnapshot(authPath), authBefore, "cleanup が Codex auth.json の実体を変えた");
     assert.deepEqual(fileSnapshot(configPath), configBefore, "cleanup が Codex config.toml の実体を変えた");
-    assert.equal(fs.existsSync(meta.codex_home), false, "managed CODEX_HOME が cleanup されていない");
+    assert.equal(fs.existsSync(meta.codex_home), true, "共有 CODEX_HOME を cleanup してはいけない");
   });
 });
 
-test("openAgent grok agent_done: cleanup は managed credential を作らず通常 auth/config を変えない", { skip: skipAgentDone }, async () => {
+test("openAgent grok agent_done: cleanup は共有 auth/config/GROK_HOME を残す", { skip: skipAgentDone }, async () => {
   const savedBin = process.env.GROK_BIN;
   process.env.GROK_BIN = "/bin/echo";
   try {
@@ -1369,13 +1373,10 @@ test("openAgent grok agent_done: cleanup は managed credential を作らず通�
       const configBefore = fileSnapshot(configPath);
       const [sid] = core.openAgent("grok", { agent_done: true });
       const meta = readAgentMeta(sid);
-      assert.equal(fs.existsSync(path.join(meta.grok_home, "auth.json")), false);
-      assert.equal(fs.existsSync(path.join(meta.grok_home, "auth.json.lock")), false);
       core.closeSession(sid);
       assert.deepEqual(fileSnapshot(authPath), authBefore, "cleanup が Grok auth.json の実体を変えた");
       assert.deepEqual(fileSnapshot(configPath), configBefore, "cleanup が通常 Grok config.toml の実体を変えた");
-      assert.equal(fs.existsSync(meta.grok_home), false, "managed GROK_HOME が cleanup されていない");
-      assert.equal(fs.existsSync(meta.home), false, "fake HOME が cleanup されていない");
+      assert.equal(fs.existsSync(meta.grok_home), true, "共有 GROK_HOME を cleanup してはいけない");
     });
   } finally {
     if (savedBin === undefined) delete process.env.GROK_BIN;
@@ -1485,22 +1486,7 @@ test("dispatch/observe: Grok vendor event も待って suffix に vendor=grok �
         const meta = JSON.parse(fs.readFileSync(path.join(agentStateDir(), metaFile), "utf8"));
         await markFakeAgentReady(sid, "grok");
         const receipt = await core.dispatchAgentTurn(sid, "echo GROK_DONE_BODY");
-        setTimeout(() => {
-          fs.appendFileSync(
-            meta.event_file,
-            JSON.stringify({
-              type: "agent_done",
-              vendor: "grok",
-              aiterm_session: sid,
-              launch_id: meta.launch_id,
-              vendor_session_id: "grok-session-test",
-              turn_id: "prompt-test",
-              reason: "end_turn",
-              done_status: "turn_done",
-              at: new Date().toISOString(),
-            }) + "\n",
-          );
-        }, 500);
+        scheduleAgentDone(meta, { turn_id: "prompt-test" }, 500);
         const observation = await core.observeAgentDone(sid, { cursor: receipt.event_cursor, timeout: 5 });
         assert.equal(observation.outcome, "done");
         assert.equal(observation.vendor, "grok");
@@ -1522,12 +1508,12 @@ test("dispatch/observe: Claudeの同一PTY follow-upをStop resultと相関し�
     await markFakeAgentReady(sid, "claude");
     const receipt = await core.dispatchAgentTurn(sid, "CLAUDE_FOLLOWUP_PROMPT");
     setTimeout(() => writeClaudeDone(meta, "Claude follow-up answer", {
-      vendor_session_id: "claude-followup-session",
+      vendor_session_id: meta.vendor_session_id,
     }), 200);
     const observation = await core.observeAgentDone(sid, { cursor: receipt.event_cursor, timeout: 3 });
     assert.equal(observation.outcome, "done");
     assert.equal(observation.vendor, "claude");
-    assert.equal(observation.vendor_session_id, "claude-followup-session");
+    assert.equal(observation.vendor_session_id, meta.vendor_session_id);
     assert.match(fs.readFileSync(sessionLogPath(sid), "utf8"), /CLAUDE_FOLLOWUP_PROMPT/);
     const transcript = await core.readAgentTranscript(sid);
     assert.match(transcript, /Claude follow-up answer/);
@@ -1549,11 +1535,11 @@ test("dispatch/observe: Claude timeout後は再送せず後着resultを同一ses
     assert.match(core.listSessions(), new RegExp(`(^|\\n)${sid}\\t`), "timeout後も同じsessionを残す");
 
     writeClaudeDone(meta, "Claude late answer", {
-      vendor_session_id: "claude-late-session",
+      vendor_session_id: meta.vendor_session_id,
     });
     const transcript = await core.readAgentTranscript(sid);
     assert.match(transcript, /Claude late answer/);
-    assert.equal(readAgentMeta(sid).vendor_session_id, "claude-late-session");
+    assert.equal(readAgentMeta(sid).vendor_session_id, meta.vendor_session_id);
   } finally {
     core.closeSession(sid);
   }
@@ -1565,10 +1551,8 @@ test("Claude operation回収: 古いR1を新しいO2へ誤帰属せずO2だけ�
   const operation2 = `sha256:${"2".repeat(64)}`;
   try {
     const meta = readAgentMeta(sid);
-    meta.vendor_session_id = "claude-operation-session";
-    writeAgentMeta(sid, meta);
     writeClaudeDone(meta, "old R1", {
-      vendor_session_id: "claude-operation-session",
+      vendor_session_id: meta.vendor_session_id,
       operation_id: operation1,
     });
 
@@ -1578,7 +1562,7 @@ test("Claude operation回収: 古いR1を新しいO2へ誤帰属せずO2だけ�
     );
 
     writeClaudeDone(meta, "new R2", {
-      vendor_session_id: "claude-operation-session",
+      vendor_session_id: meta.vendor_session_id,
       operation_id: operation2,
     });
     const out = await core.readAgentTranscript(sid, { operation_id: operation2 });
@@ -1612,7 +1596,7 @@ test("dispatch/observe: Claude operation_idをmarker・完了suffix・timeout後
     assert.equal(marker.operation_id, operationId);
 
     writeClaudeDone(meta, "late operation answer", {
-      vendor_session_id: "claude-operation-timeout-session",
+      vendor_session_id: meta.vendor_session_id,
       operation_id: operationId,
     });
     const recovered = await core.readAgentTranscript(sid, { operation_id: operationId });
@@ -1656,7 +1640,7 @@ test("runClaudeOperation: timeoutしたissueはaccepted、同じoperationだけ�
     );
     assert.match(fs.readFileSync(sessionLogPath(sid), "utf8"), /STRUCTURED_TIMEOUT_PROMPT/);
 
-    const hook = invokeClaudeStopHook(meta, "structured exact raw output", "structured-caller-session");
+    const hook = invokeClaudeStopHook(meta, "structured exact raw output", meta.vendor_session_id);
     assert.equal(hook.status, 0, hook.stderr);
     assert.equal(hook.stderr, "");
     assert.deepEqual(
@@ -1762,7 +1746,7 @@ test("Claude operation E2E fixture: core dispatch markerを実Stop hookが消費
     const meta = readAgentMeta(sid);
     await markFakeAgentReady(sid, "claude");
     await core.dispatchAgentTurn(sid, "CLAUDE_OPERATION_E2E", { operation_id: operationId });
-    const hook = invokeClaudeStopHook(meta, "hook-correlated E2E answer", "claude-operation-e2e-session");
+    const hook = invokeClaudeStopHook(meta, "hook-correlated E2E answer", meta.vendor_session_id);
     assert.equal(hook.status, 0, hook.stderr);
     assert.equal(hook.stderr, "");
     const recovered = await core.readAgentTranscript(sid, { operation_id: operationId });
@@ -1786,7 +1770,7 @@ test("dispatch/observe: 別operationのStop eventを期待operationの完了に�
     await markFakeAgentReady(sid, "claude");
     const receipt = await core.dispatchAgentTurn(sid, "CLAUDE_EXPECTED_OPERATION", { operation_id: expected });
     setTimeout(() => writeClaudeDone(meta, "wrong operation answer", {
-      vendor_session_id: "claude-other-operation-session",
+      vendor_session_id: meta.vendor_session_id,
       operation_id: other,
       consume_marker: false,
     }), 200);
@@ -1837,7 +1821,7 @@ test("Claude operation interrupt: active中の通常入力を拒否しC-c後もS
       /未解決/,
     );
 
-    const hook = invokeClaudeStopHook(meta, "interrupted operation result", "claude-interrupted-session");
+    const hook = invokeClaudeStopHook(meta, "interrupted operation result", meta.vendor_session_id);
     assert.equal(hook.status, 0, hook.stderr);
     assert.equal(hook.stderr, "");
     assert.equal(fs.existsSync(marker), false);
@@ -1926,10 +1910,8 @@ test("Claude anonymous turn: timeout中はdurable operationを開始せず遅延
   try {
     const meta = readAgentMeta(sid);
     await markFakeAgentReady(sid, "claude");
-    meta.vendor_session_id = "claude-anonymous-session";
-    writeAgentMeta(sid, meta);
     writeClaudeDone(meta, "old anonymous R1", {
-      vendor_session_id: "claude-anonymous-session",
+      vendor_session_id: meta.vendor_session_id,
       consume_marker: false,
     });
     await core.dispatchAgentTurn(sid, "CLAUDE_ANONYMOUS_TIMEOUT");
@@ -1944,7 +1926,7 @@ test("Claude anonymous turn: timeout中はdurable operationを開始せず遅延
     );
     await assert.rejects(() => core.readAgentTranscript(sid), /operation_idなし.*まだ完了していません/);
 
-    const hook = invokeClaudeStopHook(meta, "anonymous late result", "claude-anonymous-session");
+    const hook = invokeClaudeStopHook(meta, "anonymous late result", meta.vendor_session_id);
     assert.equal(hook.status, 0, hook.stderr);
     assert.equal(hook.stderr, "");
     assert.equal(fs.existsSync(marker), false);
@@ -2033,7 +2015,7 @@ test("Claude operation dispatch: 送信前破壊ゲート失敗はreceiptを予�
     assert.throws(() => core.send(sid, "rm -rf /"), /破壊的/);
     assert.equal(JSON.parse(fs.readFileSync(marker, "utf8")).operation_id, operation1, "拒否した通常sendはmarkerを消さない");
 
-    const hook = invokeClaudeStopHook(meta, "preflight operation result", "claude-preflight-session");
+    const hook = invokeClaudeStopHook(meta, "preflight operation result", meta.vendor_session_id);
     assert.equal(hook.status, 0, hook.stderr);
     assert.equal(hook.stderr, "");
     assert.equal(fs.existsSync(marker), false);
@@ -2043,21 +2025,21 @@ test("Claude operation dispatch: 送信前破壊ゲート失敗はreceiptを予�
   }
 });
 
-test("dispatch/observe: Claudeは未bindでもvendor_session_id欠落・空eventを完了扱いしない", { skip: skipAgentDone }, async () => {
+test("dispatch/observe: Claudeは既知vendor_session_idと一致しないeventを完了扱いしない", { skip: skipAgentDone }, async () => {
   const [sid] = core.openAgent("claude", { agent_done: true });
   try {
     const meta = readAgentMeta(sid);
     await markFakeAgentReady(sid, "claude");
     const receipt = await core.dispatchAgentTurn(sid, "CLAUDE_INVALID_VENDOR_SESSION");
     setTimeout(() => {
-      writeClaudeDone(meta, "missing vendor session", { vendor_session_id: undefined, consume_marker: false });
-      writeClaudeDone(meta, "empty vendor session", { vendor_session_id: "", consume_marker: false });
+      fs.appendFileSync(meta.event_file, agentDoneLine(meta, { vendor_session_id: undefined }));
+      fs.appendFileSync(meta.event_file, agentDoneLine(meta, { vendor_session_id: "" }));
     }, 200);
     const observation = await core.observeAgentDone(sid, { cursor: receipt.event_cursor, timeout: 1 });
     assert.equal(observation.outcome, "timeout");
     assert.equal(observation.vendor, "claude");
-    assert.equal(observation.malformed_events, 2);
-    assert.equal(readAgentMeta(sid).vendor_session_id, null);
+    assert.equal(observation.malformed_events, 0, "別vendor sessionのeventは破損でなく非該当として無視する");
+    assert.equal(readAgentMeta(sid).vendor_session_id, meta.vendor_session_id);
   } finally {
     core.closeSession(sid);
   }
@@ -2162,10 +2144,10 @@ test("openAgentWithInitialPrompt: Claude初回promptを対話PTYへ送りpending
     assert.match(out, /initial_prompt=pending vendor=claude event_cursor=\d+/, `pending hint: ${out}`);
     const meta = readAgentMeta(sid);
     assert.equal(meta.initial_prompt, "pending");
-    writeClaudeDone(meta, "Claude initial answer", { vendor_session_id: "claude-initial-session" });
+    writeClaudeDone(meta, "Claude initial answer", { vendor_session_id: meta.vendor_session_id });
     const transcript = await core.readAgentTranscript(sid);
     assert.match(transcript, /Claude initial answer/);
-    assert.equal(readAgentMeta(sid).vendor_session_id, "claude-initial-session");
+    assert.equal(readAgentMeta(sid).vendor_session_id, meta.vendor_session_id);
   } finally {
     try {
       core.closeSession(sid);
@@ -2634,22 +2616,21 @@ test("openAgent grok/composer: model 引数で既定モデルを上書きする"
   }
 });
 
-test("openAgent codex agent_done: model 上書きは managed config の該当 top-level 行だけを置換する", { skip: skipAgentDone }, async () => {
+test("openAgent codex agent_done: model 上書きは共有 config を変更せずCLI引数へ載せる", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async (fakeHome) => {
     fs.writeFileSync(
       path.join(fakeHome, "config.toml"),
       'model = "pinned"\nmodel_reasoning_effort = "ultra"\nkeep_me = true\n\n[mcp_servers.x]\ncommand = "y"\n',
       { mode: 0o600 },
     );
+    const configPath = path.join(fakeHome, "config.toml");
+    const before = fs.readFileSync(configPath, "utf8");
     const [sid, hint] = core.openAgent("codex", { model: "gpt-5.6-terra", agent_done: true });
     try {
-      const config = fs.readFileSync(path.join(readAgentMeta(sid).codex_home, "config.toml"), "utf8");
-      assert.match(config, /^model = "gpt-5\.6-terra"\n/);
-      assert.match(config, /model_reasoning_effort = "ultra"/);
-      assert.match(config, /keep_me = true/);
-      assert.match(config, /\[mcp_servers\.x\]\ncommand = "y"/);
-      assert.doesNotMatch(config, /model = "pinned"/);
-      assert.match(hint, /端末config継承/);
+      assert.equal(fs.readFileSync(configPath, "utf8"), before);
+      const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
+      assert.match(out, /-m gpt-5\.6-terra/);
+      assert.match(hint, /共有 config/);
       assert.match(hint, /proactive 自動委譲/);
     } finally {
       core.closeSession(sid);
@@ -2657,47 +2638,50 @@ test("openAgent codex agent_done: model 上書きは managed config の該当 to
   });
 });
 
-test("openAgent codex agent_done: model と effort の両引数で managed config を置換する", { skip: skipAgentDone }, async () => {
+test("openAgent codex agent_done: model と effort は共有 config を変更せずCLI引数へ載せる", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async (fakeHome) => {
     fs.writeFileSync(
       path.join(fakeHome, "config.toml"),
       'model = "pinned"\nmodel_reasoning_effort = "ultra"\nkeep_me = true\n\n[mcp_servers.x]\ncommand = "y"\n',
       { mode: 0o600 },
     );
+    const configPath = path.join(fakeHome, "config.toml");
+    const before = fs.readFileSync(configPath, "utf8");
     const [sid] = core.openAgent("codex", {
       model: "gpt-5.6-terra",
       reasoning_effort: "high",
       agent_done: true,
     });
     try {
-      const config = fs.readFileSync(path.join(readAgentMeta(sid).codex_home, "config.toml"), "utf8");
-      assert.match(config, /^model = "gpt-5\.6-terra"\nmodel_reasoning_effort = "high"\n/);
-      assert.match(config, /keep_me = true/);
-      assert.match(config, /\[mcp_servers\.x\]\ncommand = "y"/);
-      assert.doesNotMatch(config, /"pinned"|"ultra"/);
+      assert.equal(fs.readFileSync(configPath, "utf8"), before);
+      const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
+      assert.match(out, /-m gpt-5\.6-terra/);
+      assert.match(out, /-c model_reasoning_effort=high/);
     } finally {
       core.closeSession(sid);
     }
   });
 });
 
-test("openAgent codex agent_done: quoted top-level pin を重複なく上書きする", { skip: skipAgentDone }, async () => {
+test("openAgent codex agent_done: quoted top-level pin も共有したまま引数を優先する", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async (fakeHome) => {
     fs.writeFileSync(
       path.join(fakeHome, "config.toml"),
       '"model" = "pinned"\n\'model_reasoning_effort\' = "ultra"\nkeep_me = true\n',
       { mode: 0o600 },
     );
+    const configPath = path.join(fakeHome, "config.toml");
+    const before = fs.readFileSync(configPath, "utf8");
     const [sid, hint] = core.openAgent("codex", {
       model: "gpt-5.6-terra",
       reasoning_effort: "high",
       agent_done: true,
     });
     try {
-      const config = fs.readFileSync(path.join(readAgentMeta(sid).codex_home, "config.toml"), "utf8");
-      assert.match(config, /^model = "gpt-5\.6-terra"\nmodel_reasoning_effort = "high"\n/);
-      assert.doesNotMatch(config, /["']model(?:_reasoning_effort)?["']\s*=/);
-      assert.match(config, /keep_me = true/);
+      assert.equal(fs.readFileSync(configPath, "utf8"), before);
+      const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
+      assert.match(out, /-m gpt-5\.6-terra/);
+      assert.match(out, /-c model_reasoning_effort=high/);
       assert.match(hint, /model=gpt-5\.6-terra（引数） effort=high（引数）/);
     } finally {
       core.closeSession(sid);
@@ -2787,11 +2771,9 @@ test("readAgentTranscript: Claudeはprivate transcriptでなくhook-captured res
   const [sid] = core.openAgent("claude", { agent_done: true });
   try {
     const meta = readAgentMeta(sid);
-    const vendorSessionId = "claude-session-result-1";
+    const vendorSessionId = meta.vendor_session_id;
     const text = "一つの永続Claude sessionが維持した助言";
     const digest = createHash("sha256").update(text, "utf8").digest("hex");
-    meta.vendor_session_id = vendorSessionId;
-    writeAgentMeta(sid, meta);
     fs.writeFileSync(meta.result_file, JSON.stringify({
       schema: "aiterm.claude-turn-result.v2",
       operation_id: null,
@@ -2872,8 +2854,9 @@ test("readAgentTranscript: Grok は最後の実 user 入力以降の assistant �
     await withFakeGrokHome(async () => {
       const [sid] = core.openAgent("grok", { agent_done: true, cwd: process.cwd() });
       try {
-        const vendorSessionId = "transcript-grok-latest";
-        const meta = bindTranscriptTurn(sid, vendorSessionId, "transcript-turn-grok");
+        const meta = readAgentMeta(sid);
+        const vendorSessionId = meta.vendor_session_id;
+        appendAgentDone(meta, { turn_id: "transcript-turn-grok" });
         writeGrokTranscript(meta, vendorSessionId, [
           { type: "user", content: "old question" },
           { type: "assistant", content: "old answer" },
