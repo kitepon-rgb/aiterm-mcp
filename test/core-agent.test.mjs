@@ -558,6 +558,123 @@ test("openAgent codex: 複数行日本語 prompt は argv に残るが shell con
   }
 });
 
+test("target contract: Codexは通常CODEX_HOMEを共有しsub-agent lineageだけを加算する", { skip: skipAgentDone }, async () => {
+  await withFakeCodexHome(async (normalHome) => {
+    const configPath = path.join(normalHome, "config.toml");
+    const configBefore = fs.readFileSync(configPath, "utf8");
+    const [sid] = core.openAgent("codex", { reasoning_effort: "high", agent_done: true });
+    try {
+      const meta = readAgentMeta(sid);
+      assert.equal(meta.codex_home, normalHome);
+      assert.equal(meta.hook_route, "shared_codex_home");
+      assert.equal(meta.agent_role, "subagent");
+      assert.equal(meta.parent_session_id, "host-root");
+      assert.equal(meta.delegation_depth, 1);
+      assert.equal(meta.delegation_allowed, true);
+      assert.match(meta.lineage, new RegExp(`^host-root>codex:${sid}$`));
+      assert.equal(fs.readFileSync(configPath, "utf8"), configBefore, "通常configを書き換えない");
+      const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
+      assert.doesNotMatch(out, /CODEX_HOME=/, "通常CODEX_HOMEを置換しない");
+      assert.match(out, /developer_instructions=/);
+      assert.match(out, /AITERM_AGENT_ROLE='subagent'/);
+      assert.match(out, /AITERM_AGENT_DEPTH='1'/);
+      assert.match(out, /delegation_allowed=true/);
+    } finally {
+      core.closeSession(sid);
+    }
+    assert.equal(fs.readFileSync(configPath, "utf8"), configBefore, "close後も通常configを維持する");
+  });
+});
+
+test("target contract: Claudeは通常3 scopeを共有してlaunch固有hookとlineageだけを加算する", { skip: skipAgentDone }, async () => {
+  const userConfig = path.join(fakeHome, ".claude.json");
+  const configBody = JSON.stringify({ theme: "dark", mcpServers: { fixture: { command: "fixture-mcp" } } }) + "\n";
+  fs.writeFileSync(userConfig, configBody, { mode: 0o600 });
+  const [sid] = core.openAgent("claude", { agent_done: true });
+  try {
+    const meta = readAgentMeta(sid);
+    assert.equal(meta.hook_route, "shared_claude_settings");
+    assert.equal(meta.claude_mcp_config, undefined);
+    assert.equal(meta.agent_role, "subagent");
+    assert.equal(meta.delegation_depth, 1);
+    const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
+    assert.match(out, /--setting-sources\s+user,project,local/);
+    assert.match(out, /--settings/);
+    assert.match(out, /--append-system-prompt/);
+    assert.doesNotMatch(out, /--mcp-config/);
+    assert.equal(fs.readFileSync(userConfig, "utf8"), configBody, "通常user設定を書き換えない");
+  } finally {
+    core.closeSession(sid);
+    fs.rmSync(userConfig, { force: true });
+  }
+});
+
+test("target contract: Grok/Composerは通常HOMEとGROK_HOMEを共有し既知session transcriptへ束縛する", { skip: skipAgentDone }, async () => {
+  await withFakeGrokHome(async (normalHome) => {
+    const configPath = path.join(normalHome, "config.toml");
+    const configBefore = fs.readFileSync(configPath, "utf8");
+    for (const kind of ["grok", "composer"]) {
+      const [sid] = core.openAgent(kind, { agent_done: true });
+      try {
+        const meta = readAgentMeta(sid);
+        assert.equal(meta.grok_home, normalHome);
+        assert.equal(meta.hook_route, "shared_grok_home");
+        assert.match(meta.vendor_session_id, /^[0-9a-f-]{36}$/);
+        assert.equal(meta.agent_role, "subagent");
+        const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
+        assert.doesNotMatch(out, /(?:^|\s)HOME=/, "通常HOMEを置換しない");
+        assert.doesNotMatch(out, /(?:^|\s)GROK_HOME=/, "通常GROK_HOMEを置換しない");
+        assert.match(out, /--session-id/);
+        assert.match(out, /--rules/);
+      } finally {
+        core.closeSession(sid);
+      }
+    }
+    assert.equal(fs.readFileSync(configPath, "utf8"), configBefore, "通常Grok configを書き換えない");
+  });
+});
+
+test("target contract: nested launcherはdepthとlineageを1段だけ進め、再委譲を許可する", { skip: skipAgentDone }, async () => {
+  const saved = {
+    role: process.env.AITERM_AGENT_ROLE,
+    session: process.env.AITERM_AGENT_SESSION_ID,
+    depth: process.env.AITERM_AGENT_DEPTH,
+    lineage: process.env.AITERM_AGENT_LINEAGE,
+  };
+  process.env.AITERM_AGENT_ROLE = "subagent";
+  process.env.AITERM_AGENT_SESSION_ID = "parent-session";
+  process.env.AITERM_AGENT_DEPTH = "1";
+  process.env.AITERM_AGENT_LINEAGE = "host-root>claude:parent-session";
+  try {
+    await withFakeCodexHome(async () => {
+      const [sid] = core.openAgent("codex", { agent_done: true });
+      try {
+        const meta = readAgentMeta(sid);
+        assert.equal(meta.parent_session_id, "parent-session");
+        assert.equal(meta.delegation_depth, 2);
+        assert.equal(meta.lineage, `host-root>claude:parent-session>codex:${sid}`);
+        assert.equal(meta.delegation_allowed, true);
+        const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
+        assert.match(out, /AITERM_AGENT_DEPTH='2'/);
+        assert.match(out, /追加のsub-agentへ委譲してよい/);
+        assert.doesNotMatch(out, /再委譲.*禁止/);
+      } finally {
+        core.closeSession(sid);
+      }
+    });
+  } finally {
+    for (const [key, value] of Object.entries({
+      AITERM_AGENT_ROLE: saved.role,
+      AITERM_AGENT_SESSION_ID: saved.session,
+      AITERM_AGENT_DEPTH: saved.depth,
+      AITERM_AGENT_LINEAGE: saved.lineage,
+    })) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test("openAgent codex agent_done: managed CODEX_HOME は transcript 完了正本だけを使う", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async (fakeHome) => {
     const [sid, hint] = core.openAgent("codex", { reasoning_effort: "high", agent_done: true });
