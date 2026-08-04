@@ -1829,14 +1829,14 @@ test("Claude operation interrupt: active中の通常入力を拒否しC-c後もS
     fs.writeFileSync(lastcmdFile, "before-rejected-send");
     assert.throws(
       () => core.send(sid, "manual follow-up", { enter: false, force: true, mark: true }),
-      /managed Claude|active|未解決/,
+      /相関付きClaude|active|未解決/,
     );
     assert.equal(fs.existsSync(markFile), false, "拒否したmark:trueは偽の完了待ちmarkerを作らない");
     assert.equal(fs.readFileSync(lastcmdFile, "utf8"), "before-rejected-send", "拒否した送信はlastcmdも変えない");
     fs.writeFileSync(markFile, "existing-mark");
     assert.throws(
       () => core.send(sid, "manual follow-up", { enter: false, force: true, mark: false }),
-      /managed Claude|active|未解決/,
+      /相関付きClaude|active|未解決/,
     );
     assert.equal(fs.readFileSync(markFile, "utf8"), "existing-mark", "拒否したmark:falseは既存markerを消さない");
     assert.throws(() => core.sendKey(sid, "Enter"), /C-c|active|未解決/);
