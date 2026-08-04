@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.4] - 2026-08-04
+
+### Fixed
+
+- managed Claudeの`--setting-sources ""`が通常hookだけでなくuser scope MCPまで不可視にし、fresh
+  sessionからAIShell等が使えなかった。`~/.claude.json`のtop-level `mcpServers`だけをlaunch単位の
+  0600 configへsnapshotして`--mcp-config`で渡す。通常hook／plugin／permissionとproject／local MCPの
+  隔離は維持し、破損／型不正configはsession作成前に残骸ゼロでfail loudする。
+
+### Verification
+
+- snapshot内容、0600 mode、argv、config欠落、破損、metadata path再束縛、close cleanupをfocused testで固定。
+  関連test 130/130、full regression 324/324がgreen。
+
 ## [0.21.3] - 2026-08-03
 
 ### Added

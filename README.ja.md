@@ -96,6 +96,10 @@ host統合は、kitepon.devの製品開発を支える内部基盤
 
 13 ツール: 6 つの **PTY ツール**（`pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list`）で 1 本の永続端末を開き・操作し・読む。加えて 4 つの **エージェント起動ツール**（`claude_agent` / `codex_agent` / `grok_agent` / `composer_agent`）が別のコーディングエージェントの TUI を新しい端末の中に起動し、`claude_turn`がdurable caller向けの構造化issue／recoveryを、`claude_approval`がmanaged Claudeの相関済み承認UI中継を、`diagnostics`が安全なfactory readinessを返す。バックエンドは **tmux** なので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
 
+**v0.21.4ではfresh managed Claudeからuser scope MCPを復元。** 通常hook、plugin、permission、
+project／local MCPの隔離は維持し、`~/.claude.json`で既にuser scope登録された`mcpServers`だけを
+owner-onlyのlaunch設定へsnapshotする。破損したuser MCP設定は、toolなしで黙って起動せずsession作成前に失敗する。
+
 **v0.21.3ではCodexの完了経路からStop hookを撤去。** Codexの完了通知と最終回答の帰属は、
 root rollout transcriptへ永続化される`task_complete.turn_id`をdispatch byte境界以後から観測する。
 hookの実行ファイルが壊れたり消えたりしても`aiterm-wait`は座礁しない。v0.21.0では外部agent launcherへ
@@ -163,7 +167,7 @@ $ aiterm-wait --session codex1 --cursor <event_cursor>   # exit 0=done / 3=timeo
 | `grok_agent` | Grok Build（xAI、既定`grok-4.5`、`model?`で上書き） | `prompt?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `cwd?`, `session_name?`, `write_scope?` |
 | `composer_agent` | Grok Build（xAI、既定`grok-composer-2.5-fast`、`model?`で上書き） | `prompt?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `cwd?`, `session_name?`, `write_scope?` |
 
-各ベンダーの CLI が導入・認証済みであること（`claude_agent` は `claude`、`codex_agent` は `codex`、Grok 系は `grok`）。バイナリは `CLAUDE_BIN` / `CODEX_BIN` / `GROK_BIN`、各既定path、`PATH` の順で解決する。CLI不在・不正なmodel/effort・実在しない`cwd`はsession作成前に失敗し、残骸を残さない。Claudeはさらに、PTY作成前に同じCLIの`auth status --json`が`loggedIn:true`を返すことを要求する。未認証・malformed・失敗exit・timeoutは残骸ゼロで失敗し、正常なvendor所有の共有認証は複数sessionから利用する。managed Claudeへのexact `/login`・`/logout`は通常dispatchとforce送信の双方で副作用前に拒否するため、認証は通常端末で一度だけ修理する。Claudeは通常settingsを継承しないlaunch専用settingsとStop hookを使い、本文なしeventとowner-only bounded resultを分離する。`pty_read({ agent_transcript:true })`はdigestとbyte数を検証したresultだけを返し、Claude private transcriptを読まない。後着resultは同じsessionからprompt再送なしで回収できる。managed Claudeのactive turn中はC-c以外の`pty_key`と素送信を拒否する。Claudeが`Do you want to proceed?`を表示したら、`claude_approval(action:"inspect", ...)`で画面digestを取得し、表示内容を判断してから、そのdigestと`approve_once`または`deny`を`respond`へ渡す。同じoperation・同じ画面が維持されている時だけ入力し、任意文字列や恒久許可選択肢は中継しない。中断は`C-c`、解除は`pty_close`。
+各ベンダーの CLI が導入・認証済みであること（`claude_agent` は `claude`、`codex_agent` は `codex`、Grok 系は `grok`）。バイナリは `CLAUDE_BIN` / `CODEX_BIN` / `GROK_BIN`、各既定path、`PATH` の順で解決する。CLI不在・不正なmodel/effort・実在しない`cwd`はsession作成前に失敗し、残骸を残さない。Claudeはさらに、PTY作成前に同じCLIの`auth status --json`が`loggedIn:true`を返すことを要求する。未認証・malformed・失敗exit・timeoutは残骸ゼロで失敗し、正常なvendor所有の共有認証は複数sessionから利用する。managed Claudeへのexact `/login`・`/logout`は通常dispatchとforce送信の双方で副作用前に拒否するため、認証は通常端末で一度だけ修理する。Claudeは通常settingsを継承しないlaunch専用settingsとStop hookを使う一方、user scopeの`mcpServers`だけは`~/.claude.json`から別のowner-only launch configへsnapshotし`--mcp-config`で渡す。project／local MCPは継承しない。本文なしeventとowner-only bounded resultを分離し、`pty_read({ agent_transcript:true })`はdigestとbyte数を検証したresultだけを返してClaude private transcriptを読まない。後着resultは同じsessionからprompt再送なしで回収できる。managed Claudeのactive turn中はC-c以外の`pty_key`と素送信を拒否する。Claudeが`Do you want to proceed?`を表示したら、`claude_approval(action:"inspect", ...)`で画面digestを取得し、表示内容を判断してから、そのdigestと`approve_once`または`deny`を`respond`へ渡す。同じoperation・同じ画面が維持されている時だけ入力し、任意文字列や恒久許可選択肢は中継しない。中断は`C-c`、解除は`pty_close`。
 
 エージェント間の隠れたプロトコルは無い。起動したClaude/Codex/Grok/Composerは利用者がattachできるもう1本の永続sessionであり、MCPクライアントが通常のPTY操作で駆動する。
 

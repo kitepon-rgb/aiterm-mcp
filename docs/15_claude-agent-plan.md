@@ -4,6 +4,8 @@
 > v0.16以降のagent sendは非ブロックdispatchで`event_cursor`を返し、完了通知は別processの
 > `aiterm-wait --cursor`、回答回収は`pty_read(agent_transcript:true)`または`claude_turn recover`が担う。
 > Claudeのmanaged Stop hook／bounded result／operation相関自体は現行のまま。
+> v0.21.4以降は通常hook隔離を維持しつつ、`~/.claude.json`のuser scope `mcpServers`だけを
+> launch専用0600 configへsnapshotして`--mcp-config`で継承する。正本はADR 0024。
 
 ## 目的
 
@@ -20,6 +22,8 @@ protocol／transcript読取、Observer／Throughline／Mailboxロジックの内
   ADR 0003へ固定する。
 - [x] Claude CLI path、model／effort、cwdをsession作成前に検証し、失敗時にPTY残骸を残さない。
 - [x] launch専用managed Claude settingsとStop hookを実装し、通常settings／hookを継承しない。
+- [x] user scope MCPだけをmanaged settingsとは別のowner-only snapshotで継承し、project／local MCPと
+  通常hookは隔離したままにする（ADR 0024）。
 - [x] Stop payloadをsession／launchへ厳密相関し、本文なしeventとowner-only bounded resultへ分離する。
 - [x] `claude_agent`を公開し、promptなし起動、初回prompt、follow-up `pty_send(wait:"agent_done")`、
   timeout後の同一session回収、interrupt／closeを既存PTYモデルへ接続する。

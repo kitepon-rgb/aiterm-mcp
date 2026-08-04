@@ -19,6 +19,10 @@ const hasTmux =
 // claude.sock への接続が "File name too long" で落ちる——実測）。
 process.env.TMPDIR = fs.mkdtempSync(path.join(os.tmpdir(), "aiterm-agt-"));
 process.env.XDG_RUNTIME_DIR = process.env.TMPDIR;
+const savedHome = process.env.HOME;
+const fakeHome = path.join(process.env.TMPDIR, "fake-home");
+fs.mkdirSync(fakeHome, { mode: 0o700 });
+process.env.HOME = fakeHome;
 const argvPrinterBin = path.join(process.env.TMPDIR, "print-argv.sh");
 const fakeClaudeBin = path.join(process.env.TMPDIR, "fake-claude.sh");
 if (process.platform !== "win32") {
@@ -383,6 +387,8 @@ after(() => {
       /* noop */
     }
   }
+  if (savedHome === undefined) delete process.env.HOME;
+  else process.env.HOME = savedHome;
 });
 
 test("openAgent: grok は effort 指定自体を session 作成前に拒否（headless 専用）", () => {
@@ -762,6 +768,7 @@ test("openAgent claude agent_done: isolated settings、Stop hook、result path�
     assert.equal(meta.hook_route, "managed_claude_settings");
     assert.ok(fs.existsSync(meta.event_file));
     assert.ok(fs.existsSync(meta.result_file));
+    assert.equal(meta.claude_mcp_config, null, "user MCP未登録なら追加configを作らない");
     const settings = JSON.parse(fs.readFileSync(meta.claude_settings, "utf8"));
     assert.deepEqual(Object.keys(settings), ["hooks"]);
     assert.match(settings.hooks.Stop[0].hooks[0].command, /claude-stop-hook\.js/);
@@ -770,11 +777,86 @@ test("openAgent claude agent_done: isolated settings、Stop hook、result path�
     const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
     assert.match(out, /--setting-sources\s+(?:''\s+)?--settings/);
     assert.match(out, /--settings/);
+    assert.doesNotMatch(out, /--mcp-config/, "user MCP未登録ならflagを渡さない");
     assert.match(out, /--model\s+claude-sonnet-4-6/);
     assert.match(out, /--effort\s+high/);
     assert.doesNotMatch(out, /\s-p(?:\s|$)/, "headless print modeへ落とさない");
   } finally {
     core.closeSession(sid);
+  }
+});
+
+test("openAgent claude agent_done: user scope MCPだけを0600 snapshotで継承する", { skip: skipAgentDone }, async () => {
+  const userConfig = path.join(fakeHome, ".claude.json");
+  fs.writeFileSync(userConfig, JSON.stringify({
+    theme: "dark",
+    mcpServers: {
+      aishell: {
+        command: "aishell-mcp",
+        env: { AISHELL_CAPABILITY_SET: "expanded-v1", TEST_SECRET: "fixture-only" },
+      },
+    },
+  }) + "\n", { mode: 0o600 });
+  const [sid] = core.openAgent("claude", { agent_done: true });
+  try {
+    const meta = readAgentMeta(sid);
+    assert.ok(meta.claude_mcp_config);
+    assert.equal(fs.statSync(meta.claude_mcp_config).mode & 0o777, 0o600);
+    assert.deepEqual(JSON.parse(fs.readFileSync(meta.claude_mcp_config, "utf8")), {
+      mcpServers: {
+        aishell: {
+          command: "aishell-mcp",
+          env: { AISHELL_CAPABILITY_SET: "expanded-v1", TEST_SECRET: "fixture-only" },
+        },
+      },
+    });
+    const settings = JSON.parse(fs.readFileSync(meta.claude_settings, "utf8"));
+    assert.deepEqual(Object.keys(settings), ["hooks"], "通常settingsとhooksは引き続き隔離する");
+    const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
+    assert.match(out, /--mcp-config/);
+    assert.doesNotMatch(out, /fixture-only/, "MCP定義や秘密値をargvへ展開しない");
+    writeAgentMeta(sid, { ...meta, claude_mcp_config: path.join(fakeHome, "foreign.json") });
+    await assert.rejects(
+      () => core.readAgentTranscript(sid),
+      /agent metadata の path が現在の secure state root と一致しません/,
+    );
+    writeAgentMeta(sid, meta);
+    const mcpPath = meta.claude_mcp_config;
+    core.closeSession(sid);
+    assert.equal(fs.existsSync(mcpPath), false, "session closeでsnapshotを削除する");
+  } finally {
+    fs.rmSync(userConfig, { force: true });
+    try {
+      core.closeSession(sid);
+    } catch {
+      /* already closed */
+    }
+  }
+});
+
+test("openAgent claude agent_done: malformed user MCP設定はsessionとstateを残さず拒否する", { skip: skipAgentDone }, () => {
+  const userConfig = path.join(fakeHome, ".claude.json");
+  fs.writeFileSync(userConfig, "{ broken\n", { mode: 0o600 });
+  const sid = `claude_bad_mcp_${Date.now().toString(36)}`;
+  const before = agentStateFiles();
+  const sessionsBefore = core.listSessions();
+  try {
+    assert.throws(
+      () => core.openAgent("claude", { session_name: sid, agent_done: true }),
+      /Claude user MCP設定を読めません/,
+    );
+    assert.deepEqual(agentStateFiles(), before, "失敗したlaunchのstateを残さない");
+    assert.equal(core.listSessions(), sessionsBefore, "失敗したsessionを残さない");
+
+    fs.writeFileSync(userConfig, JSON.stringify({ mcpServers: [] }) + "\n", { mode: 0o600 });
+    assert.throws(
+      () => core.openAgent("claude", { session_name: `${sid}_type`, agent_done: true }),
+      /mcpServersはobjectである必要があります/,
+    );
+    assert.deepEqual(agentStateFiles(), before, "型不正launchのstateを残さない");
+    assert.equal(core.listSessions(), sessionsBefore, "型不正launchのsessionを残さない");
+  } finally {
+    fs.rmSync(userConfig, { force: true });
   }
 });
 

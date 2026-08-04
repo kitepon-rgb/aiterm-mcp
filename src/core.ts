@@ -448,6 +448,12 @@ function agentManagedClaudeSettingsPath(name: string, launchId: string): string 
   return path.join(agentsDir(), `${name}.${launchId}.claude-settings.json`);
 }
 
+function agentManagedClaudeMcpConfigPath(name: string, launchId: string): string {
+  assertSessionName(name);
+  if (!LAUNCH_ID_RE.test(launchId)) throw new AitermError(`launch_id が不正です: ${launchId}`, 2);
+  return path.join(agentsDir(), `${name}.${launchId}.claude-mcp.json`);
+}
+
 function agentClaudeResultPath(name: string, launchId: string): string {
   assertSessionName(name);
   if (!LAUNCH_ID_RE.test(launchId)) throw new AitermError(`launch_id が不正です: ${launchId}`, 2);
@@ -524,6 +530,7 @@ function cleanupAgentState(name: string): void {
           f.endsWith(".events.jsonl") ||
           f.endsWith(".wait.lock") ||
           f.endsWith(".claude-settings.json") ||
+          f.endsWith(".claude-mcp.json") ||
           f.endsWith(".claude-result.json") ||
           f.endsWith(".claude-operation.json") ||
           f.endsWith(".claude-approval.json") ||
@@ -1424,6 +1431,7 @@ export function killAll(): string {
           f.endsWith(".events.jsonl") ||
           f.endsWith(".wait.lock") ||
           f.endsWith(".claude-settings.json") ||
+          f.endsWith(".claude-mcp.json") ||
           f.endsWith(".claude-result.json") ||
           f.endsWith(".claude-operation.json") ||
           f.endsWith(".claude-dispatch") ||
@@ -1466,6 +1474,7 @@ interface AgentMetadata {
   node_platform: NodeJS.Platform;
   codex_home?: string;
   claude_settings?: string;
+  claude_mcp_config?: string | null;
   result_file?: string;
   grok_home?: string;
   home?: string;
@@ -1837,6 +1846,48 @@ function createManagedClaudeSettings(name: string, launchId: string): string {
     },
   });
   return settings;
+}
+
+function createManagedClaudeMcpConfig(name: string, launchId: string): string | null {
+  const home = process.env.HOME?.trim() || os.homedir();
+  const source = path.join(home, ".claude.json");
+  let canonical: string;
+  try {
+    canonical = fs.realpathSync(source);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw new AitermError(`Claude user MCP設定を読めません: ${(error as Error).message}`, 2);
+  }
+
+  let fd: number | undefined;
+  let parsed: unknown;
+  try {
+    fd = fs.openSync(canonical, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+    const st = fs.fstatSync(fd);
+    if (!st.isFile() || st.uid !== currentUid() || st.size > 16 * 1024 * 1024) {
+      throw new AitermError("Claude user MCP設定の安全検証に失敗しました", 2);
+    }
+    parsed = JSON.parse(fs.readFileSync(fd, "utf8"));
+  } catch (error) {
+    if (error instanceof AitermError) throw error;
+    throw new AitermError(`Claude user MCP設定を読めません: ${(error as Error).message}`, 2);
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new AitermError("Claude user MCP設定のtop-level JSONはobjectである必要があります", 2);
+  }
+  const servers = (parsed as Record<string, unknown>).mcpServers;
+  if (servers === undefined) return null;
+  if (!servers || typeof servers !== "object" || Array.isArray(servers)) {
+    throw new AitermError("Claude user MCP設定のmcpServersはobjectである必要があります", 2);
+  }
+  if (Object.keys(servers).length === 0) return null;
+
+  const destination = agentManagedClaudeMcpConfigPath(name, launchId);
+  writeJson0600(destination, { mcpServers: servers });
+  return destination;
 }
 
 function realGrokHome(): string {
@@ -2432,6 +2483,7 @@ function createClaudeAgentMetadata(
   createEmpty0600NoFollow(eventFile);
   createEmpty0600NoFollow(resultFile);
   const claudeSettings = createManagedClaudeSettings(name, launchId);
+  const claudeMcpConfig = createManagedClaudeMcpConfig(name, launchId);
   const meta: AgentMetadata = {
     kind: "claude",
     aiterm_session: name,
@@ -2446,6 +2498,7 @@ function createClaudeAgentMetadata(
     hook_route: "managed_claude_settings",
     node_platform: process.platform,
     claude_settings: claudeSettings,
+    claude_mcp_config: claudeMcpConfig,
     result_file: resultFile,
   };
   writeAgentMetadata(meta);
@@ -2550,12 +2603,15 @@ function loadAgentMetadata(name: string): AgentMetadata {
   }
   if (m.kind === "claude") {
     const expectedSettings = agentManagedClaudeSettingsPath(name, m.launch_id);
+    const expectedMcpConfig = agentManagedClaudeMcpConfigPath(name, m.launch_id);
     const expectedResult = agentClaudeResultPath(name, m.launch_id);
+    const claudeMcpConfig = m.claude_mcp_config ?? null;
     const launchOperationId = m.launch_operation_id ?? null;
     const launchRequestDigest = m.launch_request_digest ?? null;
     if (
       m.hook_route !== "managed_claude_settings" ||
       m.claude_settings !== expectedSettings ||
+      (claudeMcpConfig !== null && claudeMcpConfig !== expectedMcpConfig) ||
       m.result_file !== expectedResult ||
       ((launchOperationId === null) !== (launchRequestDigest === null)) ||
       (launchOperationId !== null && !OPERATION_ID_RE.test(launchOperationId)) ||
@@ -2578,6 +2634,7 @@ function loadAgentMetadata(name: string): AgentMetadata {
       hook_route: "managed_claude_settings",
       node_platform: process.platform,
       claude_settings: expectedSettings,
+      claude_mcp_config: claudeMcpConfig === expectedMcpConfig ? expectedMcpConfig : null,
       result_file: expectedResult,
     };
   }
@@ -4093,6 +4150,7 @@ function buildAgentCmd(
   if (kind === "claude") {
     if (meta?.kind === "claude") {
       parts.push("--setting-sources", shq(""), "--settings", shq(meta.claude_settings ?? ""));
+      if (meta.claude_mcp_config) parts.push("--mcp-config", shq(meta.claude_mcp_config));
     }
     if (model) parts.push("--model", shq(model));
     if (effort) parts.push("--effort", shq(effort));
