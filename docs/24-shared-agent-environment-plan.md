@@ -34,11 +34,17 @@ vendor CLIの通常discoverへ委ねる。launch単位で隔離するのはaiter
    画面静止、prompt文字列、別sessionの最新transcriptへfallbackしない。
 6. 複数agentを同じproject・同じvendor homeで並列起動しても、turn完了と全文回収をsession／operation単位で
    取り違えない。close／killAllはaiterm所有物だけを削除し、vendorの認証・設定・履歴を削除しない。
+7. launcherは起動したagentへ、aitermから親agentに委譲されたsub-agentであること、親session、現在の
+   delegation depth／lineageをvendor-nativeな非user instructionと環境metadataで明示する。子が同じaiterm MCPを
+   使って孫agentを起動した時はlineageを保ちdepthを1増やす。これは再委譲禁止ではなく自己位置の認識だけを
+   強制する契約であり、任務量に応じた孫agent以降の利用を許す。
 
 ## 非目標
 
 - 親agentの会話履歴や内部contextを自動複製しない。任務・裁定・担当範囲はdispatch promptで渡す。
 - vendorのworkspace trust、permission、MCP承認をaitermが代行・迂回しない。
+- delegation depthの固定上限や、sub-agentからの`*_agent`呼出禁止を設けない。深い委譲自体を失敗条件にせず、
+  各agentが自分の位置を認識したうえで必要性を判断できるようにする。
 - 互換維持だけを理由に`environment_mode=managed|shared`のような新しい利用パターンを増やさない。
 - 共有化と無関係なPTY、screen reduction、RTK、SSH／container挙動を変更しない。
 - vendor CLIやMCPが自身の通常契約として行う設定・session更新をaiterm側で抑止しない。
@@ -63,6 +69,14 @@ merge不能または既存hook失敗がaiterm eventを失わせる場合は、Cl
 加算可能なlaunch hookのいずれで正確なturn完了を相関できるかを比較する。通常homeへのhook installや設定変更は
 採用せず、満たせない場合は共有を偽装して実装へ進まずPhase gateで止める。
 
+### 委譲lineage
+
+Claudeの`--append-system-prompt`、Grok系の`--rules`、Codexのdeveloper instruction相当など、通常のproject方針を
+置換しないvendor-nativeな追加instruction経路をcharacterizeする。少なくとも`role=subagent`、親session、depth、
+lineageをモデルと孫側のaiterm processが同じ値として観測できなければならない。初段はdepth 1、子が起動した
+aiterm serverは継承値から孫をdepth 2として起動する。instructionには、再委譲が許可されていることを明記し、
+「sub-agentだから他agentを呼べない」という誤解を作らない。固定depth capや暗黙拒否は入れない。
+
 ## Phase構成
 
 | Phase | 成果 | Gate |
@@ -83,6 +97,8 @@ merge不能または既存hook失敗がaiterm eventを失わせる場合は、Cl
 - launcher起動時にmanaged vendor home、config snapshot、fake `HOME`を作らず、通常設定を変更しない。
 - Claude／Codex／Grok／Composerの初回promptとfollow-upが非ブロックdispatch契約を維持する。
 - 同一vendor・同一cwdの並列sessionで、完了event、turn ID、全文回答、operation recoveryが交差しない。
+- 4 launcherのagentが自分をsub-agentとして説明でき、親session／depthを正しく報告する。孫agent smokeでは
+  depthが1増え、孫も再委譲可能だと理解し、同一任務の反射的な再起動ループを起こさない。
 - trust未承認、MCP起動失敗、既存hook失敗、破損transcriptはfail loudし、別経路で成功扱いしない。
 - close／killAll後も通常auth、settings、MCP、plugin、historyがbyte単位で不変で、aiterm secure stateだけが清掃される。
 - focused／related／full regressionと4vendor live smokeを区別して記録し、公開後global installから同じ共有性を再確認する。
