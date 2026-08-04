@@ -18,7 +18,7 @@ const PACKAGE = JSON.parse(fs.readFileSync(path.join(HERE, "..", "package.json")
 test("smoke: 公開versionはpackage・lock・server manifestで一致する", () => {
   const lock = JSON.parse(fs.readFileSync(path.join(HERE, "..", "package-lock.json"), "utf8"));
   const server = JSON.parse(fs.readFileSync(path.join(HERE, "..", "server.json"), "utf8"));
-  assert.equal(PACKAGE.version, "0.21.4", "managed Claude user MCP継承を公開するpatch release");
+  assert.equal(PACKAGE.version, "0.22.0", "agent launcher通常環境共有を公開するminor release");
   assert.equal(lock.version, PACKAGE.version);
   assert.equal(lock.packages?.[""]?.version, PACKAGE.version);
   assert.equal(server.version, PACKAGE.version);

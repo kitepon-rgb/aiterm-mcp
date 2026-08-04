@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-08-04
+
+### Changed
+
+- `claude_agent`／`codex_agent`／`grok_agent`／`composer_agent`を、直接CLI起動と同じ通常`HOME`、
+  vendor home、project/user/local設定、MCP、plugin、skill、permission、trust、memory、historyを使う
+  単一契約へ移行。旧fake home、private vendor home、設定snapshotはfallbackを残さず撤去した。
+- aitermがlaunchごとに所有する範囲を、相関ID、完了event/cursor、bounded result、cleanup metadataへ限定。
+  既存`managed_completion:true`は後方互換fieldとして残すが、環境隔離ではなく完了相関を表す。
+- 起動子へ`role=subagent`、親session、delegation depth、lineage、`delegation_allowed=true`を注入。
+  孫以降への再委譲は禁止せず、固定depth capも設けない。
+
+### Fixed
+
+- Grok/Composerは通常環境のMCP初期化中にも入力欄を描画するため、画面readyだけでpromptを早送信して
+  消失し得た。通常sessionの`mcp_init_completed` eventと現行model footer／入力欄の両方が揃うまで
+  dispatchしない。
+
+### Verification
+
+- Claude／Codex／Grok／Composerのdepth 1 live smokeで、sub-agent自己認識、親session、depth、lineage、
+  再委譲可を回収。Claude親がaitermの`claude_agent`を1回使うnested smokeで、孫のdepth 2と伸びた
+  lineageを実回収し、親子session残骸ゼロを確認。
+- focused ready-gate回帰と関連testを追加。公開受入のfull regression、package smoke、CI／Registry receiptは
+  リリース完了時にADR 0026へ固定する。
+
 ## [0.21.4] - 2026-08-04
 
 ### Fixed

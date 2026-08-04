@@ -1072,7 +1072,7 @@ test("openAgent claude: launch_operation_idのpromptless managed条件を固定�
       agent_done: true,
       launch_operation_id: operationId,
     }),
-    /launch_operation_idはpromptなしのmanaged Claude launchだけで指定できます/,
+    /launch_operation_idはpromptなしのClaude相関launchだけで指定できます/,
   );
 });
 

@@ -123,7 +123,7 @@ server.registerTool(
       "receipt の event_cursor を返す。" +
       NON_BLOCKING_RULE +
       "結果回収は pty_read(agent_transcript:true)、Claude の durable turn は claude_turn を使う。" +
-      "force:true は非Claude agent sessionへの手動介入用の素送信。managed Claudeの承認UIはclaude_approvalを使う。",
+      "force:true は非Claude agent sessionへの手動介入用の素送信。aiterm相関付きClaudeの承認UIはclaude_approvalを使う。",
     inputSchema: {
       session_id: z.string(),
       text: z
@@ -141,7 +141,7 @@ server.registerTool(
       force: z
         .boolean()
         .default(false)
-        .describe("破壊的コマンドゲートを越える。非Claude agent sessionではdispatchせず素送信する。managed Claudeのactive turnには使えない"),
+        .describe("破壊的コマンドゲートを越える。非Claude agent sessionではdispatchせず素送信する。aiterm相関付きClaudeのactive turnには使えない"),
       rtk: z.boolean().default(false).describe("既知コマンドを rtk 形へ委譲して送る（rtk 不在なら素通し）"),
       raw: z.boolean().default(false).describe("送信前サニタイズを無効化"),
     },
@@ -236,7 +236,7 @@ server.registerTool(
       agent_transcript: z
         .boolean()
         .default(false)
-        .describe("agent session の直近完了ターンの最終 assistant メッセージを返す。Claudeはmanaged Stop hook result、他vendorはtranscriptを使う。長い回答がscreen tailで切れた時の回収用"),
+        .describe("agent session の直近完了ターンの最終 assistant メッセージを返す。Claudeはlaunch相関付きStop hook result、他vendorは通常transcriptを使う。長い回答がscreen tailで切れた時の回収用"),
       operation_id: z
         .string()
         .regex(/^sha256:[0-9a-f]{64}$/)
@@ -293,7 +293,7 @@ server.registerTool(
 server.registerTool(
   "pty_key",
   {
-    description: "制御キーを送る（C-c, C-d, Enter, Tab, Up, Down... の別名に対応）。managed Claude sessionではturn相関を守るためC-cだけを許可し、承認UIはclaude_approvalで操作する。",
+    description: "制御キーを送る（C-c, C-d, Enter, Tab, Up, Down... の別名に対応）。aiterm相関付きClaude sessionではturn相関を守るためC-cだけを許可し、承認UIはclaude_approvalで操作する。",
     inputSchema: {
       session_id: z.string(),
       key: z.string().describe('キー名（例 "C-c", "Enter", "Up"）'),
@@ -353,7 +353,7 @@ server.registerTool(
   "claude_turn",
   {
     description:
-      "managed Claude sessionのdurable operationを構造化issue／recoverするmachine-caller専用面。" +
+      "aiterm相関付きClaude sessionのdurable operationを構造化issue／recoverするmachine-caller専用面。" +
       "pending／unknown／completedを人間向けerror文字列の解析なしで返し、Observer固有ロジックは持たない。",
     inputSchema: {
       action: z.enum(["issue", "recover"]),
@@ -396,7 +396,7 @@ server.registerTool(
   "claude_approval",
   {
     description:
-      "managed Claudeのactive turn中に表示された権限確認UIを、turn相関を保ったまま検査・応答する専用面。" +
+      "aiterm相関付きClaudeのactive turn中に表示された権限確認UIを、turn相関を保ったまま検査・応答する専用面。" +
       "inspectで画面digestと安全な単発Yes/Noだけを取得し、respondは同じoperation・同じdigestが現在も表示中の場合だけ送信する。",
     inputSchema: {
       action: z.enum(["inspect", "respond"]),
@@ -473,6 +473,10 @@ const agentCompletionDesc =
   `aiterm-wait --session <id> --cursor <event_cursor> を親のターンを塞がない別プロセスとして起動して受ける` +
   `（${core.AITERM_WAIT_OUTCOME_NOTE}。ポーリング不要・foreground実行はしない）。` +
   `結果回収は pty_read(agent_transcript:true)。`;
+const agentEnvironmentDesc =
+  `通常CLIと同じHOME・cwd・project/user/local設定・MCP・plugin・skill・permission/trustを共有する。` +
+  `aitermは完了相関stateだけをlaunch単位で所有する。起動されたagentにはsub-agent自己認識、親session、` +
+  `delegation depth/lineage、delegation_allowed=trueを注入し、必要な追加委譲は許可する。`;
 function registerAgentTool(
   toolName: string,
   kind: "claude" | "codex" | "grok" | "composer",
@@ -497,7 +501,7 @@ function registerAgentTool(
       .string()
       .regex(/^sha256:[0-9a-f]{64}$/)
       .optional()
-      .describe("promptless managed launchのexact replay相関ID。session_name必須");
+      .describe("promptなしClaude launchのexact replay相関ID。session_name必須");
   }
   server.registerTool(
     toolName,
@@ -518,7 +522,7 @@ function registerAgentTool(
         schema: z.literal("aiterm.agent-launch-result.v1"),
         provider: z.literal(kind),
         session_id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
-        managed_completion: z.boolean(),
+        managed_completion: z.boolean().describe("後方互換field。trueはaiterm完了相関が有効という意味で、project/user環境の隔離を意味しない"),
         // 起動時 prompt でturnが走っている時だけ非null（additive拡張）。wait_command はそのままホストの
         // バックグラウンドタスクとして実行できる完了待ちコマンド。
         event_cursor: z.number().int().nullable(),
@@ -573,8 +577,10 @@ registerAgentTool(
   "claude_agent",
   "claude",
   "【Claude Code (Anthropic)】の対話エージェントTUIを永続端末に起動する。`claude -p`ではなく、" +
-    "同じ利用者可視sessionへpty_sendで継続入力する。常にmanaged（isolated settingsのStop hook）で起動する。" +
-    "起動前に共有認証を構造化確認し、未認証ならsessionを作らない。managed session内の/login・/logoutは拒否する。" +
+    "同じ利用者可視sessionへpty_sendで継続入力する。" +
+    agentEnvironmentDesc +
+    "通常settingsへlaunch固有Stop hook settingsを加算する。起動前に共有認証を構造化確認し、未認証ならsessionを作らない。" +
+    "aiterm相関付きsession内の/login・/logoutは拒否する。" +
     agentCompletionDesc +
     "Claude の durable turn は claude_turn でも回収できる。",
 );
@@ -583,6 +589,7 @@ registerAgentTool(
   "codex_agent",
   "codex",
   "【Codex (OpenAI)】の対話エージェント TUI を永続端末に起動する。実装・レビュー・調査を対話で回す。" +
+    agentEnvironmentDesc +
     "委譲契約を使う完全な呼び出し例: " +
     '`codex_agent({"prompt":"<依頼>","model":"gpt-5.6-sol","reasoning_effort":"high",' +
     '"cwd":"/absolute/path/to/repo","write_scope":"read-only"})`。' +
@@ -595,6 +602,7 @@ registerAgentTool(
   "grok_agent",
   "grok",
   "【Grok Build の Grok モデル (既定 grok-4.5)】の対話エージェント TUI を永続端末に起動する。" +
+    agentEnvironmentDesc +
     "turn は pty_send で送る（自動で非ブロック dispatch になる）。" +
     agentCompletionDesc +
     "model を引数で指定可。reasoning_effort は対話 TUI 非対応（指定はエラー）。",
@@ -603,6 +611,7 @@ registerAgentTool(
   "composer_agent",
   "composer",
   "【Grok Build の Composer モデル (既定 grok-composer-2.5-fast)】の対話エージェント TUI を永続端末に起動する。" +
+    agentEnvironmentDesc +
     "turn は pty_send で送る（自動で非ブロック dispatch になる）。" +
     agentCompletionDesc +
     "model を引数で指定可。reasoning_effort は非対応（指定はエラー）。",

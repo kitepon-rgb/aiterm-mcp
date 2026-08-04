@@ -2,6 +2,14 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **v0.22.0（2026-08-04）**: 4つのagent launcherを通常project／user環境の完全共有へ移行。
+> `HOME`、vendor home、project/user/local設定、MCP、plugin、skill、permission、trust、memory、historyを
+> 直接CLI起動と同じ正本から読む。fake home、private vendor home、設定snapshotは廃止し、aitermは
+> launch相関ID、完了event/cursor、bounded result、cleanup metadataだけを所有する。子へ
+> `role=subagent`、親session、delegation depth、lineage、`delegation_allowed=true`を非user instructionと
+> 環境変数で注入する。再委譲は禁止せず固定depth capも設けない。4vendor depth 1とClaude nested depth 2の
+> live smokeを通過。DecisionはADR 0025、工程正本はLattice `shared-agent-environment`。
+
 > **v0.21.4（2026-08-04）**: managed Claudeのhook隔離がuser scope MCPまで落としていた欠陥を修理。
 > `~/.claude.json`のtop-level `mcpServers`だけをlaunch単位のowner-only configへsnapshotし、Claude CLIの
 > `--mcp-config`へ渡す。通常hook／plugin／permissionとproject／local MCPは継承しない。破損configは
@@ -132,6 +140,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > 公開面は計13ツール。設計はADR 0015。local full regression 300/300、tag CI `29682309390`の全必須jobとnpm provenance publish、Registry workflow `29682448833`がgreen。公開commit `96d461c`、npm latest=0.19.0、GitHub Release公開済み。registry由来隔離installとこの端末のglobal installでversion・3 bins・13 tools・approval schema・local dist一致を確認した。実Claude model requestを使うapproval smokeも承認済みcampaignで通過し、fixture検証とは区別して扱う。
 
 ## 現状: Node/TS の npm パッケージ `aiterm-mcp`（stdio MCP サーバ）
+
+> **2026-08-04 v0.22.0設計**: launcherは4vendorとも通常のproject／user環境を共有する。
+> Claudeだけは完了相関用Stop hook settingsを通常`user,project,local` settingsへ加算し、Codexは通常rollout、
+> Grok/Composerは通常session event/historyを完了・回答正本として読む。Grok/Composerは共有MCPの
+> `mcp_init_completed`後かつ入力欄readyまで送信しない。旧managed home／snapshot経路はfallbackとして残さない。
+> 現行Decisionは[ADR 0025](docs/adr/0025-shared-agent-environment-and-lineage.md)を正とする。
 
 > **2026-08-03 v0.21.3設計**: Codex完了正本をmanaged Stop hookからroot rollout transcriptの
 > `task_complete.turn_id`へ移した。実障害は長寿命serverがHomebrew Cellarの版付き`process.execPath`を
@@ -277,6 +291,8 @@ MarkItDown は専用 venv（`/home/kite/.local/share/markitdown/venv`）に導�
 
 design-plan は「議論継続中のスナップショット（叩き台）」と明記された生きた文書。議論が進んだら §9（決定）/§10（未決）を追記・改訂する前提で書かれている。設計判断を変えたら、コードだけでなくこの文書も同期させる。
 
-## 2026-07-14 Grok OAuth 正本
+## 2026-08-04 agent環境共有正本
 
-Grok/Composer の managed `GROK_HOME` と fake `HOME` は隔離のまま維持する。認証は vendor の `GROK_AUTH_PATH` に通常正本を明示し、managed home へ auth/lock を symlink・copy しない。aiterm は lock/copy-back を所有しない。親の `GROK_AUTH_PATH` は絶対安全pathのみ尊重し、未指定時だけ通常auth不在を `XAI_API_KEY` で許す。
+4 launcherは通常`HOME`とvendor homeをそのまま使い、credential/config/MCP/plugin/skill/permission/trustを
+copy・symlink・snapshot・filterしない。Grok/Composerの旧fake `HOME`／private `GROK_HOME`とCodexの旧private
+`CODEX_HOME`は履歴上の契約であり現行挙動ではない。cleanupはaiterm所有の相関stateだけを削除する。

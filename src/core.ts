@@ -977,7 +977,7 @@ function assertManagedClaudeCredentialCommandNotSent(name: string, text: string)
   const normalized = text.replace(PASTE_MARKERS_RE, "").replace(ANSI_RE, "").replace(CTRL_RE, "").trim();
   if (!/^\/(?:login|logout)$/i.test(normalized)) return;
   throw new AitermError(
-    "managed Claude sessionでは共有認証を変更する /login と /logout を送信できません。" +
+    "aiterm相関付きClaude sessionでは共有認証を変更する /login と /logout を送信できません。" +
       "認証操作は通常端末で一度だけ行い、必要ならこのsessionをcloseして起動し直してください。",
     2,
   );
@@ -1009,7 +1009,7 @@ export function send(name: string, text: string, o: SendOpts = {}): string {
     // sentinelを待つため、公開上の拒否は副作用ゼロでなければならない。
     if (!o.preserveAgentOperation && managedClaudeOperation(name) !== undefined) {
       throw new AitermError(
-        "managed Claude agent sessionへの通常送信はturn境界を失うため拒否します。" +
+        "aiterm相関付きClaude agent sessionへの通常送信はturn境界を失うため拒否します。" +
           "pty_send（forceなし＝自動dispatch）を使うか、通常対話へ切り替えるならsessionをcloseしてpty_openから手動起動し直してください。",
         2,
       );
@@ -1098,7 +1098,7 @@ export function sendKey(name: string, key: string, o: { preserveAgentOperation?:
   const k = KEYMAP[key.toLowerCase()] ?? key;
   if (!o.preserveAgentOperation && managedClaudeOperation(name) !== undefined && k !== "C-c") {
     throw new AitermError(
-      "managed Claude agent sessionではturn相関を壊さないC-cだけをpty_keyで送れます。" +
+      "aiterm相関付きClaude agent sessionではturn相関を壊さないC-cだけをpty_keyで送れます。" +
         "他の対話操作はpty_send（自動dispatch）、終了はpty_closeを使ってください。",
       2,
     );
@@ -2004,7 +2004,7 @@ function parseClaudeApprovalScreen(screen: string): {
     if (lines[i].trim() === "Do you want to proceed?") question = i;
   }
   if (question < 0) {
-    throw new AitermError("managed Claudeの承認UIを現在画面で確認できません（Do you want to proceed? がありません）", 2);
+    throw new AitermError("aiterm相関付きClaudeの承認UIを現在画面で確認できません（Do you want to proceed? がありません）", 2);
   }
 
   const choices: ClaudeApprovalChoice[] = [];
@@ -2022,13 +2022,13 @@ function parseClaudeApprovalScreen(screen: string): {
     // 「常に許可」等は意図的に公開しない。単発Yes/No以外を自動操作できる契約にしない。
     if (!decision) continue;
     if (!Number.isSafeInteger(index) || index < 1 || seen.has(decision)) {
-      throw new AitermError("managed Claudeの承認UI選択肢が一意に解釈できません", 2);
+      throw new AitermError("aiterm相関付きClaudeの承認UI選択肢が一意に解釈できません", 2);
     }
     seen.add(decision);
     choices.push({ decision, index, label });
   }
   if (!seen.has("approve_once") || !seen.has("deny")) {
-    throw new AitermError("managed Claudeの承認UIに安全な単発Yes/No選択肢を確認できません", 2);
+    throw new AitermError("aiterm相関付きClaudeの承認UIに安全な単発Yes/No選択肢を確認できません", 2);
   }
   return {
     promptDigest: `sha256:${createHash("sha256").update(canonical, "utf8").digest("hex")}`,
@@ -2041,7 +2041,7 @@ function assertExpectedClaudeOperation(
   expectedOperationId: string | null,
 ): ClaudeOperationMarker {
   const active = readClaudeOperationMarker(meta);
-  if (!active) throw new AitermError("managed Claudeに未解決のactive operationがありません", 2);
+  if (!active) throw new AitermError("aiterm相関付きClaudeに未解決のactive operationがありません", 2);
   if (active.operationId !== expectedOperationId) {
     const actual = active.operationId ?? "operation_idなし";
     const expected = expectedOperationId ?? "operation_idなし";
@@ -2066,7 +2066,7 @@ export function runClaudeApproval({
   assertSessionName(name);
   if (!sessionExists(name)) throw new AitermError(`session '${name}' が無い`, 2);
   const meta = loadAgentMetadata(name);
-  if (meta.kind !== "claude") throw new AitermError("claude_approvalはmanaged Claude agent sessionだけで使用できます", 2);
+  if (meta.kind !== "claude") throw new AitermError("claude_approvalはaiterm相関付きClaude agent sessionだけで使用できます", 2);
   const operationId = operationIdInput == null ? null : validateOperationId(operationIdInput);
 
   if (action === "inspect") {
@@ -4088,7 +4088,7 @@ export async function runClaudeOperation({
   }
   const operationId = validateOperationId(operationIdInput);
   const meta = loadAgentMetadata(name);
-  if (meta.kind !== "claude") throw new AitermError("claude_turnはmanaged Claude agent sessionだけで使用できます", 2);
+  if (meta.kind !== "claude") throw new AitermError("claude_turnはaiterm相関付きClaude agent sessionだけで使用できます", 2);
 
   let dispatchReceipt: AgentDispatchReceipt | null = null;
   if (action === "issue") {
@@ -4211,7 +4211,7 @@ function assertClaudeAuthenticationReady(bin: string): void {
     throw new AitermError(
       "Claude Codeの認証を利用できません。sessionは作成していません。" +
         "通常端末で `claude doctor` を実行し、Keychain／credential storeを直してから一度だけ `claude auth login` を実行してください。" +
-        "managed Claude session内で /login を繰り返さないでください。",
+        "aiterm相関付きClaude session内で /login を繰り返さないでください。",
       2,
     );
   }
@@ -4644,7 +4644,7 @@ export async function openAgentWithInitialPrompt(
 ): Promise<[string, string, number | null, boolean | null]> {
   const prompt = opts.prompt ?? null;
   if (opts.launch_operation_id != null && prompt !== null) {
-    throw new AitermError("launch_operation_idはpromptなしのmanaged Claude launchだけで指定できます", 2);
+    throw new AitermError("launch_operation_idはpromptなしのClaude相関launchだけで指定できます", 2);
   }
   // v0.16.0: launcher は常に managed（Stop hook つき）で立つ。手動運転したい場合は
   // pty_open で素の PTY を開き、vendor CLI を自分で send する。
