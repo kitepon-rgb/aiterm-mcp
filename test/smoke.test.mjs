@@ -184,6 +184,8 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 13 ツール公�
     ["composer_agent", "composer"],
   ]) {
     const tool = toolsResp.result.tools.find((entry) => entry.name === name);
+    assert.equal(tool.inputSchema.properties.throughline_source_session.type, "string", `${name} portable fork source schema`);
+    assert.equal(tool.inputSchema.properties.throughline_source_session.minLength, 1, `${name} portable fork source is non-empty`);
     assert.equal(tool.outputSchema.properties.schema.const, "aiterm.agent-launch-result.v1", `${name} launch result schema`);
     assert.equal(tool.outputSchema.properties.provider.const, provider, `${name} provider固定`);
     assert.equal(tool.outputSchema.properties.session_id.pattern, "^[A-Za-z0-9_-]{1,64}$", `${name} session ID schema`);

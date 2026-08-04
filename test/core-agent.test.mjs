@@ -244,6 +244,26 @@ function makeFakeCodexTuiBin() {
   return bin;
 }
 
+function makeFakeThroughlineBin(context = "## Throughline Context\\nSOURCE_CONTEXT_MARKER") {
+  const bin = path.join(process.env.TMPDIR, `fake-throughline-${Date.now().toString(36)}.sh`);
+  fs.writeFileSync(
+    bin,
+    [
+      "#!/bin/sh",
+      "if [ \"$1\" != handoff-context ] || [ \"$2\" != --session ] || [ \"$4\" != --json ]; then exit 9; fi",
+      `printf '%s\\n' '${JSON.stringify({
+        schema: "throughline.handoff_context.v1",
+        status: "ready",
+        sessionId: "source-session",
+        context,
+      })}'`,
+      "",
+    ].join("\n"),
+    { mode: 0o700 },
+  );
+  return bin;
+}
+
 function makeFakeGrokTuiBin() {
   const bin = path.join(process.env.TMPDIR, `fake-grok-tui-${Date.now().toString(36)}.sh`);
   fs.writeFileSync(
@@ -2151,6 +2171,69 @@ test("openAgentWithInitialPrompt: prompt を shell argv に載せず pending eve
     if (savedBin === undefined) delete process.env.CODEX_BIN;
     else process.env.CODEX_BIN = savedBin;
     fs.rmSync(fakeBin, { force: true });
+  }
+});
+
+test("portable fork: Codex TUIへThroughline contextをmissionより前に一度だけ送る", { skip: skipAgentDone }, async () => {
+  const savedCodexBin = process.env.CODEX_BIN;
+  const savedThroughlineBin = process.env.THROUGHLINE_BIN;
+  const fakeCodex = makeFakeCodexTuiBin();
+  const fakeThroughline = makeFakeThroughlineBin();
+  process.env.CODEX_BIN = fakeCodex;
+  process.env.THROUGHLINE_BIN = fakeThroughline;
+  const sid = `portable_codex_${Date.now().toString(36)}`;
+  try {
+    await withFakeCodexHome(async () => {
+      await core.openAgentWithInitialPrompt("codex", {
+        session_name: sid,
+        prompt: "MISSION_MARKER を実行してください。",
+        throughline_source_session: "source-session",
+      });
+      const output = await core.readOutput(sid, {
+        wait: true,
+        until: "MISSION_MARKER",
+        timeout: 5,
+        full: true,
+        raw: true,
+      });
+      assert.ok(output.indexOf("SOURCE_CONTEXT_MARKER") < output.indexOf("MISSION_MARKER"), output);
+      assert.equal(output.split("SOURCE_CONTEXT_MARKER").length - 1, 1, output);
+      assert.match(output, /---\r?\n\r?\n## Portable fork mission/);
+    });
+  } finally {
+    try { core.closeSession(sid); } catch {}
+    if (savedCodexBin === undefined) delete process.env.CODEX_BIN;
+    else process.env.CODEX_BIN = savedCodexBin;
+    if (savedThroughlineBin === undefined) delete process.env.THROUGHLINE_BIN;
+    else process.env.THROUGHLINE_BIN = savedThroughlineBin;
+    fs.rmSync(fakeCodex, { force: true });
+    fs.rmSync(fakeThroughline, { force: true });
+  }
+});
+
+test("portable fork: Grok argv promptも同じcontext→mission順で合成する", { skip: skipAgentDone }, async () => {
+  const savedThroughlineBin = process.env.THROUGHLINE_BIN;
+  const fakeThroughline = makeFakeThroughlineBin();
+  process.env.THROUGHLINE_BIN = fakeThroughline;
+  let sid = null;
+  try {
+    await withFakeGrokHome(async () => {
+      [sid] = await core.openAgentWithInitialPrompt("grok", {
+        prompt: "MISSION_MARKER を実行してください。",
+        throughline_source_session: "source-session",
+      });
+      const output = await core.readOutput(sid, { wait: true, timeout: 5, full: true, raw: true });
+      assert.ok(output.indexOf("SOURCE_CONTEXT_MARKER") < output.indexOf("MISSION_MARKER"), output);
+      assert.equal(output.split("SOURCE_CONTEXT_MARKER").length - 1, 1, output);
+      assert.match(output, /---\r?\n\r?\n## Portable fork mission/);
+    });
+  } finally {
+    if (sid) {
+      try { core.closeSession(sid); } catch {}
+    }
+    if (savedThroughlineBin === undefined) delete process.env.THROUGHLINE_BIN;
+    else process.env.THROUGHLINE_BIN = savedThroughlineBin;
+    fs.rmSync(fakeThroughline, { force: true });
   }
 });
 
