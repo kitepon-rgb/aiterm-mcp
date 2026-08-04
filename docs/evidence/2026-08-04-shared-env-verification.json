@@ -1,0 +1,9 @@
+{
+  "anchor_digest": null,
+  "content_digest": "6908346d9f1c43614de6f0fccb8772c8b1b5ec499ffba7f5e717aa20db2a0681",
+  "evidence_id": "shared-env-cross-vendor-verification",
+  "git_blob_oid": "c8bdbb1aa9aba0ab06f396bdfabf05901d50e5e8",
+  "media_type": "text/markdown",
+  "path": "docs/evidence/2026-08-04-shared-env-verification.md",
+  "repo_id": "self"
+}
