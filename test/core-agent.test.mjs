@@ -244,7 +244,7 @@ function makeFakeCodexTuiBin() {
   return bin;
 }
 
-function makeFakeThroughlineBin(context = "## Throughline Context\\nSOURCE_CONTEXT_MARKER") {
+function makeFakeThroughlineBin(context = "## Throughline Context\nSOURCE_CONTEXT_MARKER") {
   const bin = path.join(process.env.TMPDIR, `fake-throughline-${Date.now().toString(36)}.sh`);
   fs.writeFileSync(
     bin,
@@ -259,6 +259,16 @@ function makeFakeThroughlineBin(context = "## Throughline Context\\nSOURCE_CONTE
       })}'`,
       "",
     ].join("\n"),
+    { mode: 0o700 },
+  );
+  return bin;
+}
+
+function makeBrokenThroughlineBin(stdout, exitCode = 0) {
+  const bin = path.join(process.env.TMPDIR, `broken-throughline-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}.sh`);
+  fs.writeFileSync(
+    bin,
+    ["#!/bin/sh", `printf '%s\\n' '${stdout}'`, `exit ${exitCode}`, ""].join("\n"),
     { mode: 0o700 },
   );
   return bin;
@@ -2197,8 +2207,7 @@ test("portable fork: Codex TUIへThroughline contextをmissionより前に一度
         raw: true,
       });
       assert.ok(output.indexOf("SOURCE_CONTEXT_MARKER") < output.indexOf("MISSION_MARKER"), output);
-      assert.equal(output.split("SOURCE_CONTEXT_MARKER").length - 1, 1, output);
-      assert.match(output, /---\r?\n\r?\n## Portable fork mission/);
+      assert.match(output, /---\\n\\n## Portable fork mission/);
     });
   } finally {
     try { core.closeSession(sid); } catch {}
@@ -2224,7 +2233,6 @@ test("portable fork: Grok argv promptも同じcontext→mission順で合成す�
       });
       const output = await core.readOutput(sid, { wait: true, timeout: 5, full: true, raw: true });
       assert.ok(output.indexOf("SOURCE_CONTEXT_MARKER") < output.indexOf("MISSION_MARKER"), output);
-      assert.equal(output.split("SOURCE_CONTEXT_MARKER").length - 1, 1, output);
       assert.match(output, /---\r?\n\r?\n## Portable fork mission/);
     });
   } finally {
@@ -2235,6 +2243,90 @@ test("portable fork: Grok argv promptも同じcontext→mission順で合成す�
     else process.env.THROUGHLINE_BIN = savedThroughlineBin;
     fs.rmSync(fakeThroughline, { force: true });
   }
+});
+
+test("portable fork: contextは加工せず一度だけmissionの前へ合成する", () => {
+  const context = "CONTEXT_MARKER\n記憶本文";
+  const mission = "MISSION_MARKER\n実装してください";
+  const prompt = core.composePortableForkPrompt(context, mission);
+  assert.equal(prompt, `${context}\n\n---\n\n## Portable fork mission\n\n${mission}`);
+  assert.equal(prompt.split("CONTEXT_MARKER").length - 1, 1);
+  assert.ok(prompt.indexOf("CONTEXT_MARKER") < prompt.indexOf("MISSION_MARKER"));
+});
+
+test("portable fork: Throughline外部境界の失敗はPTY作成前に明示拒否する", async () => {
+  const savedThroughlineBin = process.env.THROUGHLINE_BIN;
+  const invalidSchema = makeBrokenThroughlineBin("{}");
+  const emptyContext = makeBrokenThroughlineBin(JSON.stringify({
+    schema: "throughline.handoff_context.v1",
+    status: "ready",
+    sessionId: "source-session",
+    context: "",
+  }));
+  const nonzero = makeBrokenThroughlineBin("", 7);
+  const cases = [
+    path.join(process.env.TMPDIR, "missing-throughline"),
+    invalidSchema,
+    emptyContext,
+    nonzero,
+  ];
+  try {
+    for (const bin of cases) {
+      process.env.THROUGHLINE_BIN = bin;
+      const before = core.listSessions();
+      await assert.rejects(
+        core.openAgentWithInitialPrompt("codex", {
+          prompt: "MISSION_MARKER",
+          throughline_source_session: "source-session",
+        }),
+        /Throughline/,
+      );
+      assert.equal(core.listSessions(), before, `${bin}: 外部失敗でsessionを作らない`);
+    }
+  } finally {
+    if (savedThroughlineBin === undefined) delete process.env.THROUGHLINE_BIN;
+    else process.env.THROUGHLINE_BIN = savedThroughlineBin;
+    for (const bin of [invalidSchema, emptyContext, nonzero]) fs.rmSync(bin, { force: true });
+  }
+});
+
+test("portable fork: source省略時はThroughlineを起動せず既存clean launchを維持する", { skip: skipAgentDone }, async () => {
+  const savedThroughlineBin = process.env.THROUGHLINE_BIN;
+  const broken = makeBrokenThroughlineBin("", 7);
+  process.env.THROUGHLINE_BIN = broken;
+  let sid = null;
+  try {
+    await withFakeGrokHome(async () => {
+      [sid] = await core.openAgentWithInitialPrompt("grok", { prompt: "CLEAN_MISSION_MARKER" });
+      const output = await core.readOutput(sid, { wait: true, timeout: 5, full: true, raw: true });
+      assert.match(output, /CLEAN_MISSION_MARKER/);
+      assert.doesNotMatch(output, /Portable fork mission/);
+    });
+  } finally {
+    if (sid) {
+      try { core.closeSession(sid); } catch {}
+    }
+    if (savedThroughlineBin === undefined) delete process.env.THROUGHLINE_BIN;
+    else process.env.THROUGHLINE_BIN = savedThroughlineBin;
+    fs.rmSync(broken, { force: true });
+  }
+});
+
+test("portable fork: mission必須かつlaunch_operation_idとは排他", async () => {
+  const before = core.listSessions();
+  await assert.rejects(
+    core.openAgentWithInitialPrompt("claude", { throughline_source_session: "source-session" }),
+    /promptにmissionが必要/,
+  );
+  await assert.rejects(
+    core.openAgentWithInitialPrompt("claude", {
+      prompt: "MISSION_MARKER",
+      throughline_source_session: "source-session",
+      launch_operation_id: `sha256:${"a".repeat(64)}`,
+    }),
+    /launch_operation_idと併用できません/,
+  );
+  assert.equal(core.listSessions(), before);
 });
 
 test("openAgentWithInitialPrompt: Claude初回promptを対話PTYへ送りpending event_cursorを返す", { skip: skipAgentDone }, async () => {

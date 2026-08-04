@@ -509,6 +509,11 @@ function registerAgentTool(
       description: desc,
       inputSchema: {
         prompt: z.string().nullish().describe("起動時に渡す初手プロンプト（任意）。送信後は待たずに即返る"),
+        throughline_source_session: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("同一端末のThroughline sessionから所有権を変えずに記憶を読み、promptのmissionより前へ注入する"),
         model: z.string().nullish().describe(agentModelDesc(kind)),
         // grok/composer の effort は対話 TUI で無効（headless 専用）＝core 側が起動前に明示エラーで拒否。
         // codex は CLI 側の値集合が版で変わるため縛らない（core 側も同方針）。
@@ -533,10 +538,11 @@ function registerAgentTool(
         ...writeScopeOutputSchema,
       },
     },
-    async ({ prompt, model, reasoning_effort, cwd, session_name, launch_operation_id, write_scope }: any) => {
+    async ({ prompt, throughline_source_session, model, reasoning_effort, cwd, session_name, launch_operation_id, write_scope }: any) => {
       try {
         const [sid, hint, eventCursor, submitResidue] = await core.openAgentWithInitialPrompt(kind, {
           prompt: prompt ?? undefined,
+          throughline_source_session,
           model: model ?? undefined,
           reasoning_effort: reasoning_effort ?? undefined,
           cwd: cwd ?? undefined,

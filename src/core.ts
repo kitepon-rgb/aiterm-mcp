@@ -4234,6 +4234,77 @@ function isUsableExecutableFile(candidate: string): boolean {
   }
 }
 
+const THROUGHLINE_HANDOFF_CONTEXT_SCHEMA = "throughline.handoff_context.v1";
+const PORTABLE_FORK_MISSION_SEPARATOR = "\n\n---\n\n## Portable fork mission\n\n";
+
+function resolveThroughlineBin(): string | null {
+  const fromEnv = process.env.THROUGHLINE_BIN;
+  if (fromEnv) return isUsableExecutableFile(fromEnv) ? fromEnv : null;
+  const resolved = spawnSync(isWin ? "where" : "which", ["throughline"], {
+    encoding: "utf8",
+  }).stdout?.split(/\r?\n/).find(Boolean) ?? null;
+  return resolved && isUsableExecutableFile(resolved) ? resolved : null;
+}
+
+function runThroughlineHandoffContext(bin: string, sessionId: string) {
+  if (isWin && /\.(?:cmd|bat)$/i.test(bin)) {
+    const ps1 = path.join(path.dirname(bin), `${path.basename(bin, path.extname(bin))}.ps1`);
+    if (fs.existsSync(ps1)) {
+      return spawnSync("powershell.exe", [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        ps1,
+        "handoff-context",
+        "--session",
+        sessionId,
+        "--json",
+      ], { encoding: "utf8" });
+    }
+  }
+  return spawnSync(bin, ["handoff-context", "--session", sessionId, "--json"], {
+    encoding: "utf8",
+  });
+}
+
+export function composePortableForkPrompt(context: string, mission: string): string {
+  return context + PORTABLE_FORK_MISSION_SEPARATOR + mission;
+}
+
+function portableForkPrompt(sourceSessionId: string, mission: string): string {
+  const bin = resolveThroughlineBin();
+  if (!bin) {
+    throw new AitermError("Throughline CLIが見つかりません。portable forkのsessionは作成していません", 2);
+  }
+  const result = runThroughlineHandoffContext(bin, sourceSessionId);
+  if (result.error || result.status !== 0) {
+    throw new AitermError("Throughline handoff-contextの取得に失敗しました。portable forkのsessionは作成していません", 2);
+  }
+
+  let value: unknown;
+  try {
+    value = JSON.parse(result.stdout ?? "");
+  } catch {
+    value = null;
+  }
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    (value as { schema?: unknown }).schema !== THROUGHLINE_HANDOFF_CONTEXT_SCHEMA ||
+    (value as { status?: unknown }).status !== "ready" ||
+    (value as { sessionId?: unknown }).sessionId !== sourceSessionId ||
+    typeof (value as { context?: unknown }).context !== "string" ||
+    !(value as { context: string }).context.trim()
+  ) {
+    throw new AitermError("Throughline handoff-contextの応答が不正です。portable forkのsessionは作成していません", 2);
+  }
+  return composePortableForkPrompt((value as { context: string }).context, mission);
+}
+
 /** vendor CLI の存在だけを安全に要約する。認証状態・実行出力・解決先 path は返さない。 */
 export function vendorLauncherDiagnostic(kind: AgentKind): DiagnosticStatus {
   try {
@@ -4640,9 +4711,23 @@ export async function openAgentWithInitialPrompt(
     ready_timeout?: number | null;
     launch_operation_id?: string | null;
     write_scope?: string;
+    throughline_source_session?: string | null;
   } = {},
 ): Promise<[string, string, number | null, boolean | null]> {
-  const prompt = opts.prompt ?? null;
+  const mission = opts.prompt ?? null;
+  const sourceSessionId = opts.throughline_source_session ?? null;
+  if (sourceSessionId !== null && !sourceSessionId.length) {
+    throw new AitermError("throughline_source_sessionが空文字です", 2);
+  }
+  if (sourceSessionId !== null && (mission === null || !mission.trim())) {
+    throw new AitermError("throughline_source_session指定時はpromptにmissionが必要です", 2);
+  }
+  if (sourceSessionId !== null && opts.launch_operation_id != null) {
+    throw new AitermError("throughline_source_sessionはlaunch_operation_idと併用できません", 2);
+  }
+  const prompt = sourceSessionId === null
+    ? mission
+    : portableForkPrompt(sourceSessionId, mission as string);
   if (opts.launch_operation_id != null && prompt !== null) {
     throw new AitermError("launch_operation_idはpromptなしのClaude相関launchだけで指定できます", 2);
   }
