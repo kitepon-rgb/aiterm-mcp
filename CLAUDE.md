@@ -6,7 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > 指定時だけローカルの`throughline handoff-context --session <id> --json`をPTY作成前に呼び、
 > 読み取り専用contextを新ミッションの前へそのまま注入する。元sessionのDB所属は変更しない。
 > `prompt`必須、`launch_operation_id`併用不可、Throughline不在／不正／空はfallbackせず失敗する。
-> 省略時は従来どおりclean launch。設計と受入条件は`docs/26-throughline-portable-fork-plan.md`。
+> 省略時は従来どおりclean launch。335/335回帰、main CI `30919026450`、tag CI `30919295270`、
+> Registry workflow `30919622861`、npm／GitHub Release／Official Registry／global install、
+> Codex source→Claude targetの実smokeまで完了。設計は`docs/26-throughline-portable-fork-plan.md`、
+> 公開受入はADR 0027、工程正本はLattice `throughline-portable-fork`。
 
 > **v0.22.0（2026-08-04）**: 4つのagent launcherを通常project／user環境の完全共有へ移行。
 > `HOME`、vendor home、project/user/local設定、MCP、plugin、skill、permission、trust、memory、historyを

@@ -8,6 +8,11 @@ vendor session を作り、Throughline の DB 所有権や通常 handoff を変�
 
 実行 ToDo、依存、状態、完了証拠の正本は Lattice plan `throughline-portable-fork` とする。
 
+## 完了
+
+2026-08-04にv0.23.0として実装・公開・global install・代表cross-vendor smokeまで完了した。
+公開受入の正本は[ADR 0027](adr/0027-release-0.23.0-acceptance.md)とする。
+
 ## 契約
 
 - `throughline_source_session` を省略した launcher は現行の clean 起動を完全に維持する。

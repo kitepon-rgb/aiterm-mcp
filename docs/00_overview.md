@@ -10,6 +10,7 @@
 - [../README.md](../README.md) / [../README.ja.md](../README.ja.md) - 公開APIと利用者向け現行契約。
 - [01_design-plan.md](01_design-plan.md) - PTYモデルと現行設計。v0.22.0項より後ろのmanaged記述は明示された履歴。
 - [adr/0025-shared-agent-environment-and-lineage.md](adr/0025-shared-agent-environment-and-lineage.md) - 通常project／user環境共有、sub-agent自己認識、委譲lineageの現行Decision。
+- [adr/0027-release-0.23.0-acceptance.md](adr/0027-release-0.23.0-acceptance.md) - v0.23.0 portable forkの公開・install・cross-vendor live smoke受入記録。
 - [adr/0026-release-0.22.0-acceptance.md](adr/0026-release-0.22.0-acceptance.md) - v0.22.0の公開・install・live smoke受入記録。
 - [PROMOTION.md](PROMOTION.md) - 現行公開状態と配布運用。
 

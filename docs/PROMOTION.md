@@ -13,20 +13,22 @@ output) is already committed — these steps activate it.
 
 ## Status (live)
 
+> **v0.23.0公開完了（2026-08-04）**: 4つのagent launcherへ任意の
+> `throughline_source_session`を追加。Throughlineの読み取り専用handoff contextを元DBのsession所属を
+> 変えずに新ミッションへ前置きし、別vendorのclean sessionへportable forkできる。
+
+- ✅ final full regression 335/335、MCPB validate、Codex source→Claude targetの代表live smoke。
+- ✅ release commit `7d92048e09b9afca6532c71769c3a3b36d527024`、main CI `30919026450`、
+  tag CI `30919295270` success。
+- ✅ npm provenance 0.23.0、GitHub Release＋MCPB、Registry workflow `30919622861` success。
+- ✅ Official Registry 0.23.0 active/latest。global install 0.23.0とThroughline 0.9.0で、
+  source marker、mission marker、DB ownership不変、clean launch、session残骸0を確認。
+
+現行の完全公開済みchainはv0.23.0。設計は[portable fork plan](26-throughline-portable-fork-plan.md)、
+公開receiptは[ADR 0027](adr/0027-release-0.23.0-acceptance.md)を正とする。
+
 > **v0.22.0公開完了（2026-08-04）**: 4つのagent launcherを通常project／user環境の完全共有へ移行し、
-> aiterm所有範囲を完了相関stateへ限定した。子へsub-agent自己認識、親session、delegation depth／lineage、
-> `delegation_allowed=true`を注入し、孫以降の再委譲は許可する。Grok/Composerは通常sessionの
-> `mcp_init_completed`後までpromptを送らない。
-
-- ✅ final full regression 329/329、4vendor depth 1、Claude nested depth 2 live smoke。
-- ✅ release commit `90e2b1265ac5c9269e31ae9b65799c596df63ca2`、main CI `30880757338`、
-  tag CI `30880912526` success。
-- ✅ npm provenance 0.22.0、GitHub Release、Registry workflow `30880912702` success。
-- ✅ Official Registry 0.22.0 active/latest。npm registry由来隔離installとglobal installで
-  3 bins、13 tools、4 launcher共有契約、stderr 0、global実Claude smokeを確認。
-
-現行の完全公開済みchainはv0.22.0。設計は[ADR 0025](adr/0025-shared-agent-environment-and-lineage.md)、
-公開receiptは[ADR 0026](adr/0026-release-0.22.0-acceptance.md)を正とする。
+> aiterm所有範囲を完了相関stateへ限定した。受入は[ADR 0026](adr/0026-release-0.22.0-acceptance.md)。
 
 > **v0.21.3公開完了（2026-08-03）**: Codex完了正本をStop hookからroot rollout
 > transcriptの`task_complete.turn_id`へ移し、hook `exit 127`で`aiterm-wait`とtranscript回収が

@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Codex型TUI後送経路とGrok型argv経路で、contextがmissionより前へ一度だけ入ることをfocused testで固定。
   外部Throughlineのmissing／nonzero／invalid schema／empty contextと、clean launch非依存も回帰した。
   最終full regressionは335/335 green。
+- main CI `30919026450`、tag CI `30919295270`とnpm provenance publish、GitHub Release＋MCPB、
+  Registry workflow `30919622861`がsuccess。Official Registry 0.23.0はactive/latestで、global install済み。
+- Codex source memoryをClaudeへportable forkする代表live smokeで、source marker `creates: true`と
+  mission marker `MISSION_OK`を同じ回答から回収。前後のDB ownershipは完全一致し、session残骸0。
 
 ## [0.22.0] - 2026-08-04
 
