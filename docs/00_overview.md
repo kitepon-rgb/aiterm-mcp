@@ -35,6 +35,7 @@
 - [adr/0023-release-0.21.3-acceptance.md](adr/0023-release-0.21.3-acceptance.md) - v0.21.3のmain／tag CI、npm provenance、GitHub Release、Official Registry、隔離／global installを固定した公開受入記録。
 - [adr/0024-managed-claude-user-mcp-inheritance.md](adr/0024-managed-claude-user-mcp-inheritance.md) - managed Claudeが通常hookを隔離したまま、user scopeの`mcpServers`だけをlaunch snapshotで継承する決定。
 - [adr/0025-shared-agent-environment-and-lineage.md](adr/0025-shared-agent-environment-and-lineage.md) - 4つのagent launcherを通常project／user環境へ戻し、sub-agent自己認識と委譲lineageだけをlaunchへ加算する決定。
+- [adr/0026-release-0.22.0-acceptance.md](adr/0026-release-0.22.0-acceptance.md) - v0.22.0のmain／tag CI、npm provenance、Registry、global install、4vendor／nested live smokeを固定した公開受入記録。
 - [25-shared-agent-environment-characterization.md](25-shared-agent-environment-characterization.md) - 3 CLIの通常環境、追加instruction、共有home上の完了相関を実測した実装前記録。
 
 ## 運用メモ

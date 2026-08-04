@@ -8,7 +8,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > launch相関ID、完了event/cursor、bounded result、cleanup metadataだけを所有する。子へ
 > `role=subagent`、親session、delegation depth、lineage、`delegation_allowed=true`を非user instructionと
 > 環境変数で注入する。再委譲は禁止せず固定depth capも設けない。4vendor depth 1とClaude nested depth 2の
-> live smokeを通過。DecisionはADR 0025、工程正本はLattice `shared-agent-environment`。
+> live smokeを通過。公開commit `90e2b1265ac5c9269e31ae9b65799c596df63ca2`、main CI `30880757338`、
+> tag CI `30880912526`、Registry workflow `30880912702`はsuccess。npm provenance、GitHub Release、
+> Official Registry active/latest、registry版global installと実Claude smokeまで完了。DecisionはADR 0025、
+> 公開受入はADR 0026、工程正本はLattice `shared-agent-environment`。
 
 > **v0.21.4（2026-08-04）**: managed Claudeのhook隔離がuser scope MCPまで落としていた欠陥を修理。
 > `~/.claude.json`のtop-level `mcpServers`だけをlaunch単位のowner-only configへsnapshotし、Claude CLIの

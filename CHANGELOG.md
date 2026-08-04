@@ -31,7 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   再委譲可を回収。Claude親がaitermの`claude_agent`を1回使うnested smokeで、孫のdepth 2と伸びた
   lineageを実回収し、親子session残骸ゼロを確認。
 - focused ready-gate回帰と関連testを追加。最終full regressionは329/329 green。公開package、CI／Registry
-  receiptはリリース完了時にADR 0026へ固定する。
+  receiptはADR 0026へ固定。main CI `30880757338`、tag CI `30880912526`、npm provenance、GitHub Release、
+  Registry workflow `30880912702`がsuccess。npm registry由来の隔離installは0.22.0、3 bins、13 tools、
+  stderr 0で、4 launcherすべての共有契約文言を確認。この端末のglobal installをregistry版へ更新し、
+  global installed coreから実Claudeのsub-agent/depth 1/lineageを回収してdone。
 
 ## [0.21.4] - 2026-08-04
 

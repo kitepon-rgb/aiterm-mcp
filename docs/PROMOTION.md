@@ -13,6 +13,21 @@ output) is already committed — these steps activate it.
 
 ## Status (live)
 
+> **v0.22.0公開完了（2026-08-04）**: 4つのagent launcherを通常project／user環境の完全共有へ移行し、
+> aiterm所有範囲を完了相関stateへ限定した。子へsub-agent自己認識、親session、delegation depth／lineage、
+> `delegation_allowed=true`を注入し、孫以降の再委譲は許可する。Grok/Composerは通常sessionの
+> `mcp_init_completed`後までpromptを送らない。
+
+- ✅ final full regression 329/329、4vendor depth 1、Claude nested depth 2 live smoke。
+- ✅ release commit `90e2b1265ac5c9269e31ae9b65799c596df63ca2`、main CI `30880757338`、
+  tag CI `30880912526` success。
+- ✅ npm provenance 0.22.0、GitHub Release、Registry workflow `30880912702` success。
+- ✅ Official Registry 0.22.0 active/latest。npm registry由来隔離installとglobal installで
+  3 bins、13 tools、4 launcher共有契約、stderr 0、global実Claude smokeを確認。
+
+現行の完全公開済みchainはv0.22.0。設計は[ADR 0025](adr/0025-shared-agent-environment-and-lineage.md)、
+公開receiptは[ADR 0026](adr/0026-release-0.22.0-acceptance.md)を正とする。
+
 > **v0.21.3公開完了（2026-08-03）**: Codex完了正本をStop hookからroot rollout
 > transcriptの`task_complete.turn_id`へ移し、hook `exit 127`で`aiterm-wait`とtranscript回収が
 > 同時に永久待ちになる単一障害点を除去したpatch release。未使用のCodex hook実装も配布物から撤去し、
@@ -40,14 +55,14 @@ Release gates:
 - ✅ npm由来の隔離installとこの端末のglobal installを0.21.3へ更新。3 bins、13 tools、stderr 0、
   Codexの5引数完全例、廃止Codex hook非同梱を実配布物で確認。
 
-最新の完全公開済みchainはv0.21.3。v0.21.0はnpm-only、v0.21.1／v0.21.2はpublish前に
+v0.21.3は直前の完全公開chain。v0.21.0はnpm-only、v0.21.1／v0.21.2はpublish前に
 tag CIが停止した履歴として保持し、tag移動や後付け成功を捏造しない。公開receiptは
 [ADR 0023](adr/0023-release-0.21.3-acceptance.md)へ固定した。
 
 Previously verified public surfaces:
 
-- ✅ **npm `0.21.3` is latest** — SLSA provenance v1、13-file tarball、integrity／shasumを公開APIで確認済み。
-- ✅ **Official MCP Registry** — `io.github.kitepon-rgb/aiterm-mcp` 0.21.3 is active and latest.
+- ✅ **npm `0.22.0` is latest** — provenance、integrity／shasumを公開APIで確認済み。
+- ✅ **Official MCP Registry** — `io.github.kitepon-rgb/aiterm-mcp` 0.22.0 is active and latest.
 - ⚠️ **mcp.so** — the existing listing was claimed through GitHub on 2026-07-26.
   Do not submit a duplicate. Its editor currently discards submitted changes
   (a fresh reload restores the stale 6-tool content), so the update remains blocked.
