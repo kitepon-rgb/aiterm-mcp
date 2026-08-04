@@ -13,6 +13,12 @@ vendor session を作り、Throughline の DB 所有権や通常 handoff を変�
 2026-08-04にv0.23.0として実装・公開・global install・代表cross-vendor smokeまで完了した。
 公開受入の正本は[ADR 0027](adr/0027-release-0.23.0-acceptance.md)とする。
 
+公開後のオーナー指示によりLatticeの終端ToDoを再openし、現行ドキュメント全域を再監査した。
+README／CLAUDE／設計索引は既に契約と一致していたため維持し、作業者入口、contributor guide、
+security policy、CHANGELOG、本計画に残っていた周辺説明をv0.23.0へ同期する。履歴ADR、archive、
+evidence、RAG sourceは当時の不変証拠として書き換えない。変更Markdownの相対リンク監査と
+`core-agent`／MCP smokeのfocused test 113/113を通過した。
+
 ## 契約
 
 - `throughline_source_session` を省略した launcher は現行の clean 起動を完全に維持する。

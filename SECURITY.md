@@ -6,8 +6,8 @@ aiterm-mcp is published from a single `0.x` line on npm. Security fixes land on 
 
 | Version | Supported |
 | --- | --- |
-| Latest `0.x` (currently `0.3.x`) | Yes — fixes released here |
-| Older `0.x` (`0.1.x`, `0.2.x`) | No — upgrade to the latest |
+| Latest published `0.x` | Yes — fixes released here |
+| Any older `0.x` | No — upgrade to the latest |
 
 If you are pinned to an older version, upgrade (`npm i -g aiterm-mcp@latest`, or just `npx -y aiterm-mcp`, which always fetches the latest) before reporting an issue, in case it is already fixed.
 
@@ -48,6 +48,16 @@ Consequences for operators:
 - Only connect MCP clients / models you trust to drive a shell on that account.
 - Sessions are tmux-backed and **persist across MCP-server and client restarts** (the tmux daemon keeps running). A session opened earlier is still live and drivable later. Use `pty_list` to see them and `pty_close` (or `tmux -S … kill-server`) to remove them.
 - Sessions live on a **shared tmux socket**, so a human can `attach` to the same pane (the `pty_open` return value prints the exact command). This is intended co-driving, but it also means anyone with access to that socket / the host user can observe and drive the session.
+
+### Portable fork context becomes launcher input
+
+When `throughline_source_session` is supplied, aiterm asks the locally installed
+Throughline CLI for that session's read-only handoff context and prepends it to
+the new mission before launching the selected vendor CLI. Aiterm does not copy
+or reassign the source database rows and does not add network transport, but the
+returned memory becomes input to the launched agent and is therefore subject to
+that vendor CLI's normal processing and retention behavior. Omit the field when
+that transfer is not intended.
 
 ### The destructive-command gate is a TRIPWIRE, not a sandbox
 

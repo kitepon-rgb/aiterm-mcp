@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Codex／Claudeの入口、日英README、設計索引、運用文書、旧plan／ADRをv0.22.0の共有agent環境契約へ同期。
   旧managed home／設定snapshotの本文は歴史的証拠として保持しつつ、現行契約ではない文書をADR 0025による
   superseded／historicalとして明示した。runtime、package version、公開成果物に変更はない。
+- v0.23.0 portable forkの公開後全域監査を行い、`AGENTS.md`、contributor guide、security policy、
+  docs索引、Lattice計画を`throughline_source_session`とread-only DB所有境界へ同期した。README、
+  CLAUDE、ADR 0027、PROMOTIONは既に一致していたため内容を維持し、履歴ADR／archive／evidence／RAGは
+  当時の証拠として改稿していない。
 
 ## [0.23.0] - 2026-08-04
 

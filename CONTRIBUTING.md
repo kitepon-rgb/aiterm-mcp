@@ -9,6 +9,7 @@ Thanks for your interest. aiterm-mcp is a small, focused project: a stdio MCP se
   - **macOS**: stock macOS ships no tmux. Install it with `brew install tmux`. If you run aiterm from a **GUI-launched** MCP client, Homebrew's bin (`/opt/homebrew/bin` on Apple Silicon, `/usr/local/bin` on Intel) may be off `PATH`; `resolveTmux()` in `src/core.ts` auto-searches those, or set **`AITERM_TMUX=/path/to/tmux`** to point at it explicitly.
   - **Linux / WSL2**: `sudo apt install tmux`.
   - **Native Windows**: there is no native tmux. aiterm bridges every tmux call through WSL (`wsl.exe -e tmux`), so you need [WSL](https://learn.microsoft.com/windows/wsl/) installed with **tmux inside the distro** (`sudo apt install tmux`; verify with `wsl tmux -V`). CI does not exercise the Windows bridge — it is validated manually — so test Windows changes on a real machine.
+- **Throughline >= 0.9.0** is optional and needed only when testing a launcher with `throughline_source_session`. Ordinary clean launches and all PTY tools do not depend on Throughline.
 
 ## Local development
 
@@ -32,7 +33,7 @@ claude mcp add --scope user --transport stdio aiterm -- aiterm-mcp
 | File | Responsibility |
 | --- | --- |
 | `src/index.ts` | The MCP surface — exposes 13 tools over stdio via `@modelcontextprotocol/sdk` + `zod`: 6 PTY tools, 4 agent launchers, `claude_turn`, `claude_approval`, and read-only `diagnostics`. |
-| `src/core.ts` | All the logic: tmux control, the `resolveTmux()` discovery layer, output reduction, completion detection, the destructive-command safety gate, managed-agent correlation and approval relay, session-name validation, and the WSL bridge. |
+| `src/core.ts` | All the logic: tmux control, the `resolveTmux()` discovery layer, output reduction, completion detection, the destructive-command safety gate, agent correlation and approval relay, optional Throughline context acquisition before PTY creation, session-name validation, and the WSL bridge. |
 | `src/rtk.ts` | Per-command output reducers (`git status`/`git log`/`grep`/`pytest` and more) — a self-contained reimplementation, no `rtk` binary required. |
 | `prototype/python/` | The original Python MVP. It is the **porting source / verification baseline** — reference only, the shipped artifact is the Node version. |
 
@@ -60,6 +61,7 @@ Tests skip gracefully when tmux is absent (they detect it via `tmux -V`, or `wsl
 - **No silent fallbacks.** When something can't be done, surface a clear error (the macOS work replaced an empty-stderr failure with an explicit "install tmux with brew" diagnostic). Don't paper over failures.
 - **Comments stay bilingual.** The codebase uses Japanese explanatory comments alongside the code (see `src/core.ts`). Match that style — explain the *why* and the non-obvious tradeoffs, in the same voice as the surrounding comments.
 - **Keep the PTY surface thin.** The project currently ships 13 tools — 6 PTY primitives, 4 agent launchers, `claude_turn`, `claude_approval`, and read-only `diagnostics`. SSH, containers, and REPLs are nested via `pty_send`, not added as tools — new session *kinds* reached by nesting are not new tools.
+- **Keep portable context behind Throughline's CLI boundary.** Do not read `~/.throughline/throughline.db` from aiterm. All four launchers share the same optional `throughline_source_session` path, and an external command failure must occur before PTY creation without falling back to a context-free launch.
 
 ## Pull requests
 

@@ -18,6 +18,7 @@ Claude Code 固有のツール名・人格・ワークフローは、Codex の�
 - セッション種別を増やす設計ではなく、SSH・docker・wsl・REPL は PTY 内へ送る通常テキストとして扱います。
 - エージェント起動ツールは例外的なブートストラップ層です。CLI バイナリ、`cwd`、`reasoning_effort` などを session 作成前に検証し、失敗時に残骸セッションを残さないことが重要です。
 - 4つのlauncherは直接CLI起動と同じ通常`HOME`、vendor home、project／user／local設定、MCP、plugin、skill、permission、trust、memory、historyを使います。aitermがlaunchごとに所有するのは完了相関stateだけで、子へ`role=subagent`、親session、delegation depth／lineage、`delegation_allowed=true`を加算します。孫以降の委譲は禁止しません。環境境界の正本はADR 0025です。
+- 4つのlauncherは任意の`throughline_source_session`を共有します。指定時だけローカルの`throughline >= 0.9.0`からread-only handoff contextをPTY作成前に取得し、必須の新ミッションへ前置きします。Throughline DBのsession所属は変更せず、失敗時はclean launchへfallbackしません。省略時の通常clean launchは不変です。正本は`docs/26-throughline-portable-fork-plan.md`とADR 0027です。
 
 ## 作業時の注意
 
