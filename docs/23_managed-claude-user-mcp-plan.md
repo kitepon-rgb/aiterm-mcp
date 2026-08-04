@@ -1,5 +1,11 @@
 # managed Claude user MCP継承・0.21.4公開計画
 
+> **Status: Superseded / historical.** 本計画はv0.21.4の受入記録として保持する。v0.22.0では
+> user MCPだけをsnapshotする方式、`--setting-sources ""`、通常hook／plugin／permissionの隔離を廃止し、
+> Claudeを含む4 launcherが通常project／user環境を直接使う。現行Decisionは
+> [ADR 0025](adr/0025-shared-agent-environment-and-lineage.md)、公開受入は
+> [ADR 0026](adr/0026-release-0.22.0-acceptance.md)。
+
 ## 目的
 
 Aitermのfresh managed Claude sessionが、通常Claude Codeへuser scopeで登録済みのMCP serverを

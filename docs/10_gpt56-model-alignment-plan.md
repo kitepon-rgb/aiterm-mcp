@@ -1,5 +1,10 @@
 # 10 — GPT-5.6 / Grok 4.5 世代へのモデル整合プラン（dotagents 再配線からの改修依頼）
 
+> **Status: Historical / completed.** 本文のmanaged `CODEX_HOME`、config snapshot、通常設定からの
+> 選択継承はv0.11.0時点の実装史であり、v0.22.0の環境境界ではない。現行4 launcherは通常homeと
+> project／user設定を直接使い、model／effortの明示引数だけをCLIへ加算する。正本は
+> [ADR 0025](adr/0025-shared-agent-environment-and-lineage.md)。
+
 <!-- 前提: Codex 0.144+（GPT-5.6 Sol/Terra/Luna）・grok CLI 0.2.87（grok-4.5 / grok-composer-2.5-fast）時点。
      依頼元: dotagents/docs/plan_gpt56-rewiring.md（2026-07-11）。モデル×エフォートの正典は dotagents/docs/02_models.md -->
 

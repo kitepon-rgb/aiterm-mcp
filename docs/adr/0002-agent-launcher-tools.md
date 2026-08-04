@@ -1,7 +1,9 @@
 # 0002. 対話エージェント起動ツール（Codex / Grok / Composer）
 
-> 2026-07-16追補: Claudeの追加契約は[ADR 0003](0003-claude-agent-launcher-contract.md)を正とする。
-> 本文の3 launcher／tool countはADR 0002採用時の履歴であり、現行sourceはagent launcher 4、全11 toolsである。
+> 2026-08-04 Status: launcherカテゴリと永続PTY契約は現行。本文の3 launcher／tool count、managed home、
+> fake `HOME`、設定snapshot／allowlistは採用時の履歴で、環境境界は[ADR 0025](0025-shared-agent-environment-and-lineage.md)が
+> 置換した。現行sourceはagent launcher 4、全13 tools。Claude追加契約は
+> [ADR 0003](0003-claude-agent-launcher-contract.md)を正とする。
 
 ## Context
 
@@ -33,7 +35,7 @@ ADR 0001 で「セッション種別（SSH / docker / REPL）ごとにツール�
 - ベンダー CLI の導入・認証はユーザー責任。未導入・未認証の環境では session 作成前に明示エラーになり、公開レジストリの他利用者を壊さない。
 - モデル固定はしない（codex は CLI の既定、grok/composer は core が固定モデル名を渡す）。将来モデル選択が要るなら `model` 引数を足す余地を残す。
 - 「ツールを絶対に増やさない」という以前の言い回しは設計原則ではなかった（撤回）。判断軸は「PTY プリミティブを薄く保ちつつ、ネストで届かない価値（前提検証つき起動）だけをツール化する」。
-- `agent_done:true` は通常の vendor hook file を書き換えない。launch ごとの managed home で Stop chain を aiterm が単独所有し、hook wrapper は secure state root へ JSONL event を追記する。Codex では `auth.json` と private copy の `config.toml` だけを持ち込み、通常 `~/.codex` のその他 entry は共有しない。Grok/Composer では `GROK_HOME` 全体共有を避ける。0.9.1当時のcredential/lock symlink共有は2026-07-14に廃止し、現在はhook/config/session隔離を維持したまま検証済み通常auth正本を`GROK_AUTH_PATH`でvendorへ渡す。
+- `agent_done:true` は通常の vendor hook file を書き換えない。launch ごとの managed home で Stop chain を aiterm が単独所有し、hook wrapper は secure state root へ JSONL event を追記する。Codex では `auth.json` と private copy の `config.toml` だけを持ち込み、通常 `~/.codex` のその他 entry は共有しない。Grok/Composer では `GROK_HOME` 全体共有を避ける。0.9.1当時のcredential/lock symlink共有は2026-07-14に廃止し、当時はhook/config/session隔離を維持したまま検証済み通常auth正本を`GROK_AUTH_PATH`でvendorへ渡した。
 - 2026-08-03以降、前項のStop chain所有はGrok/Composerに適用し、Codexはroot rolloutだけを完了正本にする。Codexの`event_cursor`はevent fileでなくtranscriptのbyte境界である。
 - 2026-07-14 改訂: Grok/Composer はcredential/lockもmanaged homeへ共有しない。隔離homeを維持したまま、検証済み通常auth正本を`GROK_AUTH_PATH`でvendorへ渡す。lock/atomic replace/copy-backはvendor責務である。
 - `pty_send(wait:"agent_done")` は普通PTY・`mark:true`・`rtk:true`・`enter:false` では送信前エラーにする。done はタスク成功ではなく turn 終了として表示する。

@@ -1,8 +1,10 @@
 # 12 — agent transcript 読取（B5: 長い TUI 回答の構造的回収）
 
-> **2026-08-03現行追補**: 本文の`pty_send(wait:"agent_done")`とCodex Stop event joinは実装当時の履歴。
-> 現行sendは非ブロックdispatchで、Codexはroot rollout transcriptの`task_complete.turn_id`を完了正本とし、
-> 同じturnのassistant `output_text`を回収する。Grok/ComposerとClaudeの回収契約は本文の後続追補どおり。
+> **2026-08-04現行追補（v0.22.0）**: 本文の`pty_send(wait:"agent_done")`、managed vendor home、
+> Codex Stop event joinは実装当時の履歴。現行sendは非ブロックdispatchで、Codexは通常`CODEX_HOME`の
+> root rollout、Grok/Composerは通常`GROK_HOME`のsession historyを読む。Claudeは通常settingsへ加算した
+> launch固有Stop hookのbounded resultを使いprivate transcriptを読まない。通常config／historyはcopy・filter・
+> cleanupせず、環境境界は[ADR 0025](adr/0025-shared-agent-environment-and-lineage.md)を正とする。
 
 <!-- 前提: Fable 級統括（2026-07-11 時点）。docs/11 の確定指摘 B5 の設計正本＝実装 TODO を兼ねる -->
 
@@ -12,11 +14,13 @@
 
 ## 方針
 
-各 vendor CLI は managed home 配下に**構造化された session transcript（JSONL）**を書く。aiterm は `vendor_session_id` と `cwd` を metadata に持つので、transcript パスを導出して**直近ターンの最終 assistant メッセージを平文で返す** read 経路を足す。新ツールは足さない（agent_done と同じく既存ツールに opt-in を1個）。
+各 vendor CLI はvendor home配下に**構造化された session transcript（JSONL）**を書く。v0.22.0では
+その通常homeを直接使い、aitermは`vendor_session_id`、`cwd`、launch markerから自分が起動したroot sessionだけを
+束縛して**直近ターンの最終assistantメッセージを平文で返す**。新ツールは足さず、既存readへopt-inを1個加える。
 
 ## 実測した transcript 構造（2026-07-11・実起動で採取）
 
-### Codex（managed `CODEX_HOME`）
+### Codex（実測時はmanaged、現行は通常`CODEX_HOME`）
 - パス: `<codex_home>/sessions/YYYY/MM/DD/rollout-<ISO時刻>-<vendor_session_id>.jsonl`
   （`vendor_session_id` はファイル名末尾に入る＝session 単位で一意特定できる）
 - 最終回答レコード（いずれかを使う。両方確認済み）:
@@ -26,7 +30,7 @@
   `event_msg.payload.type="task_complete"`の`turn_id`が一致する。現行実装はStop eventを使わず、この
   vendor-owned completion recordで完了と最終回答を同じturnへ帰属する。
 
-### Grok / Composer（managed `GROK_HOME`・同一構造）
+### Grok / Composer（実測時はmanaged、現行は通常`GROK_HOME`・同一構造）
 - パス: `<grok_home>/sessions/<URLエンコード cwd>/<vendor_session_id>/chat_history.jsonl`
   - cwd の URL エンコードは `/` → `%2F`（実測: `%2FUsers%2Fkite%2FDeveloper%2Faiterm-mcp`）。`encodeURIComponent(cwd)` 相当。
 - 各行: `{"type":"system|user|reasoning|assistant","content":...}`

@@ -18,7 +18,7 @@
 
 > **Let your AI orchestrate other AIs.** From any MCP client, one call spawns a coding agent (Claude, Codex, Grok, or Composer) inside a persistent terminal and hands you a session to drive: read what it's doing token-reduced, send it the next instruction.
 >
-> **What it is:** one persistent MCP terminal your AI drives — and can launch other coding agents into. `ssh`, `docker exec`, a REPL, or another agent's TUI all nest inside that one terminal as just text you send in. The mechanism is deliberately plain — your MCP client drives the other agent's terminal turn by turn: no hidden protocol, no shared memory, no autonomous negotiation.
+> **What it is:** one persistent MCP terminal your AI drives — and can launch other coding agents into. `ssh`, `docker exec`, a REPL, or another agent's TUI all nest inside that one terminal as just text you send in. The mechanism is deliberately plain — your MCP client drives the other agent's terminal turn by turn: no hidden protocol, no separate aiterm-owned shared-memory layer, no autonomous negotiation. Launched agents still read the normal project and vendor memory/configuration that a direct CLI launch would use.
 >
 > **No human at a tmux required.** aiterm is driven programmatically over MCP, so an AI can launch and drive another agent with no one sitting in the terminal — from an orchestration loop, a CI step, or a cron job.
 >

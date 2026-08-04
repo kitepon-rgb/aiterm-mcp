@@ -4,7 +4,10 @@
 
 ## Status
 
-Accepted。実装gateはgreen。queue 19eの実managed Claude再検証はlive Hの受入れとして別に残す。
+Accepted。連続pollによるready安定化契約は現行。queue 19eの実managed Claude再検証は当時のlive H履歴。
+2026-08-04以降、launcherは通常project／user環境を使い、ready gateの環境前提は
+[ADR 0025](0025-shared-agent-environment-and-lineage.md)が置換する。Grok/Composerには通常sessionの
+`mcp_init_completed` gateも加わる。
 
 ## Context
 

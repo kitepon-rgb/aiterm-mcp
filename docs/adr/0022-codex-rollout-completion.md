@@ -1,7 +1,12 @@
 # ADR 0022: Codex完了正本をroot rollout transcriptへ置く
 
 - 日付: 2026-08-03
-- 状態: Accepted
+- 状態: Accepted。`task_complete.turn_id`による完了・回答帰属は現行。
+
+2026-08-04追補: managed `CODEX_HOME`は障害調査時とv0.21.3実装の履歴。v0.22.0は通常`CODEX_HOME`を
+直接使い、launch marker、vendor session ID、dispatch前byte cursorで自分のroot rolloutだけを束縛する。
+通常config、AGENTS、MCP、plugin、skill、trust、historyは置換しない。環境境界は
+[ADR 0025](0025-shared-agent-environment-and-lineage.md)を正とする。
 
 ## Context
 
@@ -18,7 +23,7 @@ hook失敗より先に永続化されていた。1つのroot TUI sessionで複�
 
 ## Decision
 
-Codexの完了正本は、managed `CODEX_HOME`のroot rollout transcriptにある
+Codexの完了正本は、vendor `CODEX_HOME`のroot rollout transcriptにある
 `task_complete.turn_id`だけとする。
 
 - Codex managed homeへ完了検出用Stop hookを生成しない。

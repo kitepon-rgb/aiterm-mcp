@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- Codex／Claudeの入口、日英README、設計索引、運用文書、旧plan／ADRをv0.22.0の共有agent環境契約へ同期。
+  旧managed home／設定snapshotの本文は歴史的証拠として保持しつつ、現行契約ではない文書をADR 0025による
+  superseded／historicalとして明示した。runtime、package version、公開成果物に変更はない。
+
 ## [0.22.0] - 2026-08-04
 
 ### Changed
@@ -891,7 +897,9 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.21.3...HEAD
+[Unreleased]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.21.4...v0.22.0
+[0.21.4]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.21.3...v0.21.4
 [0.21.3]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.21.2...v0.21.3
 [0.21.2]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.21.1...v0.21.2
 [0.21.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/b8c4dbc...v0.21.1

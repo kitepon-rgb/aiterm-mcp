@@ -1,5 +1,12 @@
 # 0024. managed Claudeはuser scope MCPだけを明示継承する
 
+## Status
+
+Superseded by [ADR 0025](0025-shared-agent-environment-and-lineage.md) — 2026-08-04。
+本文はv0.21.4の歴史的Decisionとして保持する。現行Claude launcherはuser MCPだけをsnapshotせず、通常
+`HOME`と`user,project,local` settings、MCP、plugin、skill、permission、trustを直接使い、完了相関用
+Stop hook settingsだけを加算する。
+
 ## Context
 
 ADR 0003は`--setting-sources ""`とlaunch専用`--settings`により、通常の

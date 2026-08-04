@@ -1,5 +1,11 @@
 # 0003. Claude対話エージェント起動契約
 
+## Status
+
+Partially superseded by [ADR 0025](0025-shared-agent-environment-and-lineage.md) — 2026-08-04。
+永続Claude TUI、PTY操作、完了相関、bounded resultの契約は現行。launch専用settingsで通常
+user／project／local settingsを隔離する部分だけを廃止し、現行は通常settingsへ完了相関用Stop hookを加算する。
+
 ## Context
 
 ADR 0002はCodex／Grok／Composerの対話TUIをAiterm所有の永続PTYへ起動し、同じsessionを

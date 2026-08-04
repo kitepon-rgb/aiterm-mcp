@@ -1,11 +1,13 @@
 # Claude対話エージェント追加計画
 
-> **現行API追補（2026-08-03）**: 本文の`pty_send(wait:"agent_done")`はv0.15以前の実装史。
+> **現行API追補（2026-08-04・v0.22.0）**: 本文の`pty_send(wait:"agent_done")`はv0.15以前、
+> managed settings／user MCP snapshot／通常settings隔離はv0.21.4以前の実装史。
 > v0.16以降のagent sendは非ブロックdispatchで`event_cursor`を返し、完了通知は別processの
 > `aiterm-wait --cursor`、回答回収は`pty_read(agent_transcript:true)`または`claude_turn recover`が担う。
-> Claudeのmanaged Stop hook／bounded result／operation相関自体は現行のまま。
-> v0.21.4以降は通常hook隔離を維持しつつ、`~/.claude.json`のuser scope `mcpServers`だけを
-> launch専用0600 configへsnapshotして`--mcp-config`で継承する。正本はADR 0024。
+> Claudeは通常`HOME`と`user,project,local` settingsを直接読み、aitermは完了相関用Stop hook settingsだけを
+> 加算する。通常hook／MCP／plugin／skill／permission／trustをsnapshot・filter・置換しない。bounded result、
+> operation相関、`claude_turn`、`claude_approval`は現行。環境境界の正本は
+> [ADR 0025](adr/0025-shared-agent-environment-and-lineage.md)。以下のTODOは当時の完了記録として読む。
 
 ## 目的
 

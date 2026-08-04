@@ -4,6 +4,10 @@
 
 Accepted — 2026-07-16
 
+2026-08-04追補: structured caller gateの受入は現行。本文の「managed Claude」は環境隔離を意味せず、
+v0.22.0では通常project／user環境で動く相関付きClaude sessionを指す。環境境界は
+[ADR 0025](0025-shared-agent-environment-and-lineage.md)を正とする。
+
 ## Decision
 
 [ADR 0008](0008-claude-operation-structured-caller-surface.md)の`claude_turn`公開契約を受け入れる。

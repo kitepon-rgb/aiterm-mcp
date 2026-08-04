@@ -4,6 +4,10 @@
 
 Accepted — 2026-07-16
 
+2026-08-04追補: operation ID、result、回収の相関契約は現行。`pty_send(wait:"agent_done")`と
+managed環境の記述は実装当時の履歴で、現行dispatch／環境境界はADR 0017と
+[ADR 0025](0025-shared-agent-environment-and-lineage.md)を正とする。
+
 ## Context
 
 ADR 0004で受け入れたfixture契約は、同一PTY sessionの直近Claude Stop結果を正確に回収できる。

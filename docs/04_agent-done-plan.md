@@ -1,8 +1,11 @@
 # AI CLI done 検知 設計・実装ノート
 
-> **現行状態（2026-08-03・v0.21.3）**: 直下の旧「更新日／状態」と本文中のCodex Stop hook、
-> `agent_done:true`、`wait:"agent_done"`は実装史であり現行仕様ではない。現行Codexの不変Decisionは
-> [ADR 0022](adr/0022-codex-rollout-completion.md)と次の2026-08-03追補を正とする。
+> **現行状態（2026-08-04・v0.22.0）**: 本文のmanaged home、fake `HOME`、設定snapshot、
+> `agent_done:true`、`wait:"agent_done"`、Codex Stop hookは実装史であり現行仕様ではない。4 launcherは
+> 通常project／user環境を共有し、aiterm固有の完了相関stateだけをlaunch単位で持つ。Codexは通常rollout、
+> Grok/Composerは通常session event、Claudeは通常settingsへ加算したlaunch固有Stop hookを完了正本にする。
+> 現行の環境境界は[ADR 0025](adr/0025-shared-agent-environment-and-lineage.md)、Codex完了は
+> [ADR 0022](adr/0022-codex-rollout-completion.md)を正とする。
 
 更新日: 2026-07-09
 状態: Codex/Grok/Composer の `*_agent(agent_done:true)` -> `pty_send(wait:"agent_done")` 実 smoke は成功。2026-07-07 の追加敵対的検証で、Grok の `GROK_HOME` 全体を aiterm 永続共有にする案は hook/config/session 汚染リスクが大きいため棄却し、per-launch isolated `GROK_HOME`を維持したままOAuth `auth.json`と`auth.json.lock`だけを通常Grok homeと共有する方針へ修正した（0.9.1当時）。2026-07-14にこのsymlink共有は廃止し、現在は検証済み通常auth正本を`GROK_AUTH_PATH`でvendorへ渡す。v0.9.1 で Codex managed `CODEX_HOME` は `auth.json` だけを symlink し、`config.toml` は private copy、その他の通常 `~/.codex` エントリは共有しない allowlist に修正した。`grok login` 後に Grok TUI・Composer TUI・通常 headless `grok -p` の並行 smoke も通過し、login 再要求なしを確認した。同一 cwd で Codex/Grok/Composer を並列起動しても event は混線せず、普通PTYの Python REPL smoke も通過。さらに 2026-07-07 に `node dist/index.js` を実起動し、JSON-RPC `tools/call` 経由で `codex_agent` / `grok_agent` / `composer_agent` + `pty_send(wait:"agent_done")` と普通PTY Python REPL が通ることを確認した。リリース前 smoke で「起動直後に送ると vendor TUI の入力受付前に文字が落ち、hook が来ず `agent_timeout` になる」ケースを再現したため、未 bind の初回 `pty_send(wait:"agent_done")` に vendor TUI ready gate を追加し、未 ready なら送信前エラーにする実装へ修正した。ready gate 実装後は明示的な `pty_read` ready 待ちなしの起動直後即送信 smoke も通過した。CI 系の agent_done 負系/race/security/schema テストは、古い event、初回 prompt done、TUI ready gate、同時 wait、即時 event、`launch_id`/`vendor_session_id` 不一致、bind 後の vendor_session_id 欠落、bind 前 vendor_session_id 混在、初回 prompt pending、partial/malformed/oversized JSONL、done 後 offset consume、wait file lock、wait 中 close/killAll 拒否、hook no-env、存在しない `XDG_RUNTIME_DIR` fallback、path injection、hard link 拒否、secure root、core cleanup root symlink no-follow、緩い state root での stale metadata cleanup、screen settle、MCP schema、managed home cleanup、release metadata version sync まで追加済み。`npm test` は 177/177 pass。

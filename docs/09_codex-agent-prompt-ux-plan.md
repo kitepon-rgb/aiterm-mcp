@@ -1,9 +1,11 @@
 # codex_agent prompt / agent_done UX hardening plan
 
-> **2026-08-03 superseded note**: この文書の`agent_done:true`、`wait:"agent_done"`、Codex Stop hook、
-> `agent_timeout`はv0.9〜v0.10当時の履歴であり、現行APIではない。現行launcherは常にmanaged、sendは
-> 非ブロックdispatch、完了通知は`aiterm-wait --cursor`で受ける。Codexの完了正本はroot rollout
-> transcriptの`task_complete.turn_id`であり、設計は[ADR 0022](adr/0022-codex-rollout-completion.md)を正とする。
+> **2026-08-04 superseded note**: この文書の`agent_done:true`、`wait:"agent_done"`、Codex Stop hook、
+> `agent_timeout`、managed `CODEX_HOME`はv0.9〜v0.10当時の履歴であり、現行APIではない。現行launcherは
+> 通常`CODEX_HOME`とproject／user環境を使い、sendは非ブロックdispatch、完了通知は
+> `aiterm-wait --cursor`で受ける。環境境界は[ADR 0025](adr/0025-shared-agent-environment-and-lineage.md)、
+> Codex完了は通常root rolloutの`task_complete.turn_id`を定めた
+> [ADR 0022](adr/0022-codex-rollout-completion.md)を正とする。
 
 Date: 2026-07-09
 Status: Historical implementation record; current completion contract is superseded as noted above

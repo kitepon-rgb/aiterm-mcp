@@ -1,5 +1,9 @@
 # エージェント共同作業環境の完全共有計画
 
+> **Status: Completed — 2026-08-04 / v0.22.0.** Lattice plan `shared-agent-environment`は全Phase受入済み。
+> 実装後の現行Decisionは[ADR 0025](adr/0025-shared-agent-environment-and-lineage.md)、公開・install・live smokeは
+> [ADR 0026](adr/0026-release-0.22.0-acceptance.md)を正とする。以下の「現状と問題」は着手時点の履歴。
+
 ## 目的
 
 `claude_agent`／`codex_agent`／`grok_agent`／`composer_agent`を、隔離された実行環境ではなく、

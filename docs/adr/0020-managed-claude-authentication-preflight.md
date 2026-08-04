@@ -4,8 +4,12 @@
 
 ## Status
 
-Accepted。関連test 99/99、release full regression 317/317と、独立Node/MCP相当processからの実Fable 3 process×2波
+Accepted。認証preflightとsession内`/login`／`/logout`拒否は現行。関連test 99/99、release full regression 317/317と、独立Node/MCP相当processからの実Fable 3 process×2波
 （計6 process）の同時・反復起動、done観測、exact result回収、closeまでgreen。
+
+2026-08-04追補: タイトルと本文の「managed」は当時のlauncher環境を示す歴史語。v0.22.0は通常の
+vendor credential／config storeをその場で使い、完了相関stateだけをaitermが所有する。認証契約は維持し、
+環境境界は[ADR 0025](0025-shared-agent-environment-and-lineage.md)を正とする。
 
 ## Context
 

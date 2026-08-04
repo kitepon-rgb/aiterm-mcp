@@ -1,5 +1,9 @@
 # 0006. Claude operation相関gate受入
 
+> 2026-08-04現行境界: 本文はoperation相関の歴史的gate evidenceとして有効。旧wait APIとmanaged環境は
+> 現行仕様ではなく、非ブロックdispatchと通常環境共有はADR 0017／
+> [ADR 0025](0025-shared-agent-environment-and-lineage.md)を正とする。
+
 ## Decision
 
 2026-07-16、[ADR 0005](0005-claude-operation-correlated-recovery.md)のfixture実装をqueue 19c3の

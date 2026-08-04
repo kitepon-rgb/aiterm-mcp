@@ -4,6 +4,10 @@
 
 Accepted — 2026-07-16
 
+2026-08-04追補: exact launch replayと後方互換field `managed_completion`は現行。後者は環境隔離ではなく
+「aitermの完了相関あり」を意味する。通常project／user環境を使う境界は
+[ADR 0025](0025-shared-agent-environment-and-lineage.md)を正とする。
+
 ## Context
 
 `claude_agent`は構造化session receiptを返すが、MCP応答が失われた時に同じlaunchが実行済みかを

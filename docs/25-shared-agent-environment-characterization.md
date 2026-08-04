@@ -1,5 +1,9 @@
 # agent launcher通常環境共有 characterization
 
+> **Status: Implemented and accepted.** この文書は実装前probeの不変記録で、選択した境界はv0.22.0へ実装済み。
+> 現行Decisionは[ADR 0025](adr/0025-shared-agent-environment-and-lineage.md)、公開後の実測は
+> [ADR 0026](adr/0026-release-0.22.0-acceptance.md)を正とする。
+
 実測日: 2026-08-04  
 対象: Claude Code 2.1.221、Codex CLI 0.146.0、Grok Build 0.2.117
 

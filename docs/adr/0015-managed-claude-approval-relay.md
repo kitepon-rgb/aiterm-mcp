@@ -2,7 +2,13 @@
 
 ## Status
 
-Accepted for implementation — 2026-07-19
+Accepted — approval relay contract remains current。
+
+2026-08-04追補: launch-local settingsで通常permission／hookを隔離するContextはADR採用時の履歴。
+v0.22.0では通常`user,project,local` settingsへ完了相関用Stop hookだけを加算するため、通常のMCP、plugin、
+skill、permission、trustも共有する。`claude_approval`のoperation／screen digest相関、単発
+`approve_once | deny`、恒久許可拒否は変更しない。環境境界は
+[ADR 0025](0025-shared-agent-environment-and-lineage.md)を正とする。
 
 ## Context
 

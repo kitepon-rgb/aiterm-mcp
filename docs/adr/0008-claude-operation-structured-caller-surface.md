@@ -4,6 +4,10 @@
 
 Accepted for implementation — 2026-07-16
 
+2026-08-04追補: `claude_turn`の構造化statusとrecovery契約は現行。本文の旧wait surfaceとmanaged環境は
+実装史で、現行の非ブロックdispatchと通常環境共有はADR 0017／
+[ADR 0025](0025-shared-agent-environment-and-lineage.md)を正とする。
+
 ## Context
 
 `pty_send(wait:"agent_done", operation_id:...)`と`pty_read(agent_transcript:true, operation_id:...)`は、
