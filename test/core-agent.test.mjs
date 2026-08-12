@@ -493,6 +493,55 @@ test("openAgent: codex の effort は縛らない（CLI 版差があるため送
   core.closeSession(sid);
 });
 
+test("agent_configure: Codexのmodel／effort選択肢を現在の/model画面から解決する", () => {
+  const screen = [
+    "  Select Model and Effort",
+    "  1. gpt-5.6-sol (default)     Latest frontier agentic coding model.",
+    "› 2. gpt-5.6-terra (current)  Balanced agentic coding model.",
+    "  3. gpt-5.6-luna             Fast agentic coding model.",
+    "",
+    "  Select Reasoning Level for gpt-5.6-terra",
+    "  1. Low               Fast responses",
+    "› 2. Medium (default)  Balanced reasoning",
+    "  3. High              Greater reasoning depth",
+    "  4. Extra high        Extra reasoning depth",
+    "  5. More reasoning…   Max and Ultra",
+  ].join("\n");
+  assert.deepEqual(core.__testCodexConfigureChoices(screen, "gpt-5.6-luna", "xhigh"), {
+    model: "3",
+    effort: "4",
+    more: "5",
+  });
+  const advanced = "  Advanced Reasoning\n› 1. Max  For difficult problems when quality matters more than speed";
+  assert.equal(core.__testCodexConfigureChoices(advanced, "missing", "max").effort, "1");
+});
+
+test("agent_configure: Claudeへ/modelと/effortを同じsessionのまま送る", { skip: skipAgentDone }, async () => {
+  const savedBin = process.env.CLAUDE_BIN;
+  const fakeBin = makeFakeClaudeTuiBin();
+  process.env.CLAUDE_BIN = fakeBin;
+  const [sid] = core.openAgent("claude", { agent_done: true });
+  try {
+    const result = await core.configureAgent(sid, { model: "opus", reasoning_effort: "high" });
+    assert.deepEqual(result, {
+      schema: "aiterm.agent-configure-result.v1",
+      session_id: sid,
+      provider: "claude",
+      model: "opus",
+      reasoning_effort: "high",
+    });
+    const out = await core.readOutput(sid, { full: true, raw: true });
+    assert.match(out, /\/model opus/);
+    assert.match(out, /\/effort high/);
+    assert.match(core.listSessions(), new RegExp(`(^|\\n)${sid}\\t`), "同じsessionが残る");
+  } finally {
+    core.closeSession(sid);
+    if (savedBin === undefined) delete process.env.CLAUDE_BIN;
+    else process.env.CLAUDE_BIN = savedBin;
+    fs.rmSync(fakeBin, { force: true });
+  }
+});
+
 test("openAgent: 実在しない cwd は session を作る前に拒否", () => {
   assert.throws(
     () => core.openAgent("codex", { cwd: "/no/such/dir-aiterm-agent-test" }),

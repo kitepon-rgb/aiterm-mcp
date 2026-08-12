@@ -10,7 +10,7 @@
     <circle cx="30" cy="30" r="7" fill="#ff5f56"/>
     <circle cx="54" cy="30" r="7" fill="#ffbd2e"/>
     <circle cx="78" cy="30" r="7" fill="#27c93f"/>
-    <text x="1088" y="37" fill="#6e7681" font-size="20" text-anchor="end">13 tools · npx -y aiterm-mcp</text>
+    <text x="1088" y="37" fill="#6e7681" font-size="20" text-anchor="end">14 tools · npx -y aiterm-mcp</text>
 
     <g font-size="26">
       <text x="32" y="100" fill="#c9d1d9">$ <tspan fill="#58a6ff">codex_agent</tspan>({ session_name: <tspan fill="#a5d6ff">"codex1"</tspan>,</text>

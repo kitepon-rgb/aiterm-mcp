@@ -4013,6 +4013,150 @@ export interface AgentDispatchReceipt {
   submit_residue: boolean | null;
 }
 
+export interface AgentConfigureResult {
+  schema: "aiterm.agent-configure-result.v1";
+  session_id: string;
+  provider: "claude" | "codex";
+  model: string | null;
+  reasoning_effort: string | null;
+}
+
+async function waitForScreenText(name: string, text: string, timeoutMs = 3_000): Promise<string> {
+  const deadline = performance.now() + timeoutMs;
+  do {
+    const screen = captureScreen(name, AGENT_TUI_READY_LINES);
+    if (screen.includes(text)) return screen;
+    await sleep(100);
+  } while (performance.now() < deadline);
+  throw new AitermError(`${agentLabel(loadAgentMetadata(name).kind)} の ${text} 画面を確認できません`, 2);
+}
+
+function sendMenuChoice(name: string, choice: string): void {
+  const sent = tmux("send-keys", "-t", name, choice);
+  if (sent.code !== 0) {
+    throw new AitermError(`agent設定の選択を送れませんでした: ${sent.stderr.trim() || `code=${sent.code}`}`, 2);
+  }
+}
+
+function codexModelChoice(screen: string, model: string): string | null {
+  for (const line of screen.slice(screen.lastIndexOf("Select Model and Effort")).split("\n")) {
+    const match = line.match(/^\s*(?:›\s*)?(\d+)\.\s+(\S+)/);
+    if (match?.[2] === model) return match[1];
+  }
+  return null;
+}
+
+function codexEffortChoice(screen: string, effort: string): string | null {
+  const labels: Record<string, RegExp> = {
+    low: /^Low\b/i,
+    medium: /^Medium\b/i,
+    high: /^High\b/i,
+    xhigh: /^Extra high\b/i,
+    max: /^Max\b/i,
+    ultra: /^Ultra\b/i,
+  };
+  const wanted = labels[effort.toLowerCase()];
+  if (!wanted) return null;
+  for (const line of screen.split("\n")) {
+    const match = line.match(/^\s*(?:›\s*)?(\d+)\.\s+(.+?)\s{2,}/);
+    if (match && wanted.test(match[2])) return match[1];
+  }
+  return null;
+}
+
+function codexMoreReasoningChoice(screen: string): string | null {
+  for (const line of screen.split("\n")) {
+    const match = line.match(/^\s*(?:›\s*)?(\d+)\.\s+More reasoning/);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+/** 同じ対話sessionを保ったまま、vendor標準の操作でmodel／effortを変更する。 */
+export async function configureAgent(
+  name: string,
+  opts: { model?: string | null; reasoning_effort?: string | null },
+): Promise<AgentConfigureResult> {
+  assertSessionName(name);
+  const model = opts.model?.trim() || null;
+  const effort = opts.reasoning_effort?.trim() || null;
+  if (!model && !effort) throw new AitermError("model または reasoning_effort を指定してください", 2);
+  const meta = loadAgentMetadata(name);
+  if (meta.kind !== "claude" && meta.kind !== "codex") {
+    throw new AitermError("agent_configure はClaudeとCodexのsessionだけに対応します", 2);
+  }
+  bindCompletedInitialPrompt(meta);
+  const ready = await waitAgentTuiReady(name, meta, AGENT_TUI_READY_TIMEOUT_MS);
+  if (!ready.ready) throw new AitermError(`agent session '${name}' は入力待ちではありません`, 2);
+
+  if (meta.kind === "claude") {
+    if (model) {
+      await sendAgentPromptText(name, `/model ${model}`);
+      const modelReady = await waitAgentTuiReady(name, meta, AGENT_TUI_READY_TIMEOUT_MS);
+      if (!modelReady.ready) throw new AitermError(`Claudeのmodel変更完了を確認できません`, 2);
+    }
+    if (effort) {
+      await sendAgentPromptText(name, `/effort ${effort}`);
+      const effortReady = await waitAgentTuiReady(name, meta, AGENT_TUI_READY_TIMEOUT_MS);
+      if (!effortReady.ready) throw new AitermError(`Claudeのeffort変更完了を確認できません`, 2);
+    }
+    return {
+      schema: "aiterm.agent-configure-result.v1",
+      session_id: name,
+      provider: "claude",
+      model,
+      reasoning_effort: effort,
+    };
+  }
+
+  await sendAgentPromptText(name, "/model");
+  const modelScreen = await waitForScreenText(name, "Select Model and Effort");
+  if (model) {
+    const choice = codexModelChoice(modelScreen, model);
+    if (!choice) throw new AitermError(`Codexの/modelに ${model} がありません`, 2);
+    sendMenuChoice(name, choice);
+  } else {
+    sendMenuChoice(name, "Enter");
+  }
+
+  let effortScreen = await waitForScreenText(name, "Select Reasoning Level");
+  if (effort) {
+    let choice = codexEffortChoice(effortScreen, effort);
+    if (!choice && (effort === "max" || effort === "ultra")) {
+      const more = codexMoreReasoningChoice(effortScreen);
+      if (more) {
+        sendMenuChoice(name, more);
+        effortScreen = await waitForScreenText(name, "Advanced Reasoning");
+        choice = codexEffortChoice(effortScreen, effort);
+      }
+    }
+    if (!choice) throw new AitermError(`Codexの/modelに reasoning_effort=${effort} がありません`, 2);
+    sendMenuChoice(name, choice);
+  } else {
+    sendMenuChoice(name, "Enter");
+  }
+  await waitForScreenText(name, "Model changed to");
+  return {
+    schema: "aiterm.agent-configure-result.v1",
+    session_id: name,
+    provider: "codex",
+    model,
+    reasoning_effort: effort,
+  };
+}
+
+export function __testCodexConfigureChoices(screen: string, model: string, effort: string): {
+  model: string | null;
+  effort: string | null;
+  more: string | null;
+} {
+  return {
+    model: codexModelChoice(screen, model),
+    effort: codexEffortChoice(screen, effort),
+    more: codexMoreReasoningChoice(screen),
+  };
+}
+
 // v0.16.0: 親をブロックする wait 経路は廃止した。send は ready gate と submit 分離を内蔵した
 // dispatch として即返り、event_cursor（送信直前のvendor完了正本境界）を receipt で返す。
 // 完了通知は aiterm-wait（--cursor で境界を渡す）、回収は pty_read / claude_turn recover が担う。

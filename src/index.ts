@@ -448,6 +448,38 @@ server.registerTool(
   },
 );
 
+server.registerTool(
+  "agent_configure",
+  {
+    description:
+      "起動済みのCodex／Claude agent sessionを再起動せず、会話contextを保ったままmodel／reasoning effortを変更する。" +
+      "ClaudeはCLI標準の/model・/effort、CodexはCLI標準の/model選択画面を使う。",
+    inputSchema: {
+      session_id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+      model: z.string().min(1).nullish().describe("変更後のmodel。省略時はmodelを変更しない"),
+      reasoning_effort: z.string().min(1).nullish().describe("変更後のreasoning effort。省略時はeffortを変更しない"),
+    },
+    outputSchema: {
+      schema: z.literal("aiterm.agent-configure-result.v1"),
+      session_id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+      provider: z.enum(["claude", "codex"]),
+      model: z.string().nullable(),
+      reasoning_effort: z.string().nullable(),
+    },
+  },
+  async ({ session_id, model, reasoning_effort }) => {
+    try {
+      const result = await core.configureAgent(session_id, { model, reasoning_effort });
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(result) }],
+        structuredContent: { ...result },
+      };
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
 // 対話型エージェント起動ツール（モデルごとに1つ＝ツール名/説明でどのモデルか一目で分かる）。
 // いずれも永続端末に TUI を起動し session_id を返す。以後 pty_read/pty_send で対話操作する。
 const agentModelDesc = (kind: "claude" | "codex" | "grok" | "composer") =>

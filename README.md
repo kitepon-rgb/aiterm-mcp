@@ -94,7 +94,7 @@ toolchain behind kitepon.dev's products.
 
 **Measured, not claimed:** in the recorded 203-test benchmark, a `pty_read` puts **~7.1× fewer tokens** in your context than the raw log — and the pass/fail verdict survives the fold. → [When to reach for it vs. the built-in shell](#when-to-reach-for-it-vs-the-built-in-shell)
 
-Thirteen tools: six **PTY tools** — `pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list` — to open, drive, and read one persistent terminal, four **agent launchers** — `claude_agent` / `codex_agent` / `grok_agent` / `composer_agent` — that each start another coding agent's TUI inside a fresh one, `claude_turn` for durable structured issue/recovery, `claude_approval` for correlated Claude approval prompts, and `diagnostics` for safe factory readiness. The backend is **tmux**, so sessions survive even if the MCP server or the AI client restarts.
+Fourteen tools: six **PTY tools** — `pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list` — to open, drive, and read one persistent terminal, four **agent launchers** — `claude_agent` / `codex_agent` / `grok_agent` / `composer_agent` — that each start another coding agent's TUI inside a fresh one, `agent_configure` to change a running Codex/Claude session's model and effort without restarting it, `claude_turn` for durable structured issue/recovery, `claude_approval` for correlated Claude approval prompts, and `diagnostics` for safe factory readiness. The backend is **tmux**, so sessions survive even if the MCP server or the AI client restarts.
 
 **v0.23.0 adds a local, cross-vendor portable fork.** Pass `throughline_source_session`
 with a mission in `prompt` to any launcher, and aiterm asks the locally installed Throughline
@@ -263,7 +263,7 @@ The only edits to the captures above are the two `⋮` lines (a long head/tail r
 Restart Claude Code, then verify the connection:
 
 ```bash
-/mcp        # aiterm should show as connected, exposing 13 tools
+/mcp        # aiterm should show as connected, exposing 14 tools
 ```
 
 Your first session — four calls, one persistent terminal:
@@ -304,7 +304,7 @@ The terminal is real and shared, so a human *can* jump in ([A human can watch](#
 
 ```mermaid
 flowchart LR
-    AI["AI / MCP client<br/>(the orchestrator)"] -->|"pty_send · claude_agent · claude_turn · claude_approval · codex_agent<br/>grok_agent · composer_agent · diagnostics"| S["aiterm-mcp<br/>stdio MCP · 13 tools"]
+    AI["AI / MCP client<br/>(the orchestrator)"] -->|"pty_send · agent_configure · claude_agent · claude_turn · claude_approval · codex_agent<br/>grok_agent · composer_agent · diagnostics"| S["aiterm-mcp<br/>stdio MCP · 14 tools"]
     S -->|"pty_read<br/>token-reduced"| AI
     S -->|"tmux send-keys<br/>capture-pane"| P["persistent PTYs<br/>tmux · survive restarts"]
     P -->|"ssh · docker · repl"| R["nested<br/>remote · container · REPL"]
@@ -387,6 +387,7 @@ On top of that sits a productized layer a raw tmux bridge doesn't have: **token-
 | `pty_key` | Send a control key | `session_id`, `key` (`C-c`/`Enter`/`Up`…) |
 | `pty_close` | Close idempotently; return `closed` / `already_closed` | `session_id` |
 | `pty_list` | List sessions (agent rows carry `agent=<kind>` metadata) | (none) |
+| `agent_configure` | Change model/effort in a running Codex or Claude session without restarting it | `session_id`, `model?`, `reasoning_effort?` |
 | `claude_turn` | Issue (dispatch-only) or recover one correlated Claude operation | `action`, `session_id`, `operation_id`, `text?` |
 | `claude_approval` | Inspect or answer the current correlated Claude approval prompt | `action`, `session_id`, `operation_id?`, `approval_choice?`, `observed_prompt_digest?` |
 | `diagnostics` | Read-only factory readiness as machine-readable JSON | (none) |
@@ -402,6 +403,8 @@ Consumer flow is `aiterm-runtime-errors snapshot`, then `aiterm-runtime-errors a
 ### Interactive agent launchers
 
 Each launcher starts a specific vendor's interactive coding-agent TUI inside a fresh persistent PTY and returns its `session_id` — from there you drive it with plain `pty_read` / `pty_send`, exactly like any other session. One tool per model, so the tool name itself tells you which model you get. The TUI is a full-screen app, so read it with `pty_read({ screen: true })` for the rendered view.
+
+`agent_configure({ session_id, model?, reasoning_effort? })` changes a running Codex or Claude TUI through the vendor's standard controls, preserving the PTY and conversation context. Claude Code's native `/model` and `/effort` commands also save those choices as defaults for new Claude sessions.
 
 | Tool | Launches | Key args |
 | --- | --- | --- |

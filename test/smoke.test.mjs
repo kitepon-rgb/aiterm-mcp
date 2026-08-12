@@ -1,5 +1,5 @@
 // smoke: 実際に `node dist/index.js` を起動し、initialize + tools/list を stdin にパイプ。
-// 検証: stdout は改行区切り JSON-RPC のみ（診断混入なし）／13 ツールが公開されている。
+// 検証: stdout は改行区切り JSON-RPC のみ（診断混入なし）／14 ツールが公開されている。
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -25,7 +25,7 @@ test("smoke: 公開versionはpackage・lock・server manifestで一致する", (
   assert.equal(server.packages?.[0]?.version, PACKAGE.version);
 });
 
-test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 13 ツール公開", async () => {
+test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 14 ツール公開", async () => {
   const tmpdir = fs.mkdtempSync(path.join(os.tmpdir(), "aiterm-diagnostics-"));
   const child = spawn(process.execPath, [ENTRY], {
     stdio: ["pipe", "pipe", "pipe"],
@@ -77,6 +77,7 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 13 ツール公�
   assert.equal(responses.get(1)?.result?.serverInfo?.version, PACKAGE.version, "initialize version");
   const names = (toolsResp.result?.tools ?? []).map((t) => t.name).sort();
   assert.deepEqual(names, [
+    "agent_configure",
     "claude_agent",
     "claude_approval",
     "claude_turn",
@@ -172,6 +173,12 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 13 ツール公�
   assert.equal(claudeApproval.outputSchema.properties.schema.const, "aiterm.claude-approval-result.v1");
   assert.deepEqual(claudeApproval.outputSchema.properties.status.enum, ["approval_required", "submitted"]);
   assert.deepEqual(claudeApproval.outputSchema.properties.selected_choice.anyOf.flatMap((entry) => entry.enum ?? []), ["approve_once", "deny"]);
+  const agentConfigure = toolsResp.result.tools.find((t) => t.name === "agent_configure");
+  assert.equal(agentConfigure.inputSchema.properties.session_id.pattern, "^[A-Za-z0-9_-]{1,64}$");
+  assert.ok(agentConfigure.inputSchema.properties.model.anyOf.some((entry) => entry.type === "string"));
+  assert.ok(agentConfigure.inputSchema.properties.reasoning_effort.anyOf.some((entry) => entry.type === "string"));
+  assert.equal(agentConfigure.outputSchema.properties.schema.const, "aiterm.agent-configure-result.v1");
+  assert.deepEqual(agentConfigure.outputSchema.properties.provider.enum, ["claude", "codex"]);
   assert.equal(codexAgent.inputSchema.properties.agent_done, undefined, "v0.16: launcher は常に managed");
   assert.equal(codexAgent.inputSchema.properties.wait, undefined, "v0.16: 初回prompt waitは廃止");
   assert.equal(codexAgent.inputSchema.properties.timeout, undefined);

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `agent_configure`を追加。起動済みのCodex／Claude agent sessionへ各CLI標準のmodel／effort変更操作を送り、
+  PTYと会話contextを維持したまま設定を変更する。
+
+### Verification
+
+- Codex 0.147.0の実TUIでLuna low→Terra highを同一session内で確認。Claudeは標準`/model`・`/effort`の
+  実TUI挙動を確認し、Aiterm経路は対話fixtureで同一sessionへの2コマンド送信を固定した。
+
 ### Documentation
 
 - Codex／Claudeの入口、日英README、設計索引、運用文書、旧plan／ADRをv0.22.0の共有agent環境契約へ同期。
