@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- 長寿命Codex sessionで`OpenAI Codex`ヘッダが直近のcapture範囲外へ流れた後も、常駐する
+  model／effort footerと入力欄をCodex TUIのready表現として認識する。idleの実席を
+  `agent_configure`が「入力待ちではありません」と誤拒否していた欠陥を修理した。
+
 ## [0.24.0] - 2026-08-12
 
 ### Added

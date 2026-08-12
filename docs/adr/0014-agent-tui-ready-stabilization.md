@@ -24,6 +24,10 @@ transcript、Stop event、画面上のpromptがすべて0件のままready画面
 4. Claude専用sleepやcaller側retryにせず、Claude／Codex／Grok／Composer共通の初回ready gateへ適用する。
 5. follow-up、既にbind済みturn、通常PTY、公開schema、Stop相関、timeout recoveryは変更しない。
 
+2026-08-12追補: Codexの`OpenAI Codex` headerは長寿命sessionの直近capture範囲から正常に流出する。
+managed kindがCodexである前提のready判定は、headerまたは常駐model／effort footerと入力欄をfrontend根拠にする。
+caller側の画面再描画や再試行では補わない。
+
 ## Acceptance
 
 - pure testで単発ready、ready後の再初期化、必要連続数、timeoutを固定する。

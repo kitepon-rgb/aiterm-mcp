@@ -244,6 +244,21 @@ test("agent_done ready gate: busy 表示（esc to interrupt）中の Codex/Claud
   assert.equal(recovered.ready, true);
 });
 
+test("agent_done ready gate: ヘッダが画面外へ流れた長寿命Codexもfooterと入力欄でreadyになる", () => {
+  const longLivedCodex = [
+    "• bell さんへ指定どおりDMを送信し、マーカーを保持したまま待機します。",
+    "",
+    "› Write tests for @filename",
+    "",
+    "  gpt-5.6-terra high · ~/Developer/peertable",
+  ].join("\n");
+  assert.equal(core.__testIsAgentTuiReady("codex", longLivedCodex), true);
+  assert.equal(core.__testIsAgentTuiIdleReady("codex", longLivedCodex), true);
+  assert.equal(core.__testIsAgentTuiReady("codex", "› Write tests for @filename"), false);
+  assert.equal(core.__testIsAgentTuiReady("codex", "gpt-5.6-terra high · ~/Developer/peertable"), false);
+  assert.equal(core.__testIsAgentTuiIdleReady("codex", `${longLivedCodex}\n• Working (1s • esc to interrupt)`), false);
+});
+
 // ---------------------------------------------------------------- submit座礁観測（実被弾: 未submit promptがcomposerに2時間滞留）
 test("submit座礁観測: composer に送信 text の末尾が残存していれば residue=true", async () => {
   const text = "1. 既存 runtime event-store を読む\n2. byte-level fail closed を実装する";

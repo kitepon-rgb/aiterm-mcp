@@ -503,7 +503,7 @@ vendor CLI と認証が必要なので CI 必須にはしないが、採用前�
 - API互換: `raw` の意味を返り値 raw に流用しない。`wait:"auto"` はMVPで出さない。
 - `core.send`: async化せず、待機 wrapper を分ける。
 - screen settle: 連続一致だけでは古い安定画面を返し得る。minimum delay / log安定 / 不安定suffix / fake test を入れる。
-- TUI startup readiness: 起動直後に送ると vendor TUI がまだ入力受付状態でなく文字列を落とし得る。未 bind の初回 send は vendor-specific ready gate（Codex: `OpenAI Codex` + 入力欄、Grok/Composer: `Grok Build` + `❯`）を送信前に通す。
+- TUI startup readiness: 起動直後に送ると vendor TUI がまだ入力受付状態でなく文字列を落とし得る。未 bind の初回 send は vendor-specific ready gate（Codex: `OpenAI Codex` headerまたは長寿命画面のmodel／effort footer + 入力欄、Grok/Composer: `Grok Build` + `❯`）を送信前に通す。
 
 ## 8. リスクと対策
 
