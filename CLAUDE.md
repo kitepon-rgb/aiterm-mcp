@@ -10,6 +10,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > bakery queueの1.5秒を総待ち時間として測り、各pollの外部`ps`が自らqueueを遅らせたこと。
 > 0.24.2では同じ先頭ownerの無進捗時間だけを期限とし、通常pollは`kill(pid, 0)`で生存確認、
 > process-start identityはstall時にだけ照合する。失敗tagは動かさず、公開成果を0.24.2へ継承する。
+> 公開commit `9febb994370a270acd0d38a80be508318d481060`、main CI `31611936274`、
+> tag CI／Trusted Publishing `31612206338`、Registry workflow `31612570435`はsuccess。
+> npm latest、GitHub Release＋MCPB、Official Registry active/latest、registry由来global install 0.24.2、
+> 3 bins、14 tools、`agent_configure` schema、stderr 0、installed dist一致、長寿命Codex ready根治を確認済み。
 
 > **v0.24.0（2026-08-12）**: 起動中のCodex／Claudeを再起動せずmodel／effort変更する
 > `agent_configure`を追加。vendor標準操作だけを使い、PTY・vendor session・会話contextを維持する。

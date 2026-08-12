@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   20並行時の`ps`起動を258回から20回へ削減した。
 - focused 67/67、full regression 339/339、npm pack dry-run（13 files）、MCPB validate／packと
   staged MCPのversion 0.24.2／14 tools／`agent_configure` schema／stderr 0がgreen。
+- release commit `9febb994370a270acd0d38a80be508318d481060`のmain CI `31611936274`、
+  tag CI／Trusted Publishing `31612206338`、Official MCP Registry workflow `31612570435`がsuccess。
+  npm latest 0.24.2、GitHub Release＋MCPB、Registry active/latest、registry由来global install、
+  3 bins、14 tools、schema、stderr 0、installed dist一致、長寿命Codex ready根治を確認した。
 
 ## [0.24.1] - 2026-08-12
 

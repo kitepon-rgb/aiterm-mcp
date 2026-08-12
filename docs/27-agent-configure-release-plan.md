@@ -130,6 +130,23 @@ blockerがstallした時だけ行う。期限延長、retry、CI rerunで症状�
 - staged MCP: version 0.24.2、14 tools、`aiterm.agent-configure-result.v1` schema、stderr 0。
 - changed-doc links 12 files／84 links missing 0、6 manifest version一致、JSON、`git diff --check`がgreen。
 
+### v0.24.2 Result
+
+- release commit: `9febb994370a270acd0d38a80be508318d481060`（`origin/main`へpush・祖先確認済み）
+- CI: main `31611936274`、tag／Trusted Publishing `31612206338` success。Linux 18/20/22、
+  macOS 18/20/22、Windows 20/22とpublish jobがすべてgreen
+- npm: `aiterm-mcp@0.24.2` latest。integrity
+  `sha512-19WP/D98Vqpb5rgGRcZWsJ3xB3c/lbwzv1n2gtUWI33R7ulouVyQH9IYKY4DOLIHYfEdrfywonjBbodIVuzH4A==`、
+  shasum `b08f3167182790da19f18e29060866d0ed6a86e5`、SLSA provenanceあり
+- GitHub Release: `v0.24.2 — long-lived Codex readiness and queue progress`。MCPB 3,482,300 bytes、
+  SHA-256 `bd3fc9e53ba884e8e90fe1d7106114551b9d692cfc1ffba93759d0f62d0d3a63`
+- Official MCP Registry: workflow `31612570435` success。公開APIで
+  `io.github.kitepon-rgb/aiterm-mcp` 0.24.2は`active`かつ`isLatest:true`
+- install: npm registry由来global 0.24.2、3 bins、公開MCP version 0.24.2、14 tools、
+  `aiterm.agent-configure-result.v1` schema、stderr 0、installed `dist/*.js`とrelease commit buildが一致
+- installed root-fix smoke: headerなし＋model／effort footer＋入力欄はready／idle、promptだけ・footerだけ・
+  busy表示は不成立
+
 ### Rollback
 
 公開済みversionは削除・上書きしない。欠陥時は原因修正を新しいpatch versionとして公開する。

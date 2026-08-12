@@ -1,6 +1,6 @@
 # BugHub runtime error store plan
 
-Status: v0.12.3で初回修正公開済み。v0.24.2で高競合時のqueue期限意味論を根治（2026-08-13）
+Status: v0.12.3で初回修正公開済み。v0.24.2で高競合時のqueue期限意味論を根治・公開済み（2026-08-13）
 
 This plan is aiterm-mcp's implementation TODO for a product-owned local runtime
 error projection. MCP stdout remains JSON-RPC-only and the existing PTY/session
