@@ -13,6 +13,20 @@ output) is already committed — these steps activate it.
 
 ## Status (live)
 
+> **v0.24.0公開完了（2026-08-12）**: 起動中のCodex／Claudeを同じPTY・vendor session・会話contextの
+> ままmodel／reasoning effort変更する`agent_configure`を14番目のMCP toolとして追加。
+
+- ✅ Codex 0.147.0でLuna low→Terra high、Claude Code 2.1.228で
+  Sonnet low→Opus high→Sonnet lowを同一Aiterm session内で実測。Fableは未使用。
+- ✅ local full regression 337/337、MCPB validate／pack、npm pack dry-runがgreen。
+- ✅ release commit `764e83857c8c63416ca9da5311b73cac9364e490`、main CI `31587209848`、
+  tag CI／npm Trusted Publishing `31587248091` success。
+- ✅ npm latest 0.24.0、global install 0.24.0、3 bins、公開MCP version 0.24.0、14 tools、
+  `agent_configure` schema、stderr 0、installed distのrelease commit一致を確認。
+
+現行のnpm公開済みchainはv0.24.0。設計・公開receiptは
+[agent_configure release plan](27-agent-configure-release-plan.md)を正とする。
+
 > **v0.23.0公開完了（2026-08-04）**: 4つのagent launcherへ任意の
 > `throughline_source_session`を追加。Throughlineの読み取り専用handoff contextを元DBのsession所属を
 > 変えずに新ミッションへ前置きし、別vendorのclean sessionへportable forkできる。

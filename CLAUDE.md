@@ -6,7 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > `agent_configure`を追加。vendor標準操作だけを使い、PTY・vendor session・会話contextを維持する。
 > Codex 0.147.0でLuna low→Terra high、Claude Code 2.1.228で
 > Sonnet low→Opus high→Sonnet lowを同一Aiterm session内で実測。公開面は14 tools。
-> 設計・release受入条件は`docs/27-agent-configure-release-plan.md`を正とする。
+> main CI `31587209848`、tag CI／npm Trusted Publishing `31587248091`はsuccess。
+> npm latest、global install、公開MCPのversion 0.24.0／14 tools／`agent_configure` schema／stderr 0、
+> installed distとrelease commitのバイト一致まで確認。設計・release受入は
+> `docs/27-agent-configure-release-plan.md`を正とする。
 
 > **v0.23.0（2026-08-04）**: 4つのagent launcherへ任意の`throughline_source_session`を追加。
 > 指定時だけローカルの`throughline handoff-context --session <id> --json`をPTY作成前に呼び、

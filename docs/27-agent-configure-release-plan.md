@@ -41,3 +41,16 @@
 
 公開済みnpm versionは削除・上書きしない。欠陥時は`agent_configure`の実装・登録・文書を同じ単位でrevertし、
 修正版を新しいpatch versionとして公開する。
+
+## Result
+
+- release commit: `764e83857c8c63416ca9da5311b73cac9364e490`（`origin/main`へpush・祖先確認済み）
+- local gates: focused 3/3、full regression 337/337、MCPB validate／pack、npm pack dry-run、
+  changed-doc link、JSON、diff hygieneがgreen
+- live gates: Codex 0.147.0 Luna low→Terra high、Claude Code 2.1.228
+  Sonnet low→Opus high→Sonnet low。どちらも同一Aiterm session。Fable未使用
+- CI: main `31587209848`、tag／Trusted Publishing `31587248091` success
+- npm: `aiterm-mcp@0.24.0` latest。integrity
+  `sha512-nXkw9g+1ctHikMPryoonKA3Mh1+ZyXteQuRqA4rzQ930bYv3oCf1x9iTWWhiTO/TYuDOhwXd6iXPl9M6ro8M6g==`
+- install: global 0.24.0、3 bins、公開MCP version 0.24.0、14 tools、`agent_configure` schema、
+  stderr 0、installed `dist/*.js`とrelease commitのlocal distが全バイト一致

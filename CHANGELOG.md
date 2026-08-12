@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Codex 0.147.0の実TUIでLuna low→Terra highを同一session内で確認。
 - Claude Code 2.1.228をAitermの実PTYでSonnet low→Opus high→Sonnet lowへ変更し、同一sessionの
   画面表示と標準`/model`・`/effort`成功応答を確認。対話fixtureでも同一sessionへの2コマンド送信を固定した。
+- local full regression 337/337、MCPB validate／pack、npm pack dry-runがgreen。release commit
+  `764e83857c8c63416ca9da5311b73cac9364e490`のmain CI `31587209848`、tag CI／Trusted Publishing
+  `31587248091`はsuccess。npm latest 0.24.0、global install、公開MCPの14 tools／stderr 0、
+  installed distとrelease commitのバイト一致を確認した。
 
 ### Documentation
 
