@@ -28,6 +28,7 @@
 - [13_native-factory-diagnostics-plan.md](13_native-factory-diagnostics-plan.md) - factory 向け read-only diagnostics の公開契約・privacy 境界・検証 TODO。
 - [15_claude-agent-plan.md](15_claude-agent-plan.md) - 永続PTY上の対話型`claude_agent`、operation相関、構造化`claude_turn`、権限確認用`claude_approval`の設計史。旧settings隔離はADR 0025で置換済み。
 - [26-throughline-portable-fork-plan.md](26-throughline-portable-fork-plan.md) - Throughlineの読み取り専用handoff contextを4 launcherへ注入し、元DBのsession所属を変えずに別vendorへportable forkするv0.23.0の実装・受入計画。
+- [27-agent-configure-release-plan.md](27-agent-configure-release-plan.md) - 起動中Codex／Claudeのmodel・effort変更とv0.24.0公開受入。
 - [23_managed-claude-user-mcp-plan.md](23_managed-claude-user-mcp-plan.md) - v0.21.4の歴史的工程。環境境界はADR 0025で全面置換済み。
 - [24_shared-agent-environment-plan.md](24-shared-agent-environment-plan.md) - 4 launcherを通常CLIと同じ環境へ戻した完了済みLattice工程の判断正本。
 

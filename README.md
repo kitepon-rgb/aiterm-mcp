@@ -96,6 +96,10 @@ toolchain behind kitepon.dev's products.
 
 Fourteen tools: six **PTY tools** — `pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list` — to open, drive, and read one persistent terminal, four **agent launchers** — `claude_agent` / `codex_agent` / `grok_agent` / `composer_agent` — that each start another coding agent's TUI inside a fresh one, `agent_configure` to change a running Codex/Claude session's model and effort without restarting it, `claude_turn` for durable structured issue/recovery, `claude_approval` for correlated Claude approval prompts, and `diagnostics` for safe factory readiness. The backend is **tmux**, so sessions survive even if the MCP server or the AI client restarts.
 
+**v0.24.0 adds in-place agent configuration.** `agent_configure` uses each vendor's
+native controls to change the model and/or reasoning effort of a running Codex or Claude
+session while preserving its PTY, vendor session, and conversation context.
+
 **v0.23.0 adds a local, cross-vendor portable fork.** Pass `throughline_source_session`
 with a mission in `prompt` to any launcher, and aiterm asks the locally installed Throughline
 for that session's read-only handoff context before creating the PTY. The exact returned memory

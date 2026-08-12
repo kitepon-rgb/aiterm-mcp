@@ -96,6 +96,9 @@ host統合は、kitepon.devの製品開発を支える内部基盤
 
 14 ツール: 6 つの **PTY ツール**（`pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list`）で 1 本の永続端末を開き・操作し・読む。加えて 4 つの **エージェント起動ツール**（`claude_agent` / `codex_agent` / `grok_agent` / `composer_agent`）が別のコーディングエージェントの TUI を新しい端末の中に起動し、`agent_configure`が起動中のCodex／Claudeのmodel・effortを再起動なしで変更し、`claude_turn`がdurable caller向けの構造化issue／recoveryを、`claude_approval`が相関済みClaude承認UI中継を、`diagnostics`が安全なfactory readinessを返す。バックエンドは **tmux** なので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
 
+**v0.24.0では起動中agentの設定変更を追加。** `agent_configure`はvendor標準操作を使って、
+起動中のCodex／Claudeのmodelとreasoning effortを変更する。PTY、vendor session、会話contextは維持する。
+
 **v0.23.0では、ローカル完結の別vendor向けportable forkを追加した。** どのlauncherでも
 `throughline_source_session`と新しいミッションを`prompt`へ渡すと、PTY作成前にローカルの
 Throughlineから対象sessionの読み取り専用handoff contextを取得する。返された記憶はそのまま

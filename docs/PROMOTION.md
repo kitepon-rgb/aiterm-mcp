@@ -138,7 +138,7 @@ re-registers automatically.
 ## C. mcp.so
 
 The server is already listed. Do **not** submit it again. Sign in and update or
-refresh the existing entry so it reflects the current 13-tool surface and
+refresh the existing entry so it reflects the current 14-tool surface and
 completion model. The submission form requires a repository URL; the name is
 optional. The free route is queued review with random placement and nofollow;
 the paid route shown on 2026-07-26 was a one-time immediate/featured option.
@@ -259,7 +259,7 @@ on the SSH-persistence wedge, not "another tmux MCP".
 > token-reduced (per-command reducers for git/grep/pytest), and there's a
 > 4-layer completion detector so the AI knows when a command is actually done.
 >
-> Thirteen tools, no clone/build
+> Fourteen tools, no clone/build
 > (`npx -y aiterm-mcp`), works on Linux/WSL2/macOS and native Windows (via a WSL
 > tmux bridge). MIT.
 >
@@ -284,7 +284,7 @@ on the SSH-persistence wedge, not "another tmux MCP".
    every command after rides the same authenticated session. SSH, docker, REPLs
    are just text you send in, not separate tools.
 3. Reads come back token-reduced (git/grep/pytest reducers), with a 4-layer
-   "is the command done?" detector. `npx -y aiterm-mcp`, 13 tools, MIT,
+   "is the command done?" detector. `npx -y aiterm-mcp`, 14 tools, MIT,
    Linux/WSL2/macOS/Windows. [demo gif]
 4. Repo + one-line Claude Code install 👇 https://github.com/kitepon-rgb/aiterm-mcp
 

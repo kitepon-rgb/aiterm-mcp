@@ -2,7 +2,7 @@
 
 > 2026-08-04 Status: launcherカテゴリと永続PTY契約は現行。本文の3 launcher／tool count、managed home、
 > fake `HOME`、設定snapshot／allowlistは採用時の履歴で、環境境界は[ADR 0025](0025-shared-agent-environment-and-lineage.md)が
-> 置換した。現行sourceはagent launcher 4、全13 tools。Claude追加契約は
+> 置換した。現行sourceはagent launcher 4、起動中設定変更`agent_configure`、全14 tools。Claude追加契約は
 > [ADR 0003](0003-claude-agent-launcher-contract.md)を正とする。
 
 ## Context
