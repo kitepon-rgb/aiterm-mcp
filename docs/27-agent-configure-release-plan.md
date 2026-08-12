@@ -55,7 +55,7 @@
 - install: global 0.24.0、3 bins、公開MCP version 0.24.0、14 tools、`agent_configure` schema、
   stderr 0、installed `dist/*.js`とrelease commitのlocal distが全バイト一致
 
-## v0.24.1 root-cause patch
+## v0.24.1 root-cause patch attempt
 
 ### Cause and decision
 
@@ -88,4 +88,48 @@ caller側の再描画、再試行、agent再起動、独自状態は追加しな
 
 ### Rollback
 
-公開済み0.24.1は削除・上書きしない。欠陥時は原因修正を新しいpatch versionとして公開する。
+`v0.24.1` tagは削除・移動・再利用しない。tag CI `31610402851`はmacOS Node 20のruntime error store
+高競合試験で停止し、publish jobはskipされた。npm、GitHub Release、Official MCP Registryへ0.24.1は
+公開していない。長寿命Codex ready修正は0.24.2へ継承する。
+
+## v0.24.2 queue root-cause patch
+
+### Cause and decision
+
+v0.24.1のbakery queueは、固定1.5秒を「同じ先頭ownerが進まない時間」でなく、後順位ticketが待った
+総時間として測っていた。さらにmacOSでは全waiterが全pollでprocess start identity取得用の外部`ps`を
+起動し、20並行のfocused計測で258 processを発生させてqueue自身の進行を遅らせていた。tag CIでは
+20件中5件が期限を超えた。
+
+期限を同じ先頭ticketの無進捗時間として測り、正常な前任者がticketを解放するたび更新する。
+通常pollは`kill(pid, 0)`のprocess生存確認だけを行い、PID再利用を防ぐprocess start identity照合は
+blockerがstallした時だけ行う。期限延長、retry、CI rerunで症状を隠さない。
+
+### Acceptance
+
+1. 前任ticketが各900msで進み、総待ち時間が1.5秒を超えても成功する決定的regressionを固定する。
+2. 20 process同時観測を全件保持し、通常経路のmacOS `ps`起動をowner公開時の1回だけにする。
+3. dead owner回収、choosing gate、PID再利用照合、POSIX entry検証を維持する。
+4. focused test、full regression、MCPB validate／pack、npm pack dry-runをgreenにする。
+5. `v0.24.2`を`origin/main`の祖先からTrusted Publishingし、GitHub Release、Official MCP Registry、
+   registry由来global installを閉じる。
+
+### Focused root-cause result
+
+- 進行queue regressionは修正前に`runtime error store is busy`でred、修正後に1.86秒でgreen。
+- Node 20の20並行試験はgreen。wrapper計測した外部`ps`起動は258回から20回へ減少。
+- dead owner、20並行、進行queue、choosing gateの関連4 testはgreen。
+
+### Local release gate result
+
+- focused: runtime store全体、長寿命Codex ready負経路、14-tool MCP schema、release gateを含む67/67。
+- full regression: 339/339。
+- npm pack dry-run: 13 files、123,593 bytes、unpacked 419,549 bytes。
+- MCPB: validate／pack success、3,482,300 bytes、SHA-256
+  `6418222c9e2e9988e619db8ec9910e25b586168bac4499c03f8412107d51d0e3`。
+- staged MCP: version 0.24.2、14 tools、`aiterm.agent-configure-result.v1` schema、stderr 0。
+- changed-doc links 12 files／84 links missing 0、6 manifest version一致、JSON、`git diff --check`がgreen。
+
+### Rollback
+
+公開済みversionは削除・上書きしない。欠陥時は原因修正を新しいpatch versionとして公開する。

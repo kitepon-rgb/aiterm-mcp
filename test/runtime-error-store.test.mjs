@@ -328,6 +328,46 @@ test("20 process の同時観測をbakery ticket queueで全件保持する", {
   } finally { f.cleanup(); }
 });
 
+test("bakery queueの期限は総待ち時間でなく同じ先頭ownerの無進捗時間を測る", {
+  skip: process.platform === "win32" ? "process identity fixtureはPOSIX専用" : undefined,
+}, async () => {
+  const f = fixture();
+  let cleaner;
+  try {
+    f.store.record({ code: "AITERM.PTY_DEPENDENCY_UNAVAILABLE" });
+    const queue = `${f.storePath}.lock-queue`;
+    const value = spawnSync("ps", ["-o", "lstart=", "-p", String(process.pid)], { encoding: "utf8" }).stdout.trim();
+    const startId = `${f.platform}:${value}`;
+    const first = path.join(queue, `0000000000000001-${"1".repeat(32)}.ticket`);
+    const second = path.join(queue, `0000000000000002-${"2".repeat(32)}.ticket`);
+    fs.writeFileSync(first, `${JSON.stringify({ pid: process.pid, start_id: startId, token: "1".repeat(32) })}\n`, { mode: 0o600 });
+    fs.writeFileSync(second, `${JSON.stringify({ pid: process.pid, start_id: startId, token: "2".repeat(32) })}\n`, { mode: 0o600 });
+    const script = `
+      import fs from "node:fs";
+      const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+      console.log("ready");
+      sleep(900); fs.unlinkSync(${JSON.stringify(first)});
+      sleep(900); fs.unlinkSync(${JSON.stringify(second)});
+    `;
+    cleaner = spawn(process.execPath, ["--input-type=module", "-e", script], { stdio: ["ignore", "pipe", "ignore"] });
+    await new Promise((resolve, reject) => {
+      cleaner.stdout.once("data", resolve);
+      cleaner.once("error", reject);
+    });
+    let result;
+    let recordError;
+    try { result = f.store.record({ code: "AITERM.PERSISTENCE_WRITE_FAILED" }); }
+    catch (error) { recordError = error; }
+    const cleanerExit = await new Promise((resolve) => cleaner.once("exit", resolve));
+    if (recordError) throw recordError;
+    assert.equal(cleanerExit, 0);
+    assert.equal(result, true);
+  } finally {
+    if (cleaner?.exitCode === null) cleaner.kill("SIGKILL");
+    f.cleanup();
+  }
+});
+
 test("採番前choosing公開は後発ticketのcritical section入場を止める", {
   skip: process.platform === "win32" ? "process identity fixtureはPOSIX専用" : undefined,
 }, async () => {

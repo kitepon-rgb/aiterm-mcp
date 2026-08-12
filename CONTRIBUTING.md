@@ -34,6 +34,7 @@ claude mcp add --scope user --transport stdio aiterm -- aiterm-mcp
 | --- | --- |
 | `src/index.ts` | The MCP surface — exposes 14 tools over stdio via `@modelcontextprotocol/sdk` + `zod`: 6 PTY tools, 4 agent launchers, `agent_configure`, `claude_turn`, `claude_approval`, and read-only `diagnostics`. |
 | `src/core.ts` | All the logic: tmux control, the `resolveTmux()` discovery layer, output reduction, completion detection and vendor TUI readiness, the destructive-command safety gate, agent correlation and approval relay, optional Throughline context acquisition before PTY creation, session-name validation, and the WSL bridge. |
+| `src/runtime-error-store.ts` | Product-owned offline aggregate store and its bounded bakery queue. Queue deadlines measure one head owner's lack of progress; do not reintroduce total-wait timeouts or per-poll external process-identity commands. |
 | `src/rtk.ts` | Per-command output reducers (`git status`/`git log`/`grep`/`pytest` and more) — a self-contained reimplementation, no `rtk` binary required. |
 | `prototype/python/` | The original Python MVP. It is the **porting source / verification baseline** — reference only, the shipped artifact is the Node version. |
 
@@ -73,6 +74,10 @@ Tests skip gracefully when tmux is absent (they detect it via `tmux -V`, or `wsl
 For Codex readiness changes, test both startup screens (with the `OpenAI Codex` header) and
 long-lived screens where only the model/effort footer remains. A prompt alone or a footer alone
 must not identify a ready Codex TUI, and a busy indicator must still make the session non-idle.
+
+For runtime error store queue changes, preserve dead-owner/PID-reuse cleanup and the deterministic
+progressing-queue regression. A healthy predecessor advancing the queue must renew the stall budget;
+the timeout must not become a fixed cap on total backlog wait.
 
 Publishing to npm (`npm publish --provenance --access public`) is automated on `v*` tags via the `publish` CI job — contributors don't publish.
 

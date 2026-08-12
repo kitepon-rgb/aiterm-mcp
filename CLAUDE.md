@@ -2,11 +2,14 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **v0.24.1（2026-08-12）**: 長寿命Codexで起動時の`OpenAI Codex` headerが直近45行の
+> **v0.24.2（2026-08-13）**: 長寿命Codexで起動時の`OpenAI Codex` headerが直近45行の
 > capture範囲外へ流れると、idleでも`agent_configure`がreadyを誤拒否した欠陥を根治。
 > Codexの常駐model／effort footerと入力欄をfrontend根拠へ加え、caller側の再描画・再試行・再起動は
 > 追加していない。pure regressionとPeertable実席のLuna medium→Terra highで確認済み。
-> release candidateはfocused 43/43、full regression 338/338、npm pack、MCPB gateがgreen。
+> v0.24.1 tag CI `31610402851`はruntime error storeのmacOS高競合でpublish前に停止した。原因は
+> bakery queueの1.5秒を総待ち時間として測り、各pollの外部`ps`が自らqueueを遅らせたこと。
+> 0.24.2では同じ先頭ownerの無進捗時間だけを期限とし、通常pollは`kill(pid, 0)`で生存確認、
+> process-start identityはstall時にだけ照合する。失敗tagは動かさず、公開成果を0.24.2へ継承する。
 
 > **v0.24.0（2026-08-12）**: 起動中のCodex／Claudeを再起動せずmodel／effort変更する
 > `agent_configure`を追加。vendor標準操作だけを使い、PTY・vendor session・会話contextを維持する。

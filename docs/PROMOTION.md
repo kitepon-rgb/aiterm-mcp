@@ -13,14 +13,18 @@ output) is already committed — these steps activate it.
 
 ## Status (live)
 
-> **v0.24.1公開準備（2026-08-12）**: 長寿命Codexで起動時headerがcapture範囲外へ流れた後も、
+> **v0.24.2公開準備（2026-08-13）**: 長寿命Codexで起動時headerがcapture範囲外へ流れた後も、
 > 常駐model／effort footerと入力欄でreadyを識別する。idle実席への`agent_configure`誤拒否を、
 > caller側の再描画・再試行・再起動なしで根本修理するpatch。
 
 - ✅ pure regressionとPeertable実席のLuna medium→Terra highで根治を確認。
-- ✅ package／lock／server／MCPB manifestを0.24.1へ同期。focused 43/43、full 338/338、
-  npm pack dry-run、MCPB validate／pack、staged MCP smokeがgreen。
-- ⏳ main push、tag CI／Trusted Publishing、GitHub Release、Official Registry、global installを実行する。
+- ⚠️ v0.24.1 tag CI `31610402851`はmacOS Node 20のruntime store高競合で停止し、publishはskip。
+  tagは動かさず、総待ち時間をstallと誤認し全pollで外部`ps`を起動する原因を0.24.2で修理した。
+- ✅ 進行中queueの決定的red→green、20並行時の`ps` 258→20、関連4 test green。
+- ✅ focused 67/67、full 339/339、npm pack dry-run（13 files）、MCPB validate／pack、
+  staged MCP version 0.24.2／14 tools／schema／stderr 0、doc／manifest hygieneがgreen。
+- ⏳ main push、tag CI／Trusted Publishing、GitHub Release、Official Registry、
+  registry由来global installを実行する。
 
 > **v0.24.0公開完了（2026-08-12）**: 起動中のCodex／Claudeを同じPTY・vendor session・会話contextの
 > ままmodel／reasoning effort変更する`agent_configure`を14番目のMCP toolとして追加。
@@ -33,7 +37,7 @@ output) is already committed — these steps activate it.
 - ✅ npm latest 0.24.0、global install 0.24.0、3 bins、公開MCP version 0.24.0、14 tools、
   `agent_configure` schema、stderr 0、installed distのrelease commit一致を確認。
 
-現行のnpm公開済みchainはv0.24.0。設計・公開receiptは
+現行のnpm公開済みchainはv0.24.0。v0.24.1はtagged but unpublished。設計・公開receiptは
 [agent_configure release plan](27-agent-configure-release-plan.md)を正とする。
 
 > **v0.23.0公開完了（2026-08-04）**: 4つのagent launcherへ任意の

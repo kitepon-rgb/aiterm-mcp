@@ -491,10 +491,15 @@ export class RuntimeErrorStore {
       ticket = path.join(queue, ticketName);
       this.publishOwnerFile(ticket, owner);
       fs.unlinkSync(choosing);
-      const deadline = Date.now() + 1_500;
+      // 期限はqueue全体の総待ち時間ではなく、同じ先頭ownerが進まない時間を測る。
+      // 正常な前任者がticketを順に解放するたびに予算を更新し、長いqueueをbusyと誤認しない。
+      let deadline = Date.now() + 1_500;
+      let blockingTicket: string | null = null;
+      let choosingBlockers = new Set<string>();
       for (;;) {
         const names = fs.readdirSync(queue).sort();
         let hasLiveChoosing = false;
+        const liveChoosing = new Set<string>();
         for (const name of names.filter((candidate) => choosingPattern.test(candidate))) {
           const currentPath = path.join(queue, name);
           let current: { pid: number; start_id: string; token: string };
@@ -504,9 +509,14 @@ export class RuntimeErrorStore {
             throw error;
           }
           if (name !== `choosing-${current.token}.json`) throw new Error("runtime error choosing entry が不正です");
-          const identity = processStartIdentity(current.pid, this.platform, identityTimeoutMs);
-          const live = identity === current.start_id || (!identity && processExists(current.pid));
-          if (live) hasLiveChoosing = true;
+          // 通常待機ではkill(0)だけを使う。macOSのprocess start identityは外部psを起動するため、
+          // 全waiterが全pollで呼ぶとqueue自身が進めなくなる。PID再利用の照合はstall時だけ行う。
+          let live = processExists(current.pid);
+          if (live && Date.now() >= deadline) {
+            const identity = processStartIdentity(current.pid, this.platform, identityTimeoutMs);
+            live = identity === current.start_id || (!identity && processExists(current.pid));
+          }
+          if (live) { hasLiveChoosing = true; liveChoosing.add(name); }
           else {
             try { fs.unlinkSync(currentPath); } catch (error) {
               if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
@@ -514,10 +524,16 @@ export class RuntimeErrorStore {
           }
         }
         if (hasLiveChoosing) {
+          if (choosingBlockers.size === 0
+            || [...choosingBlockers].some((name) => !liveChoosing.has(name))) {
+            deadline = Date.now() + 1_500;
+          }
+          choosingBlockers = liveChoosing;
           if (Date.now() >= deadline) throw new Error("runtime error store is busy");
           Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
           continue;
         }
+        choosingBlockers = new Set();
         let firstLive: string | null = null;
         const ticketNames = fs.readdirSync(queue).sort();
         for (const name of ticketNames.filter((candidate) => ticketPattern.test(candidate))) {
@@ -529,8 +545,11 @@ export class RuntimeErrorStore {
             throw error;
           }
           if (!name.endsWith(`-${current.token}.ticket`)) throw new Error("runtime error lock ticket が不正です");
-          const identity = processStartIdentity(current.pid, this.platform, identityTimeoutMs);
-          const live = identity === current.start_id || (!identity && processExists(current.pid));
+          let live = processExists(current.pid);
+          if (live && name === blockingTicket && Date.now() >= deadline) {
+            const identity = processStartIdentity(current.pid, this.platform, identityTimeoutMs);
+            live = identity === current.start_id || (!identity && processExists(current.pid));
+          }
           if (!live) {
             try { fs.unlinkSync(currentPath); } catch (error) {
               if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
@@ -541,6 +560,10 @@ export class RuntimeErrorStore {
           break;
         }
         if (firstLive === ticketName) break;
+        if (firstLive !== blockingTicket) {
+          blockingTicket = firstLive;
+          deadline = Date.now() + 1_500;
+        }
         if (Date.now() >= deadline) throw new Error("runtime error store is busy");
         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
       }

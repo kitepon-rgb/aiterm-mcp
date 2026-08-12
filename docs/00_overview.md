@@ -1,7 +1,7 @@
 # aiterm-mcp docs overview
 
 現行挙動は、まず本索引の「現行正典」を読み、旧plan／旧ADRは各文書冒頭のstatusと追補に従って
-歴史的経緯として読む。長寿命Codexのready判定はv0.24.1追補を正とする。v0.23.0のportable fork／
+歴史的経緯として読む。長寿命Codexのready判定はv0.24.2へ継承した追補を正とする。v0.23.0のportable fork／
 v0.22.0の環境境界と矛盾するmanaged home、fake `HOME`、設定snapshotの記述は
 [ADR 0025](adr/0025-shared-agent-environment-and-lineage.md)が置換する。archive、release受入、evidence、RAG rawは
 当時の証拠なので現行文言へ書き換えない。
@@ -14,7 +14,8 @@ v0.22.0の環境境界と矛盾するmanaged home、fake `HOME`、設定snapshot
 - [../SECURITY.md](../SECURITY.md) - 最新0.xだけを支える公開方針と、PTY／launcher入力の運用境界。
 - [01_design-plan.md](01_design-plan.md) - PTYモデルと現行設計。v0.22.0項より後ろのmanaged記述は明示された履歴。
 - [adr/0014-agent-tui-ready-stabilization.md](adr/0014-agent-tui-ready-stabilization.md) - vendor TUI readyの連続安定化と、長寿命Codexのheader／footer識別契約。
-- [27-agent-configure-release-plan.md](27-agent-configure-release-plan.md) - `agent_configure`のv0.24.0公開受入と長寿命Codex ready根治版v0.24.1の公開工程。
+- [27-agent-configure-release-plan.md](27-agent-configure-release-plan.md) - `agent_configure`のv0.24.0公開受入、v0.24.1停止記録、長寿命Codex ready／runtime queue根治版v0.24.2の公開工程。
+- [BUGHUB_RUNTIME_ERROR_STORE_PLAN.md](BUGHUB_RUNTIME_ERROR_STORE_PLAN.md) - runtime error storeのprivacy／bakery queue契約とv0.24.2のprogress-based deadline根治。
 - [adr/0025-shared-agent-environment-and-lineage.md](adr/0025-shared-agent-environment-and-lineage.md) - 通常project／user環境共有、sub-agent自己認識、委譲lineageの現行Decision。
 - [adr/0027-release-0.23.0-acceptance.md](adr/0027-release-0.23.0-acceptance.md) - v0.23.0 portable forkの公開・install・cross-vendor live smoke受入記録。
 - [adr/0026-release-0.22.0-acceptance.md](adr/0026-release-0.22.0-acceptance.md) - v0.22.0の公開・install・live smoke受入記録。

@@ -1,6 +1,6 @@
 # BugHub runtime error store plan
 
-Status: fixed locally 2026-07-14; v0.12.3 release pending (v0.12.2 published 2026-07-13)
+Status: v0.12.3で初回修正公開済み。v0.24.2で高競合時のqueue期限意味論を根治（2026-08-13）
 
 This plan is aiterm-mcp's implementation TODO for a product-owned local runtime
 error projection. MCP stdout remains JSON-RPC-only and the existing PTY/session
@@ -34,12 +34,25 @@ state contract is unchanged.
   choosers to publish, preventing a late same-number ticket from inserting ahead
   of an active owner. Dead owners are removed only by their unique path, avoiding
   fixed-path reclaim ABA.
+- The queue budget bounds lack of progress by the same head owner, not total
+  time behind healthy predecessors. Normal polls use process liveness only;
+  process-start identity is revalidated when a blocker stalls, avoiding a
+  macOS `ps` subprocess storm while retaining PID-reuse cleanup.
 - POSIX owner/mode is rechecked on every read. Windows rebuilds and reads back a
   protected DACL containing only the current SID. Windows remains pure-tested.
 - A typed telemetry-owned error prevents a lower PTY dependency failure from
   being reclassified by a vendor owner or counted again during cleanup.
 
 ## TODO
+
+- [x] Root-cause the v0.24.1 tag-CI macOS Node 20 failure: a fixed 1.5-second
+      total-wait deadline rejected later tickets even while predecessors were
+      completing, and every waiter spawned `ps` on every poll (258 launches in
+      the 20-process reproducer), delaying the queue itself.
+- [x] Make the deadline a per-head stall budget, defer process-start identity
+      verification until a blocker stalls, and lock a deterministic 1.8-second
+      progressing-queue regression. The same 20-process case now launches
+      `ps` 20 times (once per owner publication), not 258.
 
 - [x] Root-cause the macOS high-contention failure: after a `readdir` snapshot,
       a validly unlinked queue entry can be observed with `nlink=0` at pre-open

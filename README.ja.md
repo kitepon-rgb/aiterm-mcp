@@ -96,7 +96,7 @@ host統合は、kitepon.devの製品開発を支える内部基盤
 
 14 ツール: 6 つの **PTY ツール**（`pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list`）で 1 本の永続端末を開き・操作し・読む。加えて 4 つの **エージェント起動ツール**（`claude_agent` / `codex_agent` / `grok_agent` / `composer_agent`）が別のコーディングエージェントの TUI を新しい端末の中に起動し、`agent_configure`が起動中のCodex／Claudeのmodel・effortを再起動なしで変更し、`claude_turn`がdurable caller向けの構造化issue／recoveryを、`claude_approval`が相関済みClaude承認UI中継を、`diagnostics`が安全なfactory readinessを返す。バックエンドは **tmux** なので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
 
-**v0.24.1では長寿命Codexでも設定変更を維持。** 起動時headerがcapture範囲外へ流れた後は、
+**v0.24.2では長寿命Codexでも設定変更を維持。** 起動時headerがcapture範囲外へ流れた後は、
 常駐するmodel／effort footerと入力欄でCodexを識別する。idle sessionをそのまま変更でき、
 caller側の画面再描画、再試行、agent再起動は不要。
 
@@ -381,7 +381,7 @@ aiterm は同じ核心の洞察——端末を出会いの場にする——を�
 
 `aiterm-runtime-errors snapshot` は dotagents factory adapter 向けに、製品所有のローカル snapshot を機械可読 JSON で返す。canonical dotagents factory-reporter config が schema-exact、host profile が実行 OS と一致し、`collection.enabled` が JSON boolean `true` の時だけ収集する。reporting field は schema 検証するが endpoint/credential file へ接続・読取せず network I/O も行わない。観測 API は core owner layer の固定3 code（PTY dependency・persistence・任意 vendor launcher）だけを受け、保存するのも固定 template と aggregate metadata（SHA-256 fingerprint、count、first/last、status、monotonic sequence）だけ。exception、stderr/stdout、stack、prompt、PTY/transcript/event body、path、任意 context は受け付けない。保存済み JSON も top/record exact・固定定義一致・fingerprint 再計算を通し、明示 DTO だけを返す。
 
-consumer は `aiterm-runtime-errors snapshot` を読み、durable ingestion 後に `aiterm-runtime-errors ack --cursor N` を呼ぶ。運用上の明示操作は `resolve|reopen --fingerprint SHA256`。MCP からの収集・diagnostic read は timeout 付き child process に隔離し、FIFOや停止 filesystem が端末本体を止めない。store mutation は期限付き bakery ticket queue で直列化する。各waiterは PID＋process start identity＋owner token を持つ再利用されない固有ticketを所有するため、死んだownerだけを固有名で除去でき、固定path回収のABAを作らない。POSIX state は `$XDG_STATE_HOME/aiterm-mcp/`（既定 `~/.local/state/aiterm-mcp/`）へ atomic replacement で置き、every read で owner/mode を再検証する。Windows native は `%LOCALAPPDATA%\aiterm-mcp\` で current SID の非継承 FullControl ACE 1件だけへ DACL を再構築し readback する。今回 Windows は path/DACL/timeout の純粋テストだけであり、新しい実機統合成功は主張しない。
+consumer は `aiterm-runtime-errors snapshot` を読み、durable ingestion 後に `aiterm-runtime-errors ack --cursor N` を呼ぶ。運用上の明示操作は `resolve|reopen --fingerprint SHA256`。MCP からの収集・diagnostic read は timeout 付き child process に隔離し、FIFOや停止 filesystem が端末本体を止めない。store mutation は期限付き bakery ticket queue で直列化する。各waiterは PID＋process start identity＋owner token を持つ再利用されない固有ticketを所有するため、死んだownerだけを固有名で除去でき、固定path回収のABAを作らない。queueの期限は正常な前任者を含む総待ち時間ではなく、同じ先頭ownerが進まない時間を測る。通常pollはprocessの生存確認だけを行い、process start identityはblockerがstallした時に照合する。POSIX state は `$XDG_STATE_HOME/aiterm-mcp/`（既定 `~/.local/state/aiterm-mcp/`）へ atomic replacement で置き、every read で owner/mode を再検証する。Windows native は `%LOCALAPPDATA%\aiterm-mcp\` で current SID の非継承 FullControl ACE 1件だけへ DACL を再構築し readback する。今回 Windows は path/DACL/timeout の純粋テストだけであり、新しい実機統合成功は主張しない。
 
 ### 対話エージェント起動ツール
 

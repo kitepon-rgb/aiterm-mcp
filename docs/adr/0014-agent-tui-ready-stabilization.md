@@ -28,8 +28,9 @@ transcript、Stop event、画面上のpromptがすべて0件のままready画面
 managed kindがCodexである前提のready判定は、headerまたは常駐model／effort footerと入力欄をfrontend根拠にする。
 caller側の画面再描画や再試行では補わない。
 
-この追補は`agent_configure`の公開APIを変えず、0.24.1 patchとして公開する。footerだけ、入力欄だけ、
-busy表示はreadyへ昇格させず、vendor識別とidle判定の積を維持する。
+この追補は`agent_configure`の公開APIを変えない。0.24.1 tagは別のruntime store CI gateでpublish前に
+停止したため、tagを動かさず0.24.2 patchへ継承する。footerだけ、入力欄だけ、busy表示はreadyへ
+昇格させず、vendor識別とidle判定の積を維持する。
 
 ## Acceptance
 

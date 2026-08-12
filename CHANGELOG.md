@@ -7,13 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.24.1] - 2026-08-12
+## [0.24.2] - 2026-08-13
 
 ### Fixed
 
 - 長寿命Codex sessionで`OpenAI Codex`ヘッダが直近のcapture範囲外へ流れた後も、常駐する
   model／effort footerと入力欄をCodex TUIのready表現として認識する。idleの実席を
   `agent_configure`が「入力待ちではありません」と誤拒否していた欠陥を修理した。
+- Runtime error storeのbakery queueが固定1.5秒をqueue全体の総待ち時間として扱い、macOSでは
+  各waiterが各pollで外部`ps`を起動して自ら進行を遅らせていた欠陥を修理した。期限を同じ先頭ownerの
+  無進捗時間として測り、正常なticket進行ごとに更新する。通常pollは`kill(pid, 0)`だけを使い、
+  PID再利用を防ぐprocess-start identity照合はstall時だけ行う。
 
 ### Verification
 
@@ -21,8 +25,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   負経路をpure regressionで固定した。
 - Peertableの実席で、同じAiterm sessionと会話contextを維持したままLuna medium→Terra highの
   `agent_configure`が成功することを確認した。
-- focused 43/43、full regression 338/338、npm pack dry-run（13 files）、MCPB validate／packと
-  staged MCPのversion 0.24.1／14 tools／`agent_configure` schema／stderr 0がgreen。
+- v0.24.1 tag CI `31610402851`のmacOS Node 20で20並行queueの5 processが総待ち期限を超えた
+  failureを再現根拠にした。前任ticketが各900msで進み総待ち1.8秒になるregressionをred→greenで固定し、
+  20並行時の`ps`起動を258回から20回へ削減した。
+- focused 67/67、full regression 339/339、npm pack dry-run（13 files）、MCPB validate／packと
+  staged MCPのversion 0.24.2／14 tools／`agent_configure` schema／stderr 0がgreen。
+
+## [0.24.1] - 2026-08-12
+
+### Release status
+
+- Git tagのCI `31610402851`はmacOS Node 20のruntime error store高競合試験で失敗し、publish jobは
+  実行前にskipされた。npm、GitHub Release、Official MCP Registryへは公開せず、tagを動かさず
+  長寿命Codex ready修正とqueue根治を0.24.2へ継承する。
 
 ## [0.24.0] - 2026-08-12
 
@@ -956,7 +971,10 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.23.0...HEAD
+[Unreleased]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.24.2...HEAD
+[0.24.2]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.24.1...v0.24.2
+[0.24.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.24.0...v0.24.1
+[0.24.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.21.4...v0.22.0
 [0.21.4]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.21.3...v0.21.4
