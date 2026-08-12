@@ -1,7 +1,8 @@
 # aiterm-mcp docs overview
 
 現行挙動は、まず本索引の「現行正典」を読み、旧plan／旧ADRは各文書冒頭のstatusと追補に従って
-歴史的経緯として読む。v0.23.0のportable fork／v0.22.0の環境境界と矛盾するmanaged home、fake `HOME`、設定snapshotの記述は
+歴史的経緯として読む。長寿命Codexのready判定はv0.24.1追補を正とする。v0.23.0のportable fork／
+v0.22.0の環境境界と矛盾するmanaged home、fake `HOME`、設定snapshotの記述は
 [ADR 0025](adr/0025-shared-agent-environment-and-lineage.md)が置換する。archive、release受入、evidence、RAG rawは
 当時の証拠なので現行文言へ書き換えない。
 
@@ -12,6 +13,8 @@
 - [../CONTRIBUTING.md](../CONTRIBUTING.md) - contributor向け依存、コード所有、テスト、portable context境界。
 - [../SECURITY.md](../SECURITY.md) - 最新0.xだけを支える公開方針と、PTY／launcher入力の運用境界。
 - [01_design-plan.md](01_design-plan.md) - PTYモデルと現行設計。v0.22.0項より後ろのmanaged記述は明示された履歴。
+- [adr/0014-agent-tui-ready-stabilization.md](adr/0014-agent-tui-ready-stabilization.md) - vendor TUI readyの連続安定化と、長寿命Codexのheader／footer識別契約。
+- [27-agent-configure-release-plan.md](27-agent-configure-release-plan.md) - `agent_configure`のv0.24.0公開受入と長寿命Codex ready根治版v0.24.1の公開工程。
 - [adr/0025-shared-agent-environment-and-lineage.md](adr/0025-shared-agent-environment-and-lineage.md) - 通常project／user環境共有、sub-agent自己認識、委譲lineageの現行Decision。
 - [adr/0027-release-0.23.0-acceptance.md](adr/0027-release-0.23.0-acceptance.md) - v0.23.0 portable forkの公開・install・cross-vendor live smoke受入記録。
 - [adr/0026-release-0.22.0-acceptance.md](adr/0026-release-0.22.0-acceptance.md) - v0.22.0の公開・install・live smoke受入記録。
@@ -28,7 +31,6 @@
 - [13_native-factory-diagnostics-plan.md](13_native-factory-diagnostics-plan.md) - factory 向け read-only diagnostics の公開契約・privacy 境界・検証 TODO。
 - [15_claude-agent-plan.md](15_claude-agent-plan.md) - 永続PTY上の対話型`claude_agent`、operation相関、構造化`claude_turn`、権限確認用`claude_approval`の設計史。旧settings隔離はADR 0025で置換済み。
 - [26-throughline-portable-fork-plan.md](26-throughline-portable-fork-plan.md) - Throughlineの読み取り専用handoff contextを4 launcherへ注入し、元DBのsession所属を変えずに別vendorへportable forkするv0.23.0の実装・受入計画。
-- [27-agent-configure-release-plan.md](27-agent-configure-release-plan.md) - 起動中Codex／Claudeのmodel・effort変更とv0.24.0公開受入。
 - [23_managed-claude-user-mcp-plan.md](23_managed-claude-user-mcp-plan.md) - v0.21.4の歴史的工程。環境境界はADR 0025で全面置換済み。
 - [24_shared-agent-environment-plan.md](24-shared-agent-environment-plan.md) - 4 launcherを通常CLIと同じ環境へ戻した完了済みLattice工程の判断正本。
 

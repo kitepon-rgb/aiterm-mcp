@@ -7,11 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.1] - 2026-08-12
+
 ### Fixed
 
 - 長寿命Codex sessionで`OpenAI Codex`ヘッダが直近のcapture範囲外へ流れた後も、常駐する
   model／effort footerと入力欄をCodex TUIのready表現として認識する。idleの実席を
   `agent_configure`が「入力待ちではありません」と誤拒否していた欠陥を修理した。
+
+### Verification
+
+- headerが画面外へ流れた長寿命Codexのready／idle readyと、footerだけ・入力欄だけ・busy表示の
+  負経路をpure regressionで固定した。
+- Peertableの実席で、同じAiterm sessionと会話contextを維持したままLuna medium→Terra highの
+  `agent_configure`が成功することを確認した。
+- focused 43/43、full regression 338/338、npm pack dry-run（13 files）、MCPB validate／packと
+  staged MCPのversion 0.24.1／14 tools／`agent_configure` schema／stderr 0がgreen。
 
 ## [0.24.0] - 2026-08-12
 

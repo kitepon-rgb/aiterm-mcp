@@ -33,7 +33,7 @@ claude mcp add --scope user --transport stdio aiterm -- aiterm-mcp
 | File | Responsibility |
 | --- | --- |
 | `src/index.ts` | The MCP surface — exposes 14 tools over stdio via `@modelcontextprotocol/sdk` + `zod`: 6 PTY tools, 4 agent launchers, `agent_configure`, `claude_turn`, `claude_approval`, and read-only `diagnostics`. |
-| `src/core.ts` | All the logic: tmux control, the `resolveTmux()` discovery layer, output reduction, completion detection, the destructive-command safety gate, agent correlation and approval relay, optional Throughline context acquisition before PTY creation, session-name validation, and the WSL bridge. |
+| `src/core.ts` | All the logic: tmux control, the `resolveTmux()` discovery layer, output reduction, completion detection and vendor TUI readiness, the destructive-command safety gate, agent correlation and approval relay, optional Throughline context acquisition before PTY creation, session-name validation, and the WSL bridge. |
 | `src/rtk.ts` | Per-command output reducers (`git status`/`git log`/`grep`/`pytest` and more) — a self-contained reimplementation, no `rtk` binary required. |
 | `prototype/python/` | The original Python MVP. It is the **porting source / verification baseline** — reference only, the shipped artifact is the Node version. |
 
@@ -69,6 +69,10 @@ Tests skip gracefully when tmux is absent (they detect it via `tmux -V`, or `wsl
 2. Make sure `npm test` passes locally **with tmux installed**.
 3. Open a PR against `main`. CI (`.github/workflows/ci.yml`) must pass on **ubuntu-latest and macos-latest**, each across **Node 18, 20, and 22**. Native Windows also runs the tmux-independent layer on **Node 20 and 22** as a required gate; the WSL tmux bridge is still manual, so note in the PR if you verified it on Windows.
 4. Keep the change scoped. If you're changing design behavior (completion detection, reduction, safety), update `docs/01_design-plan.md` to match.
+
+For Codex readiness changes, test both startup screens (with the `OpenAI Codex` header) and
+long-lived screens where only the model/effort footer remains. A prompt alone or a footer alone
+must not identify a ready Codex TUI, and a busy indicator must still make the session non-idle.
 
 Publishing to npm (`npm publish --provenance --access public`) is automated on `v*` tags via the `publish` CI job — contributors don't publish.
 

@@ -13,6 +13,15 @@ output) is already committed — these steps activate it.
 
 ## Status (live)
 
+> **v0.24.1公開準備（2026-08-12）**: 長寿命Codexで起動時headerがcapture範囲外へ流れた後も、
+> 常駐model／effort footerと入力欄でreadyを識別する。idle実席への`agent_configure`誤拒否を、
+> caller側の再描画・再試行・再起動なしで根本修理するpatch。
+
+- ✅ pure regressionとPeertable実席のLuna medium→Terra highで根治を確認。
+- ✅ package／lock／server／MCPB manifestを0.24.1へ同期。focused 43/43、full 338/338、
+  npm pack dry-run、MCPB validate／pack、staged MCP smokeがgreen。
+- ⏳ main push、tag CI／Trusted Publishing、GitHub Release、Official Registry、global installを実行する。
+
 > **v0.24.0公開完了（2026-08-12）**: 起動中のCodex／Claudeを同じPTY・vendor session・会話contextの
 > ままmodel／reasoning effort変更する`agent_configure`を14番目のMCP toolとして追加。
 
