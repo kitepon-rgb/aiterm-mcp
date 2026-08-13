@@ -1,4 +1,4 @@
-> **Drive Codex CLI's interactive TUI from Claude Code — including slash commands and skills such as [`$imagegen`](https://learn.chatgpt.com/docs/image-generation#generate-or-edit-an-image) — through MCP.**
+> **From any MCP client, launch Claude, Codex, Grok, or Composer — cross-vendor or same-vendor — inside a persistent interactive TUI, with native features such as Codex slash commands and [`$imagegen`](https://learn.chatgpt.com/docs/image-generation#generate-or-edit-an-image) available.**
 
 <p align="center">
   <img src=".github/og.png" alt="Aiterm — a shared forest observatory where different intelligences work in one persistent execution space" width="100%">
@@ -16,7 +16,7 @@
 
 > *(日本語: [README.ja.md](README.ja.md))*
 
-> **Let your AI orchestrate other AIs.** From any MCP client, one call spawns a coding agent (Claude, Codex, Grok, or Composer) inside a persistent terminal and hands you a session to drive: read what it's doing token-reduced, send it the next instruction.
+> **Let your AI orchestrate other AIs.** From any MCP client, one call spawns a coding agent (Claude, Codex, Grok, or Composer) inside a persistent terminal and hands you a session to drive: read what it's doing token-reduced, send it the next instruction. The caller and launched vendor are independent: Claude can launch Claude or Codex, and Codex can launch Claude or Codex.
 >
 > **What it is:** one persistent MCP terminal your AI drives — and can launch other coding agents into. `ssh`, `docker exec`, a REPL, or another agent's TUI all nest inside that one terminal as just text you send in. The mechanism is deliberately plain — your MCP client drives the other agent's terminal turn by turn: no hidden protocol, no separate aiterm-owned shared-memory layer, no autonomous negotiation. Launched agents still read the normal project and vendor memory/configuration that a direct CLI launch would use.
 >
@@ -317,9 +317,9 @@ This registers it in `~/.claude.json`; you'll get an approval prompt the first t
 
 ## Headless: no human at the terminal
 
-Because an MCP client drives aiterm programmatically over stdio, everything above can run with **nobody sitting at a tmux**. Your Claude Code session can `codex_agent()` a task, `pty_read` the result, and act on it — unattended. That makes aiterm a fit for exactly the places a human-driven terminal isn't:
+Because an MCP client drives aiterm programmatically over stdio, everything above can run with **nobody sitting at a tmux**. A Claude or Codex session can call any launcher — including another instance of itself — then `pty_read` the result and act on it unattended. That makes aiterm a fit for exactly the places a human-driven terminal isn't:
 
-- **Multi-agent orchestration** — an orchestrator hands sub-tasks to Codex / Grok / Composer, each in its own persistent session, and reads them all back.
+- **Multi-agent orchestration** — an orchestrator hands sub-tasks to Claude / Codex / Grok / Composer, each in its own persistent session, and reads them all back.
 - **CI** — a job step can spin up an agent, drive it, and tear it down.
 - **cron** — a scheduled run can launch an agent and collect its output.
 

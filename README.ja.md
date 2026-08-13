@@ -1,4 +1,4 @@
-> **Claude Code から Codex CLI の対話 TUI を操作する——スラッシュコマンドや [`$imagegen`](https://learn.chatgpt.com/docs/image-generation#generate-or-edit-an-image) のようなスキルまで、MCP越しに使える。**
+> **任意のMCPクライアントから、Claude・Codex・Grok・Composerをクロスベンダーでも同一ベンダーでも永続対話TUIへ起動する。Codexのスラッシュコマンドや[`$imagegen`](https://learn.chatgpt.com/docs/image-generation#generate-or-edit-an-image)のような固有機能もそのまま使える。**
 
 <p align="center">
   <img src=".github/og.png" alt="Aiterm — 異なる知性が一つの持続する実行現場を共有する森の観測拠点" width="100%">
@@ -16,7 +16,7 @@
 
 > *(English: [README.md](README.md))*
 
-> **あなたの AI に、ほかの AI を操らせる。** 任意の MCP クライアントから 1 回の呼び出しで、コーディングエージェント（Claude・Codex・Grok・Composer）を永続端末の中に起動し、操作用のセッションを手渡す。何をしているかをトークン削減して読み、次の指示を送る。
+> **あなたの AI に、ほかの AI を操らせる。** 任意の MCP クライアントから 1 回の呼び出しで、コーディングエージェント（Claude・Codex・Grok・Composer）を永続端末の中に起動し、操作用のセッションを手渡す。何をしているかをトークン削減して読み、次の指示を送る。呼び出し元と起動先のベンダーは独立しており、ClaudeからClaude／Codexを、CodexからClaude／Codexを起動できる。
 >
 > **これは何か:** AI が握る 1 本の永続 MCP 端末——その中に他のコーディングエージェントも起動できる。`ssh`・`docker exec`・REPL・別エージェントの TUI は、すべてその 1 本の端末の中へ「送るだけのテキスト」として入れ子になる。仕組みはあえて素朴——MCP クライアントが相手エージェントの端末を 1 ターンずつ操作するだけ。隠れたプロトコルも・aiterm独自の共有メモリ層も・自律的な交渉も無い。起動したagentは、直接CLIと同じproject／vendorの通常memory・設定を読む。
 >
@@ -290,9 +290,9 @@ claude mcp add --scope user --transport stdio aiterm -- aiterm-mcp
 
 ## ヘッドレス: 端末に人が居ない
 
-MCP クライアントが aiterm を stdio 越しにプログラムから駆動するので、上のすべては **tmux に誰も座らないまま**動く。あなたの Claude Code セッションは、`codex_agent()` でタスクを起こし、`pty_read` で結果を読み、それを使って動ける——無人で。これは、人が操作する端末が向かない場所にこそ aiterm が合うということ:
+MCP クライアントが aiterm を stdio 越しにプログラムから駆動するので、上のすべては **tmux に誰も座らないまま**動く。Claude／Codexのどちらからでも、自分自身を含む任意のlauncherを呼び、`pty_read`で結果を読んで次へ進める——無人で。これは、人が操作する端末が向かない場所にこそ aiterm が合うということ:
 
-- **複数エージェントのオーケストレーション** — 統括役がサブタスクを Codex / Grok / Composer に渡し、各々を専用の永続セッションに置き、全部を読み戻す。
+- **複数エージェントのオーケストレーション** — 統括役がサブタスクを Claude / Codex / Grok / Composer に渡し、各々を専用の永続セッションに置き、全部を読み戻す。
 - **CI** — ジョブのステップがエージェントを起こし、操作し、片付けられる。
 - **cron** — スケジュール実行がエージェントを起動して出力を回収できる。
 
