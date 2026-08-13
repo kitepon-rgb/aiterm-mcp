@@ -16,19 +16,19 @@ test('server.json version stays in lockstep with package.json', async () => {
   assert.equal(mcpbManifest.version, pkg.version);
 });
 
-test('release metadata points at the canonical quolu repository', async () => {
+test('release metadata points at the canonical kitepon organization repository', async () => {
   const [pkg, server, mcpbManifest] = await Promise.all([
     readJson(new URL('../package.json', import.meta.url)),
     readJson(new URL('../server.json', import.meta.url)),
     readJson(new URL('../mcpb/manifest.json', import.meta.url)),
   ]);
 
-  assert.equal(pkg.mcpName, 'io.github.quolu/aiterm-mcp');
-  assert.equal(pkg.repository.url, 'git+https://github.com/quolu/aiterm-mcp.git');
-  assert.equal(pkg.homepage, 'https://github.com/quolu/aiterm-mcp#readme');
+  assert.equal(pkg.mcpName, 'io.github.kitepon/aiterm-mcp');
+  assert.equal(pkg.repository.url, 'git+https://github.com/kitepon/aiterm-mcp.git');
+  assert.equal(pkg.homepage, 'https://github.com/kitepon/aiterm-mcp#readme');
   assert.equal(server.name, pkg.mcpName);
-  assert.equal(server.repository.url, 'https://github.com/quolu/aiterm-mcp');
-  assert.equal(mcpbManifest.repository.url, 'https://github.com/quolu/aiterm-mcp');
+  assert.equal(server.repository.url, 'https://github.com/kitepon/aiterm-mcp');
+  assert.equal(mcpbManifest.repository.url, 'https://github.com/kitepon/aiterm-mcp');
   assert.equal(mcpbManifest.homepage, pkg.homepage);
 });
 

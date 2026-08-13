@@ -8,7 +8,7 @@
 
 # Aiterm
 
-[![CI](https://github.com/quolu/aiterm-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/quolu/aiterm-mcp/actions/workflows/ci.yml)
+[![CI](https://github.com/kitepon/aiterm-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/kitepon/aiterm-mcp/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/aiterm-mcp.svg)](https://www.npmjs.com/package/aiterm-mcp)
 [![weekly downloads](https://img.shields.io/npm/dw/aiterm-mcp.svg)](https://www.npmjs.com/package/aiterm-mcp)
 [![node](https://img.shields.io/node/v/aiterm-mcp)](https://nodejs.org)
@@ -168,7 +168,7 @@ A lot of 2026's agent tooling is converging on orchestration: a lead model deleg
 
 ## Built with Codex and GPT-5.6 for OpenAI Build Week 2026
 
-aiterm predates Build Week, so the event work is kept visible in dated commits. During the submission window (July 14–16, 2026), I extended it with safe serialized delivery for long PTY input, correlated operation IDs and bounded result recovery, machine-readable launch and idempotent close receipts, and a hardened readiness gate that prevents prompts from disappearing during TUI startup redraws. The public comparison from the pre-event release is [`v0.12.2...main`](https://github.com/quolu/aiterm-mcp/compare/v0.12.2...main).
+aiterm predates Build Week, so the event work is kept visible in dated commits. During the submission window (July 14–16, 2026), I extended it with safe serialized delivery for long PTY input, correlated operation IDs and bounded result recovery, machine-readable launch and idempotent close receipts, and a hardened readiness gate that prevents prompts from disappearing during TUI startup redraws. The public comparison from the pre-event release is [`v0.12.2...main`](https://github.com/kitepon/aiterm-mcp/compare/v0.12.2...main).
 
 I used **Codex with GPT-5.6** as an engineering collaborator: it inspected the implementation, challenged the API and recovery contracts, generated focused regression cases, and helped verify race, security, timeout, and malformed-event paths. I reviewed the diffs and test evidence and retained the final product and architecture decisions. At that Build Week checkpoint, the regression suite contained 262 tests covering normal operation as well as failure and recovery behavior; current release receipts live in the [CHANGELOG](CHANGELOG.md) and release ADRs.
 
@@ -531,10 +531,10 @@ One command, no clone, no build:
 claude mcp add --scope user --transport stdio aiterm -- npx -y aiterm-mcp
 ```
 
-If aiterm let your AI hand a task to another agent — or saved you a round-trip of tokens — **[star the repo](https://github.com/quolu/aiterm-mcp)**. It's the cheapest way to help others find it.
+If aiterm let your AI hand a task to another agent — or saved you a round-trip of tokens — **[star the repo](https://github.com/kitepon/aiterm-mcp)**. It's the cheapest way to help others find it.
 
 - **npm:** https://www.npmjs.com/package/aiterm-mcp
-- **Issues / bug reports:** https://github.com/quolu/aiterm-mcp/issues
+- **Issues / bug reports:** https://github.com/kitepon/aiterm-mcp/issues
 
 ## Shared agent environment
 

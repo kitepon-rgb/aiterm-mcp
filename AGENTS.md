@@ -43,10 +43,11 @@ npm test
 
 ## 工場CI
 
-- 正規リポジトリは `quolu/aiterm-mcp`。移転前の `kitepon-rgb/aiterm-mcp` を新しい設定、URL、manifest、公開手順に使わない。
+- 正規リポジトリは `kitepon/aiterm-mcp`。移転前の `kitepon-rgb/aiterm-mcp` を新しい設定、URL、manifest、公開手順に使わない。
 - 開発中は変更に直結するfocused testをローカルで回し、関連gateがgreenになってから`npm test`を最終確認として1回だけ実行する。
 - GitHub Actionsの最終CIはself-hostedの`macos-native`、`linux-native`、`windows-native`、`wsl2`で同時に開始し、4環境すべてが同じ`npm test`を実行する。OS別の縮小suiteやGitHub-hosted runnerを最終CIとして扱わない。
-- tag publishは4環境full greenとrelease commitの`origin/main`祖先確認を通過した後だけ実行する。npm Trusted Publisherは`quolu/aiterm-mcp`と`.github/workflows/ci.yml`の組を正とする。
+- 4台はGitHub Organization `kitepon`のDefault runner groupが全repositoryへ共有する。repoをOrganization外へ移すと4環境jobはrunner未割当でqueueに残るため、移転時はCI・Trusted Publisher・manifestを同じownerへ同時に揃える。
+- tag publishは4環境full greenとrelease commitの`origin/main`祖先確認を通過した後だけ実行する。npm Trusted Publisherは`kitepon/aiterm-mcp`と`.github/workflows/ci.yml`の組を正とする。
 
 ## 変更時の同期
 

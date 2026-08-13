@@ -4,10 +4,10 @@ Status: Active — v0.25.1公開工程
 
 ## 現行の正本
 
-- GitHub repositoryは`quolu/aiterm-mcp`だけを正規名とする。
+- GitHub repositoryは`kitepon/aiterm-mcp`だけを正規名とする。
 - npm packageは`aiterm-mcp`、npm OIDC Trusted PublisherはGitHub Actionsの
-  `quolu/aiterm-mcp`／`.github/workflows/ci.yml`だけを正とする。
-- Official MCP Registry名は`io.github.quolu/aiterm-mcp`とする。移転前の
+  `kitepon/aiterm-mcp`／`.github/workflows/ci.yml`だけを正とする。
+- Official MCP Registry名は`io.github.kitepon/aiterm-mcp`とする。移転前の
   `io.github.kitepon-rgb/aiterm-mcp`は過去版の公開履歴であり、現行設定例に使わない。
 - archive、release acceptance ADR、evidenceは当時の事実を保持するため書き換えない。
   新しい利用者・contributor・公開手順はREADME、CONTRIBUTING、SECURITY、package／registry
@@ -24,6 +24,9 @@ GitHub Actionsの最終CIはself-hostedの次の4環境で同時に開始する�
 - `linux-native`
 - `windows-native`
 - `wsl2`
+
+4台はGitHub Organization `kitepon`のDefault runner groupに所属し、publicを含む全repositoryへ
+共有する。`aiterm-mcp`をOrganization外へ置いた状態では共有runnerを使えず、4jobはqueueに残る。
 
 4環境はすべて同じ`node --version && npm --version && npm ci && npm test`を実行する。
 OS別の役割分散、縮小suite、GitHub-hosted runnerによる最終testの代用はしない。runnerに必要な

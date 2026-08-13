@@ -14,7 +14,7 @@ Thanks for your interest. aiterm-mcp is a small, focused project: a stdio MCP se
 ## Local development
 
 ```bash
-git clone https://github.com/quolu/aiterm-mcp.git
+git clone https://github.com/kitepon/aiterm-mcp.git
 cd aiterm-mcp
 npm install
 npm run build      # tsc → dist/
@@ -81,11 +81,11 @@ For runtime error store queue changes, preserve dead-owner/PID-reuse cleanup and
 progressing-queue regression. A healthy predecessor advancing the queue must renew the stall budget;
 the timeout must not become a fixed cap on total backlog wait.
 
-Publishing to npm (`npm publish --provenance --access public`) is automated on `v*` tags only after all four factory environments pass and the tagged commit is verified as an ancestor of `origin/main`. The npm OIDC Trusted Publisher is `quolu/aiterm-mcp` + `.github/workflows/ci.yml`; contributors don't publish.
+Publishing to npm (`npm publish --provenance --access public`) is automated on `v*` tags only after all four factory environments pass and the tagged commit is verified as an ancestor of `origin/main`. The npm OIDC Trusted Publisher is `kitepon/aiterm-mcp` + `.github/workflows/ci.yml`; contributors don't publish.
 
 ## Reporting bugs / requesting features
 
-Open an issue: <https://github.com/quolu/aiterm-mcp/issues>.
+Open an issue: <https://github.com/kitepon/aiterm-mcp/issues>.
 
 For bugs, please include your OS, `node -v`, `tmux -V` (or `wsl tmux -V` on Windows), how you launched aiterm (client, GUI vs terminal), and the exact tool call and reduced output. For the "known constraints" listed in the README (e.g. quiescence not firing while nested, `is_complete=False` on long commands, the safety gate being a tripwire not a sandbox), those are **by design** — check that section before filing.
 

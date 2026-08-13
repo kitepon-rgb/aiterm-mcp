@@ -8,7 +8,7 @@
 
 # Aiterm
 
-[![CI](https://github.com/quolu/aiterm-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/quolu/aiterm-mcp/actions/workflows/ci.yml)
+[![CI](https://github.com/kitepon/aiterm-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/kitepon/aiterm-mcp/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/aiterm-mcp.svg)](https://www.npmjs.com/package/aiterm-mcp)
 [![週間ダウンロード](https://img.shields.io/npm/dw/aiterm-mcp.svg)](https://www.npmjs.com/package/aiterm-mcp)
 [![node](https://img.shields.io/node/v/aiterm-mcp)](https://nodejs.org)
@@ -487,10 +487,10 @@ OS別の縮小suiteで代用しません。tag起点のnpm公開は4環境green�
 claude mcp add --scope user --transport stdio aiterm -- npx -y aiterm-mcp
 ```
 
-aiterm が、あなたの AI に別のエージェントへ仕事を渡させたなら——あるいはトークンの往復を 1 回でも省けたなら——**[リポジトリに star](https://github.com/quolu/aiterm-mcp)** を。他の人に見つけてもらう一番安い方法です。
+aiterm が、あなたの AI に別のエージェントへ仕事を渡させたなら——あるいはトークンの往復を 1 回でも省けたなら——**[リポジトリに star](https://github.com/kitepon/aiterm-mcp)** を。他の人に見つけてもらう一番安い方法です。
 
 - **npm:** https://www.npmjs.com/package/aiterm-mcp
-- **Issue / バグ報告:** https://github.com/quolu/aiterm-mcp/issues
+- **Issue / バグ報告:** https://github.com/kitepon/aiterm-mcp/issues
 
 ## ライセンス
 

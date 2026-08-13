@@ -12,11 +12,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/quolu/aiterm-mcp"
+    "url": "https://github.com/kitepon/aiterm-mcp"
   },
-  "homepage": "https://github.com/quolu/aiterm-mcp#readme",
-  "documentation": "https://github.com/quolu/aiterm-mcp#install-in-your-mcp-client",
-  "support": "https://github.com/quolu/aiterm-mcp/issues",
+  "homepage": "https://github.com/kitepon/aiterm-mcp#readme",
+  "documentation": "https://github.com/kitepon/aiterm-mcp#install-in-your-mcp-client",
+  "support": "https://github.com/kitepon/aiterm-mcp/issues",
   "icon": "icon.png",
   "server": {
     "type": "node",

@@ -1,7 +1,7 @@
 # MCP サーバ化 計画書 兼 TODO チェックリスト（作業版 v0.1）
 
 > **注記（2026-06-01 追補 / 2026-06-02 更新）**: 本計画は Python MVP 時点の計画/TODO スナップショット。MCP 化は完了し、その後
-> **Node/TS の npm パッケージ `aiterm-mcp` へ移行し npm 公開済み**（`aiterm-mcp@0.4.0`＝Windows/WSL2/macOS 全対応版（macOS は 0.3.0 で実機検証・tmux 解決層を追加、0.4.0 でネスト完了判定の早期返却を追加）。初版 0.1.0 は 2026-06-02 公開。リポジトリ `quolu/aiterm-mcp`。実装は `src/*.ts`、旧 Python は `prototype/python/`）。
+> **Node/TS の npm パッケージ `aiterm-mcp` へ移行し npm 公開済み**（`aiterm-mcp@0.4.0`＝Windows/WSL2/macOS 全対応版（macOS は 0.3.0 で実機検証・tmux 解決層を追加、0.4.0 でネスト完了判定の早期返却を追加）。初版 0.1.0 は 2026-06-02 公開。リポジトリ `kitepon/aiterm-mcp`。実装は `src/*.ts`、旧 Python は `prototype/python/`）。
 > 本文中の `src/aiterm_*.py` / `.mcp.json` / venv 等の記述は移行前のもの。**現状の正は [CLAUDE.md](../CLAUDE.md) と [README.md](../README.md)**。
 
 ## 0. このドキュメントの位置づけ

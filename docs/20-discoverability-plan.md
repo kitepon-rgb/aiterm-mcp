@@ -53,4 +53,4 @@
   手動認証の完了待ち。
 - SmitheryはMCPBを生成・検証済み。CLIのOAuth loginを起動し、GitHub側の
   Authorizeが無効状態のため、手動認証の完了待ち。認証後に
-  `dist/aiterm-mcp.mcpb`を`quolu/aiterm-mcp`としてpublishする。
+  `dist/aiterm-mcp.mcpb`を`kitepon/aiterm-mcp`としてpublishする。

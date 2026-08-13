@@ -2,8 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **v0.25.1（2026-08-13・release repair）**: 正規repositoryは`quolu/aiterm-mcp`、Official MCP
-> Registry名は`io.github.quolu/aiterm-mcp`。移転前ownerを新しい設定例・badge・manifest・公開手順へ
+> **v0.25.1（2026-08-13・release repair）**: 正規repositoryは`kitepon/aiterm-mcp`、Official MCP
+> Registry名は`io.github.kitepon/aiterm-mcp`。移転前ownerを新しい設定例・badge・manifest・公開手順へ
 > 書かない。工場CIはself-hostedのmacOS native・Linux native・Windows native・WSL2で同時に開始し、
 > 4環境すべてが同じ`npm test`を実行する。OS別の縮小suiteやGitHub-hosted runnerを最終CIへ使わない。
 > npm publishは4環境full green後だけ実行し、release commitの`origin/main`祖先gateとOIDC Trusted

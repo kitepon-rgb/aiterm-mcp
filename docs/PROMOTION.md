@@ -13,10 +13,10 @@ output) is already committed — these steps activate it.
 
 ## Status (live)
 
-> **v0.25.1公開工程（2026-08-13）**: 正規repositoryを`quolu/aiterm-mcp`、Official MCP Registry名を
-> `io.github.quolu/aiterm-mcp`へ統一する。最終CIはself-hostedのmacOS native・Linux native・
+> **v0.25.1公開工程（2026-08-13）**: 正規repositoryを`kitepon/aiterm-mcp`、Official MCP Registry名を
+> `io.github.kitepon/aiterm-mcp`へ統一する。最終CIはself-hostedのmacOS native・Linux native・
 > Windows native・WSL2で同じ`npm test`を同時実行する。失敗済み`v0.25.0`は移動せず、
-> repo移転後のOIDC Trusted Publisherを`quolu/aiterm-mcp`へ直した修正版を0.25.1として公開する。
+> repo移転後のOIDC Trusted Publisherを`kitepon/aiterm-mcp`へ直した修正版を0.25.1として公開する。
 > 正本は[factory CI / repository transfer release plan](30-factory-ci-repository-transfer-release-plan.md)。
 
 > **v0.24.3公開完了（2026-08-13）**: 4 launcherの`env_vars`で、現在のMCP processにある
@@ -211,7 +211,7 @@ The live Add Server form checked on 2026-07-26 required exactly:
 
 It did not request `server.json`. The `aiterm-mcp` submission was accepted for
 review with the then-current `https://github.com/kitepon-rgb/aiterm-mcp` URL.
-This is a historical receipt; new submissions use `https://github.com/quolu/aiterm-mcp`.
+This is a historical receipt; new submissions use `https://github.com/kitepon/aiterm-mcp`.
 
 ## E. Smithery (https://smithery.ai)
 
@@ -255,7 +255,7 @@ Highest-SEO community list (DoFollow GitHub links). Fork, add under the
 terminal/command-line category, alphabetical, then open the PR. Suggested line:
 
 ```md
-- [aiterm-mcp](https://github.com/quolu/aiterm-mcp) 🟩 🏠 - One persistent tmux-backed terminal for AI: `ssh`, `docker exec`, and REPLs nest inside a single authenticated session (no re-auth per command); token-reduced reads.
+- [aiterm-mcp](https://github.com/kitepon/aiterm-mcp) 🟩 🏠 - One persistent tmux-backed terminal for AI: `ssh`, `docker exec`, and REPLs nest inside a single authenticated session (no re-auth per command); token-reduced reads.
 ```
 
 (Legend: 🟩 = TypeScript/Node, 🏠 = local service. Confirm the current legend in
@@ -267,7 +267,7 @@ Completed on 2026-07-26. The repository now has all requested topics:
 `mcp`, `model-context-protocol`, `tmux`, `claude-code`, and `codex-cli`.
 
 ```bash
-gh repo edit quolu/aiterm-mcp --add-topic codex-cli
+gh repo edit kitepon/aiterm-mcp --add-topic codex-cli
 ```
 
 ## H. Backfill the v0.3.1 GitHub Release (closes the timeline gap)
@@ -316,7 +316,7 @@ on the SSH-persistence wedge, not "another tmux MCP".
 > (`npx -y aiterm-mcp`), works on Linux/WSL2/macOS and native Windows (via a WSL
 > tmux bridge). MIT.
 >
-> Repo: https://github.com/quolu/aiterm-mcp
+> Repo: https://github.com/kitepon/aiterm-mcp
 > Would love feedback on the completion-detection approach (quiescence vs prompt
 > matching) — it's the hardest part.
 
@@ -339,7 +339,7 @@ on the SSH-persistence wedge, not "another tmux MCP".
 3. Reads come back token-reduced (git/grep/pytest reducers), with a 4-layer
    "is the command done?" detector. `npx -y aiterm-mcp`, 14 tools, MIT,
    Linux/WSL2/macOS/Windows. [demo gif]
-4. Repo + one-line Claude Code install 👇 https://github.com/quolu/aiterm-mcp
+4. Repo + one-line Claude Code install 👇 https://github.com/kitepon/aiterm-mcp
 
 (Attach the demo GIF to tweet 3. Reuse `.github/og.png` as the card image.)
 
