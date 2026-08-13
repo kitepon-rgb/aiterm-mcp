@@ -33,6 +33,12 @@ project／user環境そのものではない。また、aitermから起動され
    固定depth capや暗黙拒否は設けない。instructionは再委譲が許可されていることを明記する。
 6. 新しい`managed|shared`選択肢は追加せず、通常環境共有へ単一化する。rollbackはvendor別変更commitのrevertと
    前進releaseで行い、旧managed経路を隠れfallbackとして残さない。
+7. 永続tmux serverより新しいMCP process-local値をlauncherへ渡す場合は、任意`env_vars`へ変数名だけを
+   allowlistする。aitermは起動時に現在のMCP processから存在する値だけを読み、shell quoteした起動単位の
+   overlayとしてvendor commandへ加える。全環境の暗黙copy、name/value map、tmux server環境の更新・再起動、
+   missing時のfallbackは行わない。不正なshell変数名はsession作成前に拒否する。
+8. `env_vars`の値はMCP tool引数には含めないが、PTYへ送る起動コマンドと`.lastcmd`へ入る。したがって
+   secret transportとは扱わず、起動先vendorと同じOS userへ開示可能な席identity／workflow値だけに使う。
 
 ## Acceptance
 
@@ -41,6 +47,8 @@ project／user環境そのものではない。また、aitermから起動され
 - 孫の再委譲能力は残り、同一任務の反射的な自己複製ループを起こさない。
 - 同一cwd／同一vendor homeの並列sessionで完了event、turn ID、全文回収を取り違えない。
 - close／killAllはaiterm所有stateだけを削除し、通常auth、settings、MCP、plugin、historyを変えない。
+- MCP processより先にtmux serverを起動した条件でも、`env_vars`で指定した現在値だけが4 launcherの子へ届き、
+  未指定値は新たにcopyされない。不正名はsession残骸ゼロで失敗する。
 - full regression、4vendor live smoke、公開packageからのglobal install smokeをそれぞれ記録する。
 
 ## Orchestration admission

@@ -59,6 +59,22 @@ returned memory becomes input to the launched agent and is therefore subject to
 that vendor CLI's normal processing and retention behavior. Omit the field when
 that transfer is not intended.
 
+### Selected launcher environment values are not secret transport
+
+All four agent launchers accept `env_vars` as an allowlist of environment-variable
+names. At launch, aiterm reads present values from its current MCP process and
+shell-quotes them into the one vendor launch command. This deliberately bypasses
+the potentially stale environment of a tmux server that was started earlier.
+
+The values are not supplied in MCP tool arguments, but they do pass through the
+PTY command and aiterm's per-session `.lastcmd` file, and the launched vendor can
+read them normally. Any process with access to the same OS account may also be
+able to inspect that state. Use `env_vars` only for values such as seat identity
+or workflow routing that the selected vendor and host user are allowed to see.
+Do not use it as a credential or secret-delivery mechanism. Missing names are
+omitted, invalid shell variable names fail before session creation, and aiterm
+does not copy the whole environment or mutate/restart the tmux server.
+
 ### The destructive-command gate is a TRIPWIRE, not a sandbox
 
 Before sending, `pty_send` matches the text against a small set of regexes for well-known catastrophic forms (e.g. `rm -rf /` and `~`/`$HOME`/glob-root variants, `mkfs`, `dd … of=/dev/…`, redirects to raw block devices, `DROP TABLE`/`DROP DATABASE`/`DROP SCHEMA`/`TRUNCATE TABLE`, `curl … | sh`, the classic fork bomb, `chmod -R 000 /`, `git reset --hard`). A match is **blocked** and the caller must pass `force: true` to proceed.

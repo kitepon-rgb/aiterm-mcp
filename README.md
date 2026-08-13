@@ -96,6 +96,13 @@ toolchain behind kitepon.dev's products.
 
 Fourteen tools: six **PTY tools** — `pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list` — to open, drive, and read one persistent terminal, four **agent launchers** — `claude_agent` / `codex_agent` / `grok_agent` / `composer_agent` — that each start another coding agent's TUI inside a fresh one, `agent_configure` to change a running Codex/Claude session's model and effort without restarting it, `claude_turn` for durable structured issue/recovery, `claude_approval` for correlated Claude approval prompts, and `diagnostics` for safe factory readiness. The backend is **tmux**, so sessions survive even if the MCP server or the AI client restarts.
 
+**v0.24.3 forwards explicitly selected launcher environment variables from the current MCP process.**
+Pass variable names in `env_vars`; aiterm reads their current values at launch and injects only the
+present ones into that agent. This works even when the persistent tmux server predates the MCP
+process, so a stale tmux-server environment cannot erase per-seat identity or workflow variables.
+It also recognizes Codex v0.147's optional `fast` token in long-lived model/effort footers, keeping
+`agent_configure` available on an idle `medium fast ·` session without redraw, retry, or restart.
+
 **v0.24.2 keeps in-place configuration working in long-lived Codex sessions.** Once the
 startup header has scrolled out of the captured pane, aiterm recognizes Codex by its persistent
 model/effort footer together with the input prompt. An idle session is therefore configured
@@ -205,6 +212,15 @@ One call per model, so the tool name itself tells you which model you get:
 | `codex_agent` | Codex CLI (OpenAI; terminal config/CLI default unless overridden) | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?` (`low`/`medium`/`high`/`xhigh`/`max`/`ultra`; ultra enables proactive automatic delegation), `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
 | `grok_agent` | Grok Build, model `grok-4.5` by default (`model?` overrides) (xAI) | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?` unsupported (an explicit value is an error; Grok CLI `--effort` is headless-only), `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
 | `composer_agent` | Grok Build, model `grok-composer-2.5-fast` by default (`model?` overrides) (xAI) | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?` unsupported (an explicit value is an error), `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
+
+`env_vars` is an allowlist of environment-variable **names**, not a name/value map. At launch,
+aiterm reads each valid name from its current MCP process, shell-quotes present values, and places
+them on that one vendor launch command. Missing names are omitted; invalid shell variable names
+fail before session creation. There is no implicit whole-environment copy, tmux-server restart,
+retry, or fallback. Values do not enter the MCP tool arguments, but they are delivered through the
+PTY launch command and retained in aiterm's per-session `.lastcmd`; the launched vendor and other
+processes with access to the same OS user may read them. Use this for non-secret seat identity and
+workflow variables, not as a secret transport.
 
 The vendor CLI must be installed and authenticated (`claude` for `claude_agent`; `codex` for `codex_agent`; `grok` for both Grok tools). aiterm resolves the binary via `CLAUDE_BIN` / `CODEX_BIN` / `GROK_BIN`, then each documented default location, then `PATH`. Prerequisites are checked **before** a session exists: empty `model` values and unsupported effort values are rejected up front; a missing CLI binary or a nonexistent `cwd` fails for all four. Before creating a Claude session, aiterm also requires a successful structured `claude auth status --json` result with `loggedIn: true`; unavailable, malformed, or failed authentication leaves **zero leftover session**. All launchers use the normal vendor-owned credential and configuration stores in place. No launcher creates a fake `HOME`, a private `CODEX_HOME`/`GROK_HOME`, or a snapshot of project/user configuration.
 
@@ -515,6 +531,11 @@ All four launchers use the caller's normal project and user environment. Aiterm 
 symlink, filter, or replace vendor configuration, authentication, MCP, plugin, skill, permission,
 trust, memory, or history stores. Cleanup removes only aiterm-owned launch metadata and completion
 correlation files.
+
+The ordinary environment still comes from the shell/tmux session. When a caller needs a value that
+belongs to the current MCP process rather than the older persistent tmux server, every launcher
+accepts `env_vars: ["NAME", ...]`. Only those names are refreshed at launch; this is a narrow
+per-launch overlay, not a replacement environment or configuration snapshot.
 
 ## License
 

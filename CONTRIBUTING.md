@@ -33,7 +33,7 @@ claude mcp add --scope user --transport stdio aiterm -- aiterm-mcp
 | File | Responsibility |
 | --- | --- |
 | `src/index.ts` | The MCP surface — exposes 14 tools over stdio via `@modelcontextprotocol/sdk` + `zod`: 6 PTY tools, 4 agent launchers, `agent_configure`, `claude_turn`, `claude_approval`, and read-only `diagnostics`. |
-| `src/core.ts` | All the logic: tmux control, the `resolveTmux()` discovery layer, output reduction, completion detection and vendor TUI readiness, the destructive-command safety gate, agent correlation and approval relay, optional Throughline context acquisition before PTY creation, session-name validation, and the WSL bridge. |
+| `src/core.ts` | All the logic: tmux control, the `resolveTmux()` discovery layer, output reduction, completion detection and vendor TUI readiness, the destructive-command safety gate, agent correlation and approval relay, the selected `env_vars` launch overlay from the current MCP process, optional Throughline context acquisition before PTY creation, session-name validation, and the WSL bridge. |
 | `src/runtime-error-store.ts` | Product-owned offline aggregate store and its bounded bakery queue. Queue deadlines measure one head owner's lack of progress; do not reintroduce total-wait timeouts or per-poll external process-identity commands. |
 | `src/rtk.ts` | Per-command output reducers (`git status`/`git log`/`grep`/`pytest` and more) — a self-contained reimplementation, no `rtk` binary required. |
 | `prototype/python/` | The original Python MVP. It is the **porting source / verification baseline** — reference only, the shipped artifact is the Node version. |
@@ -63,6 +63,7 @@ Tests skip gracefully when tmux is absent (they detect it via `tmux -V`, or `wsl
 - **Comments stay bilingual.** The codebase uses Japanese explanatory comments alongside the code (see `src/core.ts`). Match that style — explain the *why* and the non-obvious tradeoffs, in the same voice as the surrounding comments.
 - **Keep the PTY surface thin.** The project currently ships 14 tools — 6 PTY primitives, 4 agent launchers, `agent_configure`, `claude_turn`, `claude_approval`, and read-only `diagnostics`. SSH, containers, and REPLs are nested via `pty_send`, not added as tools — new session *kinds* reached by nesting are not new tools.
 - **Keep portable context behind Throughline's CLI boundary.** Do not read `~/.throughline/throughline.db` from aiterm. All four launchers share the same optional `throughline_source_session` path, and an external command failure must occur before PTY creation without falling back to a context-free launch.
+- **Keep `env_vars` narrow.** It accepts variable names only and reads present values from the current MCP process at launch. Do not turn it into an arbitrary name/value map, a whole-environment snapshot, or a tmux-server mutation. Values enter the PTY launch command and `.lastcmd`, so tests and docs must not describe it as secret transport.
 
 ## Pull requests
 
@@ -72,7 +73,8 @@ Tests skip gracefully when tmux is absent (they detect it via `tmux -V`, or `wsl
 4. Keep the change scoped. If you're changing design behavior (completion detection, reduction, safety), update `docs/01_design-plan.md` to match.
 
 For Codex readiness changes, test both startup screens (with the `OpenAI Codex` header) and
-long-lived screens where only the model/effort footer remains. A prompt alone or a footer alone
+long-lived screens where only the model/effort footer remains, including Codex v0.147's optional
+`fast` token after the effort. A prompt alone or a footer alone
 must not identify a ready Codex TUI, and a busy indicator must still make the session non-idle.
 
 For runtime error store queue changes, preserve dead-owner/PID-reuse cleanup and the deterministic

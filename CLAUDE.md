@@ -2,6 +2,16 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **v0.24.3（2026-08-13）**: 4つのagent launcherへ任意`env_vars`を追加。値をtool引数へ
+> 渡すのでなく環境変数名だけをallowlistし、起動時の現在のMCP processから存在する値だけをshell quoteして
+> vendor commandへ加える。MCP processより先に永続tmux serverが起動していても、古いserver環境に
+> 席identity／workflow値を失わない。全環境copy、tmux server更新・再起動、retry／fallbackは追加しない。
+> 値はPTY起動コマンドと`.lastcmd`へ到達するためsecret transportではない。不正名はsession作成前に失敗。
+> あわせてCodex v0.147の`medium fast ·` footerをfrontendとして認識し、idle実席への
+> `agent_configure`誤拒否を根治。focused regressionと実席soraの同一session Luna→Terra変更で確認。
+> env継承はfocused 2/2、最終full 342/342、Peertable実席9席のactor値で根治を確認。公開工程は
+> `docs/28-agent-env-vars-release-plan.md`を正とする。
+
 > **v0.24.2（2026-08-13）**: 長寿命Codexで起動時の`OpenAI Codex` headerが直近45行の
 > capture範囲外へ流れると、idleでも`agent_configure`がreadyを誤拒否した欠陥を根治。
 > Codexの常駐model／effort footerと入力欄をfrontend根拠へ加え、caller側の再描画・再試行・再起動は

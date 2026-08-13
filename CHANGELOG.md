@@ -7,9 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.3] - 2026-08-13
+
 ### Fixed
 
 - Agent launcherの`env_vars`で、現在のMCP processにある指定名の値だけを起動agentへ継承できるようにした。MCP processより先にtmux serverが存在していても、呼出元が所有する席identityやworkflow変数を失わない。
+- Codex v0.147がreasoning effortの後ろへ`fast`を表示するfooterもCodex frontendとして認識する。
+  `medium fast ·`のidle実席を`agent_configure`が誤拒否していた欠陥を、vendor表示文法の判定で修理した。
+
+### Security
+
+- `env_vars`は名前だけをtool引数に受け取り、値は現在のMCP processから起動時に読む。全環境の暗黙継承や
+  name/value mapは追加しない。指定値はshell quoteして起動コマンドへ入るため、起動先agent、PTY、`.lastcmd`へ
+  到達する。この機能を秘密転送路として扱わず、同じOS userとvendorへ開示してよい変数だけを指定する。
+
+### Verification
+
+- 既存tmux serverを現在のMCP processより先に起動した条件で、指定した現在値だけがagentへ届くこと、
+  不正な変数名がsession作成前に失敗することをfocused regressionで固定した。
+- Peertableの実席9席で、各launcherへ渡したactor値が起動agentから読めることを確認した。
+- `fast`入りfooterのready／idle readyをpure regressionで固定し、実席soraを同じsessionのまま
+  LunaからTerraへ変更できることを確認した。
+- v0.24.3のrelease gateと公開receiptは[docs/28-agent-env-vars-release-plan.md](docs/28-agent-env-vars-release-plan.md)へ記録する。
 
 ## [0.24.2] - 2026-08-13
 

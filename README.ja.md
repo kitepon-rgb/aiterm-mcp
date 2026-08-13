@@ -96,6 +96,12 @@ host統合は、kitepon.devの製品開発を支える内部基盤
 
 14 ツール: 6 つの **PTY ツール**（`pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list`）で 1 本の永続端末を開き・操作し・読む。加えて 4 つの **エージェント起動ツール**（`claude_agent` / `codex_agent` / `grok_agent` / `composer_agent`）が別のコーディングエージェントの TUI を新しい端末の中に起動し、`agent_configure`が起動中のCodex／Claudeのmodel・effortを再起動なしで変更し、`claude_turn`がdurable caller向けの構造化issue／recoveryを、`claude_approval`が相関済みClaude承認UI中継を、`diagnostics`が安全なfactory readinessを返す。バックエンドは **tmux** なので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
 
+**v0.24.3ではlauncherへ渡す環境変数を現在のMCP processから明示選択できる。** `env_vars`へ
+変数名だけを指定すると、aitermは起動時の現在値を読み、存在する値だけをそのagentへ渡す。永続tmux
+serverがMCP processより先に起動していても、古いserver環境に席identityやworkflow変数を消されない。
+あわせてCodex v0.147が長寿命footerへ加える任意`fast`を認識し、idleな`medium fast ·` sessionでも
+再描画・再試行・再起動なしに`agent_configure`できる。
+
 **v0.24.2では長寿命Codexでも設定変更を維持。** 起動時headerがcapture範囲外へ流れた後は、
 常駐するmodel／effort footerと入力欄でCodexを識別する。idle sessionをそのまま変更でき、
 caller側の画面再描画、再試行、agent再起動は不要。
@@ -184,6 +190,13 @@ $ aiterm-wait --session codex1 --cursor <event_cursor>   # exit 0=done / 3=timeo
 | `codex_agent` | Codex CLI（OpenAI・端末設定／CLI既定、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`（`low`/`medium`/`high`/`xhigh`/`max`/`ultra`）, `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
 | `grok_agent` | Grok Build（xAI、既定`grok-4.5`、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
 | `composer_agent` | Grok Build（xAI、既定`grok-composer-2.5-fast`、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
+
+`env_vars`は環境変数の**名前**だけを並べるallowlistであり、name/value mapではない。aitermは
+launcher起動時に現在のMCP processから各名前を読み、存在する値をshell quoteして、その1回のvendor
+起動コマンドへ入れる。未設定名は省略し、shell変数名として不正な名前はsession作成前に失敗する。
+全環境の暗黙copy、tmux server再起動、retry、fallbackは行わない。値はMCP tool引数には入らないが、
+PTYの起動コマンドとして送られ、sessionの`.lastcmd`にも保持されるため、起動先vendorと同じOS userへ
+到達する。秘密転送路ではなく、席identityやworkflow用の非secret変数だけに使う。
 
 各ベンダーのCLIが導入・認証済みであること。CLI不在・不正なmodel/effort・実在しない`cwd`はsession作成前に失敗し、残骸を残さない。ClaudeはさらにPTY作成前に同じCLIの`auth status --json`が`loggedIn:true`を返すことを要求する。4 launcherは通常のvendor credential/config storeをその場で使い、fake `HOME`、private `CODEX_HOME`/`GROK_HOME`、project/user config snapshotを作らない。Claudeだけは完了相関用Stop hook settingsを通常の`user,project,local` settingsへ加算する。Grok/Composerは画面入力欄だけでなく通常sessionの`mcp_init_completed` eventも確認してから送信し、共有MCP初期化中の早送信を防ぐ。相関付きClaudeのactive turn中はC-c以外の`pty_key`と素送信を拒否し、承認UIは`claude_approval`で単発Yes/Noだけを相関付きで中継する。
 

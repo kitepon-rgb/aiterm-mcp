@@ -150,3 +150,12 @@ blockerがstallした時だけ行う。期限延長、retry、CI rerunで症状�
 ### Rollback
 
 公開済みversionは削除・上書きしない。欠陥時は原因修正を新しいpatch versionとして公開する。
+
+## v0.24.3 Codex v0.147 fast footer追補
+
+Codex v0.147はreasoning effortの後ろへ任意`fast`を表示し、長寿命sessionのfooterが
+`<model> <effort> fast · <cwd>`となる。v0.24.2のfrontend文法はこのtokenを受けず、idle実席を
+`agent_configure`がreadyでないと誤拒否した。v0.24.3はmodel／effortと区切り、cwd、入力欄、busy除外の
+積を維持したまま、effort直後の`fast`だけを任意tokenとして受理する。caller側の再描画、retry、再起動は
+追加しない。pure regressionと実席soraの同一session Luna→Terra変更を確認し、公開受入は
+[28-agent-env-vars-release-plan.md](28-agent-env-vars-release-plan.md)へenv継承根治と一緒に記録する。

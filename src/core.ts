@@ -3653,7 +3653,7 @@ function isAgentTuiReady(kind: AgentKind, screen: string): boolean {
     // 起動直後は製品header、長寿命sessionでは常駐footerがCodex TUIの識別子になる。
     // capture-paneは直近45行だけなので、会話が進むとheaderは正常に画面外へ流れる。
     const codexFrontend = screen.includes("OpenAI Codex")
-      || /(^|\n)\s*\S+\s+(?:low|medium|high|xhigh|max|ultra)\s+·\s+\S.*$/m.test(screen);
+      || /(^|\n)\s*\S+\s+(?:low|medium|high|xhigh|max|ultra)(?:\s+fast)?\s+·\s+\S.*$/m.test(screen);
     return codexFrontend && /(^|\n)\s*[›>]/.test(screen);
   }
   // Grok Build 0.2.117 は起動完了後に製品名を消し、model footerだけを残す。

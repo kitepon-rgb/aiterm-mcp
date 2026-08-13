@@ -3,7 +3,7 @@
   "manifest_version": "0.3",
   "name": "aiterm-mcp",
   "display_name": "aiterm-mcp — Claude Code × Codex CLI",
-  "version": "0.24.2",
+  "version": "0.24.3",
   "description": "Drive Codex CLI's interactive TUI from Claude Code, plus durable tmux terminals for SSH, containers, REPLs, and coding agents.",
   "long_description": "Give an AI one persistent terminal for SSH, containers, REPLs, and interactive coding-agent TUIs. Claude Code can launch Codex CLI and drive its interactive features through the same MCP session. Reads are token-reduced, sessions survive client restarts, and humans can attach to the shared tmux session.",
   "author": {

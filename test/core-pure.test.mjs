@@ -259,6 +259,12 @@ test("agent_done ready gate: ヘッダが画面外へ流れた長寿命Codexもf
   assert.equal(core.__testIsAgentTuiIdleReady("codex", `${longLivedCodex}\n• Working (1s • esc to interrupt)`), false);
 });
 
+test("agent_done ready gate: Codex v0.147のfast入りfooterもreadyになる", () => {
+  const screen = "\n› Find and fix a bug in @filename\n\n  gpt-5.6-luna medium fast · ~/Developer/project\n";
+  assert.equal(core.__testIsAgentTuiReady("codex", screen), true);
+  assert.equal(core.__testIsAgentTuiIdleReady("codex", screen), true);
+});
+
 // ---------------------------------------------------------------- submit座礁観測（実被弾: 未submit promptがcomposerに2時間滞留）
 test("submit座礁観測: composer に送信 text の末尾が残存していれば residue=true", async () => {
   const text = "1. 既存 runtime event-store を読む\n2. byte-level fail closed を実装する";

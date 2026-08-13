@@ -32,6 +32,11 @@ caller側の画面再描画や再試行では補わない。
 停止したため、tagを動かさず0.24.2 patchへ継承する。footerだけ、入力欄だけ、busy表示はreadyへ
 昇格させず、vendor識別とidle判定の積を維持する。
 
+2026-08-13追補: Codex v0.147はreasoning effortの直後へ任意`fast`を表示し、footerが
+`<model> <effort> fast · <cwd>`となる。Codex frontendの文法はこの任意tokenを受理する一方、model／effort、
+区切り`·`、cwd、入力欄の積は維持する。caller側の再描画・再試行・再起動や表示固定は行わない。
+pure regressionと実席soraの同一session Luna→Terra変更で確認し、v0.24.3へ含める。
+
 ## Acceptance
 
 - pure testで単発ready、ready後の再初期化、必要連続数、timeoutを固定する。

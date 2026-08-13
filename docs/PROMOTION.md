@@ -13,6 +13,20 @@ output) is already committed — these steps activate it.
 
 ## Status (live)
 
+> **v0.24.3公開準備（2026-08-13）**: 4 launcherの`env_vars`で、現在のMCP processにある
+> 指定名の値だけを起動agentへ渡す。永続tmux serverが先に起動していても席identity／workflow変数を失わない。
+> Codex v0.147の`medium fast ·` footerも認識し、idle実席への`agent_configure`誤拒否を修理する。
+
+- ✅ 変数名だけのallowlist、現在値のshell quote、未設定名省略、不正名のsession前拒否を実装。
+- ✅ 全環境copy、name/value map、tmux server更新・再起動、retry／fallbackは追加していない。
+- ✅ env継承focused 2/2、Peertable実席9席のactor値を確認済み。
+- ✅ `fast`入りfooterのfocused 2/2、ローカルpack/install後の実席sora同一session Luna→Terra変更がgreen。
+- ✅ focused 4/4、追加focused 2/2、final full 342/342、npm pack dry-run（13 files）、MCPB validate／pack、
+  staged MCP version 0.24.3／14 tools／4 launcher schema／stderr 0、doc／manifest hygieneがgreen。
+- 🔄 v0.24.3のmain／tag CI、npm Trusted Publishing、GitHub Release、
+  Official MCP Registry、registry由来global installと公開後smokeは
+  [agent env vars release plan](28-agent-env-vars-release-plan.md)へ記録する。
+
 > **v0.24.2公開完了（2026-08-13）**: 長寿命Codexで起動時headerがcapture範囲外へ流れた後も、
 > 常駐model／effort footerと入力欄でreadyを識別する。idle実席への`agent_configure`誤拒否を、
 > caller側の再描画・再試行・再起動なしで根本修理するpatch。
