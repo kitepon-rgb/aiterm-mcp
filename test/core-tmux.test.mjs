@@ -177,8 +177,9 @@ test("send: 6,000文字の入力を途中欠落させずPTYへ送る", { skip },
     const value = `${"x".repeat(255)}あ${"x".repeat(5744)}`;
     const command = `v=${value}; printf '\\n<<<AITERM_LONG_INPUT len=%s>>>\\n' "\${#v}"`;
     core.send(session, command, { force: true });
-    const out = await core.readOutput(session, { wait: true, until: marker, timeout: 5, raw: true });
+    const out = await core.readOutput(session, { wait: true, until: marker, timeout: 5 });
     assert.ok(out.includes(marker), "長いcommandの末尾まで実行される");
+    assert.match(out, /is_complete=True via until/, "指定markerが完了証拠になる");
   } finally {
     core.closeSession(session);
   }

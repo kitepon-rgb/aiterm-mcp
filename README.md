@@ -456,7 +456,7 @@ When an agent's answer is longer than the on-screen tail (pane height ≈ 24 lin
 
 ### Completion detection (5 layers)
 
-`pty_read({ wait: true })` decides "is the command done?" via five layers: process exit / a `mark:true` sentinel / an `until` match / output quiescence with shell return / timeout. Agent sessions add a sixth exact layer: Codex observes normal rollout `task_complete`; Grok/Composer observe normal session `turn_ended`; Claude observes its additive launch-correlated Stop event. `aiterm-wait --cursor` performs that vendor-specific observation without the parent blocking or polling. Pre-send readiness failures are MCP errors, and late completion remains recoverable without resending.
+`pty_read({ wait: true })` decides "is the command done?" via five layers: process exit / a `mark:true` sentinel / an `until` match / output quiescence with shell return / timeout. When `mark` or `until` is active, that requested evidence takes precedence and a momentarily quiet shell cannot complete the read as quiescent. Agent sessions add a sixth exact layer: Codex observes normal rollout `task_complete`; Grok/Composer observe normal session `turn_ended`; Claude observes its additive launch-correlated Stop event. `aiterm-wait --cursor` performs that vendor-specific observation without the parent blocking or polling. Pre-send readiness failures are MCP errors, and late completion remains recoverable without resending.
 
 ### Completion push for parent agents (`aiterm-wait`)
 
@@ -481,7 +481,7 @@ As of v0.16 a parent agent **never blocks** on aiterm — there is no wait param
 
 Before sending, `pty_send` blocks destructive commands (`rm -rf /`, `mkfs`, `dd of=/dev/…`, `DROP TABLE`, …) — pass `force: true` to override — and sanitizes ESC / bracketed-paste terminators. `pty_read` neutralizes control characters in what it returns by default (`raw: true` returns the bytes verbatim). This is a **tripwire, not a sandbox** (see [Known constraints](#known-constraints-by-design-not-bugs)).
 
-Each `pty_send` accepts at most 64 KiB of UTF-8 text. Sends to the same session are serialized across aiterm processes so chunks cannot interleave. On macOS, text is pasted through tmux in UTF-8-safe 256-byte chunks to avoid the platform PTY truncation observed with long input; Linux and WSL use one bounded paste. Sanitized multiline text sent while a POSIX shell is in the foreground is encoded as one newline-free `eval` input: the shell receives the complete script before it runs the first line, so a pager or REPL started mid-script cannot consume later lines as interactive keystrokes. Single-line input, `raw:true`, and non-shell frontends remain direct PTY pastes. Agent dispatches additionally paste with tmux bracketed paste (`paste-buffer -p`): panes that requested bracketed-paste mode (the vendor TUIs) receive each chunk wrapped in `ESC[200~/201~`, hardening prompt injection against mid-word key-interpretation corruption and dropped submits. If a later chunk fails, aiterm reports the partial-send state and does not press Enter automatically. A lock left by a terminated sender fails closed before sending; close and recreate that session (or use `pty_kill_all` when every session is disposable) to clean it up safely.
+Each `pty_send` accepts at most 64 KiB of UTF-8 text. Sends to the same session are serialized across aiterm processes so chunks cannot interleave. Every OS pastes through tmux in UTF-8-safe 256-byte chunks with a 10 ms drain interval; macOS, Linux, and WSL2 have all demonstrated silent middle/trailing loss when a long input is pushed without that boundary. Sanitized multiline text sent while a POSIX shell is in the foreground is encoded as one newline-free `eval` input: the shell receives the complete script before it runs the first line, so a pager or REPL started mid-script cannot consume later lines as interactive keystrokes. Single-line input, `raw:true`, and non-shell frontends remain direct PTY pastes. Agent dispatches additionally paste with tmux bracketed paste (`paste-buffer -p`): panes that requested bracketed-paste mode (the vendor TUIs) receive each chunk wrapped in `ESC[200~/201~`, hardening prompt injection against mid-word key-interpretation corruption and dropped submits. If a later chunk fails, aiterm reports the partial-send state and does not press Enter automatically. A lock left by a terminated sender fails closed before sending; close and recreate that session (or use `pty_kill_all` when every session is disposable) to clean it up safely.
 
 ## A human can watch
 
@@ -519,7 +519,9 @@ npm link           # put `aiterm-mcp` on PATH locally
 Development uses focused local tests first. The final GitHub Actions gate starts the same full
 `npm test` concurrently on self-hosted macOS native, Linux native, Windows native, and WSL2
 runners; it does not replace any OS with a reduced suite. Tag-triggered npm publishing runs only
-after all four environments pass and the tagged commit is confirmed on `origin/main`.
+after all four environments pass and the tagged commit is confirmed on `origin/main`. The native
+Windows runner must run as the interactive Windows user that owns the initialized WSL distro;
+`NETWORK SERVICE` cannot see that user's WSL/tmux environment and is not a valid runner identity.
 
 Logic lives in `src/core.ts` (tmux control, reduction, completion detection, safety, agent launch) and `src/rtk.ts` (per-command reducers); `src/index.ts` is the MCP surface. The design origin and the reducer's porting source (the pytest reducer is ported to match upstream rtk 0.42.0, except the deliberate `FAILED`-line difference noted above, and is locked by regression tests) are in `prototype/python/`.
 

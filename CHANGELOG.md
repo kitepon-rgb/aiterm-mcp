@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - 移転前のTrusted Publisherが発行するOIDC claimと現在のrepository ownerが食い違い、provenance署名後の
   npm publishがE404になる公開障害を修理する。失敗済み`v0.25.0`は動かさず、修正版を`v0.25.1`として出す。
+- Linux native／WSL2でも長いPTY入力を一括pasteするとtmuxが成功を返したまま中間を欠落させるため、
+  全OSでUTF-8境界を守る256byte chunkと10msのdrain間隔を使う。
+- `until`／`mark`を指定したreadが、shell builtin処理中の一瞬の出力静止をquiescent完了と誤認して
+  指定証拠より先に返る欠陥を修理し、指定したmarker／sentinelを優先する。
+- Windows nativeのself-hosted runnerをWSL所有者のinteractive taskで起動し、`NETWORK SERVICE`から
+  見えないWSL／tmuxのためWindows fullが一括失敗する工場設定を修理する。
 
 ## [0.25.0] - 2026-08-13
 

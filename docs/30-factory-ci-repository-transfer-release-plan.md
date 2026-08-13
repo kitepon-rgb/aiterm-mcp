@@ -31,6 +31,8 @@ GitHub Actionsの最終CIはself-hostedの次の4環境で同時に開始する�
 4環境はすべて同じ`node --version && npm --version && npm ci && npm test`を実行する。
 OS別の役割分散、縮小suite、GitHub-hosted runnerによる最終testの代用はしない。runnerに必要な
 Node、npm、tmux／WSL bridgeは各OSの標準システム環境へ導入し、workflow内で補完しない。
+Windows native runnerは初期化済みWSL distroを所有するWindows userのinteractive Scheduled Taskで
+起動する。`NETWORK SERVICE`等のservice accountはuser所有WSL／tmuxを列挙できないため使用しない。
 
 ## 公開契約
 

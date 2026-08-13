@@ -97,9 +97,11 @@ const LINE_TAIL_CHARS = 600;
 const DEDUP_MIN_RUN = 3; // 同一行がこれ以上連続したら 1 行＋件数に畳む
 const MAX_FULL_BYTES = 8 * 1024 * 1024; // full/range 読取で一度にメモリへ載せる上限（B7）
 const MAX_SEND_BYTES = 64 * 1024;
-// macOSのPTY入力queueは、tmuxが長文を1回で流すと後半を落とすことがある。
+// PTY入力queueはOSを問わず、tmuxが長文を1回で流すと後半を落とすことがある。
 // UTF-8境界を守って小さいtmux client roundtripに分け、各回にserver event loopがPTYへdrainできる境界を作る。
-const PTY_PASTE_CHUNK_BYTES = process.platform === "darwin" ? 256 : MAX_SEND_BYTES;
+const PTY_PASTE_CHUNK_BYTES = 256;
+const PTY_PASTE_CHUNK_PAUSE_MS = 10;
+const PTY_PASTE_PAUSE_BUFFER = new Int32Array(new SharedArrayBuffer(4));
 const SESSION_SEND_LOCK_WAIT_MS = 10_000;
 const SESSION_SEND_LOCK_POLL_MS = 25;
 
@@ -814,14 +816,15 @@ async function waitCompletion(
         // 次周回の先頭で新増分に対する mark/until 判定が走る。
         if (safeStatSize(logpath(name)) !== size) {
           stable = 0;
-        } else if (SHELLS.has(fg)) {
+        } else if (!until && !markActive && SHELLS.has(fg)) {
           if (isWin) await settleWinLog(name);
           return [true, "quiescent"]; // 出力静止 ∧ シェル復帰 ＝ 確証つき完了
         } else if (!until && !markActive && fg !== "") {
           // ネスト中（前面が ssh/docker/REPL 等でシェル集合外）は quiescence の「シェル復帰」条件を
           // 原理的に満たせない。until も mark も無ければこれ以上待っても確証は増えない（until/dead/
           // quiescent/mark のいずれも発火し得ない）ので、出力静止時点で「未確定」のまま早期返却する。
-          // markActive のときは sentinel を待つべく早期返却せず、非シェル前面（sleep 等）でも待ち続ける。
+          // until/markActive のときは指定した証拠を待つべく早期返却せず、shell builtinや
+          // 非シェル前面（sleep 等）でも待ち続ける。
           // fg==="" は前面コマンド取得失敗＝ネスト断定不可なので早期返却せず従来どおり timeout まで待つ。
           if (isWin) await settleWinLog(name);
           return [false, "nested"];
@@ -1043,9 +1046,9 @@ export function send(name: string, text: string, o: SendOpts = {}): string {
         /* noop */
       }
     }
-    // `send-keys -l`と単発`paste-buffer`は、長文をPTY入力queueへ一度に流し、macOS CIで
-    // 途中以降が欠落しても tmux 自体は code=0 を返した。macOSだけUTF-8を壊さない256byte以下に分け、
-    // Linux/WSLは一括のままとする。全chunk＋Enterはsession単位のcross-process lock内で直列化する。
+    // `send-keys -l`と単発`paste-buffer`は、長文をPTY入力queueへ一度に流すと、OSを問わず
+    // 途中以降が欠落しても tmux 自体は code=0 を返す。UTF-8を壊さない256byte以下に分け、
+    // 全chunk＋Enterをsession単位のcross-process lock内で直列化する。
     const pasteSupportsNoSanitize = pasteBufferSupportsNoSanitizeFlag();
     const chunks = splitPtyText(text);
     const bufferBase = `aiterm-${process.pid}-${randomBytes(8).toString("hex")}`;
@@ -1079,6 +1082,11 @@ export function send(name: string, text: string, o: SendOpts = {}): string {
             `（chunk ${i + 1}/${chunks.length}）: ${pasted.stderr.trim() || `code=${pasted.code}`}.${partial}`,
           2,
         );
+      }
+      if (i + 1 < chunks.length) {
+        // tmux clientの終了だけでは、serverが前chunkをPTYへdrainしたことを保証しない。
+        // 次chunkまで短く間を空け、外部PTY入力queueの飽和による黙った末尾欠落を防ぐ。
+        Atomics.wait(PTY_PASTE_PAUSE_BUFFER, 0, 0, PTY_PASTE_CHUNK_PAUSE_MS);
       }
     }
     if (enter) {

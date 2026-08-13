@@ -17,6 +17,8 @@ output) is already committed — these steps activate it.
 > `io.github.kitepon/aiterm-mcp`へ統一する。最終CIはself-hostedのmacOS native・Linux native・
 > Windows native・WSL2で同じ`npm test`を同時実行する。失敗済み`v0.25.0`は移動せず、
 > repo移転後のOIDC Trusted Publisherを`kitepon/aiterm-mcp`へ直した修正版を0.25.1として公開する。
+> Windows native runnerはWSL distro所有者`kite_`のinteractive Scheduled Taskで起動する。
+> `NETWORK SERVICE`ではuser所有WSL／tmuxへ到達できず、Windows fullの実行主体に使わない。
 > 正本は[factory CI / repository transfer release plan](30-factory-ci-repository-transfer-release-plan.md)。
 
 > **v0.24.3公開完了（2026-08-13）**: 4 launcherの`env_vars`で、現在のMCP processにある
