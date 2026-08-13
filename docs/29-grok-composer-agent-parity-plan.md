@@ -30,7 +30,7 @@ ClaudeとCodexのlauncherが共通して提供する機能を、GrokとComposer�
 1. 共通同等機能の範囲は、起動model、起動effort、同一sessionのmodel／effort変更、read-only sandbox、
    完了通知、transcript、環境共有、`env_vars`、Throughline、lineage／再委譲とする。
 2. Grok／Composer launcherは`reasoning_effort`をvendor CLIへ渡し、`write_scope=read-only`を
-   `--sandbox read-only`へ落とす。path説明はClaude/Codexと同じく宣言として保持する。
+   `--sandbox read-only`へ落とす。path説明はCodexと同じく宣言として保持する。
 3. `agent_configure`はGrok／Composerを受理し、vendor標準の`/model`と`/effort`だけで同一sessionを変更する。
 4. explicit modelは起動前に`grok models`の現行catalogと照合する。catalog取得失敗、catalogにないmodel、
    Composerの既定model不在は明示エラーとし、sessionを作らない。Grokへのsilent fallbackは禁止する。

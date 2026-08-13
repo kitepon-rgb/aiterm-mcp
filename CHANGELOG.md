@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 起動時effort、read-only sandbox、Grok／Composerの同一session model／effort変更、
   catalog不在時の残骸ゼロ拒否をfocused regressionで固定した。
 - 既存agent関連回帰117/117とMCP schema smokeがgreen。
+- 最初のfull regressionは新catalog境界を持たない既存MCP fixtureだけが失敗して344/345。fixtureを
+  focusedに修正後、最終full regression 345/345を確認した。
+- npm pack dry-runは13 files、MCPB validate／packは0.25.0・2261 files、staged MCPは
+  version 0.25.0／14 tools／4 provider schema／stderr 0でgreen。
 
 ## [0.24.3] - 2026-08-13
 
