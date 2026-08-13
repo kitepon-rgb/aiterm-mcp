@@ -8,13 +8,13 @@ Thanks for your interest. aiterm-mcp is a small, focused project: a stdio MCP se
 - **tmux** — a runtime prerequisite, not bundled. The test suite needs it too. Check with `tmux -V`.
   - **macOS**: stock macOS ships no tmux. Install it with `brew install tmux`. If you run aiterm from a **GUI-launched** MCP client, Homebrew's bin (`/opt/homebrew/bin` on Apple Silicon, `/usr/local/bin` on Intel) may be off `PATH`; `resolveTmux()` in `src/core.ts` auto-searches those, or set **`AITERM_TMUX=/path/to/tmux`** to point at it explicitly.
   - **Linux / WSL2**: `sudo apt install tmux`.
-  - **Native Windows**: there is no native tmux. aiterm bridges every tmux call through WSL (`wsl.exe -e tmux`), so you need [WSL](https://learn.microsoft.com/windows/wsl/) installed with **tmux inside the distro** (`sudo apt install tmux`; verify with `wsl tmux -V`). CI does not exercise the Windows bridge — it is validated manually — so test Windows changes on a real machine.
+  - **Native Windows**: there is no native tmux. aiterm bridges every tmux call through WSL (`wsl.exe -e tmux`), so you need [WSL](https://learn.microsoft.com/windows/wsl/) installed with **tmux inside the distro** (`sudo apt install tmux`; verify with `wsl tmux -V`). The factory CI exercises the full suite on both native Windows and WSL2.
 - **Throughline >= 0.9.0** is optional and needed only when testing a launcher with `throughline_source_session`. Ordinary clean launches and all PTY tools do not depend on Throughline.
 
 ## Local development
 
 ```bash
-git clone https://github.com/kitepon-rgb/aiterm-mcp.git
+git clone https://github.com/quolu/aiterm-mcp.git
 cd aiterm-mcp
 npm install
 npm run build      # tsc → dist/
@@ -44,7 +44,7 @@ The design source of truth is `docs/01_design-plan.md` — read it before changi
 
 ## Tests
 
-Tests live in `test/` and use the built-in `node:test` runner (`node --test test/*.test.mjs`). Run the whole suite with `npm test`. On POSIX and macOS, the full tmux-backed suite runs when tmux is installed. Native Windows CI runs the tmux-independent layer on Node 20/22 as a required publish gate; the WSL tmux bridge still requires manual validation on a real Windows machine.
+Tests live in `test/` and use the built-in `node:test` runner (`node --test test/*.test.mjs`). Run the whole suite with `npm test`. Development and diagnosis happen against focused tests locally; run the full suite once only after the relevant targets are green. Factory CI then starts the same `npm test` concurrently on self-hosted macOS native, Linux native, Windows native, and WSL2 runners. No OS receives a reduced substitute suite.
 
 The integration tests that touch real tmux **isolate themselves** so they never pollute your live session (`claude.sock`):
 
@@ -69,7 +69,7 @@ Tests skip gracefully when tmux is absent (they detect it via `tmux -V`, or `wsl
 
 1. Branch from `main`.
 2. Make sure `npm test` passes locally **with tmux installed**.
-3. Open a PR against `main`. CI (`.github/workflows/ci.yml`) must pass on **ubuntu-latest and macos-latest**, each across **Node 18, 20, and 22**. Native Windows also runs the tmux-independent layer on **Node 20 and 22** as a required gate; the WSL tmux bridge is still manual, so note in the PR if you verified it on Windows.
+3. Open a PR against `main`. CI (`.github/workflows/ci.yml`) must pass the same full `npm test` on all four self-hosted factory environments: **macOS native, Linux native, Windows native, and WSL2**.
 4. Keep the change scoped. If you're changing design behavior (completion detection, reduction, safety), update `docs/01_design-plan.md` to match.
 
 For Codex readiness changes, test both startup screens (with the `OpenAI Codex` header) and
@@ -81,11 +81,11 @@ For runtime error store queue changes, preserve dead-owner/PID-reuse cleanup and
 progressing-queue regression. A healthy predecessor advancing the queue must renew the stall budget;
 the timeout must not become a fixed cap on total backlog wait.
 
-Publishing to npm (`npm publish --provenance --access public`) is automated on `v*` tags via the `publish` CI job — contributors don't publish.
+Publishing to npm (`npm publish --provenance --access public`) is automated on `v*` tags only after all four factory environments pass and the tagged commit is verified as an ancestor of `origin/main`. The npm OIDC Trusted Publisher is `quolu/aiterm-mcp` + `.github/workflows/ci.yml`; contributors don't publish.
 
 ## Reporting bugs / requesting features
 
-Open an issue: <https://github.com/kitepon-rgb/aiterm-mcp/issues>.
+Open an issue: <https://github.com/quolu/aiterm-mcp/issues>.
 
 For bugs, please include your OS, `node -v`, `tmux -V` (or `wsl tmux -V` on Windows), how you launched aiterm (client, GUI vs terminal), and the exact tool call and reduced output. For the "known constraints" listed in the README (e.g. quiescence not firing while nested, `is_complete=False` on long commands, the safety gate being a tripwire not a sandbox), those are **by design** — check that section before filing.
 

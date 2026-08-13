@@ -16,6 +16,38 @@ test('server.json version stays in lockstep with package.json', async () => {
   assert.equal(mcpbManifest.version, pkg.version);
 });
 
+test('release metadata points at the canonical quolu repository', async () => {
+  const [pkg, server, mcpbManifest] = await Promise.all([
+    readJson(new URL('../package.json', import.meta.url)),
+    readJson(new URL('../server.json', import.meta.url)),
+    readJson(new URL('../mcpb/manifest.json', import.meta.url)),
+  ]);
+
+  assert.equal(pkg.mcpName, 'io.github.quolu/aiterm-mcp');
+  assert.equal(pkg.repository.url, 'git+https://github.com/quolu/aiterm-mcp.git');
+  assert.equal(pkg.homepage, 'https://github.com/quolu/aiterm-mcp#readme');
+  assert.equal(server.name, pkg.mcpName);
+  assert.equal(server.repository.url, 'https://github.com/quolu/aiterm-mcp');
+  assert.equal(mcpbManifest.repository.url, 'https://github.com/quolu/aiterm-mcp');
+  assert.equal(mcpbManifest.homepage, pkg.homepage);
+});
+
+test('final CI runs the same full test on all four factory environments', async () => {
+  const [ci, factory] = await Promise.all([
+    readFile(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8'),
+    readFile(new URL('../.github/workflows/factory-full-ci.yml', import.meta.url), 'utf8'),
+  ]);
+
+  assert.match(ci, /uses: \.\/\.github\/workflows\/factory-full-ci\.yml/);
+  assert.match(ci, /node --version && npm --version && npm ci && npm test/);
+  assert.match(ci, /needs: \[full\]/);
+  for (const environment of ['macos-native', 'linux-native', 'windows-native', 'wsl2']) {
+    assert.match(factory, new RegExp(`"${environment}"`));
+  }
+  assert.match(factory, /runs-on: \[self-hosted, factory, "\$\{\{ matrix\.environment \}\}"\]/);
+  assert.match(factory, /run: \$\{\{ inputs\.full-command \}\}/);
+});
+
 test('clean build ships only the active managed stop hooks', async () => {
   await access(new URL('../dist/claude-stop-hook.js', import.meta.url));
   await access(new URL('../dist/grok-stop-hook.js', import.meta.url));

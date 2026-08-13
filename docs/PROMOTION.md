@@ -13,6 +13,12 @@ output) is already committed — these steps activate it.
 
 ## Status (live)
 
+> **v0.25.1公開工程（2026-08-13）**: 正規repositoryを`quolu/aiterm-mcp`、Official MCP Registry名を
+> `io.github.quolu/aiterm-mcp`へ統一する。最終CIはself-hostedのmacOS native・Linux native・
+> Windows native・WSL2で同じ`npm test`を同時実行する。失敗済み`v0.25.0`は移動せず、
+> repo移転後のOIDC Trusted Publisherを`quolu/aiterm-mcp`へ直した修正版を0.25.1として公開する。
+> 正本は[factory CI / repository transfer release plan](30-factory-ci-repository-transfer-release-plan.md)。
+
 > **v0.24.3公開完了（2026-08-13）**: 4 launcherの`env_vars`で、現在のMCP processにある
 > 指定名の値だけを起動agentへ渡す。永続tmux serverが先に起動していても席identity／workflow変数を失わない。
 > Codex v0.147の`medium fast ·` footerも認識し、idle実席への`agent_configure`誤拒否を修理する。
@@ -110,7 +116,7 @@ tag CIが停止した履歴として保持し、tag移動や後付け成功を�
 Previously verified public surfaces:
 
 - ✅ **npm `0.22.0` is latest** — provenance、integrity／shasumを公開APIで確認済み。
-- ✅ **Official MCP Registry** — `io.github.kitepon-rgb/aiterm-mcp` 0.22.0 is active and latest.
+- ✅ **Official MCP Registry（当時の公開記録）** — `io.github.kitepon-rgb/aiterm-mcp` 0.22.0 was active and latest. 現行namespaceではない。
 - ⚠️ **mcp.so** — the existing listing was claimed through GitHub on 2026-07-26.
   Do not submit a duplicate. Its editor currently discards submitted changes
   (a fresh reload restores the stale 6-tool content), so the update remains blocked.
@@ -136,7 +142,7 @@ The lettered steps below are kept as a re-run reference and for the announcement
 
 ## Already done in-repo (this session)
 
-- `package.json`: added `mcpName: io.github.kitepon-rgb/aiterm-mcp`, expanded
+- `package.json`: added the then-current `mcpName: io.github.kitepon-rgb/aiterm-mcp`, expanded
   keywords to include `mcp-server`, `claude-code`, `cursor`, `devtools`.
 - `server.json`: Official MCP Registry manifest (npm / stdio).
 - `glama.json`: Glama maintainer-claim file.
@@ -174,7 +180,7 @@ action, multi-directory reach. `server.json` is already in the repo.
 
 ```bash
 # install the publisher CLI (see modelcontextprotocol/registry releases)
-mcp-publisher login github         # OAuth as kitepon-rgb
+mcp-publisher login github         # OAuth as quolu
 mcp-publisher publish              # reads ./server.json
 ```
 
@@ -204,7 +210,8 @@ The live Add Server form checked on 2026-07-26 required exactly:
 - Public GitHub repository URL
 
 It did not request `server.json`. The `aiterm-mcp` submission was accepted for
-review with `https://github.com/kitepon-rgb/aiterm-mcp`.
+review with the then-current `https://github.com/kitepon-rgb/aiterm-mcp` URL.
+This is a historical receipt; new submissions use `https://github.com/quolu/aiterm-mcp`.
 
 ## E. Smithery (https://smithery.ai)
 
@@ -248,7 +255,7 @@ Highest-SEO community list (DoFollow GitHub links). Fork, add under the
 terminal/command-line category, alphabetical, then open the PR. Suggested line:
 
 ```md
-- [aiterm-mcp](https://github.com/kitepon-rgb/aiterm-mcp) 🟩 🏠 - One persistent tmux-backed terminal for AI: `ssh`, `docker exec`, and REPLs nest inside a single authenticated session (no re-auth per command); token-reduced reads.
+- [aiterm-mcp](https://github.com/quolu/aiterm-mcp) 🟩 🏠 - One persistent tmux-backed terminal for AI: `ssh`, `docker exec`, and REPLs nest inside a single authenticated session (no re-auth per command); token-reduced reads.
 ```
 
 (Legend: 🟩 = TypeScript/Node, 🏠 = local service. Confirm the current legend in
@@ -260,7 +267,7 @@ Completed on 2026-07-26. The repository now has all requested topics:
 `mcp`, `model-context-protocol`, `tmux`, `claude-code`, and `codex-cli`.
 
 ```bash
-gh repo edit kitepon-rgb/aiterm-mcp --add-topic codex-cli
+gh repo edit quolu/aiterm-mcp --add-topic codex-cli
 ```
 
 ## H. Backfill the v0.3.1 GitHub Release (closes the timeline gap)
@@ -309,7 +316,7 @@ on the SSH-persistence wedge, not "another tmux MCP".
 > (`npx -y aiterm-mcp`), works on Linux/WSL2/macOS and native Windows (via a WSL
 > tmux bridge). MIT.
 >
-> Repo: https://github.com/kitepon-rgb/aiterm-mcp
+> Repo: https://github.com/quolu/aiterm-mcp
 > Would love feedback on the completion-detection approach (quiescence vs prompt
 > matching) — it's the hardest part.
 
@@ -332,7 +339,7 @@ on the SSH-persistence wedge, not "another tmux MCP".
 3. Reads come back token-reduced (git/grep/pytest reducers), with a 4-layer
    "is the command done?" detector. `npx -y aiterm-mcp`, 14 tools, MIT,
    Linux/WSL2/macOS/Windows. [demo gif]
-4. Repo + one-line Claude Code install 👇 https://github.com/kitepon-rgb/aiterm-mcp
+4. Repo + one-line Claude Code install 👇 https://github.com/quolu/aiterm-mcp
 
 (Attach the demo GIF to tweet 3. Reuse `.github/og.png` as the card image.)
 

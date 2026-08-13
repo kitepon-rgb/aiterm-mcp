@@ -8,7 +8,7 @@
 
 # Aiterm
 
-[![CI](https://github.com/kitepon-rgb/aiterm-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/kitepon-rgb/aiterm-mcp/actions/workflows/ci.yml)
+[![CI](https://github.com/quolu/aiterm-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/quolu/aiterm-mcp/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/aiterm-mcp.svg)](https://www.npmjs.com/package/aiterm-mcp)
 [![weekly downloads](https://img.shields.io/npm/dw/aiterm-mcp.svg)](https://www.npmjs.com/package/aiterm-mcp)
 [![node](https://img.shields.io/node/v/aiterm-mcp)](https://nodejs.org)
@@ -89,7 +89,7 @@ Save this as `.cursor/mcp.json` for the project, or `~/.cursor/mcp.json` globall
 
 **Ownership boundary:** this repository owns the persistent PTY and external-agent
 execution lane. Cross-product installation and host integration are handled by
-[dotagents](https://github.com/kitepon-rgb/dotagents), the internal development
+[dotagents](https://github.com/kitepon/dotagents), the internal development
 toolchain behind kitepon.dev's products.
 
 **Measured, not claimed:** in the recorded 203-test benchmark, a `pty_read` puts **~7.1× fewer tokens** in your context than the raw log — and the pass/fail verdict survives the fold. → [When to reach for it vs. the built-in shell](#when-to-reach-for-it-vs-the-built-in-shell)
@@ -168,7 +168,7 @@ A lot of 2026's agent tooling is converging on orchestration: a lead model deleg
 
 ## Built with Codex and GPT-5.6 for OpenAI Build Week 2026
 
-aiterm predates Build Week, so the event work is kept visible in dated commits. During the submission window (July 14–16, 2026), I extended it with safe serialized delivery for long PTY input, correlated operation IDs and bounded result recovery, machine-readable launch and idempotent close receipts, and a hardened readiness gate that prevents prompts from disappearing during TUI startup redraws. The public comparison from the pre-event release is [`v0.12.2...main`](https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.12.2...main).
+aiterm predates Build Week, so the event work is kept visible in dated commits. During the submission window (July 14–16, 2026), I extended it with safe serialized delivery for long PTY input, correlated operation IDs and bounded result recovery, machine-readable launch and idempotent close receipts, and a hardened readiness gate that prevents prompts from disappearing during TUI startup redraws. The public comparison from the pre-event release is [`v0.12.2...main`](https://github.com/quolu/aiterm-mcp/compare/v0.12.2...main).
 
 I used **Codex with GPT-5.6** as an engineering collaborator: it inspected the implementation, challenged the API and recovery contracts, generated focused regression cases, and helped verify race, security, timeout, and malformed-event paths. I reviewed the diffs and test evidence and retained the final product and architecture decisions. At that Build Week checkpoint, the regression suite contained 262 tests covering normal operation as well as failure and recovery behavior; current release receipts live in the [CHANGELOG](CHANGELOG.md) and release ADRs.
 
@@ -516,6 +516,11 @@ npm test           # build, then the node:test regression suite (requires tmux)
 npm link           # put `aiterm-mcp` on PATH locally
 ```
 
+Development uses focused local tests first. The final GitHub Actions gate starts the same full
+`npm test` concurrently on self-hosted macOS native, Linux native, Windows native, and WSL2
+runners; it does not replace any OS with a reduced suite. Tag-triggered npm publishing runs only
+after all four environments pass and the tagged commit is confirmed on `origin/main`.
+
 Logic lives in `src/core.ts` (tmux control, reduction, completion detection, safety, agent launch) and `src/rtk.ts` (per-command reducers); `src/index.ts` is the MCP surface. The design origin and the reducer's porting source (the pytest reducer is ported to match upstream rtk 0.42.0, except the deliberate `FAILED`-line difference noted above, and is locked by regression tests) are in `prototype/python/`.
 
 ## Try it
@@ -526,10 +531,10 @@ One command, no clone, no build:
 claude mcp add --scope user --transport stdio aiterm -- npx -y aiterm-mcp
 ```
 
-If aiterm let your AI hand a task to another agent — or saved you a round-trip of tokens — **[star the repo](https://github.com/kitepon-rgb/aiterm-mcp)**. It's the cheapest way to help others find it.
+If aiterm let your AI hand a task to another agent — or saved you a round-trip of tokens — **[star the repo](https://github.com/quolu/aiterm-mcp)**. It's the cheapest way to help others find it.
 
 - **npm:** https://www.npmjs.com/package/aiterm-mcp
-- **Issues / bug reports:** https://github.com/kitepon-rgb/aiterm-mcp/issues
+- **Issues / bug reports:** https://github.com/quolu/aiterm-mcp/issues
 
 ## Shared agent environment
 

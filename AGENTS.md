@@ -41,6 +41,13 @@ npm test
 
 `npm test` は `npm run build && node --test test/*.test.mjs` です。tmux に依存するテストがあります。テストしていない場合は、最終報告でテスト未実施と明示してください。
 
+## 工場CI
+
+- 正規リポジトリは `quolu/aiterm-mcp`。移転前の `kitepon-rgb/aiterm-mcp` を新しい設定、URL、manifest、公開手順に使わない。
+- 開発中は変更に直結するfocused testをローカルで回し、関連gateがgreenになってから`npm test`を最終確認として1回だけ実行する。
+- GitHub Actionsの最終CIはself-hostedの`macos-native`、`linux-native`、`windows-native`、`wsl2`で同時に開始し、4環境すべてが同じ`npm test`を実行する。OS別の縮小suiteやGitHub-hosted runnerを最終CIとして扱わない。
+- tag publishは4環境full greenとrelease commitの`origin/main`祖先確認を通過した後だけ実行する。npm Trusted Publisherは`quolu/aiterm-mcp`と`.github/workflows/ci.yml`の組を正とする。
+
 ## 変更時の同期
 
 - 公開挙動、設計判断、未決事項、テスト方針を変えたら、コードだけでなく `CLAUDE.md`、`docs/01_design-plan.md`、関連 ADR、README/CHANGELOG のどれを同期すべきか確認する。

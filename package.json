@@ -1,7 +1,7 @@
 {
   "name": "aiterm-mcp",
-  "version": "0.25.0",
-  "mcpName": "io.github.kitepon-rgb/aiterm-mcp",
+  "version": "0.25.1",
+  "mcpName": "io.github.quolu/aiterm-mcp",
   "description": "Persistent tmux terminal MCP for launching and driving Claude, Codex, Grok, or Composer from any MCP client, cross-vendor or same-vendor. Also runs durable PTY sessions for SSH, containers, and REPLs.",
   "keywords": [
     "mcp",
@@ -31,12 +31,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kitepon-rgb/aiterm-mcp.git"
+    "url": "git+https://github.com/quolu/aiterm-mcp.git"
   },
   "bugs": {
-    "url": "https://github.com/kitepon-rgb/aiterm-mcp/issues"
+    "url": "https://github.com/quolu/aiterm-mcp/issues"
   },
-  "homepage": "https://github.com/kitepon-rgb/aiterm-mcp#readme",
+  "homepage": "https://github.com/quolu/aiterm-mcp#readme",
   "type": "module",
   "bin": {
     "aiterm-mcp": "dist/index.js",

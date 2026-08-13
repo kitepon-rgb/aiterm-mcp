@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.1] - 2026-08-13
+
+### Changed
+
+- GitHub移転後の正規repositoryを`quolu/aiterm-mcp`へ統一した。README、contributor／security案内、
+  npm metadata、MCPB manifest、Official MCP Registry manifest、公開runbookを同じ正本へ揃えた。
+- 工場管理製品の最終CIをself-hostedのmacOS native・Linux native・Windows native・WSL2へ移し、
+  4環境すべてで同じ`npm test`を同時実行する。OS別の縮小suiteやGitHub-hosted runnerで代用しない。
+- npm publishは4環境full greenとrelease commitの`origin/main`祖先確認を必須条件とし、
+  GitHub Actions OIDC Trusted Publisherは移転後の`quolu/aiterm-mcp`へ対応させる。
+
+### Fixed
+
+- 移転前のTrusted Publisherが発行するOIDC claimと現在のrepository ownerが食い違い、provenance署名後の
+  npm publishがE404になる公開障害を修理する。失敗済み`v0.25.0`は動かさず、修正版を`v0.25.1`として出す。
+
 ## [0.25.0] - 2026-08-13
 
 ### Added
@@ -1032,45 +1048,48 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.24.2...HEAD
-[0.24.2]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.24.1...v0.24.2
-[0.24.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.24.0...v0.24.1
-[0.24.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.23.0...v0.24.0
-[0.23.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.22.0...v0.23.0
-[0.22.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.21.4...v0.22.0
-[0.21.4]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.21.3...v0.21.4
-[0.21.3]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.21.2...v0.21.3
-[0.21.2]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.21.1...v0.21.2
-[0.21.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/b8c4dbc...v0.21.1
-[0.21.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.20.3...b8c4dbc
-[0.20.3]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.20.2...v0.20.3
-[0.20.2]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.20.1...v0.20.2
-[0.20.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.20.0...v0.20.1
-[0.20.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.19.3...v0.20.0
-[0.19.3]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.19.2...v0.19.3
-[0.19.2]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.19.1...v0.19.2
-[0.19.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.19.0...v0.19.1
-[0.19.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.18.2...v0.19.0
-[0.18.2]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.18.1...v0.18.2
-[0.18.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.18.0...v0.18.1
-[0.18.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.17.0...v0.18.0
-[0.17.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.16.0...v0.17.0
-[0.16.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.15.1...v0.16.0
-[0.15.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.15.0...v0.15.1
-[0.15.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.12.3...v0.15.0
-[0.12.3]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.12.2...v0.12.3
-[0.12.2]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.12.1...v0.12.2
-[0.10.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.9.1...v0.10.0
-[0.9.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.9.0...v0.9.1
-[0.9.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.8.0...v0.9.0
-[0.8.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.7.1...v0.8.0
-[0.7.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.7.0...v0.7.1
-[0.7.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.6.0...v0.7.0
-[0.6.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.5.0...v0.6.0
-[0.5.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.4.1...v0.5.0
-[0.4.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.4.0...v0.4.1
-[0.4.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.3.1...v0.4.0
-[0.3.1]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.3.0...v0.3.1
-[0.3.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/kitepon-rgb/aiterm-mcp/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/kitepon-rgb/aiterm-mcp/releases/tag/v0.1.0
+[Unreleased]: https://github.com/quolu/aiterm-mcp/compare/v0.25.1...HEAD
+[0.25.1]: https://github.com/quolu/aiterm-mcp/compare/v0.25.0...v0.25.1
+[0.25.0]: https://github.com/quolu/aiterm-mcp/compare/v0.24.3...v0.25.0
+[0.24.3]: https://github.com/quolu/aiterm-mcp/compare/v0.24.2...v0.24.3
+[0.24.2]: https://github.com/quolu/aiterm-mcp/compare/v0.24.1...v0.24.2
+[0.24.1]: https://github.com/quolu/aiterm-mcp/compare/v0.24.0...v0.24.1
+[0.24.0]: https://github.com/quolu/aiterm-mcp/compare/v0.23.0...v0.24.0
+[0.23.0]: https://github.com/quolu/aiterm-mcp/compare/v0.22.0...v0.23.0
+[0.22.0]: https://github.com/quolu/aiterm-mcp/compare/v0.21.4...v0.22.0
+[0.21.4]: https://github.com/quolu/aiterm-mcp/compare/v0.21.3...v0.21.4
+[0.21.3]: https://github.com/quolu/aiterm-mcp/compare/v0.21.2...v0.21.3
+[0.21.2]: https://github.com/quolu/aiterm-mcp/compare/v0.21.1...v0.21.2
+[0.21.1]: https://github.com/quolu/aiterm-mcp/compare/b8c4dbc...v0.21.1
+[0.21.0]: https://github.com/quolu/aiterm-mcp/compare/v0.20.3...b8c4dbc
+[0.20.3]: https://github.com/quolu/aiterm-mcp/compare/v0.20.2...v0.20.3
+[0.20.2]: https://github.com/quolu/aiterm-mcp/compare/v0.20.1...v0.20.2
+[0.20.1]: https://github.com/quolu/aiterm-mcp/compare/v0.20.0...v0.20.1
+[0.20.0]: https://github.com/quolu/aiterm-mcp/compare/v0.19.3...v0.20.0
+[0.19.3]: https://github.com/quolu/aiterm-mcp/compare/v0.19.2...v0.19.3
+[0.19.2]: https://github.com/quolu/aiterm-mcp/compare/v0.19.1...v0.19.2
+[0.19.1]: https://github.com/quolu/aiterm-mcp/compare/v0.19.0...v0.19.1
+[0.19.0]: https://github.com/quolu/aiterm-mcp/compare/v0.18.2...v0.19.0
+[0.18.2]: https://github.com/quolu/aiterm-mcp/compare/v0.18.1...v0.18.2
+[0.18.1]: https://github.com/quolu/aiterm-mcp/compare/v0.18.0...v0.18.1
+[0.18.0]: https://github.com/quolu/aiterm-mcp/compare/v0.17.0...v0.18.0
+[0.17.0]: https://github.com/quolu/aiterm-mcp/compare/v0.16.0...v0.17.0
+[0.16.0]: https://github.com/quolu/aiterm-mcp/compare/v0.15.1...v0.16.0
+[0.15.1]: https://github.com/quolu/aiterm-mcp/compare/v0.15.0...v0.15.1
+[0.15.0]: https://github.com/quolu/aiterm-mcp/compare/v0.12.3...v0.15.0
+[0.12.3]: https://github.com/quolu/aiterm-mcp/compare/v0.12.2...v0.12.3
+[0.12.2]: https://github.com/quolu/aiterm-mcp/compare/v0.12.1...v0.12.2
+[0.10.0]: https://github.com/quolu/aiterm-mcp/compare/v0.9.1...v0.10.0
+[0.9.1]: https://github.com/quolu/aiterm-mcp/compare/v0.9.0...v0.9.1
+[0.9.0]: https://github.com/quolu/aiterm-mcp/compare/v0.8.0...v0.9.0
+[0.8.0]: https://github.com/quolu/aiterm-mcp/compare/v0.7.1...v0.8.0
+[0.7.1]: https://github.com/quolu/aiterm-mcp/compare/v0.7.0...v0.7.1
+[0.7.0]: https://github.com/quolu/aiterm-mcp/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/quolu/aiterm-mcp/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/quolu/aiterm-mcp/compare/v0.4.1...v0.5.0
+[0.4.1]: https://github.com/quolu/aiterm-mcp/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/quolu/aiterm-mcp/compare/v0.3.1...v0.4.0
+[0.3.1]: https://github.com/quolu/aiterm-mcp/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/quolu/aiterm-mcp/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/quolu/aiterm-mcp/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/quolu/aiterm-mcp/releases/tag/v0.1.0

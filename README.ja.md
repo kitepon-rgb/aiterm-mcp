@@ -8,7 +8,7 @@
 
 # Aiterm
 
-[![CI](https://github.com/kitepon-rgb/aiterm-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/kitepon-rgb/aiterm-mcp/actions/workflows/ci.yml)
+[![CI](https://github.com/quolu/aiterm-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/quolu/aiterm-mcp/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/aiterm-mcp.svg)](https://www.npmjs.com/package/aiterm-mcp)
 [![週間ダウンロード](https://img.shields.io/npm/dw/aiterm-mcp.svg)](https://www.npmjs.com/package/aiterm-mcp)
 [![node](https://img.shields.io/node/v/aiterm-mcp)](https://nodejs.org)
@@ -90,7 +90,7 @@ claude mcp add --scope user --transport stdio aiterm -- npx -y aiterm-mcp
 
 **所有境界:** 本repositoryは永続PTYと外部agent実行レーンを所有します。製品横断の導入と
 host統合は、kitepon.devの製品開発を支える内部基盤
-[dotagents](https://github.com/kitepon-rgb/dotagents)が担当します。
+[dotagents](https://github.com/kitepon/dotagents)が担当します。
 
 **言葉でなく実測で:** 記録済み203テストのベンチマークでは、`pty_read` はコンテキストに載るトークンを生ログの **約 7.1 分の 1** に減らす。しかも pass/fail の判定は畳んでも残る。→ [組み込みシェルツールとの使い分け](#組み込みシェルツールとの使い分け)
 
@@ -472,6 +472,11 @@ npm test           # build してから node:test 回帰スイート（tmux 必�
 npm link           # ローカルで `aiterm-mcp` を PATH に
 ```
 
+開発中は変更に直結するfocused testを先にローカルで実行します。GitHub Actionsの最終gateは
+self-hostedのmacOS native・Linux native・Windows native・WSL2で同じ`npm test`を同時実行し、
+OS別の縮小suiteで代用しません。tag起点のnpm公開は4環境greenとtagged commitの`origin/main`
+祖先確認を通過した後だけ実行します。
+
 ロジックは `src/core.ts`（tmux 制御・削減・完了検出・安全・エージェント起動）と `src/rtk.ts`（コマンド別 reducer）、公開は `src/index.ts`。設計の出発点と reducer の移植元（pytest reducer は本家 rtk 0.42.0 と一致するよう移植・ただし上記の `FAILED` 行の差異は意図的・回帰テストで固定）は `prototype/python/` を参照。
 
 ## 試す
@@ -482,10 +487,10 @@ npm link           # ローカルで `aiterm-mcp` を PATH に
 claude mcp add --scope user --transport stdio aiterm -- npx -y aiterm-mcp
 ```
 
-aiterm が、あなたの AI に別のエージェントへ仕事を渡させたなら——あるいはトークンの往復を 1 回でも省けたなら——**[リポジトリに star](https://github.com/kitepon-rgb/aiterm-mcp)** を。他の人に見つけてもらう一番安い方法です。
+aiterm が、あなたの AI に別のエージェントへ仕事を渡させたなら——あるいはトークンの往復を 1 回でも省けたなら——**[リポジトリに star](https://github.com/quolu/aiterm-mcp)** を。他の人に見つけてもらう一番安い方法です。
 
 - **npm:** https://www.npmjs.com/package/aiterm-mcp
-- **Issue / バグ報告:** https://github.com/kitepon-rgb/aiterm-mcp/issues
+- **Issue / バグ報告:** https://github.com/quolu/aiterm-mcp/issues
 
 ## ライセンス
 

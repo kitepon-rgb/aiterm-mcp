@@ -3,7 +3,7 @@
   "manifest_version": "0.3",
   "name": "aiterm-mcp",
   "display_name": "aiterm-mcp — Persistent AI terminals",
-  "version": "0.25.0",
+  "version": "0.25.1",
   "description": "Launch and drive Claude, Codex, Grok, or Composer from any MCP client, plus durable tmux terminals for SSH, containers, and REPLs.",
   "long_description": "Give any MCP client one persistent terminal for SSH, containers, REPLs, and interactive coding-agent TUIs. A Claude or Codex caller can launch Claude, Codex, Grok, or Composer, either across vendors or within the same one, and drive the real TUI through MCP. Reads are token-reduced, sessions survive client restarts, and humans can attach to the shared tmux session.",
   "author": {
@@ -12,11 +12,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/kitepon-rgb/aiterm-mcp"
+    "url": "https://github.com/quolu/aiterm-mcp"
   },
-  "homepage": "https://github.com/kitepon-rgb/aiterm-mcp#readme",
-  "documentation": "https://github.com/kitepon-rgb/aiterm-mcp#install-in-your-mcp-client",
-  "support": "https://github.com/kitepon-rgb/aiterm-mcp/issues",
+  "homepage": "https://github.com/quolu/aiterm-mcp#readme",
+  "documentation": "https://github.com/quolu/aiterm-mcp#install-in-your-mcp-client",
+  "support": "https://github.com/quolu/aiterm-mcp/issues",
   "icon": "icon.png",
   "server": {
     "type": "node",

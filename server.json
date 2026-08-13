@@ -1,18 +1,18 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.kitepon-rgb/aiterm-mcp",
+  "name": "io.github.quolu/aiterm-mcp",
   "description": "Launch and drive Claude, Codex, Grok, or Composer from any MCP client in persistent tmux terminals, cross-vendor or same-vendor.",
   "repository": {
-    "url": "https://github.com/kitepon-rgb/aiterm-mcp",
+    "url": "https://github.com/quolu/aiterm-mcp",
     "source": "github"
   },
-  "version": "0.25.0",
+  "version": "0.25.1",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "aiterm-mcp",
-      "version": "0.25.0",
+      "version": "0.25.1",
       "transport": {
         "type": "stdio"
       }

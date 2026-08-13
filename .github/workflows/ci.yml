@@ -6,91 +6,53 @@ on:
     tags: ["v*"]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 実行する工場環境
+        type: choice
+        default: all
+        options:
+          - all
+          - macos-native
+          - linux-native
+          - windows-native
+          - wsl2
+
+permissions:
+  contents: read
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node: [18, 20, 22]
-    steps:
-      - uses: actions/checkout@v5
-      - name: Install tmux (runtime prerequisite)
-        run: sudo apt-get update && sudo apt-get install -y tmux
-      - uses: actions/setup-node@v5
-        with:
-          node-version: ${{ matrix.node }}
-          cache: npm
-      - run: npm ci
-      - run: npm test
-
-  test-macos:
-    runs-on: macos-latest
-    strategy:
-      matrix:
-        node: [18, 20, 22]
-    steps:
-      - uses: actions/checkout@v5
-      - name: Install tmux (runtime prerequisite)
-        run: brew install tmux
-      - uses: actions/setup-node@v5
-        with:
-          node-version: ${{ matrix.node }}
-          cache: npm
-      - run: npm ci
-      - run: npm test
-
-  # ネイティブ Windows は WSL/tmux 無しの GitHub runner では tmux 呼び出し（ensureWinBridge）が throw する。
-  # よって tmux に触れない純粋層のみを検証する（C9・plan の明示フォールバック）: core-pure（toWslPath・
-  # utf8SafeEnd・stripControl・reduceOutput）／rtk（reducer 全般）／smoke（サーバ起動・stdout 衛生・14 ツール）。
-  # WSL ブリッジ統合経路（ensureWinBridge・pipe-pane の /mnt/c 書込・settleWinLog・PTY 完了検出）は手動
-  # Windows 検証ゲートに残す（docs/archive/03_audit-sweep-2026-07.md）。server smokeは14ツールを固定し、
-  # この純粋層全体をpublish必須gateとする。
-  test-windows:
-    runs-on: windows-latest
-    strategy:
-      matrix:
-        node: [20, 22]
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: ${{ matrix.node }}
-          cache: npm
-      - run: npm ci
-      - run: npm run build
-      - name: Test tmux-independent layer (pure functions / reducers / server smoke)
-        run: node --test test/core-pure.test.mjs test/rtk.test.mjs test/smoke.test.mjs test/runtime-error-store.test.mjs
+  full:
+    uses: ./.github/workflows/factory-full-ci.yml
+    with:
+      environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'all' }}
+      full-command: >-
+        node --version && npm --version && npm ci && npm test
 
   publish:
-    needs: [test, test-macos, test-windows]
+    needs: [full]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # npm provenance + Trusted Publishing (OIDC)
+      id-token: write
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v5
         with:
           node-version: 22
           registry-url: "https://registry.npmjs.org"
           cache: npm
-      # npm Trusted Publishing (OIDC) は npm >= 11.5.1 が必要（Node 22 同梱は 10.x）。
-      # npm@latest は 2026-07-09 時点で publish --provenance が sigstore 欠落で落ちたため、
-      # dry-run で sigstore 欠落しないことを確認した 11.6.4 に固定する。
       - run: npm install -g npm@11.6.4
       - run: npm ci
-      - run: npm run build
       - name: Verify tag commit is landed on main
         shell: bash
         run: |
           git fetch --no-tags origin main
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main
-      # 認証は npmjs.com 側の Trusted Publisher 設定（GitHub Actions OIDC）。
-      # トークンを一切持たない＝失効による publish 失敗（2026-07-04 の E404 実被弾）が構造的に消える。
-      # C11: 既に同一 version が npm に存在する場合（tag 再 push 等）は publish をスキップ＝403 で赤くしない
-      # （registry.yml の重複 idempotency と対称）。それ以外の失敗は表面化させる。
       - name: Publish to npm (skip if version already published)
         shell: bash
         run: |

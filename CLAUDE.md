@@ -2,6 +2,14 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **v0.25.1（2026-08-13・release repair）**: 正規repositoryは`quolu/aiterm-mcp`、Official MCP
+> Registry名は`io.github.quolu/aiterm-mcp`。移転前ownerを新しい設定例・badge・manifest・公開手順へ
+> 書かない。工場CIはself-hostedのmacOS native・Linux native・Windows native・WSL2で同時に開始し、
+> 4環境すべてが同じ`npm test`を実行する。OS別の縮小suiteやGitHub-hosted runnerを最終CIへ使わない。
+> npm publishは4環境full green後だけ実行し、release commitの`origin/main`祖先gateとOIDC Trusted
+> Publisherを必須とする。失敗済み`v0.25.0`は移動・再利用せず、修正版を`v0.25.1`として公開する。
+> 詳細は`docs/30-factory-ci-repository-transfer-release-plan.md`を正とする。
+
 > **v0.25.0（2026-08-13・source）**: Grok／Composerを共通launcher制御へ同等化する。
 > 起動時`reasoning_effort`を`--reasoning-effort`へ渡し、`write_scope:"read-only"`は
 > `--sandbox read-only`で実効禁止する。`agent_configure`は同じPTYと会話contextを維持したまま
@@ -244,7 +252,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > launcher 4種の説明に完了受信手順を明記し、transcript未完了エラーは aiterm-wait のバックグラウンド実行を指す。full regression 291/291。
 > 公開証跡（2026-07-18）: v0.16.0は先行して当日npm公開済み（tag CI 29636924981）。v0.17.0公開commit `1ce7cf2`、tag CI `29638878280` success、MCP Registry workflow `29638878302` success、npm latest=0.17.0。
 > 隔離install（scratchpad）で version・bin 3種・12ツール・launcher説明のwait guide・launch schemaのevent_cursor/wait_command・エラーexit 1 を実機確認し、installed dist は full regression 291/291 通過のローカルdistとバイト一致。
-> 注意: ci.yml の test-windows は現在**ブロッキング**（publish の needs に含まれる）＝下記「windows-latest を非ブロッキング」記述は旧仕様。runtime-error-store のWindows掃除flake（ENOTEMPTY）が別タスクで修理待ち。
+> 履歴注記: 旧ci.ymlの`test-windows`／`windows-latest`記述はv0.25.0以前の仕様。現行はself-hosted 4環境で同じfullを必須実行し、OS別jobや縮小suiteを持たない。
 > 実機E2E通過（2026-07-18）: 実codex子でmanaged起動→dispatch即返り（cursor=0）→**dispatch後起動**の `aiterm-wait --cursor` がdone受信→harness re-invoke→transcript turn_id一致で回収→close。cursor起動順序非依存を実機確認。
 >
 > **v0.15.1（2026-07-18公開）**: `claude_agent`を追加し、PTY 6＋対話launcher 4
@@ -283,8 +291,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `docs/01_design-plan.md` — 設計の目的・判断・決定/未決事項の source of truth。**作業前に必ず読む。**
 - `docs/02_mcp-plan.md` — MCP 化計画の履歴文書。現状の正は CLAUDE.md と README.md。
 - `prototype/python/` — 旧 Python 実装（最初の MVP・CLI＋FastMCP）。設計と reducer の**移植元／検証基準**（pytest reducer は rtk **0.42.0** と一致。ただし `FAILED` 要約行の理由は可読性優先で**全文保持**＝意図的に rtk と相違）。成果物は Node 版で、こちらは参照専用。lint は未整備。
-- `test/` — **Node 版の回帰テスト**（`node:test`、`npm test` で build→実行・tmux 必須）。`test/rtk.test.mjs`（pytest は実機 rtk 0.42.0 採取の golden と一致を `test/fixtures/pytest/*` で固定。`proj_ra` の `FAILED` 要約行のみ理由全文保持＝意図的に rtk 非一致／grep・git・filters は Python プロトタイプ生成の `test/fixtures/reducers.json` で固定／classify・truncate・stripShellFrame）、`test/core-pure.test.mjs`（stripControl・reduceOutput・agent_done screen settle fake・早期安定防止・TUI ready gate 判定）、`test/core-readoutput.test.mjs`（readOutput の full/range/lines/offset/raw/rtk を tmux 非依存で）、`test/core-tmux.test.mjs`（破壊ゲート10種・サニタイズ・sendKey・完了検出。専用ソケットで隔離）、`test/smoke.test.mjs`（stdout が JSON-RPC のみ・10 ツール・`pty_send.wait` schema）、`test/core-space-path.test.mjs`（空白入り一時パスでも pipe-pane が出力を捕捉＝tmux 内部 /bin/sh のクオート回帰）。クロスプラットフォーム対応に伴い session 名検証（トラバーサル/インジェクション遮断・全入口）・`toWslPath`・offset クランプの回帰も追加。`test/core-resolve.test.mjs`（POSIX の tmux 解決負経路: `AITERM_TMUX` 不正時に空 stderr でなく明確な code2＝Windows は WSL ブリッジ経由のため skip）も追加。`test/core-agent.test.mjs`（openAgent の前提検証・残骸ゼロ保証、Codex/Grok/Composer agent_done managed home、Codex managed home allowlist、Grok OAuth `GROK_AUTH_PATH`正本検証（no-follow/hardlink/mode/size/JSON/API-key分岐）、managed home credential非生成、cleanupが通常auth/configを変えないこと、core cleanup が root symlink を辿らないこと、緩い state root でも stale metadata を掃除してから再作成すること、fake event wait、stale/初回 prompt done 誤認防止、起動時 prompt pending 拒否、TUI ready 前の送信前拒否、同時 wait busy reject、cross-process wait lock、即時 event race、`launch_id`/`vendor_session_id` 不一致、bind 後の vendor_session_id 欠落、bind 前 vendor_session_id 混在、partial/malformed/oversized JSONL、done後 offset consume、普通PTY/enter:false拒否、model 引数（codex `-m`／grok・composer `--model` 上書き・空 model 拒否）、grok/composer effort 拒否、managed config ピン上書き）、`test/codex-stop-hook.test.mjs`（Codex/Grok Stop payload 正規化、env 無し no-op、存在しない `XDG_RUNTIME_DIR` の fallback、任意 path env 無視、symlink/hard link event file 拒否、secure root/dir 負系）、`test/release-metadata.test.mjs`（`package.json` と `server.json` の version 同期）で計 **183 件**。CI は `.github/workflows/ci.yml`（**ubuntu-latest と macos-latest** の Node 18/20/22 で build+test、tag で publish --provenance。**windows-latest（Node 20/22）を非ブロッキング（continue-on-error）で追加＝純粋層を検証**。WSL ブリッジ統合経路は手動 Windows 検証ゲートに残す）。
-- **現行テスト補足**: 直前の詳細一覧にある「10ツール・`pty_send.wait` schema・183件・`test/codex-stop-hook.test.mjs`・Windows非ブロッキング」は当時の履歴。現行`test/smoke.test.mjs`は14ツールと4vendor対応`agent_configure`／`claude_approval`のinput/output schemaを固定し、`test/core-agent.test.mjs`／`test/core-pure.test.mjs`は4vendorの通常環境共有、起動時model／effort、Codex／Grok／Composerのread-only sandbox、同一session設定変更、Grok model catalogの起動前拒否、aiterm所有state限定cleanup、sub-agent context、depth／lineage継承、Grok/Composerの`mcp_init_completed` ready gateを回帰する。Codexは通常rollout、Claudeは通常settingsへ加算したlaunch固有Stop hook、Grok/Composerは通常session event/historyを完了・回答正本にする。旧managed home／MCP snapshot生成はproduction経路へ戻さない。CIのWindows純粋層もpublish必須gateとする。
+- `test/` — **Node版の回帰テスト**（`node:test`、`npm test`でbuild→実行・tmux必須）。reducer、PTY、launcher、runtime error store、MCP schema、release metadataをfocused testへ分け、現行fullは`test/*.test.mjs`をすべて実行する。開発中は変更に直結するfocused testだけを回し、関連gate完了後にfullを1回実行する。GitHub Actionsはself-hostedのmacOS native・Linux native・Windows native・WSL2で同じfullを同時実行し、OS別の縮小suiteや手動検証を最終gateの代用にしない。
+- **現行テスト補足**: 直前の詳細一覧にある「10ツール・`pty_send.wait` schema・183件・`test/codex-stop-hook.test.mjs`・Windows非ブロッキング」は当時の履歴。現行`test/smoke.test.mjs`は14ツールと4vendor対応`agent_configure`／`claude_approval`のinput/output schemaを固定し、`test/core-agent.test.mjs`／`test/core-pure.test.mjs`は4vendorの通常環境共有、起動時model／effort、Codex／Grok／Composerのread-only sandbox、同一session設定変更、Grok model catalogの起動前拒否、aiterm所有state限定cleanup、sub-agent context、depth／lineage継承、Grok/Composerの`mcp_init_completed` ready gateを回帰する。Codexは通常rollout、Claudeは通常settingsへ加算したlaunch固有Stop hook、Grok/Composerは通常session event/historyを完了・回答正本にする。旧managed home／MCP snapshot生成はproduction経路へ戻さない。現行CIはself-hosted 4環境すべてで同じfull `npm test`を必須gateとする。
 - `rag/` — **調査資産の RAG コーパス**。一次資料を MarkItDown で Markdown 化して蓄積する。`rag/ingest.py` が取り込みツール、`rag/INDEX.md` が総目次、`rag/manifest.json` が機械可読索引。詳細は後述「調査資産: RAG コーパス」。
 - `.vscode/tasks.json` — Throughline が自動生成した token-monitor 自動起動設定。このプロジェクトの成果物ではなく編集対象外。
 - `docs/*.md:Zone.Identifier` は WSL の Windows 由来メタデータ。中身に関係しないノイズ。

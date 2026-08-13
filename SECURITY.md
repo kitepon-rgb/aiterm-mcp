@@ -17,7 +17,7 @@ Please report security issues **privately**, not as a public GitHub issue or pul
 
 Use GitHub's private vulnerability reporting on the repository:
 
-1. Go to <https://github.com/kitepon-rgb/aiterm-mcp>.
+1. Go to <https://github.com/quolu/aiterm-mcp>.
 2. Open the **Security** tab → **Report a vulnerability** (GitHub Security Advisories).
 
 That opens a private advisory thread visible only to you and the maintainer. Please do not email; the maintainer responds through GitHub.

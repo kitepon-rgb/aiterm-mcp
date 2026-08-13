@@ -141,7 +141,7 @@ blockerがstallした時だけ行う。期限延長、retry、CI rerunで症状�
 - GitHub Release: `v0.24.2 — long-lived Codex readiness and queue progress`。MCPB 3,482,300 bytes、
   SHA-256 `bd3fc9e53ba884e8e90fe1d7106114551b9d692cfc1ffba93759d0f62d0d3a63`
 - Official MCP Registry: workflow `31612570435` success。公開APIで
-  `io.github.kitepon-rgb/aiterm-mcp` 0.24.2は`active`かつ`isLatest:true`
+  当時のnamespace `io.github.kitepon-rgb/aiterm-mcp` 0.24.2は`active`かつ`isLatest:true`
 - install: npm registry由来global 0.24.2、3 bins、公開MCP version 0.24.2、14 tools、
   `aiterm.agent-configure-result.v1` schema、stderr 0、installed `dist/*.js`とrelease commit buildが一致
 - installed root-fix smoke: headerなし＋model／effort footer＋入力欄はready／idle、promptだけ・footerだけ・
