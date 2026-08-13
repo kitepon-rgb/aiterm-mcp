@@ -128,6 +128,7 @@ test("claude_agent: text contentを維持しClaude managed launch receiptをstru
 test("agent launch receipt: write_scope指定時だけ能力宣言を返し、省略時は既存shapeを保つ", { skip }, async () => {
   const root = fs.mkdtempSync(path.join("/tmp", "aiterm-write-scope-receipt-"));
   const codexHome = path.join(root, "codex-home");
+  const fakeGrok = path.join(root, "fake-grok.sh");
   // macOSでは /tmp が /private/tmp へのsymlink。Grok認証正本はpath成分のsymlinkを拒否するため、
   // fixtureも実pathへ置いてno-follow契約を崩さない。
   const grokHome = path.join(fs.realpathSync(root), "grok-home");
@@ -141,6 +142,15 @@ test("agent launch receipt: write_scope指定時だけ能力宣言を返し、�
   fs.mkdirSync(grokHome, { mode: 0o700 });
   fs.writeFileSync(path.join(grokHome, "auth.json"), "{}\n", { mode: 0o600 });
   fs.writeFileSync(path.join(grokHome, "config.toml"), "[cli]\nauto_update = false\n", { mode: 0o600 });
+  fs.writeFileSync(fakeGrok, [
+    "#!/bin/sh",
+    "if [ \"$1\" = models ]; then",
+    "  printf '%s\\n' 'Default model: grok-4.5' '' 'Available models:' '  * grok-4.5 (default)' '  - grok-composer-2.5-fast'",
+    "  exit 0",
+    "fi",
+    "for arg do printf '<arg>%s</arg>\\n' \"$arg\"; done",
+    "",
+  ].join("\n"), { mode: 0o700 });
 
   const child = spawn(process.execPath, [ENTRY], {
     stdio: ["pipe", "pipe", "pipe"],
@@ -148,7 +158,7 @@ test("agent launch receipt: write_scope指定時だけ能力宣言を返し、�
       ...process.env,
       CODEX_BIN: "/bin/echo",
       CODEX_HOME: codexHome,
-      GROK_BIN: "/bin/echo",
+      GROK_BIN: fakeGrok,
       GROK_HOME: grokHome,
       HOME: root,
       TMPDIR: root,
