@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.kitepon/aiterm-mcp",
-  "description": "Launch and drive Claude, Codex, Grok, or Composer from any MCP client in persistent tmux terminals, cross-vendor or same-vendor.",
+  "description": "Persistent tmux terminals for Claude, Codex, Grok, and Composer from any MCP client.",
   "repository": {
     "url": "https://github.com/kitepon/aiterm-mcp",
     "source": "github"

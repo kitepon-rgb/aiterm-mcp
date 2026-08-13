@@ -1,11 +1,11 @@
 blank_issues_enabled: false
 contact_links:
   - name: Question or idea (Discussions)
-    url: https://github.com/kitepon-rgb/aiterm-mcp/discussions
+    url: https://github.com/kitepon/aiterm-mcp/discussions
     about: Usage questions and open-ended ideas. Bugs and feature requests use the templates above.
   - name: npm package
     url: https://www.npmjs.com/package/aiterm-mcp
     about: Install and version information.
   - name: Report a security issue (private)
-    url: https://github.com/kitepon-rgb/aiterm-mcp/security/advisories/new
+    url: https://github.com/kitepon/aiterm-mcp/security/advisories/new
     about: Please report vulnerabilities privately via a security advisory, not a public issue.
