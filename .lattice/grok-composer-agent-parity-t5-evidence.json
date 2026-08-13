@@ -1,0 +1,9 @@
+{
+  "evidence_id": "grok-composer-parity-release-acceptance",
+  "repo_id": "self",
+  "path": "docs/adr/0030-release-0.25.1-acceptance.md",
+  "git_blob_oid": "0b7d98cf10f7eab176db47257f23553aaff62787",
+  "content_digest": "80f8230fefafc1c8cebabfba985073c34083cf82e0c310d967914f8f06ff0489",
+  "media_type": "text/markdown",
+  "anchor_digest": null
+}
