@@ -26,14 +26,13 @@ process.env.HOME = fakeHome;
 const argvPrinterBin = path.join(process.env.TMPDIR, "print-argv.sh");
 const fakeClaudeBin = path.join(process.env.TMPDIR, "fake-claude.sh");
 const fakeGrokBin = path.join(process.env.TMPDIR, "fake-grok.sh");
-if (process.platform !== "win32") {
-  fs.writeFileSync(
+fs.writeFileSync(
     argvPrinterBin,
     "#!/bin/sh\nfor arg do\n  printf '<arg>%s</arg>\\n' \"$arg\"\ndone\n",
     { mode: 0o700 },
   );
-  fs.chmodSync(argvPrinterBin, 0o700);
-  fs.writeFileSync(
+fs.chmodSync(argvPrinterBin, 0o700);
+fs.writeFileSync(
     fakeClaudeBin,
     [
       "#!/bin/sh",
@@ -47,8 +46,8 @@ if (process.platform !== "win32") {
     ].join("\n"),
     { mode: 0o700 },
   );
-  fs.chmodSync(fakeClaudeBin, 0o700);
-  fs.writeFileSync(
+fs.chmodSync(fakeClaudeBin, 0o700);
+fs.writeFileSync(
     fakeGrokBin,
     [
       "#!/bin/sh",
@@ -61,15 +60,14 @@ if (process.platform !== "win32") {
     ].join("\n"),
     { mode: 0o700 },
   );
-  fs.chmodSync(fakeGrokBin, 0o700);
-}
+fs.chmodSync(fakeGrokBin, 0o700);
 // 実 CLI を起動せず openAgent の配管だけ検証する偽 bin。resolveAgentBin は存在検証する（A3）ため、
 // 実在するパスにする必要がある。POSIX は /bin/echo（起動コマンドを echo で可視化できる）、native
 // Windows には /bin/echo が無いので node 自身（必ず存在）を使う——echo 出力を読む grok/composer/codex
 // 組立テストは { skip }（tmux 必須）で native Windows では走らないため、可視化不要な bin で足りる。
-process.env.CODEX_BIN = process.platform === "win32" ? process.execPath : "/bin/echo";
-process.env.GROK_BIN = process.platform === "win32" ? process.execPath : fakeGrokBin;
-process.env.CLAUDE_BIN = process.platform === "win32" ? process.execPath : fakeClaudeBin;
+process.env.CODEX_BIN = argvPrinterBin;
+process.env.GROK_BIN = fakeGrokBin;
+process.env.CLAUDE_BIN = fakeClaudeBin;
 const core = await import("../dist/core.js");
 core.__testSetAgentTuiReadyStableSamples(1);
 const skip = hasTmux ? undefined : "tmux 未インストール";
@@ -804,22 +802,22 @@ test("target contract: Grok/Composer read-onlyはsandboxで実効化し、パス
 });
 
 // A-test: grok/composer 経路の組立コマンドを実検証（従来は codex 経路のみで未カバー）。
-// 偽 bin を /bin/echo にすると起動コマンドがそのまま echo で出力され、組立内容を観測できる。
+// 偽 bin は受け取ったargvをタグ付きで出力し、shell表示に依存せず組立内容を観測できる。
 test("openAgent codex: -c model_reasoning_effort=<effort> を組み立てる", { skip }, async () => {
-  const [sid] = core.openAgent("codex", { reasoning_effort: "high" }); // CODEX_BIN=/bin/echo
+  const [sid] = core.openAgent("codex", { reasoning_effort: "high" });
   try {
     const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
-    assert.match(out, /-c model_reasoning_effort=high/, `codex 組立: ${out}`);
+    assert.match(out, /<arg>-c<\/arg>\s*<arg>model_reasoning_effort=high<\/arg>/, `codex 組立: ${out}`);
   } finally {
     core.closeSession(sid);
   }
 });
 
 test("openAgent codex: model 引数を -m で組み立てる", { skip }, async () => {
-  const [sid] = core.openAgent("codex", { model: "gpt-5.6-terra" }); // CODEX_BIN=/bin/echo
+  const [sid] = core.openAgent("codex", { model: "gpt-5.6-terra" });
   try {
     const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
-    assert.match(out, /-m gpt-5\.6-terra/, `codex model: ${out}`);
+    assert.match(out, /<arg>-m<\/arg>\s*<arg>gpt-5\.6-terra<\/arg>/, `codex model: ${out}`);
   } finally {
     core.closeSession(sid);
   }
@@ -3092,7 +3090,7 @@ test("openAgent codex agent_done: model 上書きは共有 config を変更せ�
     try {
       assert.equal(fs.readFileSync(configPath, "utf8"), before);
       const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
-      assert.match(out, /-m gpt-5\.6-terra/);
+      assert.match(out, /<arg>-m<\/arg>\s*<arg>gpt-5\.6-terra<\/arg>/);
       assert.match(hint, /共有 config/);
       assert.match(hint, /proactive 自動委譲/);
     } finally {
@@ -3118,8 +3116,8 @@ test("openAgent codex agent_done: model と effort は共有 config を変更せ
     try {
       assert.equal(fs.readFileSync(configPath, "utf8"), before);
       const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
-      assert.match(out, /-m gpt-5\.6-terra/);
-      assert.match(out, /-c model_reasoning_effort=high/);
+      assert.match(out, /<arg>-m<\/arg>\s*<arg>gpt-5\.6-terra<\/arg>/);
+      assert.match(out, /<arg>-c<\/arg>\s*<arg>model_reasoning_effort=high<\/arg>/);
     } finally {
       core.closeSession(sid);
     }
@@ -3143,8 +3141,8 @@ test("openAgent codex agent_done: quoted top-level pin も共有したまま引�
     try {
       assert.equal(fs.readFileSync(configPath, "utf8"), before);
       const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
-      assert.match(out, /-m gpt-5\.6-terra/);
-      assert.match(out, /-c model_reasoning_effort=high/);
+      assert.match(out, /<arg>-m<\/arg>\s*<arg>gpt-5\.6-terra<\/arg>/);
+      assert.match(out, /<arg>-c<\/arg>\s*<arg>model_reasoning_effort=high<\/arg>/);
       assert.match(hint, /model=gpt-5\.6-terra（引数） effort=high（引数）/);
     } finally {
       core.closeSession(sid);

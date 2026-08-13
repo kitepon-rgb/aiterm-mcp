@@ -209,6 +209,7 @@ test("send: shellへの複数行は途中の対話programに後続行を奪わ�
 test("send: 別processの同一session送信をchunk単位で混線させない", { skip }, async () => {
   const session = "selftest_send_lock";
   const outputPath = path.join(process.env.TMPDIR, "send-lock-output.bin");
+  const shellOutputPath = process.platform === "win32" ? core.toWslPath(outputPath) : outputPath;
   core.openSession(session);
   try {
     const ready = "<<<AITERM_SEND_LOCK_READY>>>";
@@ -216,7 +217,7 @@ test("send: 別processの同一session送信をchunk単位で混線させない"
     core.send(
       session,
       `stty raw -echo; printf '<<<AITERM_SEND_LOCK_%s>>>\\n' READY; ` +
-        `dd bs=1 count=12000 of='${outputPath}' 2>/dev/null; stty sane; ` +
+        `dd bs=1 count=12000 of='${shellOutputPath}' 2>/dev/null; stty sane; ` +
         `printf '<<<AITERM_SEND_LOCK_%s>>>\\n' DONE`,
       { force: true },
     );

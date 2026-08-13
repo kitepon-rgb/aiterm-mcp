@@ -7,7 +7,7 @@
  *
  * 設計: docs/01_design-plan.md / docs/02_mcp-plan.md。出力削減は rag/ の RTK を移植。
  */
-import { spawnSync } from "node:child_process";
+import { spawnSync, type SpawnSyncOptionsWithStringEncoding, type SpawnSyncReturns } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -1880,7 +1880,7 @@ function resolveAndValidateGrokAuth(srcHome: string): string | null {
 }
 
 function grokModelCatalog(bin: string, cwd: string): string[] {
-  const result = spawnSync(bin, ["models"], {
+  const result = spawnAgentControlCommand(bin, ["models"], cwd, {
     cwd,
     encoding: "utf8",
     env: process.env,
@@ -4411,18 +4411,23 @@ function resolveAgentBin(kind: AgentKind): string | null {
     // 明示指定 env は実在を検証する。存在しないパスを黙って返すと、session を作って
     // `'/typo' ...` を送信し bash が command not found を出すだけで openAgent は「起動した」と
     // 偽成功を返す（既定パス/PATH 経路は検証するのに env だけ無検証だった非対称の解消・A3）。
-    if (isUsableExecutableFile(fromEnv)) return fromEnv;
+    if (isUsableAgentExecutableFile(fromEnv)) return resolveWindowsCodexShim(kind, fromEnv);
     throw new AitermError(`${envVar} に指定された ${name} が存在しません: ${fromEnv}`, 2);
   }
   const cand = path.join(home, ...(rel as string[]));
-  if (isUsableExecutableFile(cand)) return cand;
+  if (isUsableAgentExecutableFile(cand)) return resolveWindowsCodexShim(kind, cand);
   const w = spawnSync(isWin ? "where" : "which", [name as string], {
     encoding: "utf8",
     timeout: 5000,
   });
   if (w.status === 0 && (w.stdout ?? "").trim()) {
-    const resolved = w.stdout.trim().split(/\r?\n/)[0];
-    if (isUsableExecutableFile(resolved)) return resolved;
+    const found = w.stdout.trim().split(/\r?\n/).filter(Boolean);
+    const ordered = isWin
+      ? [...found.filter((p) => /\.(?:exe|com|cmd|bat)$/i.test(p)), ...found.filter((p) => !/\.(?:exe|com|cmd|bat)$/i.test(p))]
+      : found;
+    for (const resolved of ordered) {
+      if (isUsableAgentExecutableFile(resolved)) return resolveWindowsCodexShim(kind, resolved);
+    }
   }
   return null;
 }
@@ -4430,7 +4435,7 @@ function resolveAgentBin(kind: AgentKind): string | null {
 const CLAUDE_AUTH_STATUS_TIMEOUT_MS = 5_000;
 
 function assertClaudeAuthenticationReady(bin: string): void {
-  const result = spawnSync(bin, ["auth", "status", "--json"], {
+  const result = spawnAgentControlCommand(bin, ["auth", "status", "--json"], process.cwd(), {
     encoding: "utf8",
     timeout: CLAUDE_AUTH_STATUS_TIMEOUT_MS,
     maxBuffer: 64 * 1024,
@@ -4481,6 +4486,76 @@ function isUsableExecutableFile(candidate: string): boolean {
   } catch {
     return false;
   }
+}
+
+function isWindowsDrivePath(candidate: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(candidate);
+}
+
+function isWindowsNativeExecutable(candidate: string): boolean {
+  return isWindowsDrivePath(candidate) && /\.(?:exe|com|cmd|bat)$/i.test(candidate);
+}
+
+function isUsableWslExecutable(candidate: string): boolean {
+  if (!isWin) return false;
+  let wslPath = candidate;
+  if (isWindowsDrivePath(candidate)) {
+    try {
+      if (!fs.statSync(candidate).isFile()) return false;
+      wslPath = toWslPath(candidate);
+    } catch {
+      return false;
+    }
+  } else if (!candidate.startsWith("/")) {
+    return false;
+  }
+  const checked = spawnSync("wsl.exe", ["-e", "test", "-f", wslPath, "-a", "-x", wslPath], {
+    encoding: "utf8",
+    timeout: 5000,
+  });
+  return checked.status === 0;
+}
+
+function isUsableAgentExecutableFile(candidate: string): boolean {
+  if (!isWin) return isUsableExecutableFile(candidate);
+  if (isWindowsNativeExecutable(candidate)) return isUsableExecutableFile(candidate);
+  return isUsableWslExecutable(candidate);
+}
+
+function resolveWindowsCodexShim(kind: AgentKind, candidate: string): string {
+  if (!isWin || kind !== "codex" || !/\.(?:cmd|bat)$/i.test(candidate)) return candidate;
+  const packageRoot = path.join(path.dirname(candidate), "node_modules", "@openai", "codex", "node_modules", "@openai");
+  try {
+    for (const platformPackage of fs.readdirSync(packageRoot).filter((name) => name.startsWith("codex-win32-"))) {
+      const vendorRoot = path.join(packageRoot, platformPackage, "vendor");
+      for (const target of fs.readdirSync(vendorRoot)) {
+        const executable = path.join(vendorRoot, target, "bin", "codex.exe");
+        if (isUsableExecutableFile(executable)) return executable;
+      }
+    }
+  } catch {
+    /* 下の明示エラーへ */
+  }
+  throw new AitermError(
+    `CODEX_BIN のnpm shimからWindows native codex.exeを解決できません: ${candidate}。` +
+      "@openai/codexを再インストールするか、CODEX_BINへcodex.exeを指定してください",
+    2,
+  );
+}
+
+function agentBinForWslShell(bin: string): string {
+  return isWin && isWindowsDrivePath(bin) ? toWslPath(bin) : bin;
+}
+
+function spawnAgentControlCommand(
+  bin: string,
+  args: string[],
+  cwd: string,
+  options: SpawnSyncOptionsWithStringEncoding,
+): SpawnSyncReturns<string> {
+  if (!isWin || isWindowsNativeExecutable(bin)) return spawnSync(bin, args, options);
+  const wslCwd = isWindowsDrivePath(cwd) ? toWslPath(cwd) : cwd;
+  return spawnSync("wsl.exe", ["--cd", wslCwd, "-e", agentBinForWslShell(bin), ...args], options);
 }
 
 const THROUGHLINE_HANDOFF_CONTEXT_SCHEMA = "throughline.handoff_context.v1";
@@ -4871,7 +4946,7 @@ export function openAgent(
   // パスで解決）。toWslPath は session を作る前に呼ぶ＝変換失敗（非ドライブパス）で残骸 session を残さない。
   // 未検証リスク: npm グローバル導入の codex.cmd/.bat シムや WSL interop 上の対話 TUI 描画は実 Windows
   // でしか確認できない（CI 非対象。docs/03_audit-sweep-2026-07.md 参照）。
-  const binForCmd = isWin ? toWslPath(bin) : bin;
+  const binForCmd = agentBinForWslShell(bin);
   const cwdForCmd = cwd && isWin ? toWslPath(cwd) : cwd;
   const grokAuthPath = agentDone && (kind === "grok" || kind === "composer") ? resolveAndValidateGrokAuth(realGrokHome()) : null;
   if (kind === "grok" || kind === "composer") {
