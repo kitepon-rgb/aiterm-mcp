@@ -1,0 +1,30 @@
+{
+  "schema": "lattice.plan_scope_review.v1",
+  "authoring_digest": "27d2acb08ace01045fc4da7be6bece8ab2fe1d0ce2bff87fb880c80932b72c38",
+  "work_specs": [
+    {
+      "work_spec_id": "W1",
+      "requirement": "ClaudeとCodexが共通して備えるaiterm機能をGrokとComposerへ完全に同等化する",
+      "acceptance": "4 launcherがmodel、effort、同一session設定変更、read-only、完了回収、環境、Throughline、lineageを同じ公開契約で扱う"
+    },
+    {
+      "work_spec_id": "W2",
+      "requirement": "既存コード詳細とvendor実装を確認し、同等契約をGrok／Composerへ再現する",
+      "acceptance": "古い推測でなく現行Grok Build公式ソースと実機挙動に基づき、silent fallbackを含む差をテストと実装で閉じる"
+    },
+    {
+      "work_spec_id": "W3",
+      "requirement": "Peertable等から実際に使える公開製品として届ける",
+      "acceptance": "回帰、実機、package、公開registry、global install smokeまで完了する"
+    }
+  ],
+  "task_assessments": [
+    {"task_id": "T1", "work_spec_ids": ["W1", "W2"], "judgment": "required", "reason": "同等面とvendor現行契約を実測しないと完全再現の基準を固定できない"},
+    {"task_id": "T2", "work_spec_ids": ["W1", "W2"], "judgment": "required", "reason": "要求差を実装前の赤い契約として固定するために必要"},
+    {"task_id": "T3", "work_spec_ids": ["W1", "W2"], "judgment": "required", "reason": "要求されたGrok／Composer同等化そのもの"},
+    {"task_id": "T4", "work_spec_ids": ["W1", "W2", "W3"], "judgment": "required", "reason": "実機・回帰・公開説明を受入可能な一つのcandidateへ閉じるために必要"},
+    {"task_id": "T5", "work_spec_ids": ["W3"], "judgment": "required", "reason": "repo内コードで止めず利用面へ届けるために必要"}
+  ],
+  "verdict": "scope_preserved",
+  "review_digest": "a02cb956b40343724e167a03b5e1bbf119247ffb90e04c808f6757ef8a9b9371"
+}

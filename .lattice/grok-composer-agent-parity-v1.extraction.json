@@ -1,0 +1,127 @@
+{
+  "schema": "lattice.todo_extraction.v4",
+  "project_id": "aiterm-mcp",
+  "plan_key": "grok-composer-agent-parity",
+  "plan_version": "v1",
+  "actor": {
+    "host": "kaitono-macbook-air",
+    "session": "codex-grok-composer-parity",
+    "agent": "bell-root"
+  },
+  "recorded_at": "2026-08-13T12:08:45.000Z",
+  "tasks": [
+    {
+      "task_id": "T1",
+      "title": "現行契約と再現証拠を固定する",
+      "lane": "discovery",
+      "design_memo": "Grok Build公式ソース、ローカルCLI、model catalog、TUI、session summaryを突き合わせ、Claude/Codex共通面とGrok/Composer不足面を固定する。Composer silent fallbackの再現を含む。",
+      "narrative_ref": "docs/29-grok-composer-agent-parity-plan.md",
+      "compile_binding": null,
+      "disposition": "register_pending",
+      "start": null,
+      "completion": null,
+      "source": {
+        "origin_plan_ref": "docs/29-grok-composer-agent-parity-plan.md",
+        "origin_line": 76,
+        "source_commit": "8974cf314ce055039d5aaa0eb2091320f7e48f94",
+        "heading_path": ["Grok／Composer agent parity・公開計画", "Lattice task specification", "T1 — 現行契約と再現証拠を固定する"],
+        "markdown_depth": 3,
+        "parent_task_id": null,
+        "checkbox_state": "absent"
+      },
+      "migration_context": {"external_canonical_ref": null, "carry_over_ref": null, "h_required": false, "condition": null, "evidence_refs": [], "notes": []}
+    },
+    {
+      "task_id": "T2",
+      "title": "target contractをred testへ落とす",
+      "lane": "verification",
+      "design_memo": "launcher schema、起動引数、read-only enforcement、catalog不在時のpre-session failure、Grok/Composerのagent_configure commandとreceiptをfocused testへ追加し、製品コード変更前に不足を赤として確認する。",
+      "narrative_ref": "docs/29-grok-composer-agent-parity-plan.md",
+      "compile_binding": null,
+      "disposition": "register_pending",
+      "start": null,
+      "completion": null,
+      "source": {
+        "origin_plan_ref": "docs/29-grok-composer-agent-parity-plan.md",
+        "origin_line": 82,
+        "source_commit": "8974cf314ce055039d5aaa0eb2091320f7e48f94",
+        "heading_path": ["Grok／Composer agent parity・公開計画", "Lattice task specification", "T2 — target contractをred testへ落とす"],
+        "markdown_depth": 3,
+        "parent_task_id": null,
+        "checkbox_state": "absent"
+      },
+      "migration_context": {"external_canonical_ref": null, "carry_over_ref": null, "h_required": false, "condition": null, "evidence_refs": [], "notes": []}
+    },
+    {
+      "task_id": "T3",
+      "title": "最小の共通実装を行う",
+      "lane": "implementation",
+      "design_memo": "src/core.tsとsrc/index.tsを中心に、Grok/Composer effort、sandbox、catalog照合、同一session設定変更を実装する。既存のcompletion、transcript、environment、Throughline、lineage経路は共有したまま変更を最小化する。",
+      "narrative_ref": "docs/29-grok-composer-agent-parity-plan.md",
+      "compile_binding": null,
+      "disposition": "register_pending",
+      "start": null,
+      "completion": null,
+      "source": {
+        "origin_plan_ref": "docs/29-grok-composer-agent-parity-plan.md",
+        "origin_line": 88,
+        "source_commit": "8974cf314ce055039d5aaa0eb2091320f7e48f94",
+        "heading_path": ["Grok／Composer agent parity・公開計画", "Lattice task specification", "T3 — 最小の共通実装を行う"],
+        "markdown_depth": 3,
+        "parent_task_id": null,
+        "checkbox_state": "absent"
+      },
+      "migration_context": {"external_canonical_ref": null, "carry_over_ref": null, "h_required": false, "condition": null, "evidence_refs": [], "notes": []}
+    },
+    {
+      "task_id": "T4",
+      "title": "実機受入・回帰・知識還流を閉じる",
+      "lane": "verification",
+      "design_memo": "focused test後にGrok実席、Composer不在の明示失敗、full regression、package/MCPB/staged MCPを確認する。公開説明、設計正本、CHANGELOG、RAGへ現行xAI契約と実測結果を反映する。",
+      "narrative_ref": "docs/29-grok-composer-agent-parity-plan.md",
+      "compile_binding": null,
+      "disposition": "register_pending",
+      "start": null,
+      "completion": null,
+      "source": {
+        "origin_plan_ref": "docs/29-grok-composer-agent-parity-plan.md",
+        "origin_line": 94,
+        "source_commit": "8974cf314ce055039d5aaa0eb2091320f7e48f94",
+        "heading_path": ["Grok／Composer agent parity・公開計画", "Lattice task specification", "T4 — 実機受入・回帰・知識還流を閉じる"],
+        "markdown_depth": 3,
+        "parent_task_id": null,
+        "checkbox_state": "absent"
+      },
+      "migration_context": {"external_canonical_ref": null, "carry_over_ref": null, "h_required": false, "condition": null, "evidence_refs": [], "notes": []}
+    },
+    {
+      "task_id": "T5",
+      "title": "公開とregistry由来smokeを完了する",
+      "lane": "release",
+      "design_memo": "versionを一意に上げ、commit、push、CI、tag、npm、GitHub Release、Official MCP Registryを順に通す。registry由来global installで14 tools、4 launcher schema、Grok実席、Composer不在時の明示失敗を最終確認する。",
+      "narrative_ref": "docs/29-grok-composer-agent-parity-plan.md",
+      "compile_binding": null,
+      "disposition": "register_pending",
+      "start": null,
+      "completion": null,
+      "source": {
+        "origin_plan_ref": "docs/29-grok-composer-agent-parity-plan.md",
+        "origin_line": 100,
+        "source_commit": "8974cf314ce055039d5aaa0eb2091320f7e48f94",
+        "heading_path": ["Grok／Composer agent parity・公開計画", "Lattice task specification", "T5 — 公開とregistry由来smokeを完了する"],
+        "markdown_depth": 3,
+        "parent_task_id": null,
+        "checkbox_state": "absent"
+      },
+      "migration_context": {"external_canonical_ref": null, "carry_over_ref": null, "h_required": true, "condition": "公開前に目的・影響・rollbackを再確認する", "evidence_refs": [], "notes": []}
+    }
+  ],
+  "hard_dependencies": [
+    {"from": {"project_id": "aiterm-mcp", "plan_key": "grok-composer-agent-parity", "task_id": "T1"}, "to": {"project_id": "aiterm-mcp", "plan_key": "grok-composer-agent-parity", "task_id": "T2"}},
+    {"from": {"project_id": "aiterm-mcp", "plan_key": "grok-composer-agent-parity", "task_id": "T2"}, "to": {"project_id": "aiterm-mcp", "plan_key": "grok-composer-agent-parity", "task_id": "T3"}},
+    {"from": {"project_id": "aiterm-mcp", "plan_key": "grok-composer-agent-parity", "task_id": "T3"}, "to": {"project_id": "aiterm-mcp", "plan_key": "grok-composer-agent-parity", "task_id": "T4"}},
+    {"from": {"project_id": "aiterm-mcp", "plan_key": "grok-composer-agent-parity", "task_id": "T4"}, "to": {"project_id": "aiterm-mcp", "plan_key": "grok-composer-agent-parity", "task_id": "T5"}}
+  ],
+  "joins": [],
+  "extraction_digest": "27d2acb08ace01045fc4da7be6bece8ab2fe1d0ce2bff87fb880c80932b72c38"
+}
