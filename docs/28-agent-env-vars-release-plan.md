@@ -2,7 +2,7 @@
 
 ## Status
 
-In progress — 2026-08-13
+Completed — 2026-08-13
 
 ## 原因
 
@@ -40,10 +40,10 @@ header、busy除外、入力欄単独／footer単独をreadyへ昇格させな�
 - [x] Codex v0.147の`fast`入りfooterがready／idle readyになり、実席soraを同一sessionのままLuna→Terra変更できる。
 - [x] package／lock／server.json／MCPB manifestが0.24.3で一致する。
 - [x] focused test、full regression、npm pack dry-run、MCPB validate／pack、staged MCP smokeがgreen。
-- [ ] release commitがorigin/mainの祖先で、main CIがgreen。
-- [ ] `v0.24.3` tag CIとnpm Trusted Publishingがgreen。
-- [ ] npm latest／integrity／provenance、GitHub Release＋MCPB、Official MCP Registry active/latestを確認する。
-- [ ] registry由来global installで0.24.3、3 bins、14 tools、4 launcher schema、stderr 0、installed dist一致、
+- [x] release commitがorigin/mainの祖先で、main CIがgreen。
+- [x] `v0.24.3` tag CIとnpm Trusted Publishingがgreen。
+- [x] npm latest／integrity／provenance、GitHub Release＋MCPB、Official MCP Registry active/latestを確認する。
+- [x] registry由来global installで0.24.3、3 bins、14 tools、4 launcher schema、stderr 0、installed dist一致、
   stale tmux server条件の現在値継承を確認する。
 
 ## Rollback
@@ -62,4 +62,19 @@ header、busy除外、入力欄単独／footer単独をreadyへ昇格させな�
 - staged MCPはversion 0.24.3、14 tools、4 launcherの`env_vars` array schema、
   `aiterm.agent-configure-result.v1`、stderr 0を確認。
 
-公開完了後にrelease commit、CI run、npm integrity、GitHub Release／Registry、global install smokeを追記する。
+### Public result
+
+- release commit `6ccb1a3add62e183d321e1ad97cd008da31026a2`は`origin/main`へpush済みで、
+  main CI `31664655592`がLinux 18/20/22、macOS 18/20/22、Windows 20/22の全job green。
+- `v0.24.3`はrelease commitへ固定。tag CI／Trusted Publishing `31664795704`は全matrixとpublishがgreen。
+- npm latest 0.24.3。integrity
+  `sha512-D8++YiQzAj6pASlUPc9X/T8IB98I2uW5BiLBzq5+zxvEI7Kev+PAke4gLiPCgcI1jjF+lfhaUEPGL2u90+1dUg==`、
+  shasum `61ccd19668c40a9fa6a497e8427efd80b3709904`、SLSA provenanceあり。
+- GitHub Release `v0.24.3 — selected launcher environment and Codex fast readiness`を公開。添付MCPBは
+  3,482,565 bytes、SHA-256 `c158aacf6016851d5ace5b24c76a3c0eb3633a8a28091c77d4610de2c00cec7e`。
+- Official MCP Registry workflow `31664974149`がgreen。公開APIで0.24.3は`active`かつ`isLatest:true`。
+- npm registry由来global install 0.24.3は非symlink、3 bins、14 tools、4 launcherの`env_vars` schema、
+  `aiterm.agent-configure-result.v1`、stderr 0、installed `dist/*.js`とrelease commit buildの全バイト一致を確認。
+- installed root-fix smokeは、先にtmux serverへ旧actor値を持たせた後、現在MCP processの値で上書きされ、
+  未設定名は省略されることを確認。`medium fast ·` footerもready／idle ready。初回検査はmacOSの長い
+  test TMPDIRでtmux socket長上限に達しsession作成前に失敗したため、短い専用`/tmp`で同じ検査をgreenにした。

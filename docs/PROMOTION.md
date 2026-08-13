@@ -13,7 +13,7 @@ output) is already committed — these steps activate it.
 
 ## Status (live)
 
-> **v0.24.3公開準備（2026-08-13）**: 4 launcherの`env_vars`で、現在のMCP processにある
+> **v0.24.3公開完了（2026-08-13）**: 4 launcherの`env_vars`で、現在のMCP processにある
 > 指定名の値だけを起動agentへ渡す。永続tmux serverが先に起動していても席identity／workflow変数を失わない。
 > Codex v0.147の`medium fast ·` footerも認識し、idle実席への`agent_configure`誤拒否を修理する。
 
@@ -23,9 +23,12 @@ output) is already committed — these steps activate it.
 - ✅ `fast`入りfooterのfocused 2/2、ローカルpack/install後の実席sora同一session Luna→Terra変更がgreen。
 - ✅ focused 4/4、追加focused 2/2、final full 342/342、npm pack dry-run（13 files）、MCPB validate／pack、
   staged MCP version 0.24.3／14 tools／4 launcher schema／stderr 0、doc／manifest hygieneがgreen。
-- 🔄 v0.24.3のmain／tag CI、npm Trusted Publishing、GitHub Release、
-  Official MCP Registry、registry由来global installと公開後smokeは
-  [agent env vars release plan](28-agent-env-vars-release-plan.md)へ記録する。
+- ✅ release commit `6ccb1a3add62e183d321e1ad97cd008da31026a2`、main CI `31664655592`、
+  tag CI／Trusted Publishing `31664795704`、Registry workflow `31664974149`がsuccess。
+- ✅ npm latest 0.24.3、SLSA provenance、GitHub Release＋MCPB、Official Registry active/latest、
+  registry由来global install、3 bins、14 tools、4 launcher schema、stderr 0、installed dist一致、
+  stale tmux server越しの現在値継承と`fast` footer ready根治を確認。詳細receiptは
+  [agent env vars release plan](28-agent-env-vars-release-plan.md)。
 
 > **v0.24.2公開完了（2026-08-13）**: 長寿命Codexで起動時headerがcapture範囲外へ流れた後も、
 > 常駐model／effort footerと入力欄でreadyを識別する。idle実席への`agent_configure`誤拒否を、

@@ -28,7 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Peertableの実席9席で、各launcherへ渡したactor値が起動agentから読めることを確認した。
 - `fast`入りfooterのready／idle readyをpure regressionで固定し、実席soraを同じsessionのまま
   LunaからTerraへ変更できることを確認した。
-- v0.24.3のrelease gateと公開receiptは[docs/28-agent-env-vars-release-plan.md](docs/28-agent-env-vars-release-plan.md)へ記録する。
+- final full regression 342/342、npm pack dry-run（13 files）、MCPB validate／pack、staged MCPの
+  version 0.24.3／14 tools／4 launcher schema／stderr 0がgreen。
+- release commit `6ccb1a3add62e183d321e1ad97cd008da31026a2`のmain CI `31664655592`、
+  tag CI／Trusted Publishing `31664795704`、Official MCP Registry workflow `31664974149`がsuccess。
+  npm latest 0.24.3、SLSA provenance、GitHub Release＋MCPB、Registry active/latest、registry由来
+  global install、3 bins、14 tools、schema、stderr 0、installed dist一致、2件の根治smokeを確認した。
+- v0.24.3の完全な公開receiptは[docs/28-agent-env-vars-release-plan.md](docs/28-agent-env-vars-release-plan.md)へ記録する。
 
 ## [0.24.2] - 2026-08-13
 

@@ -10,7 +10,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > あわせてCodex v0.147の`medium fast ·` footerをfrontendとして認識し、idle実席への
 > `agent_configure`誤拒否を根治。focused regressionと実席soraの同一session Luna→Terra変更で確認。
 > env継承はfocused 2/2、最終full 342/342、Peertable実席9席のactor値で根治を確認。公開工程は
-> `docs/28-agent-env-vars-release-plan.md`を正とする。
+> `docs/28-agent-env-vars-release-plan.md`を正とする。公開commit
+> `6ccb1a3add62e183d321e1ad97cd008da31026a2`、main CI `31664655592`、tag CI／Trusted Publishing
+> `31664795704`、Registry workflow `31664974149`はsuccess。npm latest、SLSA provenance、
+> GitHub Release＋MCPB、Official Registry active/latest、registry由来global install 0.24.3、3 bins、
+> 14 tools、4 launcher schema、stderr 0、installed dist一致、env／`fast`の公開後smokeを確認済み。
 
 > **v0.24.2（2026-08-13）**: 長寿命Codexで起動時の`OpenAI Codex` headerが直近45行の
 > capture範囲外へ流れると、idleでも`agent_configure`がreadyを誤拒否した欠陥を根治。
