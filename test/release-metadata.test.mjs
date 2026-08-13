@@ -33,19 +33,11 @@ test('release metadata points at the canonical kitepon organization repository',
 });
 
 test('final CI runs the same full test on all four factory environments', async () => {
-  const [ci, factory] = await Promise.all([
-    readFile(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8'),
-    readFile(new URL('../.github/workflows/factory-full-ci.yml', import.meta.url), 'utf8'),
-  ]);
+  const ci = await readFile(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
 
-  assert.match(ci, /uses: \.\/\.github\/workflows\/factory-full-ci\.yml/);
+  assert.match(ci, /uses: kitepon\/dotagents\/\.github\/workflows\/factory-full-ci\.yml@main/);
   assert.match(ci, /node --version && npm --version && npm ci && npm test/);
   assert.match(ci, /needs: \[full\]/);
-  for (const environment of ['macos-native', 'linux-native', 'windows-native', 'wsl2']) {
-    assert.match(factory, new RegExp(`"${environment}"`));
-  }
-  assert.match(factory, /runs-on: \[self-hosted, factory, "\$\{\{ matrix\.environment \}\}"\]/);
-  assert.match(factory, /run: \$\{\{ inputs\.full-command \}\}/);
 });
 
 test('clean build ships only the active managed stop hooks', async () => {
