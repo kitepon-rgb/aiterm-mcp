@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-08-13
+
+### Added
+
+- `grok_agent`／`composer_agent`が起動時`reasoning_effort`をGrok Build TUIの
+  `--reasoning-effort`へ渡すようにした。
+- `agent_configure`をGrok／Composerへ拡張し、同一PTY・同一会話contextのまま
+  `/model <model> [effort]`または`/effort <effort>`で変更できるようにした。
+- Grok／Composerの`write_scope:"read-only"`を`--sandbox read-only`へ接続し、
+  Codexと同じ実効書込み壁にした。パス説明は引き続き宣言記録だけである。
+
+### Changed
+
+- 明示したGrok／Composer modelとComposer既定`grok-composer-2.5-fast`を、PTY作成前に
+  現在の`grok models` catalogへ照合する。取得失敗、形式不正、model不在は別modelへ
+  fallbackせず明示失敗する。現行catalogにComposer modelが無い場合、Composer既定起動も
+  利用可能と偽らずsession作成前に失敗する。
+
+### Verification
+
+- 起動時effort、read-only sandbox、Grok／Composerの同一session model／effort変更、
+  catalog不在時の残骸ゼロ拒否をfocused regressionで固定した。
+- 既存agent関連回帰117/117とMCP schema smokeがgreen。
+
 ## [0.24.3] - 2026-08-13
 
 ### Fixed

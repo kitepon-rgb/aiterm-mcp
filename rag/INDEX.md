@@ -4,7 +4,7 @@ AIターミナル直接操作プロジェクトの調査一次資料。`rag/sour
 忠実 Markdown 化した版（front-matter にメタdata）。
 **設計/実装の前にまずここを読み、該当資料を再利用する（再フェッチしない）。**
 
-- 総数: **96** 件 / 更新: 2026-08-01
+- 総数: **100** 件 / 更新: 2026-08-13
 - 取り込み: `python3 rag/ingest.py <sources.json>` → `python3 rag/build_index.py`
 - 統合分析: [briefs/](briefs/)
 
@@ -89,11 +89,7 @@ AIターミナル直接操作プロジェクトの調査一次資料。`rag/sour
   - 出典: <https://raw.githubusercontent.com/rusiaaman/wcgw/main/README.md> (github_readme, 14491 chars)
   - 効きどころ: 完了検出が二段(短timeoutで即抜け+出力ストリーム継続を見て待ち時間調整)で、純粋quiescenceとexit-codeの中間設計の実例。screen -xで人間が同一端末にアタッチ、背景コマンド多重化は我々のバックエンド選定(tmux代替案)とsend設計の比較対象。
 
-## 完了境界の検出 (completion-detection) — 25件
-
-- [Agent CLI done detection — current conclusion](briefs/agent-cli-done-detection.md) — 旧Stop hook実測を履歴として保持しつつ、2026-08-03時点の現行Codex完了正本をroot rollout transcriptの`task_complete.turn_id`へ更新した統合brief。
-  - 出典: <local:aiterm-mcp-runtime-incident-2026-08-03> (local_probe_and_repository_evidence)
-  - 効きどころ: Codexのhook `exit 127`が完了通知と回答回収を同時に失わせた実障害、byte cursorによるturn帰属、後発sub-agent rollout除外、旧hook実装撤去を再調査せず参照する現行入口。
+## 完了境界の検出 (completion-detection) — 24件
 
 - [Phase 0 multi-agent smoke: AI CLI TUI done detection](sources/completion-detection/agent-cli-done-phase0-smoke-2026-07-07.md) — Codex/Grok/Composer の TUI Stop hook をマルチエージェントで実測した。hook 発火自体は確認できたが、Codex continuation と temporary home 差分が実装前ブロッカーとして残った。
   - 出典: <local:multi-agent-smoke-2026-07-07> (local_probe, 7446 chars)
@@ -278,6 +274,21 @@ AIターミナル直接操作プロジェクトの調査一次資料。`rag/sour
 - [XTerm – Bracketed Paste Mode](sources/safety/xterm-bracketed-paste-spec.md) — xterm公式によるブラケットペーストモードの仕様・歴史・採用状況。ESC[?2004h で有効化し、貼り付けたテキストを ESC[200~ … ESC[201~ で囲む。allowPasteControls による制御文字フィルタにも言及。
   - 出典: <https://invisible-island.net/xterm/xterm-paste64.html> (spec, 16092 chars)
   - 効きどころ: PTYへ「貼り付け相当」のテキストを送る際、ブラケットペーストの開始/終了マーカーと、その保護が制御文字混入には無力である(=送る前に我々がサニタイズ責任を持つ)という設計上の前提を一次仕様で確定できる。
+
+## agent-launchers — 4件
+
+- [Grok Build CLI model, reasoning effort, and sandbox flags](sources/agent-launchers/grok-build-cli-agent-parity-e5fd481.md) — Grok Build TUIの--model、--reasoning-effort（--effort alias）、--sandbox引数の一次実装。
+  - 出典: <https://raw.githubusercontent.com/xai-org/grok-build/e5fd4816d43260c15ba785f103990c1ed6cea230/crates/codegen/xai-grok-pager/src/app/cli.rs> (official_source, 59351 chars)
+  - 効きどころ: grok_agent/composer_agentの起動時model・effort・read-only同等化の根拠。
+- [Grok Build /effort command](sources/agent-launchers/grok-build-effort-command-e5fd481.md) — 対話TUIの/effortコマンドの一次実装。
+  - 出典: <https://raw.githubusercontent.com/xai-org/grok-build/e5fd4816d43260c15ba785f103990c1ed6cea230/crates/codegen/xai-grok-pager/src/slash/commands/effort.rs> (official_source, 14357 chars)
+  - 効きどころ: agent_configureのeffort単独変更経路の根拠。
+- [Grok Build model catalog command output](sources/agent-launchers/grok-build-model-catalog-e5fd481.md) — grok modelsが既定モデルと利用可能モデルを出力する一次実装。
+  - 出典: <https://raw.githubusercontent.com/xai-org/grok-build/e5fd4816d43260c15ba785f103990c1ed6cea230/crates/codegen/xai-grok-pager/src/models.rs> (official_source, 1717 chars)
+  - 効きどころ: 存在しないComposer modelが別モデルへ黙って落ちることを起動前に防ぐcatalog検証の根拠。
+- [Grok Build /model command](sources/agent-launchers/grok-build-model-command-e5fd481.md) — 対話TUIの/modelコマンドがmodelと任意effortを受ける一次実装。
+  - 出典: <https://raw.githubusercontent.com/xai-org/grok-build/e5fd4816d43260c15ba785f103990c1ed6cea230/crates/codegen/xai-grok-pager/src/slash/commands/model.rs> (official_source, 19345 chars)
+  - 効きどころ: agent_configureで同一PTY・同一会話のままGrok/Composer modelとeffortを変更する根拠。
 
 ## discoverability — 12件
 

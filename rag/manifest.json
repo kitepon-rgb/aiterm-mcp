@@ -1,6 +1,75 @@
 {
   "docs": [
     {
+      "slug": "grok-build-cli-agent-parity-e5fd481",
+      "topic": "agent-launchers",
+      "title": "Grok Build CLI model, reasoning effort, and sandbox flags",
+      "source_url": "https://raw.githubusercontent.com/xai-org/grok-build/e5fd4816d43260c15ba785f103990c1ed6cea230/crates/codegen/xai-grok-pager/src/app/cli.rs",
+      "source_type": "official_source",
+      "path": "sources/agent-launchers/grok-build-cli-agent-parity-e5fd481.md",
+      "tags": [
+        "grok-build",
+        "model",
+        "reasoning-effort",
+        "sandbox"
+      ],
+      "summary": "Grok Build TUIの--model、--reasoning-effort（--effort alias）、--sandbox引数の一次実装。",
+      "relevance": "grok_agent/composer_agentの起動時model・effort・read-only同等化の根拠。",
+      "chars": 59351,
+      "fetched": "2026-08-13"
+    },
+    {
+      "slug": "grok-build-effort-command-e5fd481",
+      "topic": "agent-launchers",
+      "title": "Grok Build /effort command",
+      "source_url": "https://raw.githubusercontent.com/xai-org/grok-build/e5fd4816d43260c15ba785f103990c1ed6cea230/crates/codegen/xai-grok-pager/src/slash/commands/effort.rs",
+      "source_type": "official_source",
+      "path": "sources/agent-launchers/grok-build-effort-command-e5fd481.md",
+      "tags": [
+        "grok-build",
+        "reasoning-effort",
+        "slash-command"
+      ],
+      "summary": "対話TUIの/effortコマンドの一次実装。",
+      "relevance": "agent_configureのeffort単独変更経路の根拠。",
+      "chars": 14357,
+      "fetched": "2026-08-13"
+    },
+    {
+      "slug": "grok-build-model-catalog-e5fd481",
+      "topic": "agent-launchers",
+      "title": "Grok Build model catalog command output",
+      "source_url": "https://raw.githubusercontent.com/xai-org/grok-build/e5fd4816d43260c15ba785f103990c1ed6cea230/crates/codegen/xai-grok-pager/src/models.rs",
+      "source_type": "official_source",
+      "path": "sources/agent-launchers/grok-build-model-catalog-e5fd481.md",
+      "tags": [
+        "grok-build",
+        "models",
+        "catalog"
+      ],
+      "summary": "grok modelsが既定モデルと利用可能モデルを出力する一次実装。",
+      "relevance": "存在しないComposer modelが別モデルへ黙って落ちることを起動前に防ぐcatalog検証の根拠。",
+      "chars": 1717,
+      "fetched": "2026-08-13"
+    },
+    {
+      "slug": "grok-build-model-command-e5fd481",
+      "topic": "agent-launchers",
+      "title": "Grok Build /model command",
+      "source_url": "https://raw.githubusercontent.com/xai-org/grok-build/e5fd4816d43260c15ba785f103990c1ed6cea230/crates/codegen/xai-grok-pager/src/slash/commands/model.rs",
+      "source_type": "official_source",
+      "path": "sources/agent-launchers/grok-build-model-command-e5fd481.md",
+      "tags": [
+        "grok-build",
+        "model",
+        "slash-command"
+      ],
+      "summary": "対話TUIの/modelコマンドがmodelと任意effortを受ける一次実装。",
+      "relevance": "agent_configureで同一PTY・同一会話のままGrok/Composer modelとeffortを変更する根拠。",
+      "chars": 19345,
+      "fetched": "2026-08-13"
+    },
+    {
       "slug": "ecma-48-control-functions",
       "topic": "ansi-handling",
       "title": "Standard ECMA-48 (5th ed.) - Control Functions for Coded Character Sets",
@@ -1947,5 +2016,5 @@
       "fetched": "2026-06-01"
     }
   ],
-  "updated": "2026-08-01"
+  "updated": "2026-08-13"
 }

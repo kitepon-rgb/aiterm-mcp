@@ -94,7 +94,12 @@ host統合は、kitepon.devの製品開発を支える内部基盤
 
 **言葉でなく実測で:** 記録済み203テストのベンチマークでは、`pty_read` はコンテキストに載るトークンを生ログの **約 7.1 分の 1** に減らす。しかも pass/fail の判定は畳んでも残る。→ [組み込みシェルツールとの使い分け](#組み込みシェルツールとの使い分け)
 
-14 ツール: 6 つの **PTY ツール**（`pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list`）で 1 本の永続端末を開き・操作し・読む。加えて 4 つの **エージェント起動ツール**（`claude_agent` / `codex_agent` / `grok_agent` / `composer_agent`）が別のコーディングエージェントの TUI を新しい端末の中に起動し、`agent_configure`が起動中のCodex／Claudeのmodel・effortを再起動なしで変更し、`claude_turn`がdurable caller向けの構造化issue／recoveryを、`claude_approval`が相関済みClaude承認UI中継を、`diagnostics`が安全なfactory readinessを返す。バックエンドは **tmux** なので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
+14 ツール: 6 つの **PTY ツール**（`pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list`）で 1 本の永続端末を開き・操作し・読む。加えて 4 つの **エージェント起動ツール**（`claude_agent` / `codex_agent` / `grok_agent` / `composer_agent`）が別のコーディングエージェントの TUI を新しい端末の中に起動し、`agent_configure`が起動中のClaude／Codex／Grok／Composerのmodel・effortを再起動なしで変更し、`claude_turn`がdurable caller向けの構造化issue／recoveryを、`claude_approval`が相関済みClaude承認UI中継を、`diagnostics`が安全なfactory readinessを返す。バックエンドは **tmux** なので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
+
+**v0.25.0ではGrok／Composerへ共通launcher制御を同等実装。** 起動時`reasoning_effort`、
+`write_scope:"read-only"`の`--sandbox read-only`強制、`agent_configure`による同一session内の
+model／effort変更に対応した。明示したGrok／Composer modelとComposer既定modelはPTY作成前に
+現在の`grok models` catalogへ照合し、不在時は別modelへ黙ってfallbackせず明示失敗する。
 
 **v0.24.3ではlauncherへ渡す環境変数を現在のMCP processから明示選択できる。** `env_vars`へ
 変数名だけを指定すると、aitermは起動時の現在値を読み、存在する値だけをそのagentへ渡す。永続tmux
@@ -168,7 +173,7 @@ pty_read(id, { wait: true })       → 削減済みの出力を読む（完了�
 
 既存の人間向けtextに加えて`aiterm.agent-launch-result.v1` structured receiptも返すため、durable callerは表示文字列を解析せずsession handleを取得できる。Codexは通常rollout transcriptの`task_complete`、Grok/Composerは通常session event、Claudeは通常settingsへ加算したlaunch固有Stop hookを完了正本に使う。agent sessionへの`pty_send`は非ブロックの **dispatch** になり`event_cursor`入りreceiptを即返す。完了通知は`aiterm-wait --session <id> --cursor <event_cursor>`を親のターンを塞がない別processで受ける。durable machine callerは`claude_turn`を使い、recoveryは再送せず、検証済み完了だけがexact `raw_output`を持つ。
 
-`codex_agent`・`grok_agent`・`composer_agent`は任意の`write_scope`（`"read-only"`または書込み許可パスの説明）も受ける。指定値はlaunch receipt・session metadata・`pty_list`へ保存する。Codexの`write_scope:"read-only"`だけは実効能力壁であり、aitermがCLIの`--sandbox read-only`を付ける。Grok/Composerには対応する対話起動sandboxがなく、Codexにもパス説明をallowlistへ変換するフラグがないため、それらは強制済みと偽らず`write_scope_enforcement:"declaration_only_unsupported"`を返す。`write_scope`を省略した起動は従来どおりである。
+`codex_agent`・`grok_agent`・`composer_agent`は任意の`write_scope`（`"read-only"`または書込み許可パスの説明）も受ける。指定値はlaunch receipt・session metadata・`pty_list`へ保存する。3 launcherすべてで`write_scope:"read-only"`は実効能力壁となり、aitermがCLIの`--sandbox read-only`を付ける。パス説明をallowlistへ変換する同等CLI引数はないため、そちらだけは`write_scope_enforcement:"declaration_only_unsupported"`を返す。`write_scope`を省略した起動は従来どおりである。
 
 ```text
 codex_agent({ session_name: "codex1", cwd: "/repo",
@@ -188,8 +193,8 @@ $ aiterm-wait --session codex1 --cursor <event_cursor>   # exit 0=done / 3=timeo
 | --- | --- | --- |
 | `claude_agent` | Claude Code CLI（Anthropic） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`（`low`/`medium`/`high`/`xhigh`/`max`）, `env_vars?`, `cwd?`, `session_name?` |
 | `codex_agent` | Codex CLI（OpenAI・端末設定／CLI既定、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`（`low`/`medium`/`high`/`xhigh`/`max`/`ultra`）, `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
-| `grok_agent` | Grok Build（xAI、既定`grok-4.5`、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
-| `composer_agent` | Grok Build（xAI、既定`grok-composer-2.5-fast`、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
+| `grok_agent` | Grok Build（xAI、既定`grok-4.5`、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`（vendor対応値）, `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
+| `composer_agent` | Grok Build（xAI、既定`grok-composer-2.5-fast`、`model?`で上書き。全modelをlive catalog照合） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`（vendor対応値）, `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
 
 `env_vars`は環境変数の**名前**だけを並べるallowlistであり、name/value mapではない。aitermは
 launcher起動時に現在のMCP processから各名前を読み、存在する値をshell quoteして、その1回のvendor
@@ -383,7 +388,7 @@ aiterm は同じ核心の洞察——端末を出会いの場にする——を�
 | `pty_key` | 制御キーを送る | `session_id`, `key`（`C-c`/`Enter`/`Up`…） |
 | `pty_close` | 冪等に閉じ、`closed` / `already_closed`を返す | `session_id` |
 | `pty_list` | セッション一覧 | （なし） |
-| `agent_configure` | 起動中のCodex／Claudeを再起動せずmodel／effort変更 | `session_id`, `model?`, `reasoning_effort?` |
+| `agent_configure` | 起動中のClaude／Codex／Grok／Composerを再起動せずmodel／effort変更 | `session_id`, `model?`, `reasoning_effort?` |
 | `claude_turn` | 相関済みClaude operationをdispatch（issue）または回収（recover） | `action`, `session_id`, `operation_id`, `text?` |
 | `claude_approval` | 現在表示中の相関済みClaude承認UIを検査または応答 | `action`, `session_id`, `operation_id?`, `approval_choice?`, `observed_prompt_digest?` |
 | `diagnostics` | 機械可読 JSON による read-only factory readiness | （なし） |
@@ -400,14 +405,14 @@ consumer は `aiterm-runtime-errors snapshot` を読み、durable ingestion 後�
 
 各ツールは特定ベンダーの対話型コーディングエージェント TUI を新しい永続 PTY の中に起動し、`session_id` を返す。以後は他のセッションと同様に `pty_read` / `pty_send` で操作する。モデルごとに 1 ツール＝ツール名を見ればどのモデルか分かる。TUI は全画面アプリなので、`pty_read({ screen: true })` で描画済みの画面を読む。
 
-`agent_configure({ session_id, model?, reasoning_effort? })`はvendor標準操作で起動中のCodex／Claudeを変更し、PTYと会話contextを維持する。Claude Code標準の`/model`・`/effort`は、新しいClaude sessionの既定値も同時に保存する。
+`agent_configure({ session_id, model?, reasoning_effort? })`はvendor標準操作で起動中のClaude／Codex／Grok／Composerを変更し、PTYと会話contextを維持する。Grok／Composerは同じlive model catalog照合後に`/model <model> [effort]`または`/effort <effort>`を使う。Claude Code標準の`/model`・`/effort`は、新しいClaude sessionの既定値も同時に保存する。
 
 | ツール | 起動するもの | 主な引数 |
 | --- | --- | --- |
 | `claude_agent` | Claude Code CLI（Anthropic） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`（`low`/`medium`/`high`/`xhigh`/`max`）, `env_vars?`, `cwd?`, `session_name?` |
 | `codex_agent` | Codex CLI（OpenAI・端末設定／CLI既定、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`（`low`/`medium`/`high`/`xhigh`/`max`/`ultra`）, `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
-| `grok_agent` | Grok Build（xAI、既定`grok-4.5`、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
-| `composer_agent` | Grok Build（xAI、既定`grok-composer-2.5-fast`、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
+| `grok_agent` | Grok Build（xAI、既定`grok-4.5`、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`（vendor対応値）, `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
+| `composer_agent` | Grok Build（xAI、既定`grok-composer-2.5-fast`、`model?`で上書き。全modelをlive catalog照合） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`（vendor対応値）, `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
 
 対応するCLI（`claude` / `codex` / `grok`）の導入・認証が必要。前提違反はsession作成前に明示失敗する。4 launcherすべてが通常project/user環境と同じ非ブロックdispatch契約を使う。Claude／Codex／Grok／Composerのdepth 1 live smokeと、Claude親→Claude孫のdepth 2 nested delegation smokeはgreenであり、fixtureによる検証とは区別して記録する。
 

@@ -83,6 +83,8 @@ const AGENT_SUBMIT_RESIDUE_MAX_SAMPLES = 5;
 const AGENT_SUBMIT_RESIDUE_TAIL_CHARS = 32;
 const AGENT_SUBMIT_RESIDUE_MIN_TAIL_CHARS = 8;
 const GROK_AUTH_MAX_BYTES = 64 * 1024;
+const GROK_MODELS_MAX_BYTES = 1024 * 1024;
+const GROK_MODELS_TIMEOUT_MS = 15_000;
 const CLAUDE_RESULT_MAX_BYTES = 4 * 1024 * 1024;
 
 // 出力削減（RTK の CAP 思想を移植）
@@ -1866,6 +1868,43 @@ function resolveAndValidateGrokAuth(srcHome: string): string | null {
     throw new AitermError((e as NodeJS.ErrnoException).code === "ENOENT" ? "Grok 認証正本が見つかりません。先に grok login が必要です" : "Grok 認証正本を安全に開けません", 2);
   } finally {
     if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
+function grokModelCatalog(bin: string, cwd: string): string[] {
+  const result = spawnSync(bin, ["models"], {
+    cwd,
+    encoding: "utf8",
+    env: process.env,
+    timeout: GROK_MODELS_TIMEOUT_MS,
+    maxBuffer: GROK_MODELS_MAX_BYTES,
+    windowsHide: true,
+  });
+  if (result.error || result.status !== 0) {
+    const detail = result.error?.message || result.stderr?.trim() || `exit=${result.status ?? "unknown"}`;
+    throw new AitermError(`Grok model catalog を取得できません: ${detail}`, 2);
+  }
+  const text = result.stdout.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+  const marker = "Available models:";
+  const start = text.indexOf(marker);
+  if (start < 0) throw new AitermError("Grok model catalog の出力形式が不正です（Available models がありません）", 2);
+  const models: string[] = [];
+  for (const line of text.slice(start + marker.length).split(/\r?\n/)) {
+    const match = line.match(/^\s{2}[-*]\s+(.+?)(?:\s+\(default\))?\s*$/);
+    if (match?.[1]) models.push(match[1]);
+  }
+  if (models.length === 0) throw new AitermError("Grok model catalog に利用可能なmodelがありません", 2);
+  return models;
+}
+
+function assertGrokModelAvailable(bin: string, cwd: string, model: string): void {
+  const models = grokModelCatalog(bin, cwd);
+  if (!models.includes(model)) {
+    throw new AitermError(
+      `Grok model catalog に ${JSON.stringify(model)} がありません。利用可能: ${models.join(", ")}。` +
+        "別modelへfallbackせず起動を中止しました",
+      2,
+    );
   }
 }
 
@@ -4020,7 +4059,7 @@ export interface AgentDispatchReceipt {
 export interface AgentConfigureResult {
   schema: "aiterm.agent-configure-result.v1";
   session_id: string;
-  provider: "claude" | "codex";
+  provider: AgentKind;
   model: string | null;
   reasoning_effort: string | null;
 }
@@ -4033,6 +4072,35 @@ async function waitForScreenText(name: string, text: string, timeoutMs = 3_000):
     await sleep(100);
   } while (performance.now() < deadline);
   throw new AitermError(`${agentLabel(loadAgentMetadata(name).kind)} の ${text} 画面を確認できません`, 2);
+}
+
+function lineCounts(screen: string): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const line of screen.split("\n").map((value) => value.trim()).filter(Boolean)) {
+    counts.set(line, (counts.get(line) ?? 0) + 1);
+  }
+  return counts;
+}
+
+async function waitForGrokConfigurationResult(name: string, before: string, timeoutMs = 3_000): Promise<void> {
+  const beforeCounts = lineCounts(before);
+  const deadline = performance.now() + timeoutMs;
+  do {
+    const screen = captureScreen(name, AGENT_TUI_READY_LINES);
+    const seen = new Map<string, number>();
+    const added = screen.split("\n").map((value) => value.trim()).filter((line) => {
+      if (!line) return false;
+      const count = (seen.get(line) ?? 0) + 1;
+      seen.set(line, count);
+      return count > (beforeCounts.get(line) ?? 0);
+    });
+    const error = added.find((line) =>
+      /^(?:Unknown model:|unknown effort level|Usage: \/(?:model|effort)\b|Invalid (?:model|reasoning effort)|.*does not support reasoning effort)/i.test(line));
+    if (error) throw new AitermError(`Grokの設定変更に失敗しました: ${error}`, 2);
+    if (added.some((line) => /^(?:Switched to |✓?\s*Default model:)/.test(line))) return;
+    await sleep(100);
+  } while (performance.now() < deadline);
+  throw new AitermError(`${agentLabel(loadAgentMetadata(name).kind)} の設定変更完了を確認できません`, 2);
 }
 
 function sendMenuChoice(name: string, choice: string): void {
@@ -4085,10 +4153,10 @@ export async function configureAgent(
   const model = opts.model?.trim() || null;
   const effort = opts.reasoning_effort?.trim() || null;
   if (!model && !effort) throw new AitermError("model または reasoning_effort を指定してください", 2);
-  const meta = loadAgentMetadata(name);
-  if (meta.kind !== "claude" && meta.kind !== "codex") {
-    throw new AitermError("agent_configure はClaudeとCodexのsessionだけに対応します", 2);
+  if ((model && /[\r\n]/.test(model)) || (effort && /[\r\n]/.test(effort))) {
+    throw new AitermError("model／reasoning_effort に改行を含められません", 2);
   }
+  const meta = loadAgentMetadata(name);
   bindCompletedInitialPrompt(meta);
   const ready = await waitAgentTuiReady(name, meta, AGENT_TUI_READY_TIMEOUT_MS);
   if (!ready.ready) throw new AitermError(`agent session '${name}' は入力待ちではありません`, 2);
@@ -4108,6 +4176,27 @@ export async function configureAgent(
       schema: "aiterm.agent-configure-result.v1",
       session_id: name,
       provider: "claude",
+      model,
+      reasoning_effort: effort,
+    };
+  }
+
+  if (meta.kind === "grok" || meta.kind === "composer") {
+    if (model) {
+      const bin = resolveAgentBin(meta.kind);
+      if (!bin) throw new AitermError(`${agentLabel(meta.kind)} の CLI が見つかりません`, 2);
+      assertGrokModelAvailable(bin, meta.cwd ?? process.cwd(), model);
+    }
+    const command = model
+      ? `/model ${model}${effort ? ` ${effort}` : ""}`
+      : `/effort ${effort}`;
+    const before = captureScreen(name, AGENT_TUI_READY_LINES);
+    await sendAgentPromptText(name, command);
+    await waitForGrokConfigurationResult(name, before);
+    return {
+      schema: "aiterm.agent-configure-result.v1",
+      session_id: name,
+      provider: meta.kind,
       model,
       reasoning_effort: effort,
     };
@@ -4514,11 +4603,14 @@ function buildAgentCmd(
       parts.push("-c", `developer_instructions=${shq(subagentInstruction(meta))}`);
     }
   } else {
-    // grok / composer は同じ grok CLI をモデル違いで起動。--effort は headless（grok -p）専用で
-    // 対話 TUI では警告の上無視されるため渡さない（openAgent が指定を事前拒否する）。
+    // grok / composer は同じ grok CLI をモデル違いで起動する。
     parts.push("--no-auto-update");
     if (meta?.kind === "grok" || meta?.kind === "composer") parts.push("--no-alt-screen");
     parts.push("--model", shq(model ?? GROK_MODEL_DEFAULTS[kind]));
+    if (effort) parts.push("--reasoning-effort", shq(effort));
+    if ((meta?.kind === "grok" || meta?.kind === "composer") && meta.write_scope === "read-only") {
+      parts.push("--sandbox", "read-only");
+    }
     if ((meta?.kind === "grok" || meta?.kind === "composer") && meta.hook_route === "shared_grok_home") {
       parts.push("--session-id", shq(meta.vendor_session_id ?? ""), "--rules", shq(subagentInstruction(meta)));
     }
@@ -4580,16 +4672,16 @@ function buildAgentLaunchNote(
 ): string {
   const writeScopeNote = meta?.write_scope === undefined
     ? ""
-    : kind === "codex" && meta.write_scope === "read-only"
-      ? `\n能力宣言: write_scope=${JSON.stringify(meta.write_scope)}。Codex CLIへ --sandbox read-only を付与し、書込みを実効禁止。`
-      : `\n能力宣言: write_scope=${JSON.stringify(meta.write_scope)}。${kind === "grok" || kind === "composer" ? "このCLIには起動sandbox機構がないため" : "パス単位のsandbox allowlistに対応するCLI引数がないため"}宣言の記録のみ（構造的unsupported）。`;
+    : (kind === "codex" || kind === "grok" || kind === "composer") && meta.write_scope === "read-only"
+      ? `\n能力宣言: write_scope=${JSON.stringify(meta.write_scope)}。${agentLabel(kind)} CLIへ --sandbox read-only を付与し、書込みを実効禁止。`
+      : `\n能力宣言: write_scope=${JSON.stringify(meta.write_scope)}。パス単位のsandbox allowlistに対応するCLI引数がないため宣言の記録のみ（構造的unsupported）。`;
   if (kind === "claude") {
     return `起動設定: model=${model ?? "CLI既定"} effort=${effort ?? "CLI既定"}。${writeScopeNote}`;
   }
   if (kind !== "codex") {
     return (
       `起動設定: model=${model ?? GROK_MODEL_DEFAULTS[kind]}（${model ? "引数" : "ツール既定"}）。` +
-      "reasoning effort は対話 TUI 非対応＝未指定で起動。" + writeScopeNote
+      `effort=${effort ?? "CLI／model既定"}。` + writeScopeNote
     );
   }
   const configPath =
@@ -4700,24 +4792,6 @@ export function openAgent(
   if (effort && kind === "claude" && !CLAUDE_EFFORTS.has(effort)) {
     throw new AitermError("Claude Code の reasoning_effort は low/medium/high/xhigh/max のいずれかです", 2);
   }
-  // grok CLI の --effort は headless（grok -p）専用で、対話 TUI では警告の上無視される。
-  // 黙って no-op の引数を受けない＝起動前に明示エラーで拒否する（codex は CLI 側の値集合が
-  // 版で変わるため縛らず送信まで通す）。
-  if (effort && kind === "grok") {
-    throw new AitermError(
-      `${label} は reasoning_effort を指定できません。grok CLI の --effort は headless（grok -p）専用で、` +
-        "対話 TUI では警告の上無視されます（grok-4.5 の TUI 既定 effort は high）。" +
-        "effort 制御が必要なら通常 PTY で `grok -p --effort low|medium|high ...` を使ってください",
-      2,
-    );
-  }
-  if (effort && kind === "composer") {
-    throw new AitermError(
-      `${label} は reasoning_effort を指定できません。grok-composer-2.5-fast は reasoning effort 非対応です` +
-        "（モデルカタログ supports_reasoning_effort=false）",
-      2,
-    );
-  }
   const agentDone = !!opts.agent_done;
   const launchOperationId = opts.launch_operation_id == null
     ? null
@@ -4792,6 +4866,10 @@ export function openAgent(
   const binForCmd = isWin ? toWslPath(bin) : bin;
   const cwdForCmd = cwd && isWin ? toWslPath(cwd) : cwd;
   const grokAuthPath = agentDone && (kind === "grok" || kind === "composer") ? resolveAndValidateGrokAuth(realGrokHome()) : null;
+  if (kind === "grok" || kind === "composer") {
+    const requestedModel = model ?? (kind === "composer" ? GROK_MODEL_DEFAULTS.composer : null);
+    if (requestedModel) assertGrokModelAvailable(bin, cwd ?? process.cwd(), requestedModel);
+  }
 
   let sid: string;
   let hint: string;

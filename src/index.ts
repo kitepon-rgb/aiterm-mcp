@@ -452,8 +452,8 @@ server.registerTool(
   "agent_configure",
   {
     description:
-      "起動済みのCodex／Claude agent sessionを再起動せず、会話contextを保ったままmodel／reasoning effortを変更する。" +
-      "ClaudeはCLI標準の/model・/effort、CodexはCLI標準の/model選択画面を使う。",
+      "起動済みのClaude／Codex／Grok／Composer agent sessionを再起動せず、会話contextを保ったままmodel／reasoning effortを変更する。" +
+      "Claude／Grok／ComposerはCLI標準の/model・/effort、CodexはCLI標準の/model選択画面を使う。",
     inputSchema: {
       session_id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
       model: z.string().min(1).nullish().describe("変更後のmodel。省略時はmodelを変更しない"),
@@ -462,7 +462,7 @@ server.registerTool(
     outputSchema: {
       schema: z.literal("aiterm.agent-configure-result.v1"),
       session_id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
-      provider: z.enum(["claude", "codex"]),
+      provider: z.enum(["claude", "codex", "grok", "composer"]),
       model: z.string().nullable(),
       reasoning_effort: z.string().nullable(),
     },
@@ -488,15 +488,17 @@ const agentModelDesc = (kind: "claude" | "codex" | "grok" | "composer") =>
     : kind === "codex"
     ? "起動モデル（例: gpt-5.6-sol / gpt-5.6-terra / gpt-5.6-luna）。省略時は端末 config／CLI 既定を継承" +
       "（端末側のピンがそのまま効く。実効値は起動応答に明示される）"
-    : `起動モデル。省略時は ${kind === "grok" ? "grok-4.5" : "grok-composer-2.5-fast"}`;
+    : `起動モデル。省略時は ${kind === "grok" ? "grok-4.5" : "grok-composer-2.5-fast"}。` +
+      (kind === "composer"
+        ? "既定／explicit modelを起動前にlive catalogへ照合し、不在ならfallbackせずエラー"
+        : "explicit modelを起動前にlive catalogへ照合し、不在ならfallbackせずエラー");
 const agentEffortDesc = (kind: "claude" | "codex" | "grok" | "composer") =>
   kind === "claude"
     ? "Claude Code reasoning effort。low/medium/high/xhigh/max。省略時はCLI既定"
-    : kind === "grok" || kind === "composer"
-    ? "指定不可（grok CLI の --effort は headless 専用で、対話 TUI では警告の上無視される。" +
-      "composer は effort 自体非対応）。指定すると起動前にエラーを返す"
-    : "reasoning effort（思考レベル）。low/medium/high/xhigh/max/ultra（CLI 版依存）。" +
-      "ultra は max 推論＋proactive 自動委譲 ON＝使用量急増注意（明示要求時のみ）。省略時は端末 config／CLI 既定。";
+    : kind === "codex"
+      ? "reasoning effort（思考レベル）。low/medium/high/xhigh/max/ultra（CLI／model 版依存）。" +
+        "ultra は max 推論＋proactive 自動委譲 ON＝使用量急増注意（明示要求時のみ）。省略時は端末 config／CLI 既定。"
+      : "Grok Build reasoning effort。利用可能値はCLI／modelのlive catalogに従う。省略時はCLI／model既定。";
 // 全launcher共通の完了受信ガイド。待ちコマンドは起動応答の wait_command（初回prompt時）または
 // pty_send dispatch の event_cursor から組む。文型は NON_BLOCKING_RULE と同じく「待たない」が先。
 const agentCompletionDesc =
@@ -518,7 +520,7 @@ function registerAgentTool(
   const supportsWriteScope = kind === "codex" || kind === "grok" || kind === "composer";
   const writeScopeInputSchema: Record<string, z.ZodTypeAny> = supportsWriteScope
     ? {
-        write_scope: z.string().min(1).optional().describe("能力宣言。read-only、または書込みを許可するパスの説明文字列。Codexのread-onlyだけはCLI sandboxで実効禁止する"),
+        write_scope: z.string().min(1).optional().describe("能力宣言。read-only、または書込みを許可するパスの説明文字列。Codex／Grok／Composerのread-onlyはCLI sandboxで実効禁止する"),
       }
     : {};
   const writeScopeOutputSchema: Record<string, z.ZodTypeAny> = supportsWriteScope
@@ -547,8 +549,7 @@ function registerAgentTool(
           .optional()
           .describe("同一端末のThroughline sessionから所有権を変えずに記憶を読み、promptのmissionより前へ注入する"),
         model: z.string().nullish().describe(agentModelDesc(kind)),
-        // grok/composer の effort は対話 TUI で無効（headless 専用）＝core 側が起動前に明示エラーで拒否。
-        // codex は CLI 側の値集合が版で変わるため縛らない（core 側も同方針）。
+        // CLI／model側の値集合が版で変わるため公開enumでは縛らない（core側も同方針）。
         reasoning_effort: z.string().nullish().describe(agentEffortDesc(kind)),
         env_vars: z.array(z.string()).optional().describe("起動したagentへ現在のMCP processから継承する環境変数名。値はtool引数へ渡さない"),
         cwd: z.string().nullish().describe("作業ディレクトリ（対象リポのルート等・任意）"),
@@ -596,7 +597,7 @@ function registerAgentTool(
             ? {
                 write_scope,
                 write_scope_enforcement:
-                  kind === "codex" && write_scope === "read-only"
+                  (kind === "codex" || kind === "grok" || kind === "composer") && write_scope === "read-only"
                     ? "enforced_read_only" as const
                     : "declaration_only_unsupported" as const,
               }
@@ -645,7 +646,7 @@ registerAgentTool(
     agentEnvironmentDesc +
     "turn は pty_send で送る（自動で非ブロック dispatch になる）。" +
     agentCompletionDesc +
-    "model を引数で指定可。reasoning_effort は対話 TUI 非対応（指定はエラー）。",
+    "model／reasoning_effortを引数で指定可。read-only sandboxとagent_configureに対応。",
 );
 registerAgentTool(
   "composer_agent",
@@ -654,7 +655,8 @@ registerAgentTool(
     agentEnvironmentDesc +
     "turn は pty_send で送る（自動で非ブロック dispatch になる）。" +
     agentCompletionDesc +
-    "model を引数で指定可。reasoning_effort は非対応（指定はエラー）。",
+    "model／reasoning_effortを引数で指定可。live catalogにComposer modelがなければGrokへfallbackせず明示エラー。" +
+    "read-only sandboxとagent_configureに対応。",
 );
 
 async function main(): Promise<void> {
