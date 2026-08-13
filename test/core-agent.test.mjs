@@ -25,6 +25,7 @@ fs.mkdirSync(fakeHome, { mode: 0o700 });
 process.env.HOME = fakeHome;
 const argvPrinterBin = path.join(process.env.TMPDIR, "print-argv.sh");
 const fakeClaudeBin = path.join(process.env.TMPDIR, "fake-claude.sh");
+const fakeGrokBin = path.join(process.env.TMPDIR, "fake-grok.sh");
 if (process.platform !== "win32") {
   fs.writeFileSync(
     argvPrinterBin,
@@ -47,13 +48,27 @@ if (process.platform !== "win32") {
     { mode: 0o700 },
   );
   fs.chmodSync(fakeClaudeBin, 0o700);
+  fs.writeFileSync(
+    fakeGrokBin,
+    [
+      "#!/bin/sh",
+      "if [ \"$1\" = models ]; then",
+      "  printf '%s\\n' 'You are logged in with grok.com.' '' 'Default model: grok-4.5' '' 'Available models:' '  - grok-4.6' '  * grok-4.5 (default)' '  - grok-composer-2.5-fast'",
+      "  exit 0",
+      "fi",
+      "for arg do printf '<arg>%s</arg>\\n' \"$arg\"; done",
+      "",
+    ].join("\n"),
+    { mode: 0o700 },
+  );
+  fs.chmodSync(fakeGrokBin, 0o700);
 }
 // 実 CLI を起動せず openAgent の配管だけ検証する偽 bin。resolveAgentBin は存在検証する（A3）ため、
 // 実在するパスにする必要がある。POSIX は /bin/echo（起動コマンドを echo で可視化できる）、native
 // Windows には /bin/echo が無いので node 自身（必ず存在）を使う——echo 出力を読む grok/composer/codex
 // 組立テストは { skip }（tmux 必須）で native Windows では走らないため、可視化不要な bin で足りる。
 process.env.CODEX_BIN = process.platform === "win32" ? process.execPath : "/bin/echo";
-process.env.GROK_BIN = process.platform === "win32" ? process.execPath : "/bin/echo";
+process.env.GROK_BIN = process.platform === "win32" ? process.execPath : fakeGrokBin;
 process.env.CLAUDE_BIN = process.platform === "win32" ? process.execPath : fakeClaudeBin;
 const core = await import("../dist/core.js");
 core.__testSetAgentTuiReadyStableSamples(1);
@@ -280,6 +295,10 @@ function makeFakeGrokTuiBin() {
     bin,
     [
       "#!/bin/sh",
+      "if [ \"$1\" = models ]; then",
+      "  printf '%s\\n' 'You are logged in with grok.com.' '' 'Default model: grok-4.5' '' 'Available models:' '  - grok-4.6' '  * grok-4.5 (default)' '  - grok-composer-2.5-fast'",
+      "  exit 0",
+      "fi",
       "printf 'Grok Build\\n❯ ready\\n'",
       "while IFS= read -r line; do",
       "  printf '%s\\n' \"$line\"",
@@ -473,18 +492,28 @@ after(() => {
   else process.env.HOME = savedHome;
 });
 
-test("openAgent: grok は effort 指定自体を session 作成前に拒否（headless 専用）", () => {
-  assert.throws(
-    () => core.openAgent("grok", { reasoning_effort: "high" }),
-    (e) => e.code === 2 && /headless（grok -p）専用/.test(e.message) && /対話 TUI では警告の上無視され/.test(e.message),
-  );
+test("target contract: Grok/Composerは対話TUIへreasoning_effortを渡す", { skip }, async () => {
+  for (const kind of ["grok", "composer"]) {
+    const [sid] = core.openAgent(kind, { reasoning_effort: "high" });
+    try {
+      const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
+      assert.match(out, /<arg>--reasoning-effort<\/arg>/, `${kind} effort flag: ${out}`);
+      assert.match(out, /<arg>high<\/arg>/, `${kind} effort value: ${out}`);
+    } finally {
+      core.closeSession(sid);
+    }
+  }
 });
 
-test("openAgent: composer は effort 指定自体を session 作成前に拒否", () => {
-  assert.throws(
-    () => core.openAgent("composer", { reasoning_effort: "high" }),
-    (e) => e.code === 2 && /supports_reasoning_effort=false/.test(e.message),
-  );
+test("target contract: catalogにないGrok/Composer modelはsession作成前に拒否する", { skip }, () => {
+  for (const kind of ["grok", "composer"]) {
+    const sessionName = `missing_${kind}_model`;
+    assert.throws(
+      () => core.openAgent(kind, { session_name: sessionName, model: "not-in-live-catalog" }),
+      (error) => error.code === 2 && /model catalog/.test(error.message) && /not-in-live-catalog/.test(error.message),
+    );
+    assert.doesNotMatch(core.listSessions(), new RegExp(`(^|\\n)${sessionName}\\t`));
+  }
 });
 
 test("openAgent: codex の effort は縛らない（CLI 版差があるため送信まで到達する）", { skip }, () => {
@@ -540,6 +569,40 @@ test("agent_configure: Claudeへ/modelと/effortを同じsessionのまま送る"
     else process.env.CLAUDE_BIN = savedBin;
     fs.rmSync(fakeBin, { force: true });
   }
+});
+
+test("target contract: Grok/Composerへ/modelと/effortを同じsessionのまま送る", { skip: skipAgentDone }, async () => {
+  await withFakeGrokHome(async () => {
+    const savedBin = process.env.GROK_BIN;
+    const fakeBin = makeFakeGrokTuiBin();
+    process.env.GROK_BIN = fakeBin;
+    try {
+      for (const kind of ["grok", "composer"]) {
+        const [sid] = core.openAgent(kind, { agent_done: true });
+        try {
+          await markFakeAgentReady(sid, kind);
+          const model = kind === "grok" ? "grok-4.6" : "grok-composer-2.5-fast";
+          const result = await core.configureAgent(sid, { model, reasoning_effort: "high" });
+          assert.deepEqual(result, {
+            schema: "aiterm.agent-configure-result.v1",
+            session_id: sid,
+            provider: kind,
+            model,
+            reasoning_effort: "high",
+          });
+          const out = await core.readOutput(sid, { full: true, raw: true });
+          assert.match(out, new RegExp(`/model ${model.replaceAll(".", "\\.")} high`));
+          assert.match(core.listSessions(), new RegExp(`(^|\\n)${sid}\\t`));
+        } finally {
+          core.closeSession(sid);
+        }
+      }
+    } finally {
+      if (savedBin === undefined) delete process.env.GROK_BIN;
+      else process.env.GROK_BIN = savedBin;
+      fs.rmSync(fakeBin, { force: true });
+    }
+  });
 });
 
 test("openAgent: 実在しない cwd は session を作る前に拒否", () => {
@@ -634,15 +697,25 @@ test("openAgent: Codexのパス説明write_scopeはunsupportedを明示してsan
   });
 });
 
-test("openAgent: Grok/Composerのwrite_scopeは構造的unsupportedを明示して記録だけする", { skip: skipAgentDone }, async () => {
+test("target contract: Grok/Composer read-onlyはsandboxで実効化し、パス説明は宣言に保つ", { skip: skipAgentDone }, async () => {
   await withFakeGrokHome(async () => {
     for (const kind of ["grok", "composer"]) {
-      const [sid, hint] = core.openAgent(kind, { agent_done: true, write_scope: "/repo/docs のみ書込み可" });
+      const [sid, hint] = core.openAgent(kind, { agent_done: true, write_scope: "read-only" });
       try {
-        assert.equal(readAgentMeta(sid).write_scope, "/repo/docs のみ書込み可");
-        assert.match(hint, /宣言の記録のみ（構造的unsupported）/);
+        assert.equal(readAgentMeta(sid).write_scope, "read-only");
+        assert.match(hint, /--sandbox read-only を付与し、書込みを実効禁止/);
+        const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
+        assert.match(out, /<arg>--sandbox<\/arg>\s*<arg>read-only<\/arg>/, `${kind} read-only sandbox: ${out}`);
       } finally {
         core.closeSession(sid);
+      }
+
+      const [pathSid, pathHint] = core.openAgent(kind, { agent_done: true, write_scope: "/repo/docs のみ書込み可" });
+      try {
+        assert.equal(readAgentMeta(pathSid).write_scope, "/repo/docs のみ書込み可");
+        assert.match(pathHint, /パス単位のsandbox allowlistに対応するCLI引数がないため宣言の記録のみ（構造的unsupported）/);
+      } finally {
+        core.closeSession(pathSid);
       }
     }
   });

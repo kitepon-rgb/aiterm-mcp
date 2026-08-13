@@ -179,7 +179,7 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 14 ツール公�
   assert.ok(agentConfigure.inputSchema.properties.model.anyOf.some((entry) => entry.type === "string"));
   assert.ok(agentConfigure.inputSchema.properties.reasoning_effort.anyOf.some((entry) => entry.type === "string"));
   assert.equal(agentConfigure.outputSchema.properties.schema.const, "aiterm.agent-configure-result.v1");
-  assert.deepEqual(agentConfigure.outputSchema.properties.provider.enum, ["claude", "codex"]);
+  assert.deepEqual(agentConfigure.outputSchema.properties.provider.enum, ["claude", "codex", "grok", "composer"]);
   assert.equal(codexAgent.inputSchema.properties.agent_done, undefined, "v0.16: launcher は常に managed");
   assert.equal(codexAgent.inputSchema.properties.wait, undefined, "v0.16: 初回prompt waitは廃止");
   assert.equal(codexAgent.inputSchema.properties.timeout, undefined);

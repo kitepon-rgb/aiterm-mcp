@@ -1,0 +1,9 @@
+{
+  "evidence_id": "grok-composer-parity-discovery",
+  "repo_id": "self",
+  "path": "docs/evidence/2026-08-13-grok-composer-parity-discovery.md",
+  "git_blob_oid": "88e656e08a55170abc46b242fd5a75125f4cab44",
+  "content_digest": "8cc879008609074e5422b8aadd552816444211e16f27b4c8934116870c257562",
+  "media_type": "text/markdown",
+  "anchor_digest": null
+}
