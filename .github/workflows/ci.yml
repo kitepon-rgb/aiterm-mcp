@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   full:
-    uses: ./.github/workflows/factory-full-ci.yml
+    uses: kitepon/dotagents/.github/workflows/factory-full-ci.yml@main
     with:
       environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'all' }}
       full-command: >-
