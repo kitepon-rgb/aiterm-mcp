@@ -1,0 +1,9 @@
+{
+  "evidence_id": "grok-composer-parity-verification",
+  "repo_id": "self",
+  "path": "docs/evidence/2026-08-13-grok-composer-parity-verification.md",
+  "git_blob_oid": "960dc664009cb87a2f576b34ede3e52ec6c8abac",
+  "content_digest": "10db741ce878f092547a8eb6c8f125c2094c0a19f5495e64da77720a786bf47a",
+  "media_type": "text/markdown",
+  "anchor_digest": null
+}
