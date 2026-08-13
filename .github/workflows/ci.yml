@@ -27,8 +27,9 @@ jobs:
     uses: kitepon/dotagents/.github/workflows/factory-full-ci.yml@main
     with:
       environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'all' }}
+      dependency-command: npm ci
       full-command: >-
-        node --version && npm --version && npm ci && npm test
+        node --version && npm --version && npm test
 
   publish:
     needs: [full]
