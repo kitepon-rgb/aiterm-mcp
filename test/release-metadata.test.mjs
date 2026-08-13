@@ -40,11 +40,12 @@ test('release metadata points at the canonical kitepon organization repository',
   assert.doesNotMatch(registryWorkflow, /io\.github\.kitepon-rgb/);
 });
 
-test('final CI runs the same full test on all four factory environments', async () => {
+test('final CI measures dependency install separately from the four-environment full test', async () => {
   const ci = await readFile(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
 
   assert.match(ci, /uses: kitepon\/dotagents\/\.github\/workflows\/factory-full-ci\.yml@main/);
-  assert.match(ci, /node --version && npm --version && npm ci && npm test/);
+  assert.match(ci, /dependency-command: npm ci/);
+  assert.match(ci, /node --version && npm --version && npm test/);
   assert.match(ci, /needs: \[full\]/);
 });
 
