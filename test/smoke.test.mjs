@@ -128,6 +128,7 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 14 ツール公�
   for (const field of ["prompt", "model", "reasoning_effort", "cwd", "write_scope"]) {
     assert.match(codexAgent.description, new RegExp(`\\"${field}\\"`), `codex_agent complete example: ${field}`);
   }
+  assert.equal(codexAgent.inputSchema.properties.env_vars.type, "array", "codex_agent env_vars schema");
   const claudeAgent = toolsResp.result.tools.find((t) => t.name === "claude_agent");
   assert.equal(claudeAgent.inputSchema.properties.write_scope, undefined, "claude_agent はwrite_scope対象外");
   assert.equal(claudeAgent.outputSchema.properties.write_scope, undefined, "claude_agent receiptは不変");

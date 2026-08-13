@@ -180,10 +180,10 @@ $ aiterm-wait --session codex1 --cursor <event_cursor>   # exit 0=done / 3=timeo
 
 | ツール | 起動するもの | 主な引数 |
 | --- | --- | --- |
-| `claude_agent` | Claude Code CLI（Anthropic） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`（`low`/`medium`/`high`/`xhigh`/`max`）, `cwd?`, `session_name?` |
-| `codex_agent` | Codex CLI（OpenAI・端末設定／CLI既定、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`（`low`/`medium`/`high`/`xhigh`/`max`/`ultra`）, `cwd?`, `session_name?`, `write_scope?` |
-| `grok_agent` | Grok Build（xAI、既定`grok-4.5`、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `cwd?`, `session_name?`, `write_scope?` |
-| `composer_agent` | Grok Build（xAI、既定`grok-composer-2.5-fast`、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `cwd?`, `session_name?`, `write_scope?` |
+| `claude_agent` | Claude Code CLI（Anthropic） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`（`low`/`medium`/`high`/`xhigh`/`max`）, `env_vars?`, `cwd?`, `session_name?` |
+| `codex_agent` | Codex CLI（OpenAI・端末設定／CLI既定、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`（`low`/`medium`/`high`/`xhigh`/`max`/`ultra`）, `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
+| `grok_agent` | Grok Build（xAI、既定`grok-4.5`、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
+| `composer_agent` | Grok Build（xAI、既定`grok-composer-2.5-fast`、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
 
 各ベンダーのCLIが導入・認証済みであること。CLI不在・不正なmodel/effort・実在しない`cwd`はsession作成前に失敗し、残骸を残さない。ClaudeはさらにPTY作成前に同じCLIの`auth status --json`が`loggedIn:true`を返すことを要求する。4 launcherは通常のvendor credential/config storeをその場で使い、fake `HOME`、private `CODEX_HOME`/`GROK_HOME`、project/user config snapshotを作らない。Claudeだけは完了相関用Stop hook settingsを通常の`user,project,local` settingsへ加算する。Grok/Composerは画面入力欄だけでなく通常sessionの`mcp_init_completed` eventも確認してから送信し、共有MCP初期化中の早送信を防ぐ。相関付きClaudeのactive turn中はC-c以外の`pty_key`と素送信を拒否し、承認UIは`claude_approval`で単発Yes/Noだけを相関付きで中継する。
 
@@ -391,10 +391,10 @@ consumer は `aiterm-runtime-errors snapshot` を読み、durable ingestion 後�
 
 | ツール | 起動するもの | 主な引数 |
 | --- | --- | --- |
-| `claude_agent` | Claude Code CLI（Anthropic） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`（`low`/`medium`/`high`/`xhigh`/`max`）, `cwd?`, `session_name?` |
-| `codex_agent` | Codex CLI（OpenAI・端末設定／CLI既定、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`（`low`/`medium`/`high`/`xhigh`/`max`/`ultra`）, `cwd?`, `session_name?`, `write_scope?` |
-| `grok_agent` | Grok Build（xAI、既定`grok-4.5`、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `cwd?`, `session_name?`, `write_scope?` |
-| `composer_agent` | Grok Build（xAI、既定`grok-composer-2.5-fast`、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `cwd?`, `session_name?`, `write_scope?` |
+| `claude_agent` | Claude Code CLI（Anthropic） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`（`low`/`medium`/`high`/`xhigh`/`max`）, `env_vars?`, `cwd?`, `session_name?` |
+| `codex_agent` | Codex CLI（OpenAI・端末設定／CLI既定、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`（`low`/`medium`/`high`/`xhigh`/`max`/`ultra`）, `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
+| `grok_agent` | Grok Build（xAI、既定`grok-4.5`、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
+| `composer_agent` | Grok Build（xAI、既定`grok-composer-2.5-fast`、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`は非対応（指定時は明示エラー）, `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
 
 対応するCLI（`claude` / `codex` / `grok`）の導入・認証が必要。前提違反はsession作成前に明示失敗する。4 launcherすべてが通常project/user環境と同じ非ブロックdispatch契約を使う。Claude／Codex／Grok／Composerのdepth 1 live smokeと、Claude親→Claude孫のdepth 2 nested delegation smokeはgreenであり、fixtureによる検証とは区別して記録する。
 

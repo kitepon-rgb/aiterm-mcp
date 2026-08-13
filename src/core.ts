@@ -4528,9 +4528,14 @@ function buildAgentCmd(
   return parts.join(" ");
 }
 
-function agentEnvPrefix(meta: AgentMetadata | null, sid: string): string {
-  if (!meta) return "";
+function agentEnvPrefix(meta: AgentMetadata | null, sid: string, envVars: string[] = []): string {
+  const inherited = envVars.flatMap((name) => {
+    const value = process.env[name];
+    return value === undefined ? [] : [`${name}=${shq(value)}`];
+  });
+  if (!meta) return inherited.length ? inherited.join(" ") + " " : "";
   const common = [
+    ...inherited,
     `AITERM_AGENT_KIND=${shq(meta.kind)}`,
     `AITERM_SESSION_ID=${shq(sid)}`,
     `AITERM_AGENT_SESSION_ID=${shq(sid)}`,
@@ -4673,6 +4678,7 @@ export function openAgent(
     agent_done?: boolean | null;
     launch_operation_id?: string | null;
     write_scope?: string;
+    env_vars?: string[];
   } = {},
 ): [string, string] {
   const label = agentLabel(kind);
@@ -4685,6 +4691,12 @@ export function openAgent(
   }
   const effort = opts.reasoning_effort ?? null;
   const writeScope = opts.write_scope;
+  const envVars = opts.env_vars ?? [];
+  for (const name of envVars) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+      throw new AitermError(`env_vars に無効な環境変数名があります: ${JSON.stringify(name)}`, 2);
+    }
+  }
   if (effort && kind === "claude" && !CLAUDE_EFFORTS.has(effort)) {
     throw new AitermError("Claude Code の reasoning_effort は low/medium/high/xhigh/max のいずれかです", 2);
   }
@@ -4812,7 +4824,7 @@ export function openAgent(
     if (meta) agentMetadataNegativeCache.delete(sid);
     launchNote = buildAgentLaunchNote(kind, model, effort, meta);
     const cmd = buildAgentCmd(kind, binForCmd, model, effort, opts.prompt ?? null, meta);
-    const envPrefix = agentEnvPrefix(meta, sid);
+    const envPrefix = agentEnvPrefix(meta, sid, envVars);
     const full = cwdForCmd ? `cd ${shq(cwdForCmd)} && ${envPrefix}${cmd}` : `${envPrefix}${cmd}`;
     // force:true で送る。起動骨格は `bin '...'` の固定形で、prompt/cwd/effort は shq でクオート済みの
     // 引数＝シェルは決して破壊コマンドとして実行しない。破壊ゲート（生シェルコマンド想定）を prompt に
@@ -4864,6 +4876,7 @@ export async function openAgentWithInitialPrompt(
     launch_operation_id?: string | null;
     write_scope?: string;
     throughline_source_session?: string | null;
+    env_vars?: string[];
   } = {},
 ): Promise<[string, string, number | null, boolean | null]> {
   const mission = opts.prompt ?? null;
@@ -4897,6 +4910,7 @@ export async function openAgentWithInitialPrompt(
       agent_done: true,
       launch_operation_id: opts.launch_operation_id ?? null,
       write_scope: opts.write_scope,
+      env_vars: opts.env_vars,
     });
     // argv prompt（grok/composer）は composer を経由しないため submit 座礁観測の対象外。
     return [sid, hint, prompt ? 0 : null, null];
@@ -4910,6 +4924,7 @@ export async function openAgentWithInitialPrompt(
     agent_done: true,
     launch_operation_id: opts.launch_operation_id ?? null,
     write_scope: opts.write_scope,
+    env_vars: opts.env_vars,
   });
   try {
     const initial = await sendInitialAgentPrompt(sid, prompt, {

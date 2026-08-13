@@ -550,6 +550,7 @@ function registerAgentTool(
         // grok/composer の effort は対話 TUI で無効（headless 専用）＝core 側が起動前に明示エラーで拒否。
         // codex は CLI 側の値集合が版で変わるため縛らない（core 側も同方針）。
         reasoning_effort: z.string().nullish().describe(agentEffortDesc(kind)),
+        env_vars: z.array(z.string()).optional().describe("起動したagentへ現在のMCP processから継承する環境変数名。値はtool引数へ渡さない"),
         cwd: z.string().nullish().describe("作業ディレクトリ（対象リポのルート等・任意）"),
         session_name: z.string().nullish().describe("セッション名（省略で自動採番）"),
         ...writeScopeInputSchema,
@@ -570,13 +571,14 @@ function registerAgentTool(
         ...writeScopeOutputSchema,
       },
     },
-    async ({ prompt, throughline_source_session, model, reasoning_effort, cwd, session_name, launch_operation_id, write_scope }: any) => {
+    async ({ prompt, throughline_source_session, model, reasoning_effort, env_vars, cwd, session_name, launch_operation_id, write_scope }: any) => {
       try {
         const [sid, hint, eventCursor, submitResidue] = await core.openAgentWithInitialPrompt(kind, {
           prompt: prompt ?? undefined,
           throughline_source_session,
           model: model ?? undefined,
           reasoning_effort: reasoning_effort ?? undefined,
+          env_vars,
           cwd: cwd ?? undefined,
           session_name: session_name ?? undefined,
           launch_operation_id: launch_operation_id ?? undefined,

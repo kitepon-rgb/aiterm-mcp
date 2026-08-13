@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Agent launcherの`env_vars`で、現在のMCP processにある指定名の値だけを起動agentへ継承できるようにした。MCP processより先にtmux serverが存在していても、呼出元が所有する席identityやworkflow変数を失わない。
+
 ## [0.24.2] - 2026-08-13
 
 ### Fixed

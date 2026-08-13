@@ -670,6 +670,35 @@ test("openAgent codex: model 引数を -m で組み立てる", { skip }, async (
   }
 });
 
+test("openAgent codex: 指定した現在値だけを既存tmux server越しにagentへ渡す", { skip }, async () => {
+  const savedBin = process.env.CODEX_BIN;
+  const savedValue = process.env.AITERM_FORWARD_FIXTURE;
+  process.env.CODEX_BIN = "/usr/bin/env";
+  process.env.AITERM_FORWARD_FIXTURE = "seat-value";
+  try {
+    const [sid] = core.openAgent("codex", { env_vars: ["AITERM_FORWARD_FIXTURE"] });
+    try {
+      const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
+      assert.match(out, /^AITERM_FORWARD_FIXTURE=seat-value$/mu);
+    } finally {
+      core.closeSession(sid);
+    }
+  } finally {
+    if (savedBin === undefined) delete process.env.CODEX_BIN;
+    else process.env.CODEX_BIN = savedBin;
+    if (savedValue === undefined) delete process.env.AITERM_FORWARD_FIXTURE;
+    else process.env.AITERM_FORWARD_FIXTURE = savedValue;
+  }
+});
+
+test("openAgent: env_varsの無効名はsession作成前に拒否する", () => {
+  assert.throws(
+    () => core.openAgent("codex", { session_name: "invalid_env_name", env_vars: ["BAD-NAME"] }),
+    (error) => error.code === 2 && /env_vars に無効/.test(error.message),
+  );
+  assert.doesNotMatch(core.listSessions(), /(^|\n)invalid_env_name\t/);
+});
+
 test("openAgent codex: 複数行日本語 prompt は argv に残るが shell continuation 表示を出す", { skip }, async () => {
   const prompt = [
     "NoveLore リポジトリで、docs/23_graph_upsert_tool_contract_plan.md を敵対的にレビューしてください。",
