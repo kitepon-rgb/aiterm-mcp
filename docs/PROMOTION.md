@@ -13,13 +13,22 @@ output) is already committed — these steps activate it.
 
 ## Status (live)
 
-> **v0.25.1公開工程（2026-08-13）**: 正規repositoryを`kitepon/aiterm-mcp`、Official MCP Registry名を
+> **v0.25.1公開完了（2026-08-14）**: 正規repositoryを`kitepon/aiterm-mcp`、Official MCP Registry名を
 > `io.github.kitepon/aiterm-mcp`へ統一する。最終CIはself-hostedのmacOS native・Linux native・
 > Windows native・WSL2で同じ`npm test`を同時実行する。失敗済み`v0.25.0`は移動せず、
-> repo移転後のOIDC Trusted Publisherを`kitepon/aiterm-mcp`へ直した修正版を0.25.1として公開する。
+> repo移転後のOIDC Trusted Publisherを`kitepon/aiterm-mcp`へ直した修正版を0.25.1として公開した。
 > Windows native runnerはWSL distro所有者`kite_`のinteractive Scheduled Taskで起動する。
 > `NETWORK SERVICE`ではuser所有WSL／tmuxへ到達できず、Windows fullの実行主体に使わない。
 > 正本は[factory CI / repository transfer release plan](30-factory-ci-repository-transfer-release-plan.md)。
+
+- ✅ tag CI／Trusted Publishing `31747150072`は4環境同一fullとnpm provenance publishがsuccess。
+  `FACTORY_CI_JOBS`はmacOS 10、Linux 32、Windows 32、WSL2 24。
+- ✅ npm latest 0.25.1、GitHub Release＋MCPB、Official Registry 0.25.1 active/latest。
+- ✅ Registry初回run `31747392229`のdescription長422は製品manifestを根治し、main 4環境CI
+  `31747557265`後の再dispatch `31748407046`で公開した。fallbackや別registry経路は追加していない。
+- ✅ npm由来global／隔離install、3 bins、14 tools、4 launcher schema、stderr 0、配布`dist`一致、
+  Grok実席done、Composer catalog不在のsession前fail-loud／残骸ゼロを確認。公開受入は
+  [ADR 0030](adr/0030-release-0.25.1-acceptance.md)。
 
 > **v0.24.3公開完了（2026-08-13）**: 4 launcherの`env_vars`で、現在のMCP processにある
 > 指定名の値だけを起動agentへ渡す。永続tmux serverが先に起動していても席identity／workflow変数を失わない。
@@ -64,8 +73,9 @@ output) is already committed — these steps activate it.
 - ✅ npm latest 0.24.0、global install 0.24.0、3 bins、公開MCP version 0.24.0、14 tools、
   `agent_configure` schema、stderr 0、installed distのrelease commit一致を確認。
 
-現行の完全公開済みchainはv0.24.2。v0.24.1はtagged but unpublished。設計・公開receiptは
-[agent_configure release plan](27-agent-configure-release-plan.md)を正とする。
+現行の完全公開済みchainはv0.25.1。Grok／Composer parityの設計は
+[agent parity plan](29-grok-composer-agent-parity-plan.md)、公開receiptは
+[ADR 0030](adr/0030-release-0.25.1-acceptance.md)を正とする。
 
 > **v0.23.0公開完了（2026-08-04）**: 4つのagent launcherへ任意の
 > `throughline_source_session`を追加。Throughlineの読み取り専用handoff contextを元DBのsession所属を

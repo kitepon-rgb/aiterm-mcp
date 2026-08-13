@@ -2,7 +2,7 @@
 
 ## Status
 
-Active — 2026-08-13
+Complete — 2026-08-14（v0.25.1公開受入済み）
 
 進行状態と依存関係の正本はLattice plan `grok-composer-agent-parity/v1`とする。この文書は目的、判断、
 非目標、受入条件、各Taskの作業仕様だけを所有する。完了済みの
@@ -81,3 +81,15 @@ focused test後にGrok実席、Composer不在の明示失敗、full regression�
 
 versionを一意に上げ、commit／push／CI／tag／npm／GitHub Release／Official MCP Registryを順に通す。
 registry由来global installで14 tools、4 launcher schema、Grok実席、Composer不在時の明示失敗を最終確認する。
+
+## Public result
+
+- release対象commit `1346066507f38e8d003208a1a2a3cd0220f263fa`を`v0.25.1`へ固定した。
+- tag CI／Trusted Publishing `31747150072`はmacOS native・Linux native・Windows native・WSL2の
+  同一`npm test`とnpm publishをすべて成功させた。
+- npm `aiterm-mcp@0.25.1`、SLSA provenance、GitHub Release＋MCPB、Official MCP Registry
+  `io.github.kitepon/aiterm-mcp` 0.25.1の`active`／`isLatest:true`を確認した。
+- registry由来global／隔離install、3 bin、14 tools、4 launcher schema、stderr 0、配布`dist`一致を確認した。
+- Grok実席は完了相関とlineageを返し、Composerは現行catalogに既定modelがないためPTY作成前にcode 2で
+  明示停止し、残骸sessionを作らなかった。
+- 完全な公開receiptと失敗記録は[ADR 0030](adr/0030-release-0.25.1-acceptance.md)を正とする。

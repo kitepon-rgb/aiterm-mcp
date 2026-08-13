@@ -1,6 +1,6 @@
 # Factory CI and repository transfer release plan
 
-Status: Active — v0.25.1公開工程
+Status: Complete — v0.25.1公開受入済み（2026-08-14）
 
 ## 現行の正本
 
@@ -48,3 +48,25 @@ CI、Trusted Publisher、manifestを修理した配布物は`v0.25.1`として�
 完了条件は、4環境CI、npm provenance、GitHub Release＋MCPB、Official MCP Registry、registry由来
 隔離install、この端末のglobal install、3 bin、14 tools、4 launcher schema、stderr 0、installed dist
 一致、Grok live smoke、Composer model不在時のsession作成前fail-loudをすべて実測し、公開receiptへ固定すること。
+
+## 公開receipt
+
+- release対象commit／tag: `1346066507f38e8d003208a1a2a3cd0220f263fa`／`v0.25.1`。
+- tag CI／Trusted Publishing: `31747150072` success。4環境は同じ`npm test`を実行し、各347/347 green。
+- 論理CPU並列度: macOS 10、Linux 32、Windows 32、WSL2 24を`FACTORY_CI_JOBS`へ設定。
+- npm: `aiterm-mcp@0.25.1`、SLSA provenance、integrity
+  `sha512-0JX+96X1/OWf7YCf0JRP3GHB0Zht1Ij/e1BDdthFKXiSuc5e/R/I4yIK64U7Oan9+5QH2Efz4XGwzGPbfkAdZw==`。
+- GitHub Release: `aiterm-mcp v0.25.1`。MCPBは3,484,366 bytes、SHA-256
+  `e2889f8438390fce6ea482dd7f6adcce563752c07a6a387a0bc4a364ed2c4774`。
+- release起点Registry run `31747392229`はdescriptionの100文字制約超過を422で明示失敗した。
+  descriptionを短縮し、現行GitHub導線とOIDC説明を修理したcommit
+  `56d2df24b0454801ff4a60e742e4fb55a552472f`のmain CI `31747557265`は4環境green。
+- mainから再dispatchしたRegistry run `31748407046`はsuccess。公開APIで
+  `io.github.kitepon/aiterm-mcp` 0.25.1は`active`かつ`isLatest:true`。
+- npm由来のglobal／隔離installは0.25.1で一致。3 bin、MCP 14 tools、4 launcher schema、stderr 0、
+  共通`dist`のバイト一致を確認した。
+- Grok live smokeは`done`と`role=subagent`／親session／depth 1／lineageを回収した。
+  Composer既定`grok-composer-2.5-fast`は現行catalogに無いためsession作成前にcode 2でfail-loudし、
+  `shared_composer_*` sessionを残さなかった。
+
+公開受入Decisionは[ADR 0030](adr/0030-release-0.25.1-acceptance.md)を正とする。

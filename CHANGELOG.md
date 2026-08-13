@@ -29,6 +29,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Windows nativeのself-hosted runnerをWSL所有者のinteractive taskで起動し、`NETWORK SERVICE`から
   見えないWSL／tmuxのためWindows fullが一括失敗する工場設定を修理する。
 
+### Verification
+
+- tag CI／Trusted Publishing `31747150072`はself-hostedのmacOS native・Linux native・
+  Windows native・WSL2で同じ`npm test`を各347/347通過し、npm 0.25.1をSLSA provenance付きで公開した。
+- GitHub ReleaseへMCPBを添付。Official Registry初回runのdescription 100文字超過422を根治後、
+  run `31748407046`で`io.github.kitepon/aiterm-mcp` 0.25.1を`active`／latestへ公開した。
+- npm由来global／隔離install、3 bin、14 tools、4 launcher schema、stderr 0、配布`dist`一致、
+  Grok live smoke、Composer model不在時のsession作成前fail-loudと残骸ゼロを確認した。
+
 ## [0.25.0] - 2026-08-13
 
 ### Added
