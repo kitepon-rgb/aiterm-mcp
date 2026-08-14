@@ -93,3 +93,10 @@ registry由来global installで14 tools、4 launcher schema、Grok実席、Compo
 - Grok実席は完了相関とlineageを返し、Composerは現行catalogに既定modelがないためPTY作成前にcode 2で
   明示停止し、残骸sessionを作らなかった。
 - 完全な公開receiptと失敗記録は[ADR 0030](adr/0030-release-0.25.1-acceptance.md)を正とする。
+
+## Peertable integration follow-up — 2026-08-14
+
+PeertableのGrok 4.6実席で、`/model`は成功してfooterも要求modelへ変わった一方、成功通知が次の再描画で
+消え、Aitermが設定変更を失敗として返す再現を得た。変更前には無かった要求model／effortが常駐footerへ
+現れた場合もvendorの最終状態として受理する。caller側のretry、画面再描画、失敗の成功丸めは追加しない。
+focused regressionと同一Grok実席の4.6→4.5→4.6変更で確認する。

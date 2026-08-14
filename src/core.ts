@@ -4090,8 +4090,27 @@ function lineCounts(screen: string): Map<string, number> {
   return counts;
 }
 
-async function waitForGrokConfigurationResult(name: string, before: string, timeoutMs = 3_000): Promise<void> {
+function grokFooterHasConfiguration(screen: string, model: string | null, effort: string | null): boolean {
+  const modelMatch = model?.match(/^grok-(\d+(?:\.\d+)*)$/) ?? null;
+  if (model && !modelMatch) return false;
+  const modelLabel = modelMatch ? `Grok ${modelMatch[1]}` : null;
+  return screen.split("\n").some((line) => {
+    if (!line.includes("·")) return false;
+    if (modelLabel && !line.includes(`${modelLabel} (`)) return false;
+    if (effort && !line.includes(`(${effort})`)) return false;
+    return modelLabel !== null || effort !== null;
+  });
+}
+
+async function waitForGrokConfigurationResult(
+  name: string,
+  before: string,
+  model: string | null,
+  effort: string | null,
+  timeoutMs = 3_000,
+): Promise<void> {
   const beforeCounts = lineCounts(before);
+  const footerAlreadyMatched = grokFooterHasConfiguration(before, model, effort);
   const deadline = performance.now() + timeoutMs;
   do {
     const screen = captureScreen(name, AGENT_TUI_READY_LINES);
@@ -4106,6 +4125,9 @@ async function waitForGrokConfigurationResult(name: string, before: string, time
       /^(?:Unknown model:|unknown effort level|Usage: \/(?:model|effort)\b|Invalid (?:model|reasoning effort)|.*does not support reasoning effort)/i.test(line));
     if (error) throw new AitermError(`Grokの設定変更に失敗しました: ${error}`, 2);
     if (added.some((line) => /^(?:Switched to |✓?\s*Default model:)/.test(line))) return;
+    // Grok Build 1.0.3では成功通知が次の再描画で消えることがある。変更前には無かった
+    // target model／effortが常駐footerへ現れた場合も、vendor自身の最終状態として受理する。
+    if (!footerAlreadyMatched && grokFooterHasConfiguration(screen, model, effort)) return;
     await sleep(100);
   } while (performance.now() < deadline);
   throw new AitermError(`${agentLabel(loadAgentMetadata(name).kind)} の設定変更完了を確認できません`, 2);
@@ -4200,7 +4222,7 @@ export async function configureAgent(
       : `/effort ${effort}`;
     const before = captureScreen(name, AGENT_TUI_READY_LINES);
     await sendAgentPromptText(name, command);
-    await waitForGrokConfigurationResult(name, before);
+    await waitForGrokConfigurationResult(name, before, model, effort);
     return {
       schema: "aiterm.agent-configure-result.v1",
       session_id: name,

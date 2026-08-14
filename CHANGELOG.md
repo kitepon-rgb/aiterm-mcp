@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Grok Build 1.0.3で`/model`成功通知が次の再描画までに消えた場合、実際にはmodel／effortが
+  変更済みでも`agent_configure`が失敗と返していた。変更前には無かった要求model／effortが
+  常駐footerへ現れた場合もvendorの最終状態として確認し、同一sessionの連続変更を正しく返す。
+
 ## [0.25.1] - 2026-08-13
 
 ### Changed

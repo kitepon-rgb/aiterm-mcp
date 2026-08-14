@@ -309,6 +309,27 @@ function makeFakeGrokTuiBin() {
   return bin;
 }
 
+function makeFakeGrokFooterOnlyTuiBin() {
+  const bin = path.join(process.env.TMPDIR, `fake-grok-footer-only-${Date.now().toString(36)}.sh`);
+  fs.writeFileSync(
+    bin,
+    [
+      "#!/bin/sh",
+      "if [ \"$1\" = models ]; then",
+      "  printf '%s\\n' 'Default model: grok-4.5' '' 'Available models:' '  - grok-4.6' '  * grok-4.5 (default)'",
+      "  exit 0",
+      "fi",
+      "printf 'Grok Build\\n❯ ready\\n╰─ Grok 4.5 (high) · always-approve ─╯\\n'",
+      "while IFS= read -r line; do",
+      "  case \"$line\" in '/model grok-4.6 high') printf '╰─ Grok 4.6 (high) · always-approve ─╯\\n' ;; esac",
+      "done",
+      "",
+    ].join("\n"),
+    { mode: 0o700 },
+  );
+  return bin;
+}
+
 function makeGrokCatalogBin(models) {
   const bin = path.join(process.env.TMPDIR, `fake-grok-catalog-${Date.now().toString(36)}.sh`);
   const catalogLines = models.map((model) => `  - ${model}`);
@@ -678,6 +699,26 @@ test("target contract: Grok/Composerへ/modelと/effortを同じsessionのまま
         }
       }
     } finally {
+      if (savedBin === undefined) delete process.env.GROK_BIN;
+      else process.env.GROK_BIN = savedBin;
+      fs.rmSync(fakeBin, { force: true });
+    }
+  });
+});
+
+test("target contract: Grokの成功通知が消えても変更後footerで設定完了を確認する", { skip: skipAgentDone }, async () => {
+  await withFakeGrokHome(async () => {
+    const savedBin = process.env.GROK_BIN;
+    const fakeBin = makeFakeGrokFooterOnlyTuiBin();
+    process.env.GROK_BIN = fakeBin;
+    const [sid] = core.openAgent("grok", { agent_done: true });
+    try {
+      await markFakeAgentReady(sid, "grok");
+      const result = await core.configureAgent(sid, { model: "grok-4.6", reasoning_effort: "high" });
+      assert.equal(result.model, "grok-4.6");
+      assert.equal(result.reasoning_effort, "high");
+    } finally {
+      core.closeSession(sid);
       if (savedBin === undefined) delete process.env.GROK_BIN;
       else process.env.GROK_BIN = savedBin;
       fs.rmSync(fakeBin, { force: true });
