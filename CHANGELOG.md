@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.2] - 2026-08-14
+
 ### Fixed
 
 - Grok Build 1.0.3で`/model`成功通知が次の再描画までに消えた場合、実際にはmodel／effortが

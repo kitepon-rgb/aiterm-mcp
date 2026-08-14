@@ -2,7 +2,7 @@
 
 ## Status
 
-Complete — 2026-08-14（v0.25.1公開受入済み）
+Complete — 2026-08-14（v0.25.1公開受入済み、v0.25.2 follow-up公開準備中）
 
 進行状態と依存関係の正本はLattice plan `grok-composer-agent-parity/v1`とする。この文書は目的、判断、
 非目標、受入条件、各Taskの作業仕様だけを所有する。完了済みの
@@ -100,3 +100,9 @@ PeertableのGrok 4.6実席で、`/model`は成功してfooterも要求modelへ�
 消え、Aitermが設定変更を失敗として返す再現を得た。変更前には無かった要求model／effortが常駐footerへ
 現れた場合もvendorの最終状態として受理する。caller側のretry、画面再描画、失敗の成功丸めは追加しない。
 focused regressionと同一Grok実席の4.6→4.5→4.6変更で確認する。
+
+### v0.25.2 follow-up release
+
+この根治だけをpatch releaseとし、package／lock／MCP Registry manifest／MCPB manifestを`0.25.2`へ
+同期する。main着地後にtag CIの4環境full、Trusted Publishing、GitHub Release、Official MCP Registryを
+通し、registry由来global installで14 tools、`agent_configure` schema、Grok 4.6↔4.5の実席変更を確認する。

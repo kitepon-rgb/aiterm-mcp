@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **2026-08-14 source追補**: PeertableのGrok 4.6実席で、`/model`成功通知が再描画で消えた後も
+> **v0.25.2（2026-08-14・公開準備）**: PeertableのGrok 4.6実席で、`/model`成功通知が再描画で消えた後も
 > footerは要求した`Grok 4.6 (high)`へ変わっているのに、`agent_configure`が3秒後に失敗を返す
 > 再現を確認した。変更前には無かった要求model／effortが常駐footerへ現れた場合も完了とする。
 > transient通知だけへ依存せず、caller側のretry／成功丸めは追加しない。focused regressionと

@@ -96,6 +96,11 @@ host統合は、kitepon.devの製品開発を支える内部基盤
 
 14 ツール: 6 つの **PTY ツール**（`pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list`）で 1 本の永続端末を開き・操作し・読む。加えて 4 つの **エージェント起動ツール**（`claude_agent` / `codex_agent` / `grok_agent` / `composer_agent`）が別のコーディングエージェントの TUI を新しい端末の中に起動し、`agent_configure`が起動中のClaude／Codex／Grok／Composerのmodel・effortを再起動なしで変更し、`claude_turn`がdurable caller向けの構造化issue／recoveryを、`claude_approval`が相関済みClaude承認UI中継を、`diagnostics`が安全なfactory readinessを返す。バックエンドは **tmux** なので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
 
+**v0.25.2ではGrok 4.6を含む同一sessionの連続設定変更を安定化。** Grok Build 1.0.3で
+`/model`の成功通知が再描画により消えても、変更前には無かった要求model／effortが常駐footerへ現れた
+最終状態を確認する。caller側のretry、再起動、失敗の成功丸めは不要で、`grok-4.6`は従来どおり
+明示`model`としてlive catalog照合後に起動・変更できる。
+
 **v0.25.0ではGrok／Composerへ共通launcher制御を同等実装。** 起動時`reasoning_effort`、
 `write_scope:"read-only"`の`--sandbox read-only`強制、`agent_configure`による同一session内の
 model／effort変更に対応した。明示したGrok／Composer modelとComposer既定modelはPTY作成前に
