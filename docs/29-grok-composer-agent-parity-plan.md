@@ -2,7 +2,7 @@
 
 ## Status
 
-Complete — 2026-08-14（v0.25.1公開受入済み、v0.25.2 follow-up公開準備中）
+Complete — 2026-08-14（v0.25.1／v0.25.2公開受入済み）
 
 進行状態と依存関係の正本はLattice plan `grok-composer-agent-parity/v1`とする。この文書は目的、判断、
 非目標、受入条件、各Taskの作業仕様だけを所有する。完了済みの
@@ -104,5 +104,7 @@ focused regressionと同一Grok実席の4.6→4.5→4.6変更で確認する。
 ### v0.25.2 follow-up release
 
 この根治だけをpatch releaseとし、package／lock／MCP Registry manifest／MCPB manifestを`0.25.2`へ
-同期する。main着地後にtag CIの4環境full、Trusted Publishing、GitHub Release、Official MCP Registryを
-通し、registry由来global installで14 tools、`agent_configure` schema、Grok 4.6↔4.5の実席変更を確認する。
+同期した。main／tag CIの4環境full、Trusted Publishing、GitHub Release、Official MCP Registryを通し、
+registry由来global installで3 bins、14 tools、`agent_configure` schema、stderr 0、配布`dist`一致を確認した。
+Peertable実席のGrok 4.6↔4.5変更、room参加、DM起床もgreen。完全な公開receiptは
+[ADR 0031](adr/0031-release-0.25.2-acceptance.md)を正とする。

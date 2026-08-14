@@ -2,11 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **v0.25.2（2026-08-14・公開準備）**: PeertableのGrok 4.6実席で、`/model`成功通知が再描画で消えた後も
+> **v0.25.2（2026-08-14・公開完了）**: PeertableのGrok 4.6実席で、`/model`成功通知が再描画で消えた後も
 > footerは要求した`Grok 4.6 (high)`へ変わっているのに、`agent_configure`が3秒後に失敗を返す
 > 再現を確認した。変更前には無かった要求model／effortが常駐footerへ現れた場合も完了とする。
 > transient通知だけへ依存せず、caller側のretry／成功丸めは追加しない。focused regressionと
-> Peertable実席の4.6→4.5→4.6で固定する。
+> Peertable実席の4.6→4.5→4.6で固定した。npm provenance、GitHub Release＋MCPB、Official MCP
+> Registry active/latest、registry由来global installまで公開済み。受入DecisionはADR 0031を正とする。
 
 > **v0.25.1（2026-08-14・公開完了）**: 正規repositoryは`kitepon/aiterm-mcp`、Official MCP
 > Registry名は`io.github.kitepon/aiterm-mcp`。移転前ownerを新しい設定例・badge・manifest・公開手順へ
