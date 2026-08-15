@@ -2,7 +2,7 @@
 
 このファイルが aiterm-mcp の運用・設計・履歴の正本です（全 host 共通。Claude Code は CLAUDE.md の `@AGENTS.md` 経由で同じ内容を読む）。設計の詳細は `docs/00_overview.md` から辿り、特に `docs/01_design-plan.md` と関連 ADR を読む。
 
-> **v0.26.0（2026-08-15）**: Windows hostの`grok_agent`／`composer_agent`はWindows nativeの
+> **v0.26.0（2026-08-15・公開完了）**: Windows hostの`grok_agent`／`composer_agent`はWindows nativeの
 > `grok.exe`だけを起動する（オーナー裁定: WindowsネイティブはWindowsネイティブで完結させ、WSL2へ
 > vendor状態を持ち込まない。ClaudeやCodexと同じ整列）。WSL側grokを起動するとsession記録がWSL home側へ
 > 分裂し`agent_transcript`／`aiterm-wait`完了帰属が回収不能だった実被弾（olc-plan-review-grok2）の根治。
