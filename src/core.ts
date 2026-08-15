@@ -1840,7 +1840,11 @@ function resolveAndValidateGrokAuth(srcHome: string): string | null {
   try {
     fd = fs.openSync(authPath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
     const st = fs.fstatSync(fd);
-    if (!st.isFile() || st.nlink !== 1 || st.uid !== currentUid() || (st.mode & 0o077) !== 0 || st.size > GROK_AUTH_MAX_BYTES) {
+    // Windows の fs.Stats.mode は POSIX permission bit を持たず、常に 666/777 相当を報告する
+    // （NTFS ACL は別体系）。currentUid と同じ既知制約の明示的受容として、Windows では
+    // group/other bit 検証を行わない。isFile・nlink・owner・size・O_NOFOLLOW・realpath 検証は共通に維持する。
+    const worldAccessible = !isWin && (st.mode & 0o077) !== 0;
+    if (!st.isFile() || st.nlink !== 1 || st.uid !== currentUid() || worldAccessible || st.size > GROK_AUTH_MAX_BYTES) {
       throw new AitermError("Grok 認証正本の安全検証に失敗しました", 2);
     }
     const value: unknown = JSON.parse(fs.readFileSync(fd, "utf8"));
@@ -1856,7 +1860,8 @@ function resolveAndValidateGrokAuth(srcHome: string): string | null {
       // /tmp のような root 所有 + sticky の共有 directory は、本人所有の private な
       // 直下 directory を他 UID が rename/unlink できないため許可する。sticky 無しの
       // group/other writable 祖先は path swap が可能なので従来どおり拒否する。
-      const writableByOthers = (dirSt.mode & 0o022) !== 0;
+      // Windows は directory も mode bit を持たない（常に 777 相当）ため、同じ受容で除外する。
+      const writableByOthers = !isWin && (dirSt.mode & 0o022) !== 0;
       const protectedSharedRoot = dirSt.uid === 0 && (dirSt.mode & 0o1000) !== 0;
       if (
         !dirSt.isDirectory()
