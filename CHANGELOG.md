@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.3] - 2026-08-15
+
+### Fixed
+
+- Windows hostで`grok_agent`／`composer_agent`が「Grok 認証正本の安全検証に失敗しました」で
+  構造的に起動不能だった。WindowsのNode `fs.Stats`はPOSIX permission bitを持たない（fileは常に
+  666、directoryは777相当）ため、`resolveAndValidateGrokAuth`のmode bit検証をWindowsでは
+  除外する（`currentUid`と同じ既知制約の明示的受容。owner・nlink・size・O_NOFOLLOW・realpath・
+  祖先symlink検証は全platform共通のまま維持）。
+- Windowsで検証を通過しても、WSL内bashで走る起動コマンドへ`GROK_AUTH_PATH`をWindowsドライブ
+  形式のまま渡していたため、WSL側grokが認証正本を開けず接続段階で無応答のまま停止していた。
+  bin／cwdと同じ`toWslPath`変換を適用する。
+
 ## [0.25.2] - 2026-08-14
 
 ### Fixed
