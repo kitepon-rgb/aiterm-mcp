@@ -825,8 +825,9 @@ test("target contract: Grok/Composer read-onlyはsandboxで実効化し、パス
       try {
         assert.equal(readAgentMeta(sid).write_scope, "read-only");
         assert.match(hint, /--sandbox read-only を付与し、書込みを実効禁止/);
+        assert.match(hint, /--always-approve で自動承認/);
         const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
-        assert.match(out, /<arg>--sandbox<\/arg>\s*<arg>read-only<\/arg>/, `${kind} read-only sandbox: ${out}`);
+        assert.match(out, /<arg>--sandbox<\/arg>\s*<arg>read-only<\/arg>\s*<arg>--always-approve<\/arg>/, `${kind} read-only sandbox: ${out}`);
       } finally {
         core.closeSession(sid);
       }
@@ -835,8 +836,18 @@ test("target contract: Grok/Composer read-onlyはsandboxで実効化し、パス
       try {
         assert.equal(readAgentMeta(pathSid).write_scope, "/repo/docs のみ書込み可");
         assert.match(pathHint, /パス単位のsandbox allowlistに対応するCLI引数がないため宣言の記録のみ（構造的unsupported）/);
+        const pathOut = await core.readOutput(pathSid, { wait: true, timeout: 5, raw: true });
+        assert.doesNotMatch(pathOut, /--always-approve/, `${kind} 非read-onlyへの自動承認混入: ${pathOut}`);
       } finally {
         core.closeSession(pathSid);
+      }
+
+      const [plainSid] = core.openAgent(kind, { agent_done: true });
+      try {
+        const plainOut = await core.readOutput(plainSid, { wait: true, timeout: 5, raw: true });
+        assert.doesNotMatch(plainOut, /--always-approve/, `${kind} write_scope省略への自動承認混入: ${plainOut}`);
+      } finally {
+        core.closeSession(plainSid);
       }
     }
   });

@@ -4719,7 +4719,10 @@ function buildAgentCmd(
     parts.push("--model", shq(model ?? GROK_MODEL_DEFAULTS[kind]));
     if (effort) parts.push("--reasoning-effort", shq(effort));
     if ((meta?.kind === "grok" || meta?.kind === "composer") && meta.write_scope === "read-only") {
-      parts.push("--sandbox", "read-only");
+      // read-only は sandbox が実効書込み禁止を作るため、MCP ツール許可ダイアログの自動承認を
+      // 付けても能力は増えない。無人 subagent が初回 MCP 使用の許可待ちで停止する実障害への対処。
+      // read-only 以外の launch には付けない＝権限拡大しない。
+      parts.push("--sandbox", "read-only", "--always-approve");
     }
     if ((meta?.kind === "grok" || meta?.kind === "composer") && meta.hook_route === "shared_grok_home") {
       parts.push("--session-id", shq(meta.vendor_session_id ?? ""), "--rules", shq(subagentInstruction(meta)));
@@ -4788,7 +4791,8 @@ function buildAgentLaunchNote(
   const writeScopeNote = meta?.write_scope === undefined
     ? ""
     : (kind === "codex" || kind === "grok" || kind === "composer") && meta.write_scope === "read-only"
-      ? `\n能力宣言: write_scope=${JSON.stringify(meta.write_scope)}。${agentLabel(kind)} CLIへ --sandbox read-only を付与し、書込みを実効禁止。`
+      ? `\n能力宣言: write_scope=${JSON.stringify(meta.write_scope)}。${agentLabel(kind)} CLIへ --sandbox read-only を付与し、書込みを実効禁止。` +
+        (kind === "codex" ? "" : "MCPツール許可は --always-approve で自動承認（sandbox内のため能力拡大なし）。")
       : `\n能力宣言: write_scope=${JSON.stringify(meta.write_scope)}。パス単位のsandbox allowlistに対応するCLI引数がないため宣言の記録のみ（構造的unsupported）。`;
   if (kind === "claude") {
     return `起動設定: model=${model ?? "CLI既定"} effort=${effort ?? "CLI既定"}。${writeScopeNote}`;

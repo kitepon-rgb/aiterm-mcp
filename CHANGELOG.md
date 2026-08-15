@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `grok_agent`／`composer_agent`の`write_scope:"read-only"`起動へ`--always-approve`を付与し、
+  無人subagentがMCPツール初回使用の許可ダイアログで停止しないようにした。sandboxが実効
+  書込み禁止を作るread-only起動だけが対象で、read-only以外のlaunchコマンドラインには
+  従来どおり`--always-approve`を入れない（権限拡大なし）。
+
 ## [0.25.3] - 2026-08-15
 
 <!-- 公開受入: docs/adr/0032-release-0.25.3-acceptance.md -->
