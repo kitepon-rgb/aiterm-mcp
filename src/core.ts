@@ -4754,8 +4754,13 @@ function agentEnvPrefix(meta: AgentMetadata | null, sid: string, envVars: string
   if (meta.kind === "codex") {
     return common.join(" ") + " ";
   }
+  // Windows では起動コマンドが WSL 内 bash で走るため、検証済み auth 正本の Windows ドライブパスを
+  // bin/cwd と同じく /mnt/c/... 形へ変換して渡す。変換しないと WSL 側 grok が正本を開けず接続で停止する。
+  const grokAuthForCmd = meta.grok_auth_path && isWin && isWindowsDrivePath(meta.grok_auth_path)
+    ? toWslPath(meta.grok_auth_path)
+    : meta.grok_auth_path;
   return [
-    ...(meta.grok_auth_path ? [`GROK_AUTH_PATH=${shq(meta.grok_auth_path)}`] : []),
+    ...(grokAuthForCmd ? [`GROK_AUTH_PATH=${shq(grokAuthForCmd)}`] : []),
     "GROK_DISABLE_AUTOUPDATER=1",
     ...common,
   ].join(" ") + " ";
