@@ -18,7 +18,7 @@ const PACKAGE = JSON.parse(fs.readFileSync(path.join(HERE, "..", "package.json")
 test("smoke: 公開versionはpackage・lock・server manifestで一致する", () => {
   const lock = JSON.parse(fs.readFileSync(path.join(HERE, "..", "package-lock.json"), "utf8"));
   const server = JSON.parse(fs.readFileSync(path.join(HERE, "..", "server.json"), "utf8"));
-  assert.equal(PACKAGE.version, "0.25.3", "Windows hostのGrok認証検証とWSL橋渡しpathを直すpatch release");
+  assert.equal(PACKAGE.version, "0.26.0", "WindowsのGrok/Composerをnative grok.exe起動へ確定するminor release");
   assert.equal(lock.version, PACKAGE.version);
   assert.equal(lock.packages?.[""]?.version, PACKAGE.version);
   assert.equal(server.version, PACKAGE.version);

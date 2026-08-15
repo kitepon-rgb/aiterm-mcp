@@ -7,8 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-08-15
+
+### Changed
+
+- Windows hostの`grok_agent`／`composer_agent`はWindows nativeの`grok.exe`だけを起動する
+  （オーナー裁定 2026-08-15: WindowsネイティブはWindowsネイティブで完結させ、WSL2へ持ち込まない）。
+  WSL側grokを起動するとvendor実体がWSL processになり、session記録（events/chat_history）が
+  WSL home側へ分裂して`pty_read(agent_transcript:true)`と`aiterm-wait`の完了帰属が回収不能だった
+  （実被弾: olc-plan-review-grok2）。非nativeな解決先はsession作成前に明示エラーにし、
+  Windowsの既定候補へ`~/.grok/bin/grok.exe`を追加した。native実体はWindows側`~/.grok`へ
+  記録するため、transcript／completion読取・auth検証（0.25.3）と同じ面で完結する。
+  v0.25.3の`GROK_AUTH_PATH`の`/mnt/c`変換（WSL grok前提）は撤回し、Windowsドライブ形のまま渡す。
+- `grok_agent`のツール既定modelをdotagents規範（xAI旗艦）どおり`grok-4.6`へ更新した
+  （実catalogで現行defaultであることを確認済み）。
+
 ### Fixed
 
+- Windowsのtmux bridgeでは各`wsl.exe`呼び出しが短命なため、paneが継承する`WSL_INTEROP`が
+  死んだsocketを指し、pane内からのWindows `.exe`起動（binfmt interop）が
+  `UtilAcceptVsock accept4=110`で失敗していた。aitermが長寿命のinterop anchor（sleepする
+  `wsl.exe` process）を1本所有し、native `.exe`起動のenvへ生きたsocketを供給する。
+  あわせてWSL側envはinterop先のWindows processへ既定では渡らないため（実測）、注入envを
+  `WSLENV`（`/w`）で明示的に運ぶ。Windows native grok.exe 1.0.4の入力欄marker `>` を
+  ready判定・submit残存観測へ追加した（`❯`は従来どおり）。
+- Windows（`process.getuid`不在）で`existingAgentsDir()`が常に`null`を返し、close／killAll／
+  同名再起動時のagent state掃除がno-opになっていた。閉じたsessionのmetadataが残り、同名の
+  再起動が「agent metadata が複数あります」で失敗する実害を確認し、`currentUid()`の既知制約
+  受容（uid 0）へ揃えて根治した。
 - `grok_agent`／`composer_agent`の`write_scope:"read-only"`起動へ`--always-approve`を付与し、
   無人subagentがMCPツール初回使用の許可ダイアログで停止しないようにした。sandboxが実効
   書込み禁止を作るread-only起動だけが対象で、read-only以外のlaunchコマンドラインには

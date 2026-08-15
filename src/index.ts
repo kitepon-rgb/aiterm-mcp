@@ -488,7 +488,7 @@ const agentModelDesc = (kind: "claude" | "codex" | "grok" | "composer") =>
     : kind === "codex"
     ? "起動モデル（例: gpt-5.6-sol / gpt-5.6-terra / gpt-5.6-luna）。省略時は端末 config／CLI 既定を継承" +
       "（端末側のピンがそのまま効く。実効値は起動応答に明示される）"
-    : `起動モデル。省略時は ${kind === "grok" ? "grok-4.5" : "grok-composer-2.5-fast"}。` +
+    : `起動モデル。省略時は ${kind === "grok" ? "grok-4.6" : "grok-composer-2.5-fast"}。` +
       (kind === "composer"
         ? "既定／explicit modelを起動前にlive catalogへ照合し、不在ならfallbackせずエラー"
         : "explicit modelを起動前にlive catalogへ照合し、不在ならfallbackせずエラー");
@@ -642,7 +642,7 @@ registerAgentTool(
 registerAgentTool(
   "grok_agent",
   "grok",
-  "【Grok Build の Grok モデル (既定 grok-4.5)】の対話エージェント TUI を永続端末に起動する。" +
+  "【Grok Build の Grok モデル (既定 grok-4.6)】の対話エージェント TUI を永続端末に起動する。" +
     agentEnvironmentDesc +
     "turn は pty_send で送る（自動で非ブロック dispatch になる）。" +
     agentCompletionDesc +

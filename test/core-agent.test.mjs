@@ -72,6 +72,10 @@ const core = await import("../dist/core.js");
 core.__testSetAgentTuiReadyStableSamples(1);
 const skip = hasTmux ? undefined : "tmux 未インストール";
 const skipAgentDone = hasTmux && typeof process.getuid === "function" ? undefined : "tmux または POSIX getuid が無い";
+// Windows は grok/composer launcher が Windows native の grok.exe を強制するため、
+// POSIX script の fake grok bin による起動組立テストは設計どおり session 作成前に拒否される。
+// 同じ組立コードは POSIX 3 環境（macOS/Linux/WSL2）の同テストが検証する。
+const skipGrokFakeBin = process.platform === "win32" ? "Windows は native grok.exe 強制のため fake grok bin は起動不可" : skip;
 const agentStateDir = () => path.join(process.env.TMPDIR, `aiterm-mcp-${process.getuid()}`, "agents");
 
 function makeFakeCodexHome() {
@@ -537,7 +541,7 @@ after(() => {
   else process.env.HOME = savedHome;
 });
 
-test("target contract: Grok/Composerは対話TUIへreasoning_effortを渡す", { skip }, async () => {
+test("target contract: Grok/Composerは対話TUIへreasoning_effortを渡す", { skip: skipGrokFakeBin }, async () => {
   for (const kind of ["grok", "composer"]) {
     const [sid] = core.openAgent(kind, { reasoning_effort: "high" });
     try {
@@ -550,7 +554,7 @@ test("target contract: Grok/Composerは対話TUIへreasoning_effortを渡す", {
   }
 });
 
-test("target contract: catalogにないGrok/Composer modelはsession作成前に拒否する", { skip }, () => {
+test("target contract: catalogにないGrok/Composer modelはsession作成前に拒否する", { skip: skipGrokFakeBin }, () => {
   for (const kind of ["grok", "composer"]) {
     const sessionName = `missing_${kind}_model`;
     assert.throws(
@@ -3075,14 +3079,14 @@ test("dispatchAgentTurn: 普通のPTY session は送信前に拒否する", { sk
 // v0.16.0: dispatchAgentTurn に enter オプションは存在しない（渡しても無視される）。
 // 「enter:false は送信前に拒否する」は概念ごと削除。
 
-test("openAgent grok: --model grok-4.5 を組み立て、--effort は渡さない", { skip }, async () => {
+test("openAgent grok: --model grok-4.6 を組み立て、--effort は渡さない", { skip: skipGrokFakeBin }, async () => {
   const saved = process.env.GROK_BIN;
   process.env.GROK_BIN = "/bin/echo"; // grok 経路を echo で可視化
   try {
     const [sid] = core.openAgent("grok", {});
     const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
     assert.match(out, /--no-auto-update/, `grok no-auto-update: ${out}`);
-    assert.match(out, /--model grok-4\.5/, `grok model: ${out}`);
+    assert.match(out, /--model grok-4\.6/, `grok model: ${out}`);
     assert.doesNotMatch(out, /--effort/, `grok effort: ${out}`);
     core.closeSession(sid);
   } finally {
@@ -3090,7 +3094,7 @@ test("openAgent grok: --model grok-4.5 を組み立て、--effort は渡さな�
     else process.env.GROK_BIN = saved;
   }
 });
-test("openAgent composer: --model grok-composer-2.5-fast を組み立て、--effort は渡さない（コピペ swap 検出）", { skip }, async () => {
+test("openAgent composer: --model grok-composer-2.5-fast を組み立て、--effort は渡さない（コピペ swap 検出）", { skip: skipGrokFakeBin }, async () => {
   const saved = process.env.GROK_BIN;
   process.env.GROK_BIN = fakeGrokBin;
   try {
@@ -3107,7 +3111,7 @@ test("openAgent composer: --model grok-composer-2.5-fast を組み立て、--eff
   }
 });
 
-test("openAgent grok/composer: model 引数で既定モデルを上書きする", { skip }, async () => {
+test("openAgent grok/composer: model 引数で既定モデルを上書きする", { skip: skipGrokFakeBin }, async () => {
   const saved = process.env.GROK_BIN;
   const catalogBin = makeGrokCatalogBin(["grok-next", "composer-next"]);
   process.env.GROK_BIN = catalogBin;
@@ -3444,4 +3448,20 @@ test("readAgentTranscript: 巨大回答は既存 reduceOutput の行数 bound �
       core.closeSession(sid);
     }
   });
+});
+
+test("openAgent grok: Windows は非native GROK_BIN を session 作成前に拒否する", {
+  skip: process.platform !== "win32" ? "Windows 専用の native 強制検証" : (hasTmux ? undefined : "tmux 未インストール"),
+}, () => {
+  const saved = process.env.GROK_BIN;
+  const bin = path.join(process.env.TMPDIR, "fake-grok-nonnative.sh");
+  fs.writeFileSync(bin, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  process.env.GROK_BIN = bin;
+  try {
+    assert.throws(() => core.openAgent("grok", {}), /Windows native の grok\.exe/);
+  } finally {
+    if (saved === undefined) delete process.env.GROK_BIN;
+    else process.env.GROK_BIN = saved;
+    fs.rmSync(bin, { force: true });
+  }
 });

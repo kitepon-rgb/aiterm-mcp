@@ -7,7 +7,7 @@
  *
  * 設計: docs/01_design-plan.md / docs/02_mcp-plan.md。出力削減は rag/ の RTK を移植。
  */
-import { spawnSync, type SpawnSyncOptionsWithStringEncoding, type SpawnSyncReturns } from "node:child_process";
+import { spawn, spawnSync, type SpawnSyncOptionsWithStringEncoding, type SpawnSyncReturns } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -200,6 +200,91 @@ function ensureWinBridge(observe = true): void {
   if (r.status !== 0)
     ptyDependencyError("WSL 経由で tmux を起動できませんでした。WSL のディストリ未導入、または distro 内に tmux が無い可能性があります。`wsl tmux -V` が通るか確認してください（tmux 導入例: sudo apt install tmux）。", observe);
   winBridgeOk = true;
+}
+
+// Windows の tmux bridge では各 wsl.exe 呼び出しが短命で、tmux server と pane が継承する
+// WSL_INTEROP は起動元 WSL session の終了とともに死ぬ。死んだ socket のまま pane 内から
+// Windows .exe を起動すると binfmt interop が UtilAcceptVsock accept4=110(ETIMEDOUT) で失敗する。
+// 生きた session leader の socket を WSL_INTEROP へ指せば同じ pane で成功する（どちらも実測
+// 2026-08-15・WSL 2.6.1）。そのため aiterm が長寿命 anchor（sleep する wsl.exe process）を
+// 1本所有し、native .exe 起動の env へその socket を供給する。anchor は起動時に自身の
+// WSL_INTEROP と pid を state file へ書き、以後は生存確認だけで再利用する。
+const WIN_INTEROP_ANCHOR_SPAWN_TIMEOUT_MS = 10_000;
+const WIN_INTEROP_ANCHOR_POLL_MS = 100;
+
+function winInteropAnchorStatePath(): string {
+  return path.join(ensureSecureStateRoot(), "interop-anchor.json");
+}
+
+function readWinInteropAnchorState(): { socket: string; pid: number } | null {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(winInteropAnchorStatePath(), "utf8");
+  } catch {
+    return null;
+  }
+  try {
+    const value = JSON.parse(raw) as { socket?: unknown; pid?: unknown };
+    if (
+      typeof value.socket === "string" &&
+      value.socket.startsWith("/run/WSL/") &&
+      Number.isSafeInteger(value.pid) &&
+      (value.pid as number) > 0
+    ) {
+      return { socket: value.socket, pid: value.pid as number };
+    }
+  } catch {
+    /* 不完全・破損 state は下の再生成経路で作り直す */
+  }
+  return null;
+}
+
+function isWinInteropAnchorAlive(state: { socket: string; pid: number }): boolean {
+  const r = spawnSync("wsl.exe", ["-e", "sh", "-c", `test -S ${shq(state.socket)} && kill -0 ${state.pid}`], {
+    encoding: "utf8",
+    timeout: 10000,
+    windowsHide: true,
+  });
+  return !r.error && r.status === 0;
+}
+
+// openAgent は同期経路のため、anchor の起動待ちだけ Atomics.wait で有界に同期 sleep する。
+function sleepSyncMs(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function ensureWinInteropAnchor(): string {
+  const existing = readWinInteropAnchorState();
+  if (existing && isWinInteropAnchorAlive(existing)) return existing.socket;
+  const statePath = winInteropAnchorStatePath();
+  fs.rmSync(statePath, { force: true });
+  // 並行launchが同時にここへ来ると anchor が余分に1本立つが、state は後着が上書きし
+  // どちらの socket も有効なので実害はない（余剰 process は wsl shutdown まで sleep のみ）。
+  const child = spawn(
+    "wsl.exe",
+    [
+      "-e",
+      "sh",
+      "-c",
+      `printf '{"socket":"%s","pid":%s}' "$WSL_INTEROP" "$$" > ${shq(toWslPath(statePath))} && exec sleep infinity`,
+    ],
+    { detached: true, stdio: "ignore", windowsHide: true },
+  );
+  child.unref();
+  const deadline = Date.now() + WIN_INTEROP_ANCHOR_SPAWN_TIMEOUT_MS;
+  for (;;) {
+    const state = readWinInteropAnchorState();
+    if (state) {
+      if (!isWinInteropAnchorAlive(state)) {
+        throw new AitermError("WSL interop anchor が起動直後に停止しました。`wsl` が動作するか確認してください。", 2);
+      }
+      return state.socket;
+    }
+    if (Date.now() >= deadline) {
+      throw new AitermError("WSL interop anchor を起動できません。`wsl` が動作するか確認してください。", 2);
+    }
+    sleepSyncMs(WIN_INTEROP_ANCHOR_POLL_MS);
+  }
 }
 
 // tmux が見つからないときの説明。macOS は tmux を同梱せず、Homebrew の bin は GUI 起動時の PATH に
@@ -485,16 +570,19 @@ function agentClaudeDispatchReceiptPath(name: string, launchId: string, operatio
 }
 
 function existingAgentsDir(): string | null {
-  if (typeof process.getuid !== "function") return null;
-  const root = path.join(runtimeStateBase(), `aiterm-mcp-${process.getuid()}`);
+  // Windows は getuid を持たないが、currentUid() が 0 を返し fs.Stats.uid も常に 0 のため
+  // owner 比較は自然に通過する（currentUid の既知制約受容と同じ）。以前はここで null を返して
+  // いたため、Windows では close/killAll の agent state 掃除が常に no-op になり、同名 session の
+  // 再起動が「agent metadata が複数あります」で失敗していた（実被弾 2026-08-15）。
+  const root = path.join(runtimeStateBase(), `aiterm-mcp-${currentUid()}`);
   const dir = path.join(root, "agents");
   try {
     const rst = fs.lstatSync(root);
-    if (!rst.isDirectory() || rst.isSymbolicLink() || rst.uid !== process.getuid()) return null;
-    if ((rst.mode & 0o077) !== 0) fs.chmodSync(root, 0o700);
+    if (!rst.isDirectory() || rst.isSymbolicLink() || rst.uid !== currentUid()) return null;
+    if (!isWin && (rst.mode & 0o077) !== 0) fs.chmodSync(root, 0o700);
     const st = fs.lstatSync(dir);
-    if (!st.isDirectory() || st.isSymbolicLink() || st.uid !== process.getuid()) return null;
-    if ((st.mode & 0o077) !== 0) fs.chmodSync(dir, 0o700);
+    if (!st.isDirectory() || st.isSymbolicLink() || st.uid !== currentUid()) return null;
+    if (!isWin && (st.mode & 0o077) !== 0) fs.chmodSync(dir, 0o700);
     return dir;
   } catch {
     return null;
@@ -3710,8 +3798,9 @@ function isAgentTuiReady(kind: AgentKind, screen: string): boolean {
   }
   // Grok Build 0.2.117 は起動完了後に製品名を消し、model footerだけを残す。
   // Composerも同じfrontendでmodel名だけが異なるため、両方をvendor UIの根拠にする。
+  // Windows native grok.exe（1.0.4 実測）は入力欄markerを `❯` でなく `>` で描画するため両方を受ける。
   const grokFrontend = screen.includes("Grok Build") || /\b(?:Grok|Composer)\s+[\w.()-]+/.test(screen);
-  return grokFrontend && /(^|\n|\s)❯/.test(screen);
+  return grokFrontend && /(^|\n|\s)[❯>]/.test(screen);
 }
 
 // Codex/Claude は実行中に「(esc to interrupt)」を表示する（実機採取）。startup 側の処理
@@ -3817,7 +3906,8 @@ function agentSubmitResidueOnScreen(kind: AgentKind, screen: string, tail: strin
   const lines = screen.split("\n");
   // 入力欄マーカーは ready 判定と同じ記号を行頭基準で探す。submit 済みの transcript echo は
   // マーカー行より上に出るため、最後のマーカー行以降だけを composer 領域として見る。
-  const markerRe = kind === "codex" ? /^\s*[›>]/ : kind === "claude" ? /^\s*❯/ : /(^|\s)❯/;
+  // grok/composer は Windows native 描画（`>`・実測 1.0.4）も ready 判定と同様に受ける。
+  const markerRe = kind === "codex" ? /^\s*[›>]/ : kind === "claude" ? /^\s*❯/ : /(^|\s)[❯>]/;
   let markerIdx = -1;
   for (let i = lines.length - 1; i >= 0; i--) {
     if (markerRe.test(lines[i])) {
@@ -4432,7 +4522,7 @@ function resolveAgentBin(kind: AgentKind): string | null {
       ? ["CLAUDE_BIN", [".local", "bin", "claude"], "claude"]
       : kind === "codex"
       ? ["CODEX_BIN", [".local", "bin", "codex"], "codex"]
-      : ["GROK_BIN", [".grok", "bin", "grok"], "grok"];
+      : ["GROK_BIN", [".grok", "bin", isWin ? "grok.exe" : "grok"], "grok"];
   const fromEnv = process.env[envVar as string];
   if (fromEnv) {
     // 明示指定 env は実在を検証する。存在しないパスを黙って返すと、session を作って
@@ -4672,8 +4762,9 @@ function shq(s: string): string {
 
 // grok CLI はモデル未指定だと端末側 default に従うため、ツール契約として既定 slug を固定する。
 // codex は既定 slug を持たず端末 config／CLI 既定に委ねる（起動応答で実効値を報告する）。
+// grok 既定は dotagents 規範（docs/02_models.md: xAI 旗艦 = grok-4.6）に従う。
 const GROK_MODEL_DEFAULTS: Record<"grok" | "composer", string> = {
-  grok: "grok-4.5",
+  grok: "grok-4.6",
   composer: "grok-composer-2.5-fast",
 };
 const CLAUDE_EFFORTS = new Set(["low", "medium", "high", "xhigh", "max"]);
@@ -4733,40 +4824,49 @@ function buildAgentCmd(
   return parts.join(" ");
 }
 
-function agentEnvPrefix(meta: AgentMetadata | null, sid: string, envVars: string[] = []): string {
+// Windows native .exe を WSL pane から interop 起動する時だけ、生きた anchor socket と、
+// 注入 env を Win32 process まで運ぶ WSLENV(/w) を先頭へ加える（WSL 側の env は interop 先の
+// Windows process へ既定では渡らない・実測 2026-08-15）。POSIX と非 native bin では不変。
+export function winInteropEnvTokens(tokens: string[], interopSocket: string | null): string[] {
+  if (!interopSocket) return tokens;
+  const names = tokens.map((token) => token.slice(0, token.indexOf("=")));
+  return [
+    `WSL_INTEROP=${shq(interopSocket)}`,
+    ...(names.length ? [`WSLENV=${names.map((name) => `${name}/w`).join(":")}`] : []),
+    ...tokens,
+  ];
+}
+
+function agentEnvPrefix(meta: AgentMetadata | null, sid: string, envVars: string[] = [], interopSocket: string | null = null): string {
   const inherited = envVars.flatMap((name) => {
     const value = process.env[name];
     return value === undefined ? [] : [`${name}=${shq(value)}`];
   });
-  if (!meta) return inherited.length ? inherited.join(" ") + " " : "";
-  const common = [
-    ...inherited,
-    `AITERM_AGENT_KIND=${shq(meta.kind)}`,
-    `AITERM_SESSION_ID=${shq(sid)}`,
-    `AITERM_AGENT_SESSION_ID=${shq(sid)}`,
-    `AITERM_AGENT_LAUNCH_ID=${shq(meta.launch_id)}`,
-    `AITERM_AGENT_ROLE=${shq(meta.agent_role ?? "subagent")}`,
-    `AITERM_AGENT_PARENT_SESSION_ID=${shq(meta.parent_session_id ?? "host-root")}`,
-    `AITERM_AGENT_DEPTH=${shq(String(meta.delegation_depth ?? 1))}`,
-    `AITERM_AGENT_LINEAGE=${shq(meta.lineage ?? `host-root>${meta.kind}:${sid}`)}`,
-    `AITERM_AGENT_DELEGATION_ALLOWED=${shq(meta.delegation_allowed === true ? "true" : "false")}`,
-  ];
-  if (meta.kind === "claude") {
-    return common.join(" ") + " ";
-  }
-  if (meta.kind === "codex") {
-    return common.join(" ") + " ";
-  }
-  // Windows では起動コマンドが WSL 内 bash で走るため、検証済み auth 正本の Windows ドライブパスを
-  // bin/cwd と同じく /mnt/c/... 形へ変換して渡す。変換しないと WSL 側 grok が正本を開けず接続で停止する。
-  const grokAuthForCmd = meta.grok_auth_path && isWin && isWindowsDrivePath(meta.grok_auth_path)
-    ? toWslPath(meta.grok_auth_path)
-    : meta.grok_auth_path;
-  return [
-    ...(grokAuthForCmd ? [`GROK_AUTH_PATH=${shq(grokAuthForCmd)}`] : []),
-    "GROK_DISABLE_AUTOUPDATER=1",
-    ...common,
-  ].join(" ") + " ";
+  const tokens = (() => {
+    if (!meta) return inherited;
+    const common = [
+      ...inherited,
+      `AITERM_AGENT_KIND=${shq(meta.kind)}`,
+      `AITERM_SESSION_ID=${shq(sid)}`,
+      `AITERM_AGENT_SESSION_ID=${shq(sid)}`,
+      `AITERM_AGENT_LAUNCH_ID=${shq(meta.launch_id)}`,
+      `AITERM_AGENT_ROLE=${shq(meta.agent_role ?? "subagent")}`,
+      `AITERM_AGENT_PARENT_SESSION_ID=${shq(meta.parent_session_id ?? "host-root")}`,
+      `AITERM_AGENT_DEPTH=${shq(String(meta.delegation_depth ?? 1))}`,
+      `AITERM_AGENT_LINEAGE=${shq(meta.lineage ?? `host-root>${meta.kind}:${sid}`)}`,
+      `AITERM_AGENT_DELEGATION_ALLOWED=${shq(meta.delegation_allowed === true ? "true" : "false")}`,
+    ];
+    if (meta.kind === "claude" || meta.kind === "codex") return common;
+    // grok/composer: 検証済み auth 正本をそのままの path 形で渡す。Windows では native 強制により
+    // vendor は Windows process なので、Windows ドライブパスが正しい形（WSL 形への変換はしない）。
+    return [
+      ...(meta.grok_auth_path ? [`GROK_AUTH_PATH=${shq(meta.grok_auth_path)}`] : []),
+      "GROK_DISABLE_AUTOUPDATER=1",
+      ...common,
+    ];
+  })();
+  const finalTokens = winInteropEnvTokens(tokens, interopSocket);
+  return finalTokens.length ? finalTokens.join(" ") + " " : "";
 }
 
 function agentLabel(kind: AgentKind): string {
@@ -4980,10 +5080,29 @@ export function openAgent(
   // Windows は起動コマンドが WSL 内 bash で走る（tmux ブリッジ）。bin/cwd を /mnt/c/... 形へ変換して
   // 渡す（ログの toWslPath と対称・A1）。前提: Windows 側に CLI を導入（resolveAgentBin が Windows
   // パスで解決）。toWslPath は session を作る前に呼ぶ＝変換失敗（非ドライブパス）で残骸 session を残さない。
-  // 未検証リスク: npm グローバル導入の codex.cmd/.bat シムや WSL interop 上の対話 TUI 描画は実 Windows
-  // でしか確認できない（CI 非対象。docs/03_audit-sweep-2026-07.md 参照）。
+  // 未検証リスク: npm グローバル導入の codex.cmd/.bat シムの対話 TUI 描画は実 Windows でしか確認
+  // できない（CI 非対象。docs/03_audit-sweep-2026-07.md 参照）。native .exe の interop 起動と
+  // TUI 描画は grok.exe で実測済み（2026-08-15）。
+  // Windows の grok/composer は Windows native の grok.exe だけを起動する（オーナー裁定 2026-08-15:
+  // WindowsネイティブはWindowsネイティブで完結させ、WSL2へ持ち込まない）。WSL 側 grok を起動すると
+  // vendor 実体が WSL process になり、auth・session 記録（events/chat_history）が WSL home 側へ分裂して
+  // transcript／completion を回収できない（実被弾: 2026-08-15 olc-plan-review-grok2）。
+  if (isWin && (kind === "grok" || kind === "composer") && !isWindowsNativeExecutable(bin)) {
+    ownTelemetryFailure(
+      "AITERM.VENDOR_LAUNCHER_FAILED",
+      new AitermError(
+        `Windows の ${label} launcher は Windows native の grok.exe だけを起動できます（現在の解決先: ${bin}）。` +
+          "Windows 版 Grok CLI を導入するか、GROK_BIN に grok.exe の絶対パスを指定してください。",
+        2,
+      ),
+      2,
+    );
+  }
   const binForCmd = agentBinForWslShell(bin);
   const cwdForCmd = cwd && isWin ? toWslPath(cwd) : cwd;
+  // native .exe を pane 内で interop 起動するには生きた WSL_INTEROP が必須（anchor 解説参照）。
+  // session 作成前に確保し、失敗時は残骸 session を残さない。
+  const interopSocket = isWin && isWindowsNativeExecutable(bin) ? ensureWinInteropAnchor() : null;
   const grokAuthPath = agentDone && (kind === "grok" || kind === "composer") ? resolveAndValidateGrokAuth(realGrokHome()) : null;
   if (kind === "grok" || kind === "composer") {
     const requestedModel = model ?? (kind === "composer" ? GROK_MODEL_DEFAULTS.composer : null);
@@ -5021,7 +5140,7 @@ export function openAgent(
     if (meta) agentMetadataNegativeCache.delete(sid);
     launchNote = buildAgentLaunchNote(kind, model, effort, meta);
     const cmd = buildAgentCmd(kind, binForCmd, model, effort, opts.prompt ?? null, meta);
-    const envPrefix = agentEnvPrefix(meta, sid, envVars);
+    const envPrefix = agentEnvPrefix(meta, sid, envVars, interopSocket);
     const full = cwdForCmd ? `cd ${shq(cwdForCmd)} && ${envPrefix}${cmd}` : `${envPrefix}${cmd}`;
     // force:true で送る。起動骨格は `bin '...'` の固定形で、prompt/cwd/effort は shq でクオート済みの
     // 引数＝シェルは決して破壊コマンドとして実行しない。破壊ゲート（生シェルコマンド想定）を prompt に

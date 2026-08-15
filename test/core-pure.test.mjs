@@ -168,6 +168,9 @@ test("agent_done ready gate: Claude/Codex/Grok/Composer の入力欄を判定す
   assert.equal(core.__testIsAgentTuiReady("codex", "OpenAI Codex\n◦ Starting MCP servers"), false);
   assert.equal(core.__testIsAgentTuiReady("grok", "Grok Build\nChangelog"), false);
   assert.equal(core.__testIsAgentTuiReady("claude", "Claude Code\nConnecting…"), false);
+  // Windows native grok.exe 1.0.4（実測）は入力欄 marker を `>` で描画し、footer に model を出す。
+  assert.equal(core.__testIsAgentTuiReady("grok", "│ >                │\n╰─── Grok 4.6 (high) ─╯\nGrok Build  1.0.4 [stable]"), true);
+  assert.equal(core.__testIsAgentTuiReady("composer", "│ >                │\n╰─── Composer 2.5 Fast ─╯\nGrok Build  1.0.4 [stable]"), true);
 });
 
 test("agent_done ready gate: ready が連続安定するまで polling し、timeout なら false", async () => {
@@ -410,4 +413,20 @@ test("agentWaitGuide: 復旧案内は取りこぼしゼロの --cursor 0 を維�
   assert.match(guide, /aiterm-wait --session t9 --cursor 0/, "0起点を明示する");
   assert.match(guide, /親はここで待たない/, "復旧経路でも親を待たせない");
   assert.match(guide, /outcome=done/, "exit≠完了の判定基準を示す");
+});
+
+// ------------------------------------------------ winInteropEnvTokens（Windows native .exe interop 起動）
+test("winInteropEnvTokens: anchor socket 指定時だけ WSL_INTEROP と WSLENV(/w) を先頭へ加える", () => {
+  const tokens = ["GROK_AUTH_PATH='C:\\Users\\u\\.grok\\auth.json'", "GROK_DISABLE_AUTOUPDATER=1", "AITERM_AGENT_KIND='grok'"];
+  const wrapped = core.winInteropEnvTokens(tokens, "/run/WSL/123_interop");
+  assert.equal(wrapped[0], "WSL_INTEROP='/run/WSL/123_interop'");
+  assert.equal(wrapped[1], "WSLENV=GROK_AUTH_PATH/w:GROK_DISABLE_AUTOUPDATER/w:AITERM_AGENT_KIND/w");
+  assert.deepEqual(wrapped.slice(2), tokens, "元の env token は形も順序も変えない");
+});
+
+test("winInteropEnvTokens: socket null（POSIX／非native bin）は無変換、token 無しは WSLENV を作らない", () => {
+  const tokens = ["A=1"];
+  assert.deepEqual(core.winInteropEnvTokens(tokens, null), tokens);
+  const bare = core.winInteropEnvTokens([], "/run/WSL/9_interop");
+  assert.deepEqual(bare, ["WSL_INTEROP='/run/WSL/9_interop'"], "注入 env が無ければ WSL_INTEROP だけを供給する");
 });
