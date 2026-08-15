@@ -1434,7 +1434,7 @@ test("openAgent grok agent_done: 通常 GROK_HOME を共有し相関・lineage�
         assert.match(out, /--no-auto-update/, `grok command: ${out}`);
         assert.match(out, /--no-alt-screen/, `grok no-alt-screen: ${out}`);
         assert.match(out, /--verbatim/, `grok verbatim: ${out}`);
-        assert.match(out, /--model grok-4\.5/, `grok model: ${out}`);
+        assert.match(out, /--model grok-4\.6/, `grok model: ${out}`);
         assert.doesNotMatch(out, /(^| )HOME=/, `grok HOME must be inherited: ${out}`);
         assert.doesNotMatch(out, /(^| )GROK_HOME=/, `grok GROK_HOME must be inherited: ${out}`);
         assert.doesNotMatch(out, /--effort/, `grok effort: ${out}`);
