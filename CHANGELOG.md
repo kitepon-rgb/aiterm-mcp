@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.25.3] - 2026-08-15
 
+<!-- 公開受入: docs/adr/0032-release-0.25.3-acceptance.md -->
+
 ### Fixed
 
 - Windows hostで`grok_agent`／`composer_agent`が「Grok 認証正本の安全検証に失敗しました」で
