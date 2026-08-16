@@ -24,7 +24,7 @@ TOPIC_LABEL = {
 
 
 def main():
-    with open(MANIFEST) as f:
+    with open(MANIFEST, encoding="utf-8") as f:
         manifest = json.load(f)
     docs = manifest.get("docs", [])
     updated = manifest.get("updated", "")
@@ -59,7 +59,7 @@ def main():
                 out.append(f"  - 効きどころ: {d['relevance']}")
         out.append("")
 
-    with open(INDEX, "w") as f:
+    with open(INDEX, "w", encoding="utf-8") as f:
         f.write("\n".join(out).rstrip() + "\n")
     print(f"INDEX.md updated: {len(docs)} docs across {len(by_topic)} topics")
 

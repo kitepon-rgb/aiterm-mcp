@@ -4,7 +4,7 @@ AIターミナル直接操作プロジェクトの調査一次資料。`rag/sour
 忠実 Markdown 化した版（front-matter にメタdata）。
 **設計/実装の前にまずここを読み、該当資料を再利用する（再フェッチしない）。**
 
-- 総数: **100** 件 / 更新: 2026-08-13
+- 総数: **108** 件 / 更新: 2026-08-16
 - 取り込み: `python3 rag/ingest.py <sources.json>` → `python3 rag/build_index.py`
 - 統合分析: [briefs/](briefs/)
 
@@ -164,7 +164,7 @@ AIターミナル直接操作プロジェクトの調査一次資料。`rag/sour
   - 出典: <https://learn.microsoft.com/en-us/windows/terminal/tutorials/shell-integration> (docs, 17019 chars)
   - 効きどころ: WSL2上の対象環境そのもの。bashのPS0=133;C/PS1=133;A..B注入の実コードがあり、自前でマーカーを仕込む方式の雛形になる。
 
-## バックエンド (backends) — 13件
+## バックエンド (backends) — 21件
 
 - [Detach — GNU Screen User's Manual](sources/backends/gnu-screen-detach.md) — GNU screenのdetach仕様。C-a dで端末から切離しバックグラウンド化、接続喪失時のautodetach、-rでの再接続を解説。
   - 出典: <https://www.gnu.org/software/screen/manual/html_node/Detach.html> (docs, 1578 chars)
@@ -172,6 +172,9 @@ AIターミナル直接操作プロジェクトの調査一次資料。`rag/sour
 - [libtmux README (Python tmux API)](sources/backends/libtmux-readme.md) — tmuxの型付きPython API。Server/Session/Window/Paneオブジェクトでライブ状態を走査し send_keys や capture-pane(-p)で制御、.cmd()で生コマンドも可能。
   - 出典: <https://raw.githubusercontent.com/tmux-python/libtmux/master/README.md> (github_readme, 10039 chars)
   - 効きどころ: tmuxバックエンドをPythonから操作する高位ラッパ候補。send/read/target解決をオブジェクトで扱え、薄い層の実装を短縮できる一次資料。
+- [minimux — Windows native session persistence daemon (README)](sources\backends\minimux-windows-session-persistence-readme.md) — 多重化なしのWindowsネイティブセッション永続デーモン。バックグラウンドデーモンがConPTY sessionを保持し、クライアントはnamed pipeで接続、再接続時にscrollback再生。attach/detach/status/killのみでsend/capture系外部制御なし。MIT。既知制限にリサイズ時scrollback破損。
+  - 出典: <https://raw.githubusercontent.com/llk214/minimux/main/README.md> (github_readme, 1961 chars)
+  - 効きどころ: ConPTY+named pipe+常駐デーモンという最小構成の実例。自作する場合の規模感の下限と、既知の難所（リサイズ時の履歴破損）を示す。
 - [node-pty README (Microsoft)](sources/backends/node-pty-readme.md) — Node.jsのforkpty(3)バインディング。pty.spawnで擬似端末付き子プロセスを生成し onData/write/resize で双方向制御(VS Code/Hyperで実績)。
   - 出典: <https://raw.githubusercontent.com/microsoft/node-pty/main/README.md> (github_readme, 8099 chars)
   - 効きどころ: tmuxを使わず直接1本のPTYを握る最小実装の候補。pty_open/send/read/close ツールの土台となる低レベルAPIの一次資料。
@@ -181,12 +184,21 @@ AIターミナル直接操作プロジェクトの調査一次資料。`rag/sour
 - [Pexpect Overview](sources/backends/pexpect-overview.md) — pexpect概要。ssh等の対話アプリをspawn/expect/sendlineで自動化し、before/afterで状態保持、interactで人へ制御移譲できる。
   - 出典: <https://pexpect.readthedocs.io/en/stable/overview.html> (docs, 14000 chars)
   - 効きどころ: ssh→docker のネスト対話を1本のPTYへ送る発想の先行例。before/afterの状態管理とプロンプト待ちが完了検出設計の参考になる。
+- [psmux features — server persistence, control mode, tmux compatibility](sources\backends\psmux-features-doc.md) — psmuxの機能詳細。session serverはSSH切断・端末クラッシュを生存、warm sessionでバックグラウンドサーバ事前起動、psmux-resurrect/continuumプラグイン、send-keys/capture-pane/pipe-paneをCI/CD自動化向けと明記、control mode -C/-CCの%begin/%end framing、-L名前空間隔離、ConPTY利用。
+  - 出典: <https://raw.githubusercontent.com/psmux/psmux/master/docs/features.md> (docs, 14446 chars)
+  - 効きどころ: Aitermがtmuxに要求する能力（detached永続・send/capture/pipe-pane・socket隔離）とpsmuxの対応を突合する一次資料。
+- [psmux — native tmux for Windows (README)](sources\backends\psmux-windows-native-tmux-readme.md) — Rust製のWindowsネイティブtmux実装。ConPTY+Win32 API、WSL/Cygwin不要。90+ tmux互換コマンド（send-keys/capture-pane/pipe-pane含む）、control mode -C/-CC、-Lサーバ名前空間、detachedセッション永続、warm session。repo作成2025-11-30、2026-08-15時点でpush継続、3,260 stars、MIT。
+  - 出典: <https://raw.githubusercontent.com/psmux/psmux/master/README.md> (github_readme, 8891 chars)
+  - 効きどころ: AitermのWSL2非依存Windows基盤の最有力既製候補。tmuxと同じCLI契約（send-keys/capture-pane/pipe-pane/%begin framing）を名乗るため、既存tmux呼び出し層の移植先として直接評価対象。「tmux for Windows空白仮説」の反証の中核一次資料。
 - [ptyprocess README](sources/backends/ptyprocess-readme.md) — Pythonで擬似端末内に子プロセスを起動するライブラリ。PtyProcess.spawnでread/write、パスワードプロンプトやcurses系UIの自動化に必要なPTYを提供。
   - 出典: <https://raw.githubusercontent.com/pexpect/ptyprocess/master/README.rst> (github_readme, 578 chars)
   - 効きどころ: Python実装でPTYを直接握る低レベル選択肢(pexpectの基盤)。tmux非依存の send/read を最小コストで実現する土台。
 - [pty — Pseudo-terminal utilities (Python stdlib)](sources/backends/python-stdlib-pty.md) — Python標準ライブラリptyの公式doc。openpty/fork/spawnと master_read・stdin_read コールバック(各既定1024バイト読取)を解説。
   - 出典: <https://docs.python.org/3/library/pty.html> (docs, 7674 chars)
   - 効きどころ: 依存ゼロでPTYを握る最小経路。spawnのread/writeコールバック構造は pty_open/send/read/close の参照実装になる。
+- [rmux — cross-platform workspace multiplexer with JSON-RPC socket API (README)](sources\backends\rmux-workspace-multiplexer-readme.md) — Rust製のcross-platform（Linux/macOS/Windows標榜）workspace multiplexer。pane分割・browser pane・通知・socket API（JSON-RPC、crates/rmux-api）。README上はtmux互換コマンド層やWindows実装詳細（ConPTY等）の記載なし。installerはmacOS/Linux向け。MIT。
+  - 出典: <https://raw.githubusercontent.com/nakulbh/rmux/main/README.md> (github_readme, 5226 chars)
+  - 効きどころ: X上では「tmux互換90コマンド+Typed SDK+persistent snapshots」と宣伝されるが、README一次資料では裏取りできなかった（宣伝と文書の乖離を記録）。Windows対応の実態は要実測。
 - [Scripting tmux — The Tao of tmux](sources/backends/tao-of-tmux-scripting.md) — tmuxのスクリプト制御解説。targets(-t)、formats(-F #{...})、send-keys、capture-pane を使った機械的操作を体系化。
   - 出典: <https://tao-of-tmux.readthedocs.io/en/latest/manuscript/10-scripting.html> (docs, 21766 chars)
   - 効きどころ: send/read を tmux コマンドへ写像する具体パターン(target解決、format での状態取得)が分かる。薄い層の実装レシピとして直接効く。
@@ -205,6 +217,18 @@ AIターミナル直接操作プロジェクトの調査一次資料。`rag/sour
 - [tmux-resurrect: Restoring programs (docs)](sources/backends/tmux-resurrect-restoring-programs.md) — @resurrect-processes 設定で paneの実行中プロセスをどう復元するかの仕様(チルダ/矢印/アスタリスク構文、デフォルト許可リスト)。
   - 出典: <https://raw.githubusercontent.com/tmux-plugins/tmux-resurrect/master/docs/restoring_programs.md> (docs, 8068 chars)
   - 効きどころ: detached後に「中で動いていたプロセス」を復元できる/できない範囲を精密に規定。完了検出や再接続後の状態回復の設計判断に効く。
+- [WezTerm multiplexing — unix domains on Windows, mux server](sources\backends\wezterm-multiplexing-windows.md) — WezTermのmux server/domain解説。unix domainは全OS対応（Windows含む）だがWSL2はAF_UNIX interop非対応。wezterm cliでspawn/send-text/get-text/split-pane/list-clients等の外部制御。多重化は『young feature and evolving rapidly』と明記。
+  - 出典: <https://raw.githubusercontent.com/wezterm/wezterm/main/docs/multiplexing.md> (docs, 9411 chars)
+  - 効きどころ: 既製mux候補としてのWezTermの一次資料。外部制御CLIはあるがtmux CLI互換ではなく、GUI端末とセットの重い導入になる点を評価に使う。
+- [WinTmux — Windows-native tmux replacement using ConPTY (README)](sources\backends\wintmux-conpty-tmux-replacement-readme.md) — ConPTYを使うWindowsネイティブのtmux置換を名乗るプロジェクト。CAM (Claude Agent Manager) とのdrop-in互換を掲げる。詳細な互換範囲・成熟度は本READMEで確認する。
+  - 出典: <https://raw.githubusercontent.com/orlunix/wintmux/main/README.md> (github_readme, 4087 chars)
+  - 効きどころ: AIエージェント文脈でtmux CLI互換を狙う同種プロジェクトの併記候補。psmuxとの比較材料。
+- [wmux (openwong2kim) — Electron agent workspace multiplexer (README)](sources\backends\wmux-openwong2kim-agent-workspace-readme.md) — Claude Code/Codex/Gemini並列実行向けのElectron製workspace multiplexer。ConPTY+xterm.js(WebGL)、git worktree fan-out、approval gate、再起動生存セッション。tmux CLI互換の外部制御は掲げない。同名の別プロジェクト（bahri-hirfanoglu/wmux、Rust製CLI）と区別すること。
+  - 出典: <https://raw.githubusercontent.com/openwong2kim/wmux/main/README.md> (github_readme, 24764 chars)
+  - 効きどころ: AIエージェント並列運用に特化した『agent-oriented multiplexer』潮流の代表例。Aitermの競合環境理解と、tmux CLI互換勢との性格の違いの記録。
+- [zellij CHANGELOG — Windows support merge and fixes](sources\backends\zellij-changelog-windows-support.md) — zellijのCHANGELOG。2025年にWindows supportがmergeされ、0.44.x系でWindows向け修正（windows-sys 0.59 bump、Windows Terminalのマウス処理修正等）が継続。Windows実装の残課題はissue #4745（Windows implementation issues, 2026-02-21起票）で追跡。
+  - 出典: <https://raw.githubusercontent.com/zellij-org/zellij/main/CHANGELOG.md> (docs, 112733 chars)
+  - 効きどころ: 『zellijはWindows非対応』という旧知識の更新。ただしtmux CLI互換の外部制御（send-keys/capture-pane相当）を持たないため、Aitermバックエンド適性は別問題。
 
 ## ANSI / 画面整形 (ansi-handling) — 11件
 

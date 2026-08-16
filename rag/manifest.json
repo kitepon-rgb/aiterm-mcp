@@ -336,6 +336,25 @@
       "fetched": "2026-06-01"
     },
     {
+      "slug": "minimux-windows-session-persistence-readme",
+      "topic": "backends",
+      "title": "minimux — Windows native session persistence daemon (README)",
+      "source_url": "https://raw.githubusercontent.com/llk214/minimux/main/README.md",
+      "source_type": "github_readme",
+      "path": "sources\\backends\\minimux-windows-session-persistence-readme.md",
+      "tags": [
+        "windows",
+        "conpty",
+        "named-pipe",
+        "persistence",
+        "daemon"
+      ],
+      "summary": "多重化なしのWindowsネイティブセッション永続デーモン。バックグラウンドデーモンがConPTY sessionを保持し、クライアントはnamed pipeで接続、再接続時にscrollback再生。attach/detach/status/killのみでsend/capture系外部制御なし。MIT。既知制限にリサイズ時scrollback破損。",
+      "relevance": "ConPTY+named pipe+常駐デーモンという最小構成の実例。自作する場合の規模感の下限と、既知の難所（リサイズ時の履歴破損）を示す。",
+      "chars": 1961,
+      "fetched": "2026-08-16"
+    },
+    {
       "slug": "node-pty-readme",
       "topic": "backends",
       "title": "node-pty README (Microsoft)",
@@ -400,6 +419,45 @@
       "fetched": "2026-06-01"
     },
     {
+      "slug": "psmux-features-doc",
+      "topic": "backends",
+      "title": "psmux features — server persistence, control mode, tmux compatibility",
+      "source_url": "https://raw.githubusercontent.com/psmux/psmux/master/docs/features.md",
+      "source_type": "docs",
+      "path": "sources\\backends\\psmux-features-doc.md",
+      "tags": [
+        "windows",
+        "conpty",
+        "tmux-compatible",
+        "control-mode",
+        "persistence"
+      ],
+      "summary": "psmuxの機能詳細。session serverはSSH切断・端末クラッシュを生存、warm sessionでバックグラウンドサーバ事前起動、psmux-resurrect/continuumプラグイン、send-keys/capture-pane/pipe-paneをCI/CD自動化向けと明記、control mode -C/-CCの%begin/%end framing、-L名前空間隔離、ConPTY利用。",
+      "relevance": "Aitermがtmuxに要求する能力（detached永続・send/capture/pipe-pane・socket隔離）とpsmuxの対応を突合する一次資料。",
+      "chars": 14446,
+      "fetched": "2026-08-16"
+    },
+    {
+      "slug": "psmux-windows-native-tmux-readme",
+      "topic": "backends",
+      "title": "psmux — native tmux for Windows (README)",
+      "source_url": "https://raw.githubusercontent.com/psmux/psmux/master/README.md",
+      "source_type": "github_readme",
+      "path": "sources\\backends\\psmux-windows-native-tmux-readme.md",
+      "tags": [
+        "windows",
+        "conpty",
+        "tmux-compatible",
+        "multiplexer",
+        "rust",
+        "persistence"
+      ],
+      "summary": "Rust製のWindowsネイティブtmux実装。ConPTY+Win32 API、WSL/Cygwin不要。90+ tmux互換コマンド（send-keys/capture-pane/pipe-pane含む）、control mode -C/-CC、-Lサーバ名前空間、detachedセッション永続、warm session。repo作成2025-11-30、2026-08-15時点でpush継続、3,260 stars、MIT。",
+      "relevance": "AitermのWSL2非依存Windows基盤の最有力既製候補。tmuxと同じCLI契約（send-keys/capture-pane/pipe-pane/%begin framing）を名乗るため、既存tmux呼び出し層の移植先として直接評価対象。「tmux for Windows空白仮説」の反証の中核一次資料。",
+      "chars": 8891,
+      "fetched": "2026-08-16"
+    },
+    {
       "slug": "ptyprocess-readme",
       "topic": "backends",
       "title": "ptyprocess README",
@@ -440,6 +498,25 @@
       "relevance": "依存ゼロでPTYを握る最小経路。spawnのread/writeコールバック構造は pty_open/send/read/close の参照実装になる。",
       "chars": 7674,
       "fetched": "2026-06-01"
+    },
+    {
+      "slug": "rmux-workspace-multiplexer-readme",
+      "topic": "backends",
+      "title": "rmux — cross-platform workspace multiplexer with JSON-RPC socket API (README)",
+      "source_url": "https://raw.githubusercontent.com/nakulbh/rmux/main/README.md",
+      "source_type": "github_readme",
+      "path": "sources\\backends\\rmux-workspace-multiplexer-readme.md",
+      "tags": [
+        "windows",
+        "multiplexer",
+        "rust",
+        "json-rpc",
+        "agents"
+      ],
+      "summary": "Rust製のcross-platform（Linux/macOS/Windows標榜）workspace multiplexer。pane分割・browser pane・通知・socket API（JSON-RPC、crates/rmux-api）。README上はtmux互換コマンド層やWindows実装詳細（ConPTY等）の記載なし。installerはmacOS/Linux向け。MIT。",
+      "relevance": "X上では「tmux互換90コマンド+Typed SDK+persistent snapshots」と宣伝されるが、README一次資料では裏取りできなかった（宣伝と文書の乖離を記録）。Windows対応の実態は要実測。",
+      "chars": 5226,
+      "fetched": "2026-08-16"
     },
     {
       "slug": "tao-of-tmux-scripting",
@@ -561,6 +638,79 @@
       "relevance": "detached後に「中で動いていたプロセス」を復元できる/できない範囲を精密に規定。完了検出や再接続後の状態回復の設計判断に効く。",
       "chars": 8068,
       "fetched": "2026-06-01"
+    },
+    {
+      "slug": "wezterm-multiplexing-windows",
+      "topic": "backends",
+      "title": "WezTerm multiplexing — unix domains on Windows, mux server",
+      "source_url": "https://raw.githubusercontent.com/wezterm/wezterm/main/docs/multiplexing.md",
+      "source_type": "docs",
+      "path": "sources\\backends\\wezterm-multiplexing-windows.md",
+      "tags": [
+        "windows",
+        "multiplexer",
+        "mux-server",
+        "wezterm"
+      ],
+      "summary": "WezTermのmux server/domain解説。unix domainは全OS対応（Windows含む）だがWSL2はAF_UNIX interop非対応。wezterm cliでspawn/send-text/get-text/split-pane/list-clients等の外部制御。多重化は『young feature and evolving rapidly』と明記。",
+      "relevance": "既製mux候補としてのWezTermの一次資料。外部制御CLIはあるがtmux CLI互換ではなく、GUI端末とセットの重い導入になる点を評価に使う。",
+      "chars": 9411,
+      "fetched": "2026-08-16"
+    },
+    {
+      "slug": "wintmux-conpty-tmux-replacement-readme",
+      "topic": "backends",
+      "title": "WinTmux — Windows-native tmux replacement using ConPTY (README)",
+      "source_url": "https://raw.githubusercontent.com/orlunix/wintmux/main/README.md",
+      "source_type": "github_readme",
+      "path": "sources\\backends\\wintmux-conpty-tmux-replacement-readme.md",
+      "tags": [
+        "windows",
+        "conpty",
+        "tmux-compatible",
+        "multiplexer"
+      ],
+      "summary": "ConPTYを使うWindowsネイティブのtmux置換を名乗るプロジェクト。CAM (Claude Agent Manager) とのdrop-in互換を掲げる。詳細な互換範囲・成熟度は本READMEで確認する。",
+      "relevance": "AIエージェント文脈でtmux CLI互換を狙う同種プロジェクトの併記候補。psmuxとの比較材料。",
+      "chars": 4087,
+      "fetched": "2026-08-16"
+    },
+    {
+      "slug": "wmux-openwong2kim-agent-workspace-readme",
+      "topic": "backends",
+      "title": "wmux (openwong2kim) — Electron agent workspace multiplexer (README)",
+      "source_url": "https://raw.githubusercontent.com/openwong2kim/wmux/main/README.md",
+      "source_type": "github_readme",
+      "path": "sources\\backends\\wmux-openwong2kim-agent-workspace-readme.md",
+      "tags": [
+        "windows",
+        "conpty",
+        "electron",
+        "agents",
+        "persistence"
+      ],
+      "summary": "Claude Code/Codex/Gemini並列実行向けのElectron製workspace multiplexer。ConPTY+xterm.js(WebGL)、git worktree fan-out、approval gate、再起動生存セッション。tmux CLI互換の外部制御は掲げない。同名の別プロジェクト（bahri-hirfanoglu/wmux、Rust製CLI）と区別すること。",
+      "relevance": "AIエージェント並列運用に特化した『agent-oriented multiplexer』潮流の代表例。Aitermの競合環境理解と、tmux CLI互換勢との性格の違いの記録。",
+      "chars": 24764,
+      "fetched": "2026-08-16"
+    },
+    {
+      "slug": "zellij-changelog-windows-support",
+      "topic": "backends",
+      "title": "zellij CHANGELOG — Windows support merge and fixes",
+      "source_url": "https://raw.githubusercontent.com/zellij-org/zellij/main/CHANGELOG.md",
+      "source_type": "docs",
+      "path": "sources\\backends\\zellij-changelog-windows-support.md",
+      "tags": [
+        "windows",
+        "multiplexer",
+        "zellij",
+        "rust"
+      ],
+      "summary": "zellijのCHANGELOG。2025年にWindows supportがmergeされ、0.44.x系でWindows向け修正（windows-sys 0.59 bump、Windows Terminalのマウス処理修正等）が継続。Windows実装の残課題はissue #4745（Windows implementation issues, 2026-02-21起票）で追跡。",
+      "relevance": "『zellijはWindows非対応』という旧知識の更新。ただしtmux CLI互換の外部制御（send-keys/capture-pane相当）を持たないため、Aitermバックエンド適性は別問題。",
+      "chars": 112733,
+      "fetched": "2026-08-16"
     },
     {
       "slug": "agent-cli-done-phase0-smoke-2026-07-07",
@@ -2016,5 +2166,5 @@
       "fetched": "2026-06-01"
     }
   ],
-  "updated": "2026-08-13"
+  "updated": "2026-08-16"
 }

@@ -88,7 +88,7 @@ def front_matter(rec, nchars, fetched):
 
 def load_manifest():
     if os.path.exists(MANIFEST):
-        with open(MANIFEST) as f:
+        with open(MANIFEST, encoding="utf-8") as f:
             return json.load(f)
     return {"docs": []}
 
@@ -97,7 +97,7 @@ def main():
     if len(sys.argv) < 2:
         print("usage: ingest.py <sources.json>")
         sys.exit(2)
-    with open(sys.argv[1]) as f:
+    with open(sys.argv[1], encoding="utf-8") as f:
         sources = json.load(f)
     fetched = datetime.date.today().isoformat()
     manifest = load_manifest()
@@ -116,7 +116,7 @@ def main():
             reldir = os.path.join(SRC, rec["topic"])
             os.makedirs(reldir, exist_ok=True)
             dest = os.path.join(reldir, rec["slug"] + ".md")
-            with open(dest, "w") as f:
+            with open(dest, "w", encoding="utf-8") as f:
                 f.write(front_matter(rec, len(body), fetched) + body + "\n")
             relpath = os.path.relpath(dest, RAG)
             by_key[key] = {
@@ -133,7 +133,7 @@ def main():
             print(f"FAIL {key}: {e}")
     manifest["docs"] = sorted(by_key.values(), key=lambda d: (d["topic"], d["slug"]))
     manifest["updated"] = fetched
-    with open(MANIFEST, "w") as f:
+    with open(MANIFEST, "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2)
     print(f"\n== {ok} ok, {len(failed)} failed; manifest now has {len(manifest['docs'])} docs ==")
     for k, e in failed:
