@@ -312,15 +312,6 @@ test("submit座礁観測: 画面折返し（whitespace 差）を跨いでも末�
   assert.equal(result.residue, true);
 });
 
-// ---------------------------------------------------------------- toWslPath（Windows 橋渡しのパス変換）
-test("toWslPath: ドライブパスを /mnt 形へ（ドライブ文字は小文字化）", () => {
-  assert.equal(core.toWslPath("C:\\Users\\x\\f.log"), "/mnt/c/Users/x/f.log");
-  assert.equal(core.toWslPath("D:/a/b"), "/mnt/d/a/b"); // forward-slash 入力も通す
-});
-test("toWslPath: UNC（ドライブ直下でない）は code=2 で弾く", () => {
-  assert.throws(() => core.toWslPath("\\\\server\\share\\x"), (e) => e.code === 2);
-});
-
 // tmuxSpawnEnv: C/POSIX/未設定 locale だけに UTF-8 LC_CTYPE を注入する（実挙動の破壊は
 // caveat tmux-3-7b-list-sessions-f が正。server 側入力破壊・client 側 format タブ "_" 化の対策）。
 function withLocaleEnv(vars, fn) {
@@ -415,18 +406,3 @@ test("agentWaitGuide: 復旧案内は取りこぼしゼロの --cursor 0 を維�
   assert.match(guide, /outcome=done/, "exit≠完了の判定基準を示す");
 });
 
-// ------------------------------------------------ winInteropEnvTokens（Windows native .exe interop 起動）
-test("winInteropEnvTokens: anchor socket 指定時だけ WSL_INTEROP と WSLENV(/w) を先頭へ加える", () => {
-  const tokens = ["GROK_AUTH_PATH='C:\\Users\\u\\.grok\\auth.json'", "GROK_DISABLE_AUTOUPDATER=1", "AITERM_AGENT_KIND='grok'"];
-  const wrapped = core.winInteropEnvTokens(tokens, "/run/WSL/123_interop");
-  assert.equal(wrapped[0], "WSL_INTEROP='/run/WSL/123_interop'");
-  assert.equal(wrapped[1], "WSLENV=GROK_AUTH_PATH/w:GROK_DISABLE_AUTOUPDATER/w:AITERM_AGENT_KIND/w");
-  assert.deepEqual(wrapped.slice(2), tokens, "元の env token は形も順序も変えない");
-});
-
-test("winInteropEnvTokens: socket null（POSIX／非native bin）は無変換、token 無しは WSLENV を作らない", () => {
-  const tokens = ["A=1"];
-  assert.deepEqual(core.winInteropEnvTokens(tokens, null), tokens);
-  const bare = core.winInteropEnvTokens([], "/run/WSL/9_interop");
-  assert.deepEqual(bare, ["WSL_INTEROP='/run/WSL/9_interop'"], "注入 env が無ければ WSL_INTEROP だけを供給する");
-});

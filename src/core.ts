@@ -26,13 +26,12 @@ const SOCKDIR = path.join(
   process.env.TMPDIR ?? (isWin ? process.env.TEMP ?? os.tmpdir() : "/tmp"),
   "claude-tmux-sockets",
 );
-// tmux -S に渡すソケットパス。POSIX はログと同じツリーに置く。
-// Windows は tmux が WSL 内で動くため、ソケットは WSL ネイティブ fs に置く必要がある
-// （/mnt drvfs(9p) 上では AF_UNIX 非対応）。SOCKDIR から短い安定名を導出し、
-// TMPDIR ごとの隔離（テスト）と再起動跨ぎ再接続を両立する。
-const SOCK = isWin
-  ? `/tmp/aiterm-${createHash("sha1").update(SOCKDIR).digest("hex").slice(0, 12)}.sock`
-  : path.join(SOCKDIR, "claude.sock");
+// tmux -S に渡すソケットパス（POSIX はログと同じツリーに置く）。
+// Windows は native psmux を使い、-S でなく -L server namespace で隔離する
+// （psmux の -S は黙って既定 namespace へ落ちるため使わない・実測 2026-08-16）。
+// SOCKDIR から短い安定名を導出し、TMPDIR ごとの隔離（テスト）と再起動跨ぎ再接続を両立する。
+const SOCK = path.join(SOCKDIR, "claude.sock");
+const WIN_NS = `aiterm-${createHash("sha1").update(SOCKDIR).digest("hex").slice(0, 12)}`;
 
 // 完了検出
 export const DEFAULT_TIMEOUT = 10.0;
@@ -173,118 +172,28 @@ function ptyDependencyError(message: string, observe = true): never {
   throw error;
 }
 
-// Windows のドライブパス (C:\a\b) を WSL から見える /mnt/c/a/b へ変換する。
-// 一時領域は常にドライブ直下なので UNC は想定外＝弾く（黙って壊れた //server パスを作らない）。
-export function toWslPath(p: string): string {
-  const m = /^([A-Za-z]):\/(.*)$/.exec(p.replace(/\\/g, "/"));
-  if (!m) throw new AitermError(`WSL へ橋渡しできない一時パスです（ドライブ直下のみ対応）: ${p}`, 2);
-  return `/mnt/${m[1].toLowerCase()}/${m[2]}`;
+// Windows で最初の呼び出し前に一度だけ native psmux の可用性を確かめ、失敗は原因別に投げる。
+// psmux は tmux CLI 互換の Windows ネイティブ実装（ConPTY・WSL 不要）。AITERM_PSMUX で
+// バイナリを明示上書きできる（POSIX の AITERM_TMUX に対応）。
+function psmuxBin(): string {
+  return process.env.AITERM_PSMUX || "psmux";
 }
-
-// Windows で最初の tmux 呼び出し前に一度だけ WSL+tmux の可用性を確かめ、失敗は原因別に投げる。
-// -e（ログインシェル非経由）＋短い timeout で、初回セットアップ未完了の wsl によるハングも防ぐ。
-let winBridgeOk = false;
-function ensureWinBridge(observe = true): void {
-  if (winBridgeOk) return;
-  const r = spawnSync("wsl.exe", ["-e", "tmux", "-V"], { encoding: "utf8", timeout: 10000 });
+let winPsmuxOk = false;
+function ensureWinPsmux(observe = true): void {
+  if (winPsmuxOk) return;
+  const r = spawnSync(psmuxBin(), ["-V"], { encoding: "utf8", timeout: 10000 });
   if (r.error) {
     const code = (r.error as NodeJS.ErrnoException).code;
-    if (code === "ETIMEDOUT")
-      ptyDependencyError("WSL が応答しません（初回セットアップ未完了の可能性）。一度 `wsl` を起動してから再実行してください。", observe);
     if (code === "ENOENT")
-      ptyDependencyError("wsl.exe が見つかりません。Windows では WSL 上の tmux 経由で動作します。WSL と tmux を導入してください。", observe);
-    ptyDependencyError(`wsl.exe を起動できませんでした（${code ?? "unknown"}）。`, observe);
+      ptyDependencyError(
+        "psmux が見つかりません。Windows ネイティブでは psmux が必要です（導入例: winget install marlocarlo.psmux）。既存の psmux を使う場合は AITERM_PSMUX でパスを指定してください。",
+        observe,
+      );
+    ptyDependencyError(`psmux を起動できませんでした（${code ?? "unknown"}）。`, observe);
   }
-  // wsl.exe は System32 にあるので「起動」は成功するが、ディストリ未導入や distro 内に tmux が無いと
-  // 非ゼロで終わる。両方を区別せず（wsl の出力は UTF-16 で文字化けし得るため）正直に表す。
   if (r.status !== 0)
-    ptyDependencyError("WSL 経由で tmux を起動できませんでした。WSL のディストリ未導入、または distro 内に tmux が無い可能性があります。`wsl tmux -V` が通るか確認してください（tmux 導入例: sudo apt install tmux）。", observe);
-  winBridgeOk = true;
-}
-
-// Windows の tmux bridge では各 wsl.exe 呼び出しが短命で、tmux server と pane が継承する
-// WSL_INTEROP は起動元 WSL session の終了とともに死ぬ。死んだ socket のまま pane 内から
-// Windows .exe を起動すると binfmt interop が UtilAcceptVsock accept4=110(ETIMEDOUT) で失敗する。
-// 生きた session leader の socket を WSL_INTEROP へ指せば同じ pane で成功する（どちらも実測
-// 2026-08-15・WSL 2.6.1）。そのため aiterm が長寿命 anchor（sleep する wsl.exe process）を
-// 1本所有し、native .exe 起動の env へその socket を供給する。anchor は起動時に自身の
-// WSL_INTEROP と pid を state file へ書き、以後は生存確認だけで再利用する。
-const WIN_INTEROP_ANCHOR_SPAWN_TIMEOUT_MS = 10_000;
-const WIN_INTEROP_ANCHOR_POLL_MS = 100;
-
-function winInteropAnchorStatePath(): string {
-  return path.join(ensureSecureStateRoot(), "interop-anchor.json");
-}
-
-function readWinInteropAnchorState(): { socket: string; pid: number } | null {
-  let raw: string;
-  try {
-    raw = fs.readFileSync(winInteropAnchorStatePath(), "utf8");
-  } catch {
-    return null;
-  }
-  try {
-    const value = JSON.parse(raw) as { socket?: unknown; pid?: unknown };
-    if (
-      typeof value.socket === "string" &&
-      value.socket.startsWith("/run/WSL/") &&
-      Number.isSafeInteger(value.pid) &&
-      (value.pid as number) > 0
-    ) {
-      return { socket: value.socket, pid: value.pid as number };
-    }
-  } catch {
-    /* 不完全・破損 state は下の再生成経路で作り直す */
-  }
-  return null;
-}
-
-function isWinInteropAnchorAlive(state: { socket: string; pid: number }): boolean {
-  const r = spawnSync("wsl.exe", ["-e", "sh", "-c", `test -S ${shq(state.socket)} && kill -0 ${state.pid}`], {
-    encoding: "utf8",
-    timeout: 10000,
-    windowsHide: true,
-  });
-  return !r.error && r.status === 0;
-}
-
-// openAgent は同期経路のため、anchor の起動待ちだけ Atomics.wait で有界に同期 sleep する。
-function sleepSyncMs(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
-function ensureWinInteropAnchor(): string {
-  const existing = readWinInteropAnchorState();
-  if (existing && isWinInteropAnchorAlive(existing)) return existing.socket;
-  const statePath = winInteropAnchorStatePath();
-  fs.rmSync(statePath, { force: true });
-  // 並行launchが同時にここへ来ると anchor が余分に1本立つが、state は後着が上書きし
-  // どちらの socket も有効なので実害はない（余剰 process は wsl shutdown まで sleep のみ）。
-  const child = spawn(
-    "wsl.exe",
-    [
-      "-e",
-      "sh",
-      "-c",
-      `printf '{"socket":"%s","pid":%s}' "$WSL_INTEROP" "$$" > ${shq(toWslPath(statePath))} && exec sleep infinity`,
-    ],
-    { detached: true, stdio: "ignore", windowsHide: true },
-  );
-  child.unref();
-  const deadline = Date.now() + WIN_INTEROP_ANCHOR_SPAWN_TIMEOUT_MS;
-  for (;;) {
-    const state = readWinInteropAnchorState();
-    if (state) {
-      if (!isWinInteropAnchorAlive(state)) {
-        throw new AitermError("WSL interop anchor が起動直後に停止しました。`wsl` が動作するか確認してください。", 2);
-      }
-      return state.socket;
-    }
-    if (Date.now() >= deadline) {
-      throw new AitermError("WSL interop anchor を起動できません。`wsl` が動作するか確認してください。", 2);
-    }
-    sleepSyncMs(WIN_INTEROP_ANCHOR_POLL_MS);
-  }
+    ptyDependencyError("psmux -V が失敗しました。`psmux -V` が通るか確認してください。", observe);
+  winPsmuxOk = true;
 }
 
 // tmux が見つからないときの説明。macOS は tmux を同梱せず、Homebrew の bin は GUI 起動時の PATH に
@@ -355,12 +264,12 @@ function tmuxCommandWithInput(
 ): { code: number; stdout: string; stderr: string } {
   // maxBuffer は既定 1MiB。capture-pane（大きなスクロールバック）や多セッションの list-sessions で
   // 頭打ちになり stdout が切れる/空になる。Python の subprocess.run は無制限だったので 64MiB へ広げる。
-  // Windows は同じ tmux を WSL 経由（-e でログインシェル非経由＝$ 展開やクオート崩れを防ぐ）で叩く。
+  // Windows は tmux CLI 互換の native psmux を -L namespace 隔離で叩く（WSL 非依存）。
   let r;
   const spawnOpts = { encoding: "utf8" as const, maxBuffer: 64 * 1024 * 1024, input, env: tmuxSpawnEnv() };
   if (isWin) {
-    ensureWinBridge(observe);
-    r = spawnSync("wsl.exe", ["-e", "tmux", "-S", SOCK, ...args], spawnOpts);
+    ensureWinPsmux(observe);
+    r = spawnSync(psmuxBin(), ["-L", WIN_NS, ...args], spawnOpts);
   } else {
     // resolveTmux() は tmux を解決できなければ明確な AitermError を投げる（POSIX 版の事前確認）。
     r = spawnSync(resolveTmux(observe), ["-S", SOCK, ...args], spawnOpts);
@@ -399,7 +308,13 @@ function sessionExists(name: string): boolean {
 
 function paneCurrentCommand(name: string): string {
   const r = tmux("display-message", "-p", "-t", name, "#{pane_current_command}");
-  return r.code === 0 ? r.stdout.trim() : "";
+  if (r.code !== 0) return "";
+  const cmd = r.stdout.trim();
+  // Windows（psmux）は "bash.exe" やフルパス形で報告しうる。SHELLS 等の POSIX 名
+  // 集合と突合できるよう、basename・.exe 除去・小文字化へ正規化する（Windows の
+  // 実行ファイル名は case-insensitive）。POSIX は従来どおり無加工。
+  if (!isWin) return cmd;
+  return path.basename(cmd).replace(/\.exe$/i, "").toLowerCase();
 }
 
 function pasteBufferSupportsNoSanitizeFlag(): boolean {
@@ -410,7 +325,8 @@ function pasteBufferSupportsNoSanitizeFlag(): boolean {
       2,
     );
   }
-  const usage = listed.stdout.split("\n").find((line) => line.startsWith("paste-buffer "));
+  // psmux の list-commands は行頭にインデントを持つため trim して突合する。
+  const usage = listed.stdout.split("\n").find((line) => line.trim().startsWith("paste-buffer"));
   if (!usage) throw new AitermError("tmux list-commands にpaste-bufferがありません", 2);
   // tmux 3.4は制御文字を無変換でpasteし、-S自体が無い。3.7は既定でvis(3)変換し、
   // -Sが無変換を選ぶ。version文字比較で推測せず、実際のcommand usageにflagがあるかを見る。
@@ -668,8 +584,8 @@ function readLastcmd(name: string): string {
 }
 
 export function attachHint(name: string): string {
-  // Windows は WSL 内 tmux なので、人が打つのは wsl 経由（SOCK は WSL パス）。
-  const cmd = isWin ? `wsl tmux -S ${SOCK} attach -t ${name}` : `tmux -S ${SOCK} attach -t ${name}`;
+  // Windows は native psmux（tmux CLI 互換）を -L namespace で叩く。
+  const cmd = isWin ? `psmux -L ${WIN_NS} attach -t ${name}` : `tmux -S ${SOCK} attach -t ${name}`;
   return (
     `このセッションを自分の目で見る/介入する:\n` +
     `  ${cmd}\n` +
@@ -942,11 +858,8 @@ function completionSuffix(status: string): string {
 
 function rtkRewrite(text: string): string {
   if (text.trim().includes("\n")) return text;
-  // timeout 無しだと rtk がハングしたとき send() ごと凍結する。Python は timeout=5。
-  // Windows はコマンドが WSL 内で走るので rtk も WSL 側（-e）で評価する。不在は素通し。
-  const r = isWin
-    ? spawnSync("wsl.exe", ["-e", "rtk", "rewrite", text], { encoding: "utf8", timeout: 5000, maxBuffer: 1024 * 1024 })
-    : spawnSync("rtk", ["rewrite", text], { encoding: "utf8", timeout: 5000, maxBuffer: 1024 * 1024 });
+  // timeout 無しだと rtk がハングしたとき send() ごと凍結する。Python は timeout=5。不在は素通し。
+  const r = spawnSync("rtk", ["rewrite", text], { encoding: "utf8", timeout: 5000, maxBuffer: 1024 * 1024 });
   if (r.error) return text; // rtk 不在（ENOENT）・タイムアウト（ETIMEDOUT）等は元テキストへ素通し
   if ((r.status === 0 || r.status === 3) && (r.stdout ?? "").trim()) return (r.stdout ?? "").replace(/\n+$/, "");
   return text;
@@ -966,7 +879,37 @@ function assertNotDestructive(text: string, code: number, context = ""): void {
 
 // ---------------------------------------------------------------- 操作（return で返す / 失敗は AitermError）
 
+// Windows native pane の既定 shell 解決。裸の "bash" は PATH 上で System32 の
+// WSL launcher (bash.exe) に解決されてしまうため、Git for Windows の bash.exe を
+// 明示解決する（WSL 非依存の裁定に従う）。AITERM_BASH で上書き可。
+function resolveWinPaneShell(shell: string): string {
+  if (!isWin || shell !== "bash") return shell;
+  const fromEnv = process.env.AITERM_BASH;
+  if (fromEnv) {
+    if (isUsableExecutableFile(fromEnv)) return fromEnv;
+    throw new AitermError(`AITERM_BASH に指定された bash が存在しません: ${fromEnv}`, 2);
+  }
+  const candidates = [
+    path.join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "bin", "bash.exe"),
+    path.join(process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)", "Git", "bin", "bash.exe"),
+  ];
+  const gitPath = spawnSync("where.exe", ["git.exe"], { encoding: "utf8", timeout: 5000 })
+    .stdout?.split(/\r?\n/)
+    .find(Boolean);
+  if (gitPath) candidates.push(path.join(path.dirname(path.dirname(gitPath)), "bin", "bash.exe"));
+  for (const cand of candidates) {
+    if (isUsableExecutableFile(cand)) return cand;
+  }
+  throw new AitermError(
+    "Git Bash が見つかりません。Windows ネイティブの pane shell には Git for Windows の bash.exe が必要です" +
+      "（System32 の bash.exe は WSL launcher のため使いません）。Git for Windows を導入するか、" +
+      "AITERM_BASH に bash.exe のパスを指定してください。",
+    2,
+  );
+}
+
 export function openSession(name?: string | null, shell = "bash"): [string, string] {
+  shell = resolveWinPaneShell(shell);
   try {
     fs.mkdirSync(SOCKDIR, { recursive: true });
   } catch (error) {
@@ -990,7 +933,8 @@ export function openSession(name?: string | null, shell = "bash"): [string, stri
     if (sessionExists(nm)) {
       if (explicit) throw new AitermError(`session '${nm}' は既に存在します（list で確認）`, 2);
     } else {
-      const r = tmux("new-session", "-d", "-s", nm, ...banner, "-f", "/dev/null", shell);
+      // -f は端末個人の設定ファイルを読まないための空 config（Windows は NUL デバイス）。
+      const r = tmux("new-session", "-d", "-s", nm, ...banner, "-f", isWin ? "NUL" : "/dev/null", shell);
       if (r.code === 0) break;
       // 自動採番かつ「重複名」由来の失敗（他エージェントが同名を先に取った）なら次名でリトライ。
       const dup = /duplicate|already exists/i.test(r.stderr);
@@ -1017,8 +961,10 @@ export function openSession(name?: string | null, shell = "bash"): [string, stri
   cleanupAgentState(nm);
   // pipe-pane の引数は tmux 内部の /bin/sh -c で再解釈される（argv ではない）。パスは単一引用符で包み、
   // パス自身の ' は '\'' イディオムでエスケープする（名前は検証済みだが、Windows ユーザー名 O'Brien 等が
-  // 一時パスに ' を持ち込み redirect を壊すのを防ぐ。空白対策も兼ねる）。Windows は WSL から見える /mnt/c 形へ。
-  const pipeTarget = isWin ? toWslPath(logpath(nm)) : logpath(nm);
+  // 一時パスに ' を持ち込み redirect を壊すのを防ぐ。空白対策も兼ねる）。
+  // Windows の psmux は `cat > <path>` を in-process の直接ファイルsinkとして処理する
+  // （psmux e3e4b71 以降）。パスは Windows 形のまま渡す。
+  const pipeTarget = logpath(nm);
   const quoted = `'${pipeTarget.replace(/'/g, "'\\''")}'`;
   const pr = tmux("pipe-pane", "-t", nm, "-o", `cat >> ${quoted}`);
   if (pr.code !== 0) {
@@ -1146,7 +1092,20 @@ export function send(name: string, text: string, o: SendOpts = {}): string {
         i > 0
           ? " 先行chunkはPTYに入力済みでEnterは未送信です。再送前に入力を確認・消去してください。"
           : "";
-      const loaded = tmuxWithInput(chunks[i], "load-buffer", "-b", bufferName, "-");
+      // psmux の load-buffer は stdin (`-`) 非対応で path 位置引数だけを取る。
+      // Windows は owner-only の SOCKDIR 内へ一時ファイル経由で渡す。
+      let loaded: { code: number; stdout: string; stderr: string };
+      if (isWin) {
+        const chunkFile = path.join(SOCKDIR, `${bufferName}.chunk`);
+        try {
+          fs.writeFileSync(chunkFile, chunks[i], { encoding: "utf8" });
+          loaded = tmux("load-buffer", "-b", bufferName, chunkFile);
+        } finally {
+          try { fs.unlinkSync(chunkFile); } catch { /* noop */ }
+        }
+      } else {
+        loaded = tmuxWithInput(chunks[i], "load-buffer", "-b", bufferName, "-");
+      }
       if (loaded.code !== 0) {
         tmuxCleanup("delete-buffer", "-b", bufferName);
         throw new AitermError(
@@ -1157,7 +1116,8 @@ export function send(name: string, text: string, o: SendOpts = {}): string {
       }
       // -r: LF→CR 置換を無効化。-Sは対応新版だけでvis(3)制御文字変換を無効化する。
       // send 自身の raw/sanitize 契約だけを真実とし、tmux 側で黙って再変換させない。
-      const pasteArgs = ["paste-buffer", "-d", "-r"];
+      // psmux は -r 非対応（受理フラグは d/p/b/t のみ）のため Windows では付けない。
+      const pasteArgs = isWin ? ["paste-buffer", "-d"] : ["paste-buffer", "-d", "-r"];
       if (o.bracketedPaste) pasteArgs.push("-p");
       if (pasteSupportsNoSanitize) pasteArgs.push("-S");
       pasteArgs.push("-b", bufferName, "-t", name);
@@ -2041,7 +2001,7 @@ function readClaudeOperationMarker(meta: AgentMetadata): ClaudeOperationMarker |
   }
   try {
     const st = fs.fstatSync(fd);
-    if (!st.isFile() || st.uid !== currentUid() || st.nlink !== 1 || (st.mode & 0o077) !== 0 || st.size > 1024) {
+    if (!st.isFile() || st.uid !== currentUid() || st.nlink !== 1 || (!isWin && (st.mode & 0o077) !== 0) || st.size > 1024) {
       throw new AitermError("Claude operation markerの安全検証に失敗しました", 2);
     }
     let value: any;
@@ -2092,7 +2052,7 @@ function reserveClaudeOperation(meta: AgentMetadata, operationId: string): void 
     } catch {
       throw new AitermError("Claude dispatch receiptを確認できません", 2);
     }
-    if (!st.isFile() || st.isSymbolicLink() || st.uid !== currentUid() || st.nlink !== 1 || (st.mode & 0o077) !== 0) {
+    if (!st.isFile() || st.isSymbolicLink() || st.uid !== currentUid() || st.nlink !== 1 || (!isWin && (st.mode & 0o077) !== 0)) {
       throw new AitermError("Claude dispatch receiptの安全検証に失敗しました", 2);
     }
     throw new AitermError(`operation ${validated} は既にdispatch済みです。再送しません。`, 2);
@@ -2288,7 +2248,7 @@ function hasClaudeDispatchReceipt(meta: AgentMetadata, operationId: string): boo
     st.isSymbolicLink() ||
     st.uid !== currentUid() ||
     st.nlink !== 1 ||
-    (st.mode & 0o077) !== 0 ||
+    (!isWin && (st.mode & 0o077) !== 0) ||
     st.size !== 0
   ) {
     throw new AitermError("Claude dispatch receiptの安全検証に失敗しました", 2);
@@ -3268,7 +3228,7 @@ function readClaudeResultText(
     st.isSymbolicLink() ||
     st.uid !== currentUid() ||
     st.nlink !== 1 ||
-    (st.mode & 0o077) !== 0 ||
+    (!isWin && (st.mode & 0o077) !== 0) ||
     st.size > CLAUDE_RESULT_MAX_BYTES + 4096
   ) {
     throw new AitermError("Claude result file の安全検証に失敗しました", 2);
@@ -4613,30 +4573,19 @@ function isWindowsNativeExecutable(candidate: string): boolean {
   return isWindowsDrivePath(candidate) && /\.(?:exe|com|cmd|bat)$/i.test(candidate);
 }
 
-function isUsableWslExecutable(candidate: string): boolean {
-  if (!isWin) return false;
-  let wslPath = candidate;
-  if (isWindowsDrivePath(candidate)) {
-    try {
-      if (!fs.statSync(candidate).isFile()) return false;
-      wslPath = toWslPath(candidate);
-    } catch {
-      return false;
-    }
-  } else if (!candidate.startsWith("/")) {
-    return false;
-  }
-  const checked = spawnSync("wsl.exe", ["-e", "test", "-f", wslPath, "-a", "-x", wslPath], {
-    encoding: "utf8",
-    timeout: 5000,
-  });
-  return checked.status === 0;
-}
-
+// Windows の bin 受入: native 実行ファイル（.exe/.cmd/.bat）に加え、pane shell
+// （Git Bash）が shebang で実行できる script も実在すれば受け入れる。旧 WSL 側
+// バイナリ検査への黙ったフォールバックは廃止（別 HOME・別 auth の subagent を
+// 作るため）。native 実行ファイルの強制が要る vendor（grok/composer の実効
+// sandbox 等）は openAgent 側の専用ゲートが明示エラーで担う。
 function isUsableAgentExecutableFile(candidate: string): boolean {
   if (!isWin) return isUsableExecutableFile(candidate);
   if (isWindowsNativeExecutable(candidate)) return isUsableExecutableFile(candidate);
-  return isUsableWslExecutable(candidate);
+  try {
+    return fs.statSync(candidate).isFile();
+  } catch {
+    return false;
+  }
 }
 
 function resolveWindowsCodexShim(kind: AgentKind, candidate: string): string {
@@ -4660,19 +4609,20 @@ function resolveWindowsCodexShim(kind: AgentKind, candidate: string): string {
   );
 }
 
-function agentBinForWslShell(bin: string): string {
-  return isWin && isWindowsDrivePath(bin) ? toWslPath(bin) : bin;
+// pane 内の POSIX shell（Windows は Git Bash 等）へ渡す bin パス。Git Bash は
+// バックスラッシュをエスケープとして解釈しうるため、ドライブパスは forward slash 形へ。
+function agentBinForPaneShell(bin: string): string {
+  return isWin && isWindowsDrivePath(bin) ? bin.replace(/\\/g, "/") : bin;
 }
 
 function spawnAgentControlCommand(
   bin: string,
   args: string[],
-  cwd: string,
+  _cwd: string,
   options: SpawnSyncOptionsWithStringEncoding,
 ): SpawnSyncReturns<string> {
-  if (!isWin || isWindowsNativeExecutable(bin)) return spawnSync(bin, args, options);
-  const wslCwd = isWindowsDrivePath(cwd) ? toWslPath(cwd) : cwd;
-  return spawnSync("wsl.exe", ["--cd", wslCwd, "-e", agentBinForWslShell(bin), ...args], options);
+  // Windows の bin は resolveAgentBin が native 実行ファイルへ解決済み（WSL 経由なし）。
+  return spawnSync(bin, args, options);
 }
 
 const THROUGHLINE_HANDOFF_CONTEXT_SCHEMA = "throughline.handoff_context.v1";
@@ -4824,20 +4774,7 @@ function buildAgentCmd(
   return parts.join(" ");
 }
 
-// Windows native .exe を WSL pane から interop 起動する時だけ、生きた anchor socket と、
-// 注入 env を Win32 process まで運ぶ WSLENV(/w) を先頭へ加える（WSL 側の env は interop 先の
-// Windows process へ既定では渡らない・実測 2026-08-15）。POSIX と非 native bin では不変。
-export function winInteropEnvTokens(tokens: string[], interopSocket: string | null): string[] {
-  if (!interopSocket) return tokens;
-  const names = tokens.map((token) => token.slice(0, token.indexOf("=")));
-  return [
-    `WSL_INTEROP=${shq(interopSocket)}`,
-    ...(names.length ? [`WSLENV=${names.map((name) => `${name}/w`).join(":")}`] : []),
-    ...tokens,
-  ];
-}
-
-function agentEnvPrefix(meta: AgentMetadata | null, sid: string, envVars: string[] = [], interopSocket: string | null = null): string {
+function agentEnvPrefix(meta: AgentMetadata | null, sid: string, envVars: string[] = []): string {
   const inherited = envVars.flatMap((name) => {
     const value = process.env[name];
     return value === undefined ? [] : [`${name}=${shq(value)}`];
@@ -4865,8 +4802,7 @@ function agentEnvPrefix(meta: AgentMetadata | null, sid: string, envVars: string
       ...common,
     ];
   })();
-  const finalTokens = winInteropEnvTokens(tokens, interopSocket);
-  return finalTokens.length ? finalTokens.join(" ") + " " : "";
+  return tokens.length ? tokens.join(" ") + " " : "";
 }
 
 function agentLabel(kind: AgentKind): string {
@@ -5098,11 +5034,10 @@ export function openAgent(
       2,
     );
   }
-  const binForCmd = agentBinForWslShell(bin);
-  const cwdForCmd = cwd && isWin ? toWslPath(cwd) : cwd;
-  // native .exe を pane 内で interop 起動するには生きた WSL_INTEROP が必須（anchor 解説参照）。
-  // session 作成前に確保し、失敗時は残骸 session を残さない。
-  const interopSocket = isWin && isWindowsNativeExecutable(bin) ? ensureWinInteropAnchor() : null;
+  const binForCmd = agentBinForPaneShell(bin);
+  // Windows native pane（psmux + Git Bash）は Windows パスをそのまま扱える。
+  // Git Bash の cd はドライブパスを forward slash 形で受けるのが安全。
+  const cwdForCmd = cwd && isWin ? cwd.replace(/\\/g, "/") : cwd;
   const grokAuthPath = agentDone && (kind === "grok" || kind === "composer") ? resolveAndValidateGrokAuth(realGrokHome()) : null;
   if (kind === "grok" || kind === "composer") {
     const requestedModel = model ?? (kind === "composer" ? GROK_MODEL_DEFAULTS.composer : null);
@@ -5140,7 +5075,7 @@ export function openAgent(
     if (meta) agentMetadataNegativeCache.delete(sid);
     launchNote = buildAgentLaunchNote(kind, model, effort, meta);
     const cmd = buildAgentCmd(kind, binForCmd, model, effort, opts.prompt ?? null, meta);
-    const envPrefix = agentEnvPrefix(meta, sid, envVars, interopSocket);
+    const envPrefix = agentEnvPrefix(meta, sid, envVars);
     const full = cwdForCmd ? `cd ${shq(cwdForCmd)} && ${envPrefix}${cmd}` : `${envPrefix}${cmd}`;
     // force:true で送る。起動骨格は `bin '...'` の固定形で、prompt/cwd/effort は shq でクオート済みの
     // 引数＝シェルは決して破壊コマンドとして実行しない。破壊ゲート（生シェルコマンド想定）を prompt に

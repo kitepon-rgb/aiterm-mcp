@@ -8,7 +8,7 @@ import test from "node:test";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ENTRY = path.join(HERE, "..", "dist", "index.js");
 const hasTmux = (process.platform === "win32"
-  ? spawnSync("wsl.exe", ["-e", "tmux", "-V"])
+  ? spawnSync("psmux", ["-V"])
   : spawnSync("tmux", ["-V"])
 ).status === 0;
 const skip = hasTmux && typeof process.getuid === "function"

@@ -28,9 +28,20 @@ function hasAitermEnv(): boolean {
   );
 }
 
+const IS_WIN = process.platform === "win32";
+
 function uid(): number {
-  if (typeof process.getuid !== "function") fail("POSIX getuid が使えません");
+  // Windows(native) は process.getuid を持たない。core の currentUid() と同じ
+  // 既知制約の受容として 0 を返す（Windows の fs.Stats.uid は常に 0 のため
+  // owner 比較は自然に通過する。NTFS ACL は別体系）。POSIX は getuid のまま。
+  if (typeof process.getuid !== "function") return 0;
   return process.getuid();
+}
+
+// Windows の fs mode は POSIX permission を表現しない（group/other bit が常に
+// 立って見える）。core と同じ受容として Windows は mode bit 検証を行わない。
+function posixModeUnsafe(mode: number): boolean {
+  return !IS_WIN && (mode & 0o077) !== 0;
 }
 
 function runtimeStateBase(): string {
@@ -49,11 +60,11 @@ function secureAgentsDir(): string {
   const root = path.join(runtimeStateBase(), `aiterm-mcp-${uid()}`);
   const agents = path.join(root, "agents");
   const rst = fs.lstatSync(root);
-  if (!rst.isDirectory() || rst.isSymbolicLink() || rst.uid !== uid() || (rst.mode & 0o077) !== 0) {
+  if (!rst.isDirectory() || rst.isSymbolicLink() || rst.uid !== uid() || posixModeUnsafe(rst.mode)) {
     fail(`agent state root が安全ではありません: ${root}`);
   }
   const ast = fs.lstatSync(agents);
-  if (!ast.isDirectory() || ast.isSymbolicLink() || ast.uid !== uid() || (ast.mode & 0o077) !== 0) {
+  if (!ast.isDirectory() || ast.isSymbolicLink() || ast.uid !== uid() || posixModeUnsafe(ast.mode)) {
     fail(`agent state dir が安全ではありません: ${agents}`);
   }
   return agents;
@@ -79,7 +90,7 @@ function writeResult(file: string, value: unknown): void {
   const fd = fs.openSync(tmp, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY | nofollow, 0o600);
   try {
     const st = fs.fstatSync(fd);
-    if (!st.isFile() || st.uid !== uid() || st.nlink !== 1 || (st.mode & 0o077) !== 0) fail("result temp file が安全ではありません");
+    if (!st.isFile() || st.uid !== uid() || st.nlink !== 1 || posixModeUnsafe(st.mode)) fail("result temp file が安全ではありません");
     const expected = Buffer.byteLength(body, "utf8");
     const written = fs.writeSync(fd, body, undefined, "utf8");
     if (written !== expected) fail("result file への書込みが途中で終了しました");
@@ -103,7 +114,7 @@ function appendEvent(file: string, event: unknown): void {
   const fd = fs.openSync(file, fs.constants.O_CREAT | fs.constants.O_APPEND | fs.constants.O_WRONLY | nofollow, 0o600);
   try {
     const st = fs.fstatSync(fd);
-    if (!st.isFile() || st.uid !== uid() || st.nlink !== 1 || (st.mode & 0o077) !== 0) {
+    if (!st.isFile() || st.uid !== uid() || st.nlink !== 1 || posixModeUnsafe(st.mode)) {
       fail(`event file が安全ではありません: ${file}`);
     }
     const expected = Buffer.byteLength(line, "utf8");
@@ -135,7 +146,7 @@ function readOperationMarker(file: string): OperationMarker | null {
   }
   try {
     const st = fs.fstatSync(fd!);
-    if (!st.isFile() || st.uid !== uid() || st.nlink !== 1 || (st.mode & 0o077) !== 0 || st.size > 1024) {
+    if (!st.isFile() || st.uid !== uid() || st.nlink !== 1 || posixModeUnsafe(st.mode) || st.size > 1024) {
       fail(`operation markerが安全ではありません: ${file}`);
     }
     const body = fs.readFileSync(fd!, "utf8");
@@ -169,7 +180,7 @@ function consumeOperationMarker(file: string, marker: OperationMarker): void {
     st!.isSymbolicLink() ||
     st!.uid !== uid() ||
     st!.nlink !== 1 ||
-    (st!.mode & 0o077) !== 0 ||
+    posixModeUnsafe(st!.mode) ||
     st!.dev !== marker.dev ||
     st!.ino !== marker.ino
   ) {

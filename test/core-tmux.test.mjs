@@ -8,10 +8,10 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-// Windows ネイティブには tmux が無く、core は WSL 経由で叩く。検出も同じ経路に合わせる。
+// Windows ネイティブは tmux CLI 互換の psmux を叩く。検出も同じ経路に合わせる。
 const hasTmux =
   (process.platform === "win32"
-    ? spawnSync("wsl.exe", ["-e", "tmux", "-V"])
+    ? spawnSync("psmux", ["-V"])
     : spawnSync("tmux", ["-V"])
   ).status === 0;
 process.env.TMPDIR = fs.mkdtempSync(path.join(os.tmpdir(), "aiterm-test-"));
@@ -209,7 +209,8 @@ test("send: shellへの複数行は途中の対話programに後続行を奪わ�
 test("send: 別processの同一session送信をchunk単位で混線させない", { skip }, async () => {
   const session = "selftest_send_lock";
   const outputPath = path.join(process.env.TMPDIR, "send-lock-output.bin");
-  const shellOutputPath = process.platform === "win32" ? core.toWslPath(outputPath) : outputPath;
+  // Windows native pane（Git Bash）はドライブパスを forward slash 形で受ける。
+  const shellOutputPath = process.platform === "win32" ? outputPath.replace(/\\/g, "/") : outputPath;
   core.openSession(session);
   try {
     const ready = "<<<AITERM_SEND_LOCK_READY>>>";
@@ -316,8 +317,12 @@ test("send bracketedPaste: pane が要求している時だけ ESC[200~/201~ で
       timeout: 5,
       raw: true,
     });
+    // psmux(Windows) は stty sane 直後の ESC[?2004l エコーが od のhex出力行間へ
+    // 割り込むことがある（内容は完全・表示順だけの差）。CSI シーケンスを剥いでから
+    // hex 列の連続性を照合する。
+    const bracketedHex = bracketed.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, "");
     assert.match(
-      bracketed,
+      bracketedHex,
       /1b\s+5b\s+32\s+30\s+30\s+7e\s+68\s+65\s+6c\s+6c\s+6f\s+21\s+1b\s+5b\s+32\s+30\s+31\s+7e/,
       `paste mode 要求済み pane へは bracket 付きで届く: ${JSON.stringify(bracketed)}`,
     );
@@ -436,7 +441,14 @@ test("read wait: 短命コマンドは quiescent で完了", { skip }, async () 
 // ---------------------------------------------------------------- ネスト早期リターン（nested）
 // 前面が非シェル(ssh/docker/REPL 相当)＋until 無しは quiescence が原理的に発火できない。
 // 出力静止時点で nested として is_complete=False を早期に返し、フル timeout を空費しない。
-test("read wait: ネスト中(前面が非シェル)＋until無しは nested で早期 False", { skip }, async () => {
+// Windows skip の理由（プラットフォーム制約・実測 2026-08-16）: Git Bash(MSYS2) は fork/exec の
+// 中間プロセスが即座に消え、子（cat 等）の Windows PPID が死んだ pid を指す。PPID 鎖が切れるため
+// psmux の前面プロセス検出（プロセスツリー walk）は MSYS2 配下の孫へ原理的に届かず、
+// pane_current_command は bash のまま＝nested 判定が成立しない。cmd/pwsh/native 連鎖では検出できる。
+// Windows で非シェル前面の完了判定が要る場合は until / mark を使う（quiescence の shell 復帰
+// シグナルだけに依存しない）。
+const skipNested = process.platform === "win32" ? "MSYS2のPPID切断でWindowsは前面プロセス検出不可（上記コメント参照）" : skip;
+test("read wait: ネスト中(前面が非シェル)＋until無しは nested で早期 False", { skip: skipNested }, async () => {
   const nst = "selftest_nested";
   core.openSession(nst);
   try {

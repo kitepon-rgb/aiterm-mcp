@@ -12,7 +12,7 @@ import * as path from "node:path";
 
 const hasTmux =
   (process.platform === "win32"
-    ? spawnSync("wsl.exe", ["-e", "tmux", "-V"])
+    ? spawnSync("psmux", ["-V"])
     : spawnSync("tmux", ["-V"])
   ).status === 0;
 // prefix は短く保つ（macOS の UNIX ソケットパスは 104 バイト上限。長い prefix だと
@@ -882,7 +882,13 @@ test("openAgent codex: model 引数を -m で組み立てる", { skip }, async (
 test("openAgent codex: 指定した現在値だけを既存tmux server越しにagentへ渡す", { skip }, async () => {
   const savedBin = process.env.CODEX_BIN;
   const savedValue = process.env.AITERM_FORWARD_FIXTURE;
-  process.env.CODEX_BIN = "/usr/bin/env";
+  // env をそのまま表示する実在 bin。Windows native は Git for Windows 同梱の env.exe を使う
+  // （pane shell の Git Bash から実行される）。
+  const envBin =
+    process.platform === "win32"
+      ? path.join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "usr", "bin", "env.exe")
+      : "/usr/bin/env";
+  process.env.CODEX_BIN = envBin;
   process.env.AITERM_FORWARD_FIXTURE = "seat-value";
   try {
     const [sid] = core.openAgent("codex", { env_vars: ["AITERM_FORWARD_FIXTURE"] });
