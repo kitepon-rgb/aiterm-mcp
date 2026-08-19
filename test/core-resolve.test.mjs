@@ -31,9 +31,9 @@ function openInChild(env) {
   try { return JSON.parse(line); } catch { return { raw: r.stdout, stderr: r.stderr }; }
 }
 
-// resolveTmux は POSIX(Linux/WSL2/macOS)専用。Windows ネイティブは isWin 分岐で wsl.exe ブリッジを通り
-// AITERM_TMUX を経由しないため、この負経路は skip する。
-const skip = process.platform === "win32" ? "POSIX 専用（Windows は WSL ブリッジ経由）" : undefined;
+// resolveTmux は POSIX(Linux/WSL2/macOS)専用。Windows ネイティブは AITERM_PSMUX の native psmux を
+// 解決し AITERM_TMUX を経由しないため、この負経路は skip する。
+const skip = process.platform === "win32" ? "POSIX 専用（Windows は AITERM_PSMUX の native psmux を解決する）" : undefined;
 
 test("resolveTmux: AITERM_TMUX が解決不能なら明確な code2 エラー（空 stderr 握り潰しでない）", { skip }, () => {
   const res = openInChild({ AITERM_TMUX: "/nonexistent/definitely/no/tmux" });

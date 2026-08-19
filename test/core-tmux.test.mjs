@@ -129,7 +129,7 @@ test("破壊ゲート: raw=true でもゲートは効く", { skip }, () => {
   assert.throws(() => core.send(SESS, "rm -rf /", { raw: true, enter: false }), (e) => e.code === 3);
 });
 
-test("破壊ゲート: rtk 変換後の破壊コマンドを送信前に拒否する", { skip: skip ?? (process.platform === "win32" ? "Windows の rtk は WSL 側で起動するため fake PATH を使えない" : undefined) }, async () => {
+test("破壊ゲート: rtk 変換後の破壊コマンドを送信前に拒否する", { skip: skip ?? (process.platform === "win32" ? "拡張子なし fake rtk script は Windows の spawnSync で実行不可（実 rtk は native exe）" : undefined) }, async () => {
   const fakeDir = fs.mkdtempSync(path.join(process.env.TMPDIR, "fake-rtk-"));
   const fakeRtk = path.join(fakeDir, "rtk");
   const oldPath = process.env.PATH;

@@ -2,8 +2,9 @@
 /**
  * aiterm-mcp — AI が握るローカル永続端末を stdio MCP サーバとして公開する（Node/TS 版）。
  *
- * WSL2/Linux/mac のローカルで動かし、握るのはローカル端末1個。リモートは pty_send "ssh ..." で
- * 中に入る（ネスト）。バックエンドは tmux（実行時の前提）。ロジックは core.ts に集約。
+ * Linux/WSL2/mac/Windows native のローカルで動かし、握るのはローカル端末1個。リモートは
+ * pty_send "ssh ..." で中に入る（ネスト）。バックエンドは tmux（Windows native は tmux CLI
+ * 互換の psmux）。ロジックは core.ts に集約。
  *
  * 重要: stdio MCP は stdout が JSON-RPC 専用。診断は stderr/console.error のみ（console.log 禁止）。
  * 起動: npx -y aiterm-mcp（または mcp 登録のコマンドに同じ）。

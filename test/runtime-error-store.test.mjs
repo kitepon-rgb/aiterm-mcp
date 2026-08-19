@@ -631,7 +631,7 @@ function runOwnedFailure(invocation, extraEnv = {}) {
 }
 
 test("PTY dependency failure は core owner layer で固定 code を一度だけ記録する", {
-  skip: process.platform === "win32" ? "Windows は WSL bridge の実機境界" : undefined,
+  skip: process.platform === "win32" ? "POSIX の fake tmux script fixture は Windows で実行不可（Windows は AITERM_PSMUX の native psmux）" : undefined,
 }, () => {
   const { result, snapshot } = runOwnedFailure(
     'core.openSession("owner-pty", "bash")',
@@ -644,7 +644,7 @@ test("PTY dependency failure は core owner layer で固定 code を一度だけ
 });
 
 test("vendor launcher failure は openAgent owner layer で固定 code を一度だけ記録する", {
-  skip: process.platform === "win32" ? "Windows native は WSL bridge の実機境界" : undefined,
+  skip: process.platform === "win32" ? "/definitely/missing 形の POSIX パス fixture は Windows の bin 解決と噛み合わない（POSIX 3 環境で検証）" : undefined,
 }, () => {
   const { result, snapshot } = runOwnedFailure(
     'core.openAgent("codex", {})',
@@ -657,7 +657,7 @@ test("vendor launcher failure は openAgent owner layer で固定 code を一度
 });
 
 test("tmux mid-run ENOENT は typed telemetry-owned PTY failure 1件だけで上位vendorへ再計上しない", {
-  skip: process.platform === "win32" ? "Windows は WSL bridge の実機境界" : undefined,
+  skip: process.platform === "win32" ? "POSIX の fake tmux script fixture は Windows で実行不可（Windows は AITERM_PSMUX の native psmux）" : undefined,
 }, () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "aiterm-vanish-tmux-"));
   try {
@@ -675,7 +675,7 @@ test("tmux mid-run ENOENT は typed telemetry-owned PTY failure 1件だけで上
 });
 
 test("pipe-pane persistence failure は openSession owner layer で固定 code を一度だけ記録する", {
-  skip: process.platform === "win32" ? "Windows は WSL bridge の実機境界" : undefined,
+  skip: process.platform === "win32" ? "POSIX の fake tmux script fixture は Windows で実行不可（Windows は AITERM_PSMUX の native psmux）" : undefined,
 }, () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "aiterm-fake-tmux-"));
   try {
