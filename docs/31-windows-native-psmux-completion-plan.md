@@ -1,6 +1,8 @@
 # 31. Windows native psmux 移行の完成 campaign 計画正本
 
-**状態**: P1〜P5完了・P6（dotagents戻し）のみ残（2026-08-19）
+**状態**: 完了（2026-08-19）。P6も消化: dotagents `d75a5b26` で win32 除外を revert
+（observer撤去と交差したため機械的revertでなく現行形へ除外だけを外した）。
+公開受入の正本は ADR 0035。
 **対象 branch**: `feat/windows-native-psmux`（main から1コミット先行・`e3f5fc8`）
 **レーン**: 統括レーン（複数repo書込み調整＋多段連鎖受入＋H操作を含む）
 
