@@ -71,12 +71,15 @@ process.env.CLAUDE_BIN = fakeClaudeBin;
 const core = await import("../dist/core.js");
 core.__testSetAgentTuiReadyStableSamples(1);
 const skip = hasTmux ? undefined : "tmux 未インストール";
-const skipAgentDone = hasTmux && typeof process.getuid === "function" ? undefined : "tmux または POSIX getuid が無い";
+// 製品側 currentUid()（src/core.ts）と同じ規則。Windows(native) は getuid を持たないので 0。
+// getuid の有無を skip 条件に使わない（Windows の agent 覆域が丸ごと消えるため）。
+const testUid = () => (typeof process.getuid === "function" ? testUid() : 0);
+const skipAgentDone = hasTmux ? undefined : "tmux 未インストール";
 // Windows は grok/composer launcher が Windows native の grok.exe を強制するため、
 // POSIX script の fake grok bin による起動組立テストは設計どおり session 作成前に拒否される。
 // 同じ組立コードは POSIX 3 環境（macOS/Linux/WSL2）の同テストが検証する。
 const skipGrokFakeBin = process.platform === "win32" ? "Windows は native grok.exe 強制のため fake grok bin は起動不可" : skip;
-const agentStateDir = () => path.join(process.env.TMPDIR, `aiterm-mcp-${process.getuid()}`, "agents");
+const agentStateDir = () => path.join(process.env.TMPDIR, `aiterm-mcp-${testUid()}`, "agents");
 
 function makeFakeCodexHome() {
   const dir = fs.mkdtempSync(path.join(process.env.TMPDIR, "fake-codex-home-"));
@@ -262,18 +265,33 @@ function makeFakeCodexTuiBin() {
 }
 
 function makeFakeThroughlineBin(context = "## Throughline Context\nSOURCE_CONTEXT_MARKER") {
-  const bin = path.join(process.env.TMPDIR, `fake-throughline-${Date.now().toString(36)}.sh`);
+  const payload = JSON.stringify({
+    schema: "throughline.handoff_context.v1",
+    status: "ready",
+    sessionId: "source-session",
+    context,
+  });
+  const stem = `fake-throughline-${Date.now().toString(36)}`;
+  if (process.platform === "win32") {
+    // Windows の Throughline は npm shim 形（.cmd＋sibling .ps1）を製品が正式に受ける
+    //（resolveThroughlineBin→runThroughlineHandoffContext）。fixture も同じ形にする。
+    const cmd = path.join(process.env.TMPDIR, `${stem}.cmd`);
+    const ps1 = path.join(process.env.TMPDIR, `${stem}.ps1`);
+    fs.writeFileSync(cmd, "@echo off\r\nexit /b 9\r\n");
+    fs.writeFileSync(ps1, [
+      "if ($args[0] -ne 'handoff-context' -or $args[1] -ne '--session' -or $args[3] -ne '--json') { exit 9 }",
+      `Write-Output '${payload.replace(/'/g, "''")}'`,
+      "",
+    ].join("\r\n"));
+    return cmd;
+  }
+  const bin = path.join(process.env.TMPDIR, `${stem}.sh`);
   fs.writeFileSync(
     bin,
     [
       "#!/bin/sh",
       "if [ \"$1\" != handoff-context ] || [ \"$2\" != --session ] || [ \"$4\" != --json ]; then exit 9; fi",
-      `printf '%s\\n' '${JSON.stringify({
-        schema: "throughline.handoff_context.v1",
-        status: "ready",
-        sessionId: "source-session",
-        context,
-      })}'`,
+      `printf '%s\\n' '${payload}'`,
       "",
     ].join("\n"),
     { mode: 0o700 },
@@ -663,7 +681,7 @@ test("agent_configure: Claudeへ/modelと/effortを同じsessionのまま送る"
   }
 });
 
-test("target contract: Grok/Composerへ/modelと/effortを同じsessionのまま送る", { skip: skipAgentDone }, async () => {
+test("target contract: Grok/Composerへ/modelと/effortを同じsessionのまま送る", { skip: skipGrokFakeBin }, async () => {
   await withFakeGrokHome(async () => {
     const savedBin = process.env.GROK_BIN;
     const fakeBin = makeFakeGrokTuiBin();
@@ -710,7 +728,7 @@ test("target contract: Grok/Composerへ/modelと/effortを同じsessionのまま
   });
 });
 
-test("target contract: Grokの成功通知が消えても変更後footerで設定完了を確認する", { skip: skipAgentDone }, async () => {
+test("target contract: Grokの成功通知が消えても変更後footerで設定完了を確認する", { skip: skipGrokFakeBin }, async () => {
   await withFakeGrokHome(async () => {
     const savedBin = process.env.GROK_BIN;
     const fakeBin = makeFakeGrokFooterOnlyTuiBin();
@@ -822,7 +840,7 @@ test("openAgent: Codexのパス説明write_scopeはunsupportedを明示してsan
   });
 });
 
-test("target contract: Grok/Composer read-onlyはsandboxで実効化し、パス説明は宣言に保つ", { skip: skipAgentDone }, async () => {
+test("target contract: Grok/Composer read-onlyはsandboxで実効化し、パス説明は宣言に保つ", { skip: skipGrokFakeBin }, async () => {
   await withFakeGrokHome(async () => {
     for (const kind of ["grok", "composer"]) {
       const [sid, hint] = core.openAgent(kind, { agent_done: true, write_scope: "read-only" });
@@ -984,7 +1002,7 @@ test("target contract: Claudeは通常3 scopeを共有してlaunch固有hookとl
   }
 });
 
-test("target contract: Grok/Composerは通常HOMEとGROK_HOMEを共有し既知session transcriptへ束縛する", { skip: skipAgentDone }, async () => {
+test("target contract: Grok/Composerは通常HOMEとGROK_HOMEを共有し既知session transcriptへ束縛する", { skip: skipGrokFakeBin }, async () => {
   await withFakeGrokHome(async (normalHome) => {
     const configPath = path.join(normalHome, "config.toml");
     const configBefore = fs.readFileSync(configPath, "utf8");
@@ -1399,7 +1417,7 @@ test("openAgent claude: launch_operation_idのpromptless managed条件を固定�
   );
 });
 
-test("openAgent grok agent_done: 通常 GROK_HOME を共有し相関・lineage引数だけを加える", { skip: skipAgentDone }, async () => {
+test("openAgent grok agent_done: 通常 GROK_HOME を共有し相関・lineage引数だけを加える", { skip: skipGrokFakeBin }, async () => {
   const savedBin = process.env.GROK_BIN;
   process.env.GROK_BIN = "/bin/echo";
   try {
@@ -1454,7 +1472,7 @@ test("openAgent grok agent_done: 通常 GROK_HOME を共有し相関・lineage�
   }
 });
 
-test("openAgent grok agent_done: OAuth auth 不在は session 残骸ゼロで拒否する", { skip: skipAgentDone }, async () => {
+test("openAgent grok agent_done: OAuth auth 不在は session 残骸ゼロで拒否する", { skip: skipGrokFakeBin }, async () => {
   const savedBin = process.env.GROK_BIN;
   const savedApiKey = process.env.XAI_API_KEY;
   process.env.GROK_BIN = "/bin/echo";
@@ -1478,7 +1496,7 @@ test("openAgent grok agent_done: OAuth auth 不在は session 残骸ゼロで拒
   }
 });
 
-test("openAgent grok agent_done: GROK_AUTH_PATH と default auth の負系を session 前に固定する", { skip: skipAgentDone }, async () => {
+test("openAgent grok agent_done: GROK_AUTH_PATH と default auth の負系を session 前に固定する", { skip: skipGrokFakeBin }, async () => {
   const savedBin = process.env.GROK_BIN;
   const savedPath = process.env.GROK_AUTH_PATH;
   const savedKey = process.env.XAI_API_KEY;
@@ -1586,7 +1604,7 @@ test("openAgent grok/composer agent_done: root所有sticky共有祖先のprivate
   }
 });
 
-test("openAgent grok agent_done: relative GROK_HOMEでも親cwd基準の絶対auth正本を子へ渡す", { skip: skipAgentDone }, async () => {
+test("openAgent grok agent_done: relative GROK_HOMEでも親cwd基準の絶対auth正本を子へ渡す", { skip: skipGrokFakeBin }, async () => {
   const savedBin = process.env.GROK_BIN;
   const savedHome = process.env.GROK_HOME;
   const home = makeFakeGrokHome();
@@ -1609,7 +1627,7 @@ test("openAgent grok agent_done: relative GROK_HOMEでも親cwd基準の絶対au
   }
 });
 
-test("openAgent grok agent_done: FIFO auth と不存在GROK_HOMEを session 前に扱う", { skip: skipAgentDone }, async () => {
+test("openAgent grok agent_done: FIFO auth と不存在GROK_HOMEを session 前に扱う", { skip: skipGrokFakeBin }, async () => {
   const savedBin = process.env.GROK_BIN; const savedHome = process.env.GROK_HOME; const savedPath = process.env.GROK_AUTH_PATH; const savedKey = process.env.XAI_API_KEY;
   const root = fs.mkdtempSync(path.join(fs.realpathSync(process.env.TMPDIR), "grok-auth-fifo-"));
   const fifo = path.join(root, "auth.json"); const auth = path.join(root, "explicit-auth.json");
@@ -1635,7 +1653,7 @@ test("openAgent grok agent_done: FIFO auth と不存在GROK_HOMEを session 前�
   }
 });
 
-test("openAgent grok agent_done: auth 正本 hard link は session 前に拒否する", { skip: skipAgentDone }, async () => {
+test("openAgent grok agent_done: auth 正本 hard link は session 前に拒否する", { skip: skipGrokFakeBin }, async () => {
   const savedBin = process.env.GROK_BIN;
   process.env.GROK_BIN = "/bin/echo";
   try {
@@ -1658,7 +1676,7 @@ test("openAgent grok agent_done: auth 正本 hard link は session 前に拒否�
   }
 });
 
-test("openAgent composer agent_done: vendor=composer の metadata を作る", { skip: skipAgentDone }, async () => {
+test("openAgent composer agent_done: vendor=composer の metadata を作る", { skip: skipGrokFakeBin }, async () => {
   const savedBin = process.env.GROK_BIN;
   process.env.GROK_BIN = fakeGrokBin;
   try {
@@ -1711,7 +1729,7 @@ test("openAgent codex agent_done: cleanup は共有 CODEX_HOME の auth/config �
   });
 });
 
-test("openAgent grok agent_done: cleanup は共有 auth/config/GROK_HOME を残す", { skip: skipAgentDone }, async () => {
+test("openAgent grok agent_done: cleanup は共有 auth/config/GROK_HOME を残す", { skip: skipGrokFakeBin }, async () => {
   const savedBin = process.env.GROK_BIN;
   process.env.GROK_BIN = "/bin/echo";
   try {
@@ -1737,7 +1755,7 @@ test("killAll: agent state root symlink は辿って cleanup しない", { skip:
   const savedTmp = process.env.TMPDIR;
   const savedXdg = process.env.XDG_RUNTIME_DIR;
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "aiterm-core-rootlink-"));
-  const uid = process.getuid();
+  const uid = testUid();
   const real = path.join(tmp, "real");
   const agents = path.join(real, "agents");
   fs.mkdirSync(agents, { recursive: true, mode: 0o700 });
@@ -1775,13 +1793,14 @@ test("killAll: Claude operation markerとdispatch receiptもcleanupする", { sk
   assert.deepEqual(after, []);
 });
 
-test("openAgent agent_done: 緩い state root でも stale metadata を掃除してから再作成する", { skip: skipAgentDone }, async () => {
+// 旧名「緩い state root でも…」: mode 矯正（chmod 0o777→0o700）は 2026-08-19 の
+// 安全設備撤去で仕様から消えたため、stale metadata 掃除だけを固定する。
+test("openAgent agent_done: 既存 state root の stale metadata を掃除してから再作成する", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const session = "loose_cleanup";
-    const root = path.join(process.env.TMPDIR, `aiterm-mcp-${process.getuid()}`);
+    const root = path.join(process.env.TMPDIR, `aiterm-mcp-${testUid()}`);
     const agents = path.join(root, "agents");
     fs.mkdirSync(agents, { recursive: true, mode: 0o700 });
-    fs.chmodSync(root, 0o777);
     fs.writeFileSync(path.join(agents, `${session}.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.agent.json`), "{}\n", { mode: 0o600 });
 
     const [sid] = core.openAgent("codex", { session_name: session, agent_done: true });
@@ -1790,7 +1809,6 @@ test("openAgent agent_done: 緩い state root でも stale metadata を掃除し
       const files = fs.readdirSync(agents).filter((f) => f.startsWith(`${session}.`) && f.endsWith(".agent.json"));
       assert.equal(files.length, 1, `stale metadata が残った: ${files.join(",")}`);
       assert.doesNotMatch(files[0], /aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/);
-      assert.equal(fs.statSync(root).mode & 0o777, 0o700);
 
       await markFakeAgentReady(session, "codex");
       const receipt = await core.dispatchAgentTurn(session, "echo LOOSE_CLEANUP_BODY");
@@ -1823,7 +1841,7 @@ test("dispatch/observe: Codex task_complete 到着まで transcript 正本を待
   });
 });
 
-test("dispatch/observe: Grok vendor event も待って suffix に vendor=grok を付ける", { skip: skipAgentDone }, async () => {
+test("dispatch/observe: Grok vendor event も待って suffix に vendor=grok を付ける", { skip: skipGrokFakeBin }, async () => {
   const savedBin = process.env.GROK_BIN;
   process.env.GROK_BIN = "/bin/echo";
   try {
@@ -2229,7 +2247,10 @@ test("claude_approval: active operationと画面digestを結合して単発承�
     assert.equal(submitted.selected_choice, "approve_once");
     const approvalReceipt = path.join(agentStateDir(), `${sid}.${meta.launch_id}.claude-approval.json`);
     assert.equal(fs.existsSync(approvalReceipt), true);
-    assert.equal(fs.statSync(approvalReceipt).mode & 0o777, 0o600, "approval receiptはowner-only");
+    // POSIX permission bit の断言は Windows 非適用（fs.Stats.mode が 0o666 を返すため）。
+    if (process.platform !== "win32") {
+      assert.equal(fs.statSync(approvalReceipt).mode & 0o777, 0o600, "approval receiptはowner-only");
+    }
     assert.equal(JSON.parse(fs.readFileSync(approvalReceipt, "utf8")).prompt_digest, inspected.prompt_digest);
     assert.equal(fs.existsSync(path.join(agentStateDir(), `${sid}.${meta.launch_id}.claude-operation.json`)), true,
       "承認入力はactive operation markerを消費しない");
@@ -2513,7 +2534,7 @@ test("portable fork: Codex TUIへThroughline contextをmissionより前に一度
   }
 });
 
-test("portable fork: Grok argv promptも同じcontext→mission順で合成する", { skip: skipAgentDone }, async () => {
+test("portable fork: Grok argv promptも同じcontext→mission順で合成する", { skip: skipGrokFakeBin }, async () => {
   const savedThroughlineBin = process.env.THROUGHLINE_BIN;
   const fakeThroughline = makeFakeThroughlineBin();
   process.env.THROUGHLINE_BIN = fakeThroughline;
@@ -2583,7 +2604,7 @@ test("portable fork: Throughline外部境界の失敗はPTY作成前に明示拒
   }
 });
 
-test("portable fork: source省略時はThroughlineを起動せず既存clean launchを維持する", { skip: skipAgentDone }, async () => {
+test("portable fork: source省略時はThroughlineを起動せず既存clean launchを維持する", { skip: skipGrokFakeBin }, async () => {
   const savedThroughlineBin = process.env.THROUGHLINE_BIN;
   const broken = makeBrokenThroughlineBin("", 7);
   process.env.THROUGHLINE_BIN = broken;
@@ -2833,7 +2854,7 @@ test("dispatchAgentTurn: agent TUI ready 前は送信前に拒否し文字を流
   });
 });
 
-test("dispatchAgentTurn: Grokは入力欄が見えてもMCP初期化完了前には送信しない", { skip: skipAgentDone }, async () => {
+test("dispatchAgentTurn: Grokは入力欄が見えてもMCP初期化完了前には送信しない", { skip: skipGrokFakeBin }, async () => {
   const savedBin = process.env.GROK_BIN;
   const fakeBin = makeFakeGrokTuiBin();
   process.env.GROK_BIN = fakeBin;
@@ -3370,7 +3391,7 @@ test("readAgentTranscript: Codex の複数 assistant block を join し lines �
   });
 });
 
-test("readAgentTranscript: Grok は最後の実 user 入力以降の assistant 群だけを回収する", { skip: skipAgentDone }, async () => {
+test("readAgentTranscript: Grok は最後の実 user 入力以降の assistant 群だけを回収する", { skip: skipGrokFakeBin }, async () => {
   const savedBin = process.env.GROK_BIN;
   process.env.GROK_BIN = "/bin/echo";
   try {

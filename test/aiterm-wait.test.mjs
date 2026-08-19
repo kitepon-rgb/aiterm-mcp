@@ -7,7 +7,10 @@ import * as os from "node:os";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const posix = typeof process.getuid === "function";
+// 製品側 currentUid()（src/core.ts）と同じ規則。Windows(native) は getuid を持たず、
+// fs.Stats.uid が常に 0 のため 0 を返す＝stateRoot() のパス組み立てと一致する。
+// これを getuid の有無で test 自体を止める述語に使わない（Windows 覆域が消えるため）。
+const testUid = () => (typeof process.getuid === "function" ? process.getuid() : 0);
 const CLI = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "dist", "aiterm-wait-cli.js");
 
 const LAUNCH = "0123456789abcdef0123456789abcdef";
@@ -17,7 +20,7 @@ const OPID2 = `sha256:${"cd".repeat(32)}`;
 
 function makeStateRoot() {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "aiterm-wait-"));
-  const root = path.join(base, `aiterm-mcp-${process.getuid()}`);
+  const root = path.join(base, `aiterm-mcp-${testUid()}`);
   const agents = path.join(root, "agents");
   fs.mkdirSync(root, { mode: 0o700 });
   fs.mkdirSync(agents, { mode: 0o700 });
@@ -118,10 +121,10 @@ async function withStateRoot(fn) {
   }
 }
 
-const core = posix ? await import("../dist/core.js") : null;
+const core = await import("../dist/core.js");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-test("observe: 待機後に届いたClaude eventでdone", { skip: !posix }, async () => {
+test("observe: 待機後に届いたClaude eventでdone", async () => {
   await withStateRoot(async (agents) => {
     const { eventPath } = writeMeta(agents, "s1", "claude");
     const p = core.observeAgentDone("s1", { timeout: 5 });
@@ -137,7 +140,7 @@ test("observe: 待機後に届いたClaude eventでdone", { skip: !posix }, asyn
   });
 });
 
-test("observe: 起動前のstale eventは境界の外＝running", { skip: !posix }, async () => {
+test("observe: 起動前のstale eventは境界の外＝running", async () => {
   await withStateRoot(async (agents) => {
     const { eventPath } = writeMeta(agents, "s2", "claude");
     fs.appendFileSync(eventPath, waitEvent("s2"));
@@ -147,7 +150,7 @@ test("observe: 起動前のstale eventは境界の外＝running", { skip: !posix
   });
 });
 
-test("observe: 他launch・他vendor・他sessionのeventは無視", { skip: !posix }, async () => {
+test("observe: 他launch・他vendor・他sessionのeventは無視", async () => {
   await withStateRoot(async (agents) => {
     const { eventPath } = writeMeta(agents, "s3", "claude");
     const p = core.observeAgentDone("s3", { timeout: 1 });
@@ -160,7 +163,7 @@ test("observe: 他launch・他vendor・他sessionのeventは無視", { skip: !po
   });
 });
 
-test("observe: malformed lineはカウントして待機継続", { skip: !posix }, async () => {
+test("observe: malformed lineはカウントして待機継続", async () => {
   await withStateRoot(async (agents) => {
     const { eventPath } = writeMeta(agents, "s4", "claude");
     const p = core.observeAgentDone("s4", { timeout: 5 });
@@ -174,7 +177,7 @@ test("observe: malformed lineはカウントして待機継続", { skip: !posix 
   });
 });
 
-test("observe: claude operation相関はwaiter起動より前のeventも回収できる", { skip: !posix }, async () => {
+test("observe: claude operation相関はwaiter起動より前のeventも回収できる", async () => {
   await withStateRoot(async (agents) => {
     const { eventPath } = writeMeta(agents, "s5", "claude");
     fs.appendFileSync(eventPath, claudeEvent("s5"));
@@ -185,7 +188,7 @@ test("observe: claude operation相関はwaiter起動より前のeventも回収�
   });
 });
 
-test("observe: 別operation_idのeventは回収しない（誤帰属拒否）", { skip: !posix }, async () => {
+test("observe: 別operation_idのeventは回収しない（誤帰属拒否）", async () => {
   await withStateRoot(async (agents) => {
     const { eventPath } = writeMeta(agents, "s6", "claude");
     fs.appendFileSync(eventPath, claudeEvent("s6", { operation_id: OPID2 }));
@@ -195,7 +198,7 @@ test("observe: 別operation_idのeventは回収しない（誤帰属拒否）", 
   });
 });
 
-test("observe: 待機中のsession closeはoutcome=closed", { skip: !posix }, async () => {
+test("observe: 待機中のsession closeはoutcome=closed", async () => {
   await withStateRoot(async (agents) => {
     const { metaPath, eventPath } = writeMeta(agents, "s7", "claude");
     const p = core.observeAgentDone("s7", { timeout: 10 });
@@ -207,7 +210,7 @@ test("observe: 待機中のsession closeはoutcome=closed", { skip: !posix }, as
   });
 });
 
-test("observe: 非Claudeへのoperation_id指定は拒否", { skip: !posix }, async () => {
+test("observe: 非Claudeへのoperation_id指定は拒否", async () => {
   await withStateRoot(async (agents) => {
     writeMeta(agents, "s8", "codex");
     await assert.rejects(
@@ -217,7 +220,7 @@ test("observe: 非Claudeへのoperation_id指定は拒否", { skip: !posix }, as
   });
 });
 
-test("observe: 既知vendor_session_idと違うeventは非該当として無視", { skip: !posix }, async () => {
+test("observe: 既知vendor_session_idと違うeventは非該当として無視", async () => {
   await withStateRoot(async (agents) => {
     const { eventPath } = writeMeta(agents, "s9", "claude");
     const p = core.observeAgentDone("s9", { timeout: 5 });
@@ -227,7 +230,7 @@ test("observe: 既知vendor_session_idと違うeventは非該当として無視"
   });
 });
 
-test("observe: 純リーダー＝wait.lockを作らず・既存lockとも競合しない", { skip: !posix }, async () => {
+test("observe: 純リーダー＝wait.lockを作らず・既存lockとも競合しない", async () => {
   await withStateRoot(async (agents) => {
     const { eventPath } = writeMeta(agents, "s10", "claude");
     const lockPath = path.join(agents, `s10.${LAUNCH}.wait.lock`);
@@ -243,7 +246,7 @@ test("observe: 純リーダー＝wait.lockを作らず・既存lockとも競合�
   });
 });
 
-test("observe: metadata書き戻しをしない（vendor_session_id bindを永続化しない）", { skip: !posix }, async () => {
+test("observe: metadata書き戻しをしない（vendor_session_id bindを永続化しない）", async () => {
   await withStateRoot(async (agents) => {
     const { metaPath, eventPath } = writeMeta(agents, "s11", "claude");
     const before = fs.readFileSync(metaPath, "utf8");
@@ -255,7 +258,7 @@ test("observe: metadata書き戻しをしない（vendor_session_id bindを永�
   });
 });
 
-test("observe: cursor指定はwaiter起動より前のeventも境界から回収する", { skip: !posix }, async () => {
+test("observe: cursor指定はwaiter起動より前のeventも境界から回収する", async () => {
   await withStateRoot(async (agents) => {
     const { eventPath } = writeMeta(agents, "s12", "claude");
     fs.appendFileSync(eventPath, waitEvent("s12", { turn_id: "old-turn" }));
@@ -267,7 +270,7 @@ test("observe: cursor指定はwaiter起動より前のeventも境界から回収
   });
 });
 
-test("observe: cursor境界より前のeventは不可視", { skip: !posix }, async () => {
+test("observe: cursor境界より前のeventは不可視", async () => {
   await withStateRoot(async (agents) => {
     const { eventPath } = writeMeta(agents, "s13", "claude");
     fs.appendFileSync(eventPath, waitEvent("s13"));
@@ -277,7 +280,7 @@ test("observe: cursor境界より前のeventは不可視", { skip: !posix }, asy
   });
 });
 
-test("observe: 不正cursorは拒否", { skip: !posix }, async () => {
+test("observe: 不正cursorは拒否", async () => {
   await withStateRoot(async (agents) => {
     writeMeta(agents, "s14", "claude");
     await assert.rejects(() => core.observeAgentDone("s14", { cursor: -1, timeout: 0 }), /cursor/);
@@ -294,7 +297,7 @@ function runCli(args, env) {
   });
 }
 
-test("cli: 完了済みclaude operationをreceiptで返しexit 0", { skip: !posix }, async () => {
+test("cli: 完了済みclaude operationをreceiptで返しexit 0", async () => {
   const { base, agents } = makeStateRoot();
   try {
     const { eventPath } = writeMeta(agents, "c1", "claude");
@@ -310,7 +313,7 @@ test("cli: 完了済みclaude operationをreceiptで返しexit 0", { skip: !posi
   }
 });
 
-test("cli: timeoutはreceiptを出しつつexit 3（exit≠完了）", { skip: !posix }, async () => {
+test("cli: timeoutはreceiptを出しつつexit 3（exit≠完了）", async () => {
   const { base, agents } = makeStateRoot();
   try {
     writeMeta(agents, "c2", "claude");
@@ -325,7 +328,7 @@ test("cli: timeoutはreceiptを出しつつexit 3（exit≠完了）", { skip: !
 
 // --timeout 0 は「待たずに一度だけ見る」照会。未完了は失敗ではなく running で、
 // 待って終わらなかった timeout と1語に潰さない（潰すと親が異常と読んで様子見をやめる）。
-test("cli: timeout 0の未完了はrunningでexit 5（timeoutと別語）", { skip: !posix }, async () => {
+test("cli: timeout 0の未完了はrunningでexit 5（timeoutと別語）", async () => {
   const { base, agents } = makeStateRoot();
   try {
     writeMeta(agents, "c8", "claude");
@@ -339,7 +342,7 @@ test("cli: timeout 0の未完了はrunningでexit 5（timeoutと別語）", { sk
   }
 });
 
-test("cli: timeout 0でも完了済みならdoneでexit 0", { skip: !posix }, async () => {
+test("cli: timeout 0でも完了済みならdoneでexit 0", async () => {
   const { base, agents } = makeStateRoot();
   try {
     const { eventPath } = writeMeta(agents, "c9", "claude");
@@ -355,7 +358,7 @@ test("cli: timeout 0でも完了済みならdoneでexit 0", { skip: !posix }, as
 
 // 照会経路でも「知らないsession」をrunningへ倒さない。倒すと打ち間違えたsession名が
 // 永久に「まだ走ってる」と報告され、親が存在しない子を待ち続ける。
-test("cli: timeout 0でも未知sessionはエラー（runningへ倒さない）", { skip: !posix }, async () => {
+test("cli: timeout 0でも未知sessionはエラー（runningへ倒さない）", async () => {
   const { base } = makeStateRoot();
   try {
     const r = runCli(["--session", "nosuch", "--timeout", "0"], base);
@@ -368,13 +371,13 @@ test("cli: timeout 0でも未知sessionはエラー（runningへ倒さない）"
   }
 });
 
-test("cli: exit codeは全outcomeで相異なる＝素通しでdoneに化けない", { skip: !posix }, async () => {
+test("cli: exit codeは全outcomeで相異なる＝素通しでdoneに化けない", async () => {
   const codes = { done: 0, running: 5, timeout: 3, closed: 4 };
   assert.equal(new Set(Object.values(codes)).size, Object.keys(codes).length, "exit codeの重複なし");
   assert.ok(!Object.entries(codes).some(([k, v]) => k !== "done" && v === 0), "done以外に0を割り当てない");
 });
 
-test("cli: 待機中のsession closeはreceiptを出しつつexit 4", { skip: !posix }, async () => {
+test("cli: 待機中のsession closeはreceiptを出しつつexit 4", async () => {
   const { base, agents } = makeStateRoot();
   try {
     const { metaPath } = writeMeta(agents, "c5", "claude");
@@ -394,7 +397,7 @@ test("cli: 待機中のsession closeはreceiptを出しつつexit 4", { skip: !p
   }
 });
 
-test("cli: 待機中にeventが届くとexitして完了通知になる", { skip: !posix }, async () => {
+test("cli: 待機中にeventが届くとexitして完了通知になる", async () => {
   const { base, agents } = makeStateRoot();
   try {
     const { eventPath } = writeMeta(agents, "c3", "claude");
@@ -415,7 +418,7 @@ test("cli: 待機中にeventが届くとexitして完了通知になる", { skip
   }
 });
 
-test("cli: 不正引数はok:false envelopeでexit 1", { skip: !posix }, () => {
+test("cli: 不正引数はok:false envelopeでexit 1", () => {
   const { base } = makeStateRoot();
   try {
     for (const args of [[], ["--session"], ["--session", "x", "--operation", "bad"], ["--session", "x", "--timeout", "-1"], ["--unknown"]]) {
@@ -430,7 +433,7 @@ test("cli: 不正引数はok:false envelopeでexit 1", { skip: !posix }, () => {
   }
 });
 
-test("cli: 未管理sessionはAitermErrorの文言つきでexit 1", { skip: !posix }, () => {
+test("cli: 未管理sessionはAitermErrorの文言つきでexit 1", () => {
   const { base } = makeStateRoot();
   try {
     const r = runCli(["--session", "nosuch", "--timeout", "0"], base);
@@ -443,7 +446,7 @@ test("cli: 未管理sessionはAitermErrorの文言つきでexit 1", { skip: !pos
   }
 });
 
-test("cli: --cursor で境界指定して回収できる", { skip: !posix }, async () => {
+test("cli: --cursor で境界指定して回収できる", async () => {
   const { base, agents } = makeStateRoot();
   try {
     const { eventPath } = writeMeta(agents, "c4", "claude");
@@ -460,7 +463,7 @@ test("cli: --cursor で境界指定して回収できる", { skip: !posix }, asy
   }
 });
 
-test("cli: 不正--cursorはexit 1", { skip: !posix }, () => {
+test("cli: 不正--cursorはexit 1", () => {
   const { base } = makeStateRoot();
   try {
     const r = runCli(["--session", "x", "--cursor", "-1"], base);

@@ -28,20 +28,11 @@ function hasAitermEnv(): boolean {
   );
 }
 
-const IS_WIN = process.platform === "win32";
-
 function uid(): number {
-  // Windows(native) は process.getuid を持たない。core の currentUid() と同じ
-  // 既知制約の受容として 0 を返す（Windows の fs.Stats.uid は常に 0 のため
-  // owner 比較は自然に通過する。NTFS ACL は別体系）。POSIX は getuid のまま。
+  // state root のパス構成要素 `aiterm-mcp-<uid>` にだけ使う。Windows(native) は
+  // process.getuid を持たないため core の currentUid() と同じ受容で 0 を返す。
   if (typeof process.getuid !== "function") return 0;
   return process.getuid();
-}
-
-// Windows の fs mode は POSIX permission を表現しない（group/other bit が常に
-// 立って見える）。core と同じ受容として Windows は mode bit 検証を行わない。
-function posixModeUnsafe(mode: number): boolean {
-  return !IS_WIN && (mode & 0o077) !== 0;
 }
 
 function runtimeStateBase(): string {
@@ -56,18 +47,13 @@ function runtimeStateBase(): string {
   return os.tmpdir();
 }
 
-function secureAgentsDir(): string {
+function agentsDir(): string {
+  // state root は OS が与える per-user runtime dir（XDG_RUNTIME_DIR / os.tmpdir()）の下にある。
+  // 以前はここで symlink・owner・mode を検査していたが、共有 /tmp に敵対的な同居主体がいる
+  // 前提の防御であり、対応 OS の既定配置では成立しない（オーナー裁定 2026-08-19）。
+  // 経路の異常は open/stat の OS エラーとしてそのまま露出させる。
   const root = path.join(runtimeStateBase(), `aiterm-mcp-${uid()}`);
-  const agents = path.join(root, "agents");
-  const rst = fs.lstatSync(root);
-  if (!rst.isDirectory() || rst.isSymbolicLink() || rst.uid !== uid() || posixModeUnsafe(rst.mode)) {
-    fail(`agent state root が安全ではありません: ${root}`);
-  }
-  const ast = fs.lstatSync(agents);
-  if (!ast.isDirectory() || ast.isSymbolicLink() || ast.uid !== uid() || posixModeUnsafe(ast.mode)) {
-    fail(`agent state dir が安全ではありません: ${agents}`);
-  }
-  return agents;
+  return path.join(root, "agents");
 }
 
 async function readStdin(): Promise<string> {
@@ -86,11 +72,8 @@ function writeResult(file: string, value: unknown): void {
   const body = JSON.stringify(value) + "\n";
   if (Buffer.byteLength(body, "utf8") > MAX_STDIN_BYTES) fail("result file が大きすぎます");
   const tmp = `${file}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
-  const nofollow = (fs.constants as Record<string, number>).O_NOFOLLOW ?? 0;
-  const fd = fs.openSync(tmp, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY | nofollow, 0o600);
+  const fd = fs.openSync(tmp, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY, 0o600);
   try {
-    const st = fs.fstatSync(fd);
-    if (!st.isFile() || st.uid !== uid() || st.nlink !== 1 || posixModeUnsafe(st.mode)) fail("result temp file が安全ではありません");
     const expected = Buffer.byteLength(body, "utf8");
     const written = fs.writeSync(fd, body, undefined, "utf8");
     if (written !== expected) fail("result file への書込みが途中で終了しました");
@@ -108,15 +91,12 @@ function writeResult(file: string, value: unknown): void {
 }
 
 function appendEvent(file: string, event: unknown): void {
-  const nofollow = (fs.constants as Record<string, number>).O_NOFOLLOW ?? 0;
   const line = JSON.stringify(event) + "\n";
   if (Buffer.byteLength(line, "utf8") > 64 * 1024) fail("event line が大きすぎます");
-  const fd = fs.openSync(file, fs.constants.O_CREAT | fs.constants.O_APPEND | fs.constants.O_WRONLY | nofollow, 0o600);
+  const fd = fs.openSync(file, fs.constants.O_CREAT | fs.constants.O_APPEND | fs.constants.O_WRONLY, 0o600);
   try {
+    // st は短書き込み時の巻き戻し（ftruncate）に使う。安全性検査としては使わない。
     const st = fs.fstatSync(fd);
-    if (!st.isFile() || st.uid !== uid() || st.nlink !== 1 || posixModeUnsafe(st.mode)) {
-      fail(`event file が安全ではありません: ${file}`);
-    }
     const expected = Buffer.byteLength(line, "utf8");
     const written = fs.writeSync(fd, line, undefined, "utf8");
     if (written !== expected) {
@@ -136,18 +116,18 @@ interface OperationMarker {
 }
 
 function readOperationMarker(file: string): OperationMarker | null {
-  const nofollow = (fs.constants as Record<string, number>).O_NOFOLLOW ?? 0;
   let fd: number;
   try {
-    fd = fs.openSync(file, fs.constants.O_RDONLY | nofollow);
+    fd = fs.openSync(file, fs.constants.O_RDONLY);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     fail(`operation markerを安全に開けません: ${file}`);
   }
   try {
     const st = fs.fstatSync(fd!);
-    if (!st.isFile() || st.uid !== uid() || st.nlink !== 1 || posixModeUnsafe(st.mode) || st.size > 1024) {
-      fail(`operation markerが安全ではありません: ${file}`);
+    // parse する入力の上限だけ残す（owner・link 数・mode の検査は撤去した）。
+    if (st.size > 1024) {
+      fail(`operation markerが大きすぎます: ${file}`);
     }
     const body = fs.readFileSync(fd!, "utf8");
     const value = JSON.parse(body) as Record<string, unknown>;
@@ -175,15 +155,9 @@ function consumeOperationMarker(file: string, marker: OperationMarker): void {
   } catch {
     fail("operation markerが完了記録中に消失しました");
   }
-  if (
-    !st!.isFile() ||
-    st!.isSymbolicLink() ||
-    st!.uid !== uid() ||
-    st!.nlink !== 1 ||
-    posixModeUnsafe(st!.mode) ||
-    st!.dev !== marker.dev ||
-    st!.ino !== marker.ino
-  ) {
+  // dev/ino は「先に stat したのと同じ実体か」という同一性の検査であり、operation 相関の
+  // 正しさそのもの。撤去した安全設備（symlink・owner・link 数・mode）とは別物なので残す。
+  if (st!.dev !== marker.dev || st!.ino !== marker.ino) {
     fail("operation markerが完了記録中に置換されました");
   }
   fs.unlinkSync(file);
@@ -212,7 +186,7 @@ async function main(): Promise<void> {
   const resultBytes = Buffer.byteLength(text, "utf8");
   if (resultBytes > MAX_RESULT_BYTES) fail(`assistant result が${MAX_RESULT_BYTES} bytesを超えています`);
   const resultDigest = createHash("sha256").update(text, "utf8").digest("hex");
-  const agents = secureAgentsDir();
+  const agents = agentsDir();
   const resultFile = path.join(agents, `${session}.${launchId}.claude-result.json`);
   const eventFile = path.join(agents, `${session}.${launchId}.events.jsonl`);
   const operationFile = path.join(agents, `${session}.${launchId}.claude-operation.json`);

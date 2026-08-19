@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
@@ -11,13 +12,19 @@ const hasTmux = (process.platform === "win32"
   ? spawnSync("psmux", ["-V"])
   : spawnSync("tmux", ["-V"])
 ).status === 0;
-const skip = hasTmux && typeof process.getuid === "function"
-  ? undefined
-  : "tmux または POSIX getuid が無い";
+const skip = hasTmux ? undefined : "tmux 未インストール";
+// grok/composer は Windows で native grok.exe を強制するため、POSIX script の fake grok bin に
+// よる receipt テストは Windows では起動へ到達しない。同じ組立は POSIX 3 環境が検証する。
+const skipGrokFakeBin = process.platform === "win32"
+  ? "Windows は native grok.exe 強制のため fake grok bin は起動不可"
+  : skip;
+// tmux socket は macOS で 104 byte 上限のため短い /tmp を使う。Windows に /tmp は無いので
+// os.tmpdir()（psmux は socket path 長の制約を持たない）。
+const shortTmpBase = process.platform === "win32" ? os.tmpdir() : "/tmp";
 
 test("claude_agent: text contentを維持しClaude managed launch receiptをstructuredContentで返す", { skip }, async () => {
   // tmux socketはmacOSで104 byte上限。TMPDIR由来の長いsandbox pathを避ける。
-  const root = fs.mkdtempSync(path.join("/tmp", "aiterm-launcher-structured-"));
+  const root = fs.mkdtempSync(path.join(shortTmpBase, "aiterm-launcher-structured-"));
   const fakeClaude = path.join(root, "fake-claude.sh");
   fs.writeFileSync(fakeClaude, [
     "#!/bin/sh",
@@ -125,8 +132,8 @@ test("claude_agent: text contentを維持しClaude managed launch receiptをstru
   }
 });
 
-test("agent launch receipt: write_scope指定時だけ能力宣言を返し、省略時は既存shapeを保つ", { skip }, async () => {
-  const root = fs.mkdtempSync(path.join("/tmp", "aiterm-write-scope-receipt-"));
+test("agent launch receipt: write_scope指定時だけ能力宣言を返し、省略時は既存shapeを保つ", { skip: skipGrokFakeBin }, async () => {
+  const root = fs.mkdtempSync(path.join(shortTmpBase, "aiterm-write-scope-receipt-"));
   const codexHome = path.join(root, "codex-home");
   const fakeGrok = path.join(root, "fake-grok.sh");
   // macOSでは /tmp が /private/tmp へのsymlink。Grok認証正本はpath成分のsymlinkを拒否するため、

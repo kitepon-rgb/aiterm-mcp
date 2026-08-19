@@ -16,8 +16,8 @@ import { fileURLToPath } from "node:url";
 import * as rtk from "./rtk.js";
 import { recordRuntimeError, type RuntimeErrorCode } from "./runtime-error-store.js";
 
-// Windows ネイティブには tmux が無い。その場合だけ全 tmux 呼び出しを WSL 経由へ橋渡しする
-// （POSIX = Linux/WSL2/macOS は従来どおり tmux を直接叩く）。
+// Windows ネイティブには tmux が無いため、tmux CLI 互換の native psmux を叩く
+// （POSIX = Linux/WSL2/macOS は従来どおり tmux を直接叩く。WSL 橋は e3f5fc8 で全廃）。
 const isWin = process.platform === "win32";
 
 // .log/.offset/.lastcmd を置くディレクトリ（Node が直接読み書きする）。
@@ -409,31 +409,20 @@ function stateRoot(): string {
   return path.join(base, `aiterm-mcp-${uid}`);
 }
 
-function ensureSecureStateRoot(): string {
+function ensureStateRoot(): string {
+  // state root は OS が与える per-user runtime dir（XDG_RUNTIME_DIR / os.tmpdir()）の下に作る。
+  // 以前はここで symlink・owner・mode を検査していたが、共有 /tmp に敵対的な同居主体がいる
+  // 前提の防御であり、対応 OS の既定配置では成立しない（オーナー裁定 2026-08-19）。
+  // 作成時の 0o700 は検査ではなく妥当な既定として残す。経路の異常は以降の
+  // open/stat が OS エラーとしてそのまま露出させる。
   const root = stateRoot();
   fs.mkdirSync(root, { recursive: true, mode: 0o700 });
-  const st = fs.lstatSync(root);
-  if (!st.isDirectory() || st.isSymbolicLink()) {
-    throw new AitermError(`agent state root が安全な directory ではありません: ${root}`, 2);
-  }
-  if (st.uid !== currentUid()) {
-    throw new AitermError(`agent state root の owner が現在ユーザーではありません: ${root}`, 2);
-  }
-  if ((st.mode & 0o077) !== 0) {
-    fs.chmodSync(root, 0o700);
-  }
-  const agents = path.join(root, "agents");
-  fs.mkdirSync(agents, { recursive: true, mode: 0o700 });
-  const ast = fs.lstatSync(agents);
-  if (!ast.isDirectory() || ast.isSymbolicLink() || ast.uid !== currentUid()) {
-    throw new AitermError(`agent state dir が安全な directory ではありません: ${agents}`, 2);
-  }
-  if ((ast.mode & 0o077) !== 0) fs.chmodSync(agents, 0o700);
+  fs.mkdirSync(path.join(root, "agents"), { recursive: true, mode: 0o700 });
   return root;
 }
 
 function agentsDir(): string {
-  return path.join(ensureSecureStateRoot(), "agents");
+  return path.join(ensureStateRoot(), "agents");
 }
 
 function agentEventPath(name: string, launchId: string): string {
@@ -486,20 +475,14 @@ function agentClaudeDispatchReceiptPath(name: string, launchId: string, operatio
 }
 
 function existingAgentsDir(): string | null {
-  // Windows は getuid を持たないが、currentUid() が 0 を返し fs.Stats.uid も常に 0 のため
-  // owner 比較は自然に通過する（currentUid の既知制約受容と同じ）。以前はここで null を返して
-  // いたため、Windows では close/killAll の agent state 掃除が常に no-op になり、同名 session の
-  // 再起動が「agent metadata が複数あります」で失敗していた（実被弾 2026-08-15）。
-  const root = path.join(runtimeStateBase(), `aiterm-mcp-${currentUid()}`);
-  const dir = path.join(root, "agents");
+  // 既存の agents dir があればその path、無ければ null（作成はしない）。
+  // 以前はここで symlink・owner・mode を検査していたが撤去した（オーナー裁定 2026-08-19）。
+  // なお「Windows で常に null を返す」形だった頃は close/killAll の agent state 掃除が
+  // 常に no-op になり、同名 session の再起動が「agent metadata が複数あります」で
+  // 失敗していた（実被弾 2026-08-15）。存在判定だけに絞ることでその轍も踏まない。
+  const dir = path.join(runtimeStateBase(), `aiterm-mcp-${currentUid()}`, "agents");
   try {
-    const rst = fs.lstatSync(root);
-    if (!rst.isDirectory() || rst.isSymbolicLink() || rst.uid !== currentUid()) return null;
-    if (!isWin && (rst.mode & 0o077) !== 0) fs.chmodSync(root, 0o700);
-    const st = fs.lstatSync(dir);
-    if (!st.isDirectory() || st.isSymbolicLink() || st.uid !== currentUid()) return null;
-    if (!isWin && (st.mode & 0o077) !== 0) fs.chmodSync(dir, 0o700);
-    return dir;
+    return fs.statSync(dir).isDirectory() ? dir : null;
   } catch {
     return null;
   }
@@ -713,9 +696,10 @@ function captureScreen(name: string, lines: number): string {
 
 const sleep = (ms: number) => new Promise<void>((res) => setTimeout(res, ms));
 
-// Windows 専用: pipe-pane のログは /mnt/c (9p) 境界を越えて書かれるため、tmux が完了/セッション
-// 消滅を報告した後も最後の数百バイトが少し遅れて現れる。完了と判定する直前にログサイズが
-// 伸びなくなるまで待ち、readOutput が末尾欠けの出力を返さないようにする（POSIX は同一fsゆえ不要）。
+// Windows 専用: pipe-pane のログは psmux server 側の in-process sink が書く＝完了検知と
+// 書き手が別 process のため、完了/セッション消滅の報告後も末尾数百バイトが遅れて現れうる。
+// 完了と判定する直前にログサイズが伸びなくなるまで待ち、readOutput が末尾欠けの出力を
+// 返さないようにする（POSIX の tmux は /bin/sh sink・同一 fs で実測上不要）。
 async function settleWinLog(name: string): Promise<void> {
   let prev = -1;
   for (let i = 0; i < 8; i++) {
@@ -1277,7 +1261,7 @@ export async function readOutput(name: string, o: ReadOpts = {}): Promise<string
     }
   } else {
     let off = readOffset(name);
-    // WSL 再起動等でログが作り直されると、Windows 側に残った旧 offset が新ログ長を超え、
+    // psmux server 再起動等でログが作り直されると、残った旧 offset が新ログ長を超え、
     // 空を返して「何も読めない」状態になる。末尾越えは先頭から読み直す（POSIX では no-op）。
     if (off > size) off = 0;
     const initial = readRange(off, size); // 増分のみをメモリに載せる
@@ -1364,7 +1348,7 @@ export function readOnlyPtyListDiagnostic(runTmux = tmux): { status: DiagnosticS
       return { status: "not_applicable", session_count: null };
     }
   } catch {
-    // tmux 未導入・WSL bridge 不全等。絶対 path や生 stderr を診断 JSON に出さない。
+    // tmux/psmux 未導入等。絶対 path や生 stderr を診断 JSON に出さない。
   }
   return { status: "unverified", session_count: null };
 }
@@ -1783,13 +1767,10 @@ function writeText0600(p: string, text: string): void {
   }
 }
 
-function createEmpty0600NoFollow(p: string): void {
-  const nofollow = (fs.constants as Record<string, number>).O_NOFOLLOW ?? 0;
-  const fd = fs.openSync(
-    p,
-    fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY | nofollow,
-    0o600,
-  );
+function createEmpty0600(p: string): void {
+  // O_EXCL が「既存 path なら失敗」を保証するため、新規作成の一意性はこれで足りる。
+  // O_NOFOLLOW は撤去した（オーナー裁定 2026-08-19）。
+  const fd = fs.openSync(p, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY, 0o600);
   fs.closeSync(fd);
 }
 
@@ -1991,18 +1972,18 @@ function writeClaudeOperationMarker(meta: AgentMetadata, operationId: string | n
 function readClaudeOperationMarker(meta: AgentMetadata): ClaudeOperationMarker | null {
   if (meta.kind !== "claude") return null;
   const file = agentClaudeOperationPath(meta.aiterm_session, meta.launch_id);
-  const nofollow = (fs.constants as Record<string, number>).O_NOFOLLOW ?? 0;
   let fd: number;
   try {
-    fd = fs.openSync(file, fs.constants.O_RDONLY | nofollow);
+    fd = fs.openSync(file, fs.constants.O_RDONLY);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw new AitermError(`Claude operation markerを確認できません: ${(error as Error).message}`, 2);
   }
   try {
+    // parse する入力の上限だけ残す（owner・link 数・mode・O_NOFOLLOW の検査は撤去した）。
     const st = fs.fstatSync(fd);
-    if (!st.isFile() || st.uid !== currentUid() || st.nlink !== 1 || (!isWin && (st.mode & 0o077) !== 0) || st.size > 1024) {
-      throw new AitermError("Claude operation markerの安全検証に失敗しました", 2);
+    if (st.size > 1024) {
+      throw new AitermError("Claude operation markerが大きすぎます", 2);
     }
     let value: any;
     try {
@@ -2043,18 +2024,11 @@ function reserveClaudeOperation(meta: AgentMetadata, operationId: string): void 
   }
   const receipt = agentClaudeDispatchReceiptPath(meta.aiterm_session, meta.launch_id, validated);
   try {
-    createEmpty0600NoFollow(receipt);
+    createEmpty0600(receipt);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    let st: fs.Stats;
-    try {
-      st = fs.lstatSync(receipt);
-    } catch {
-      throw new AitermError("Claude dispatch receiptを確認できません", 2);
-    }
-    if (!st.isFile() || st.isSymbolicLink() || st.uid !== currentUid() || st.nlink !== 1 || (!isWin && (st.mode & 0o077) !== 0)) {
-      throw new AitermError("Claude dispatch receiptの安全検証に失敗しました", 2);
-    }
+    // EEXIST 自体が「この operation は既に dispatch 済み」を意味する。
+    // receipt の owner・link 数・mode・symlink 検査は撤去した（オーナー裁定 2026-08-19）。
     throw new AitermError(`operation ${validated} は既にdispatch済みです。再送しません。`, 2);
   }
   try {
@@ -2236,24 +2210,14 @@ export function runClaudeApproval({
 
 function hasClaudeDispatchReceipt(meta: AgentMetadata, operationId: string): boolean {
   const file = agentClaudeDispatchReceiptPath(meta.aiterm_session, meta.launch_id, operationId);
-  let st: fs.Stats;
   try {
-    st = fs.lstatSync(file);
+    // receipt は createEmpty0600 が作る空ファイル。存在＝dispatch 済みで足りる。
+    // owner・link 数・mode・symlink の検査は撤去した（オーナー裁定 2026-08-19）。
+    return fs.statSync(file).isFile();
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
     throw new AitermError(`Claude dispatch receiptを確認できません: ${(error as Error).message}`, 2);
   }
-  if (
-    !st.isFile() ||
-    st.isSymbolicLink() ||
-    st.uid !== currentUid() ||
-    st.nlink !== 1 ||
-    (!isWin && (st.mode & 0o077) !== 0) ||
-    st.size !== 0
-  ) {
-    throw new AitermError("Claude dispatch receiptの安全検証に失敗しました", 2);
-  }
-  return true;
 }
 
 function normalizeInitialPromptState(v: unknown): InitialPromptState {
@@ -2446,8 +2410,8 @@ function createClaudeAgentMetadata(
   const launchId = randomBytes(16).toString("hex");
   const eventFile = agentEventPath(name, launchId);
   const resultFile = agentClaudeResultPath(name, launchId);
-  createEmpty0600NoFollow(eventFile);
-  createEmpty0600NoFollow(resultFile);
+  createEmpty0600(eventFile);
+  createEmpty0600(resultFile);
   const claudeSettings = createClaudeCorrelationSettings(name, launchId);
   const meta: AgentMetadata = {
     kind: "claude",
@@ -2480,7 +2444,7 @@ function createCodexAgentMetadata(
 ): AgentMetadata {
   const launchId = randomBytes(16).toString("hex");
   const eventFile = agentEventPath(name, launchId);
-  createEmpty0600NoFollow(eventFile);
+  createEmpty0600(eventFile);
   const codexHome = realCodexHome();
   const meta: AgentMetadata = {
     kind: "codex",
@@ -2513,7 +2477,7 @@ function createGrokAgentMetadata(
 ): AgentMetadata {
   const launchId = randomBytes(16).toString("hex");
   const eventFile = agentEventPath(name, launchId);
-  createEmpty0600NoFollow(eventFile);
+  createEmpty0600(eventFile);
   const grokHome = realGrokHome();
   const meta: AgentMetadata = {
     kind,
@@ -4621,7 +4585,19 @@ function spawnAgentControlCommand(
   _cwd: string,
   options: SpawnSyncOptionsWithStringEncoding,
 ): SpawnSyncReturns<string> {
-  // Windows の bin は resolveAgentBin が native 実行ファイルへ解決済み（WSL 経由なし）。
+  // 受入（isUsableAgentExecutableFile）が「使える」と判定した bin は、control command
+  //（`claude auth status --json`／`grok models`）でも同じく実行できなければならない。
+  if (isWin && !/\.(?:exe|com)$/i.test(bin)) {
+    if (/\.(?:cmd|bat)$/i.test(bin)) {
+      // Node は CVE-2024-27980 対処以降、.cmd/.bat の直接 spawn を EINVAL で拒否する。
+      // 受入が .cmd/.bat を許す以上、control 経路は shell 経由で実行する（args は固定語彙）。
+      return spawnSync(bin, args, { ...options, shell: true });
+    }
+    // 受入は pane shell（Git Bash）が shebang で実行できる script も許す。Windows の
+    // CreateProcess は shebang を解さないため、control command も同じ Git Bash で実行する。
+    // これを直接 spawn すると常に失敗し、「受入が通した bin で起動が必ず失敗する」矛盾になる。
+    return spawnSync(resolveWinPaneShell("bash"), [bin, ...args], options);
+  }
   return spawnSync(bin, args, options);
 }
 
@@ -5013,12 +4989,11 @@ export function openAgent(
     return existingAgentLaunchResult("claude", opts.session_name as string, model, effort);
   }
   if (kind === "claude") assertClaudeAuthenticationReady(bin);
-  // Windows は起動コマンドが WSL 内 bash で走る（tmux ブリッジ）。bin/cwd を /mnt/c/... 形へ変換して
-  // 渡す（ログの toWslPath と対称・A1）。前提: Windows 側に CLI を導入（resolveAgentBin が Windows
-  // パスで解決）。toWslPath は session を作る前に呼ぶ＝変換失敗（非ドライブパス）で残骸 session を残さない。
+  // Windows の起動コマンドは native psmux pane の Git Bash で走る（WSL 橋・/mnt/c 変換は
+  // e3f5fc8 で全廃。bin/cwd は Windows パスの forward slash 形のまま渡す）。
   // 未検証リスク: npm グローバル導入の codex.cmd/.bat シムの対話 TUI 描画は実 Windows でしか確認
-  // できない（CI 非対象。docs/03_audit-sweep-2026-07.md 参照）。native .exe の interop 起動と
-  // TUI 描画は grok.exe で実測済み（2026-08-15）。
+  // できない（CI 非対象。docs/03_audit-sweep-2026-07.md 参照）。native .exe の TUI 描画は
+  // grok.exe で実測済み（2026-08-15）。
   // Windows の grok/composer は Windows native の grok.exe だけを起動する（オーナー裁定 2026-08-15:
   // WindowsネイティブはWindowsネイティブで完結させ、WSL2へ持ち込まない）。WSL 側 grok を起動すると
   // vendor 実体が WSL process になり、auth・session 記録（events/chat_history）が WSL home 側へ分裂して

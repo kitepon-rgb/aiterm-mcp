@@ -9,19 +9,26 @@ import { fileURLToPath } from "node:url";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const GROK_HOOK = path.join(HERE, "..", "dist", "grok-stop-hook.js");
 const CLAUDE_HOOK = path.join(HERE, "..", "dist", "claude-stop-hook.js");
-const skip = typeof process.getuid === "function" ? undefined : "POSIX getuid が無い";
+// 製品側 currentUid()（src/core.ts）と同じ規則。Windows(native) は getuid を持たず、
+// fs.Stats.uid が常に 0 のため 0 を返す。getuid の有無で suite 全体を止めない。
+const testUid = () => (typeof process.getuid === "function" ? process.getuid() : 0);
+const isWin = process.platform === "win32";
 
 function baseHookEnv(tmp) {
   return {
     PATH: process.env.PATH ?? "",
     HOME: process.env.HOME ?? "",
     TMPDIR: tmp,
+    // Windows の os.tmpdir() は TMPDIR でなく TEMP/TMP を読む。hook 子プロセスを
+    // テスト用 state root へ隔離するため両方を渡す（POSIX 側は TMPDIR が効くため無害）。
+    TEMP: tmp,
+    TMP: tmp,
   };
 }
 
 function makeHookState(prefix) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-  const uid = process.getuid();
+  const uid = testUid();
   const root = path.join(tmp, `aiterm-mcp-${uid}`);
   const agents = path.join(root, "agents");
   fs.mkdirSync(agents, { recursive: true, mode: 0o700 });
@@ -52,7 +59,7 @@ function spawnClaudeHook(tmp, env, payload = {}) {
   });
 }
 
-test("grok-stop-hook: Stop payload を agent_done event に正規化する", { skip }, () => {
+test("grok-stop-hook: Stop payload を agent_done event に正規化する", { skip: undefined }, () => {
   const { tmp, agents } = makeHookState("aiterm-grok-hook-");
 
   const session = "grokhook";
@@ -89,7 +96,7 @@ test("grok-stop-hook: Stop payload を agent_done event に正規化する", { s
   }
 });
 
-test("claude-stop-hook: Stop payload本文をowner-only resultへ分離しeventを相関する", { skip }, () => {
+test("claude-stop-hook: Stop payload本文をowner-only resultへ分離しeventを相関する", { skip: undefined }, () => {
   const { tmp, agents } = makeHookState("aiterm-claude-hook-");
   const session = "claudehook";
   const launchId = "abcdef0123456789abcdef0123456789";
@@ -128,13 +135,15 @@ test("claude-stop-hook: Stop payload本文をowner-only resultへ分離しevent�
       result_bytes: Buffer.byteLength(message, "utf8"),
       text: message,
     });
-    assert.equal(fs.statSync(resultFile).mode & 0o077, 0);
+    // POSIX permission bit の断言は Windows 非適用（fs.Stats.mode が 0o666 を返すため）。
+    // 製品側 posixModeUnsafe() と同じ受容。本文分離と event 相関の断言は両 OS で走る。
+    if (!isWin) assert.equal(fs.statSync(resultFile).mode & 0o077, 0);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
 
-test("claude-stop-hook: secure markerのoperation_idをresultとeventへ同一相関し消費する", { skip }, () => {
+test("claude-stop-hook: secure markerのoperation_idをresultとeventへ同一相関し消費する", { skip: undefined }, () => {
   const { tmp, agents } = makeHookState("aiterm-claude-operation-");
   const session = "claudeoperation";
   const launchId = "11112222333344445555666677778888";
@@ -168,7 +177,7 @@ test("claude-stop-hook: secure markerのoperation_idをresultとeventへ同一�
   }
 });
 
-test("claude-stop-hook: malformed operation markerを帰属なし完了へ降格しない", { skip }, () => {
+test("claude-stop-hook: malformed operation markerを帰属なし完了へ降格しない", { skip: undefined }, () => {
   const { tmp, agents } = makeHookState("aiterm-claude-bad-operation-");
   const session = "claudebadoperation";
   const launchId = "99998888777766665555444433332222";
@@ -198,37 +207,7 @@ test("claude-stop-hook: malformed operation markerを帰属なし完了へ降格
   }
 });
 
-test("claude-stop-hook: operation marker symlinkを辿らない", { skip }, () => {
-  const { tmp, agents } = makeHookState("aiterm-claude-operation-link-");
-  const session = "claudeoperationlink";
-  const launchId = "aaaabbbbccccddddeeeeffff00001111";
-  const operationId = `sha256:${"b".repeat(64)}`;
-  const victim = path.join(tmp, "operation-victim.json");
-  fs.writeFileSync(victim, JSON.stringify({
-    schema: "aiterm.claude-operation-marker.v1",
-    operation_id: operationId,
-  }) + "\n", { mode: 0o600 });
-  fs.symlinkSync(victim, path.join(agents, `${session}.${launchId}.claude-operation.json`));
-  const r = spawnClaudeHook(tmp, {
-    AITERM_AGENT_KIND: "claude",
-    AITERM_SESSION_ID: session,
-    AITERM_AGENT_LAUNCH_ID: launchId,
-  }, {
-    session_id: "claude-session-operation-link",
-    hook_event_name: "Stop",
-    last_assistant_message: "must not follow symlink",
-  });
-  try {
-    assert.equal(r.status, 0);
-    assert.match(r.stderr, /operation marker/);
-    assert.equal(fs.existsSync(path.join(agents, `${session}.${launchId}.events.jsonl`)), false);
-    assert.equal(fs.existsSync(path.join(agents, `${session}.${launchId}.claude-result.json`)), false);
-  } finally {
-    fs.rmSync(tmp, { recursive: true, force: true });
-  }
-});
-
-test("claude-stop-hook: 不完全payloadと上限超過本文を完了eventへ昇格しない", { skip }, () => {
+test("claude-stop-hook: 不完全payloadと上限超過本文を完了eventへ昇格しない", { skip: undefined }, () => {
   for (const [label, payload, expected] of [
     ["missing-result", { session_id: "claude-session-1", hook_event_name: "Stop" }, /last_assistant_message/],
     [
@@ -257,7 +236,7 @@ test("claude-stop-hook: 不完全payloadと上限超過本文を完了eventへ�
   }
 });
 
-test("claude-stop-hook: 既存result symlinkを辿らず原子的に置換する", { skip }, () => {
+test("claude-stop-hook: 既存result symlinkを辿らず原子的に置換する", { skip: undefined }, () => {
   const { tmp, agents } = makeHookState("aiterm-claude-result-link-");
   const session = "clauderesultlink";
   const launchId = "45674567456745674567456745674567";
@@ -285,7 +264,7 @@ test("claude-stop-hook: 既存result symlinkを辿らず原子的に置換する
   }
 });
 
-test("managed stop hooks: aiterm env が全く無ければ state に触らず no-op", { skip }, () => {
+test("managed stop hooks: aiterm env が全く無ければ state に触らず no-op", { skip: undefined }, () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "aiterm-hook-noenv-"));
   try {
     const grok = spawnGrokHook(tmp, {}, { hookEventName: "stop" });
@@ -296,13 +275,13 @@ test("managed stop hooks: aiterm env が全く無ければ state に触らず no
     assert.equal(claude.status, 0, claude.stderr);
     assert.equal(claude.stdout, "");
     assert.equal(claude.stderr, "");
-    assert.equal(fs.existsSync(path.join(tmp, `aiterm-mcp-${process.getuid()}`)), false);
+    assert.equal(fs.existsSync(path.join(tmp, `aiterm-mcp-${testUid()}`)), false);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
 
-test("grok-stop-hook: 存在しない XDG_RUNTIME_DIR は TMPDIR へ戻す", { skip }, () => {
+test("grok-stop-hook: 存在しない XDG_RUNTIME_DIR は TMPDIR へ戻す", { skip: undefined }, () => {
   const { tmp, agents } = makeHookState("aiterm-hook-bad-xdg-");
   const session = "badxdg";
   const launchId = "99999999999999999999999999999999";
@@ -327,14 +306,16 @@ test("grok-stop-hook: 存在しない XDG_RUNTIME_DIR は TMPDIR へ戻す", { s
   }
 });
 
-test("grok-stop-hook: event file symlink と env の任意 path を拒否する", { skip }, () => {
-  const { tmp, agents } = makeHookState("aiterm-grok-hook-symlink-");
+// symlink/hard link の拒否は 2026-08-19 のオーナー裁定で撤去した（共有 /tmp に敵対的
+// 同居主体がいる前提の防御で、対応 OS の per-user runtime dir では成立しない）。
+// 一方「env で渡された任意 path へは書かず、session/launch から導出した path にだけ書く」は
+// 撤去と無関係に成り立つ不変条件なので、こちらだけを固定する。
+test("grok-stop-hook: env の任意 path を無視し導出 path にだけ書く", { skip: undefined }, () => {
+  const { tmp, agents } = makeHookState("aiterm-grok-hook-envpath-");
   const session = "groklink";
   const launchId = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-  const eventFile = path.join(agents, `${session}.${launchId}.events.jsonl`);
-  const malicious = path.join(tmp, "malicious.jsonl");
-  fs.writeFileSync(malicious, "");
-  fs.symlinkSync(malicious, eventFile);
+  const outsider = path.join(tmp, "outsider.jsonl");
+  fs.writeFileSync(outsider, "");
   try {
     const r = spawnGrokHook(
       tmp,
@@ -342,104 +323,20 @@ test("grok-stop-hook: event file symlink と env の任意 path を拒否する"
         AITERM_AGENT_KIND: "grok",
         AITERM_SESSION_ID: session,
         AITERM_AGENT_LAUNCH_ID: launchId,
-        AITERM_AGENT_EVENT_FILE: malicious,
+        AITERM_AGENT_EVENT_FILE: outsider,
       },
       { hookEventName: "stop", sessionId: "grok-session", promptId: "prompt-1" },
     );
-    assert.equal(r.status, 0);
+    assert.equal(r.status, 0, r.stderr);
     assert.equal(r.stdout, "");
-    assert.match(r.stderr, /ELOOP|symbolic link|too many levels|symlink/i);
-    assert.equal(fs.readFileSync(malicious, "utf8"), "", "env 任意 path へ追記してはいけない");
+    assert.equal(fs.readFileSync(outsider, "utf8"), "", "env で指定された path へ書いてはいけない");
+    const derived = path.join(agents, `${session}.${launchId}.events.jsonl`);
+    const event = JSON.parse(fs.readFileSync(derived, "utf8").trim());
+    assert.equal(event.type, "agent_done");
+    assert.equal(event.aiterm_session, session);
+    assert.equal(event.launch_id, launchId);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
 
-test("grok-stop-hook: event file hard link を拒否する", { skip }, () => {
-  const grokState = makeHookState("aiterm-grok-hook-hardlink-");
-  try {
-    const session = "grokhard";
-    const launchId = "22222222222222222222222222222222";
-    const eventFile = path.join(grokState.agents, `${session}.${launchId}.events.jsonl`);
-    const victim = path.join(grokState.tmp, "victim.jsonl");
-    fs.writeFileSync(victim, "", { mode: 0o600 });
-    fs.linkSync(victim, eventFile);
-    const r = spawnGrokHook(
-      grokState.tmp,
-      {
-        AITERM_AGENT_KIND: "grok",
-        AITERM_SESSION_ID: session,
-        AITERM_AGENT_LAUNCH_ID: launchId,
-      },
-      { hookEventName: "stop", sessionId: "grok-session", promptId: "prompt-1" },
-    );
-    assert.equal(r.status, 0);
-    assert.equal(r.stdout, "");
-    assert.match(r.stderr, /event file が安全ではありません/);
-    assert.equal(fs.readFileSync(victim, "utf8"), "", "hard link 先へ追記してはいけない");
-  } finally {
-    fs.rmSync(grokState.tmp, { recursive: true, force: true });
-  }
-});
-
-test("managed stop hooks: secure state root/agents dir が symlink や緩い mode なら拒否する", { skip }, () => {
-  const uid = process.getuid();
-
-  const loose = makeHookState("aiterm-hook-loose-");
-  try {
-    fs.chmodSync(loose.root, 0o777);
-    const r = spawnGrokHook(
-      loose.tmp,
-      {
-        AITERM_AGENT_KIND: "grok",
-        AITERM_SESSION_ID: "loose",
-        AITERM_AGENT_LAUNCH_ID: "cccccccccccccccccccccccccccccccc",
-      },
-      { hookEventName: "stop", sessionId: "grok-session", promptId: "prompt-1" },
-    );
-    assert.match(r.stderr, /agent state root が安全ではありません/);
-    assert.equal(r.stdout, "");
-  } finally {
-    fs.chmodSync(loose.root, 0o700);
-    fs.rmSync(loose.tmp, { recursive: true, force: true });
-  }
-
-  const rootLinkTmp = fs.mkdtempSync(path.join(os.tmpdir(), "aiterm-hook-rootlink-"));
-  try {
-    fs.mkdirSync(path.join(rootLinkTmp, "real"), { recursive: true });
-    fs.symlinkSync(path.join(rootLinkTmp, "real"), path.join(rootLinkTmp, `aiterm-mcp-${uid}`));
-    const r = spawnGrokHook(
-      rootLinkTmp,
-      {
-        AITERM_AGENT_KIND: "grok",
-        AITERM_SESSION_ID: "rootlink",
-        AITERM_AGENT_LAUNCH_ID: "dddddddddddddddddddddddddddddddd",
-      },
-      { hookEventName: "stop", sessionId: "grok-session", promptId: "prompt-1" },
-    );
-    assert.equal(r.stdout, "");
-    assert.match(r.stderr, /agent state root が安全ではありません/);
-  } finally {
-    fs.rmSync(rootLinkTmp, { recursive: true, force: true });
-  }
-
-  const agentsLink = makeHookState("aiterm-hook-agentslink-");
-  try {
-    fs.rmSync(agentsLink.agents, { recursive: true, force: true });
-    fs.mkdirSync(path.join(agentsLink.tmp, "elsewhere"));
-    fs.symlinkSync(path.join(agentsLink.tmp, "elsewhere"), agentsLink.agents);
-    const r = spawnClaudeHook(
-      agentsLink.tmp,
-      {
-        AITERM_AGENT_KIND: "claude",
-        AITERM_SESSION_ID: "agentlink",
-        AITERM_AGENT_LAUNCH_ID: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-      },
-      { session_id: "claude-session", hook_event_name: "Stop", last_assistant_message: "answer" },
-    );
-    assert.match(r.stderr, /agent state dir が安全ではありません/);
-    assert.equal(r.stdout, "");
-  } finally {
-    fs.rmSync(agentsLink.tmp, { recursive: true, force: true });
-  }
-});

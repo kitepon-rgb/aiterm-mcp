@@ -26,7 +26,12 @@ function hasAitermEnv(): boolean {
 }
 
 function uid(): number {
-  if (typeof process.getuid !== "function") fail("POSIX getuid が使えません");
+  // Windows(native) は process.getuid を持たない。core の currentUid()・claude-stop-hook と
+  // 同じ受容として 0 を返す（Windows の fs.Stats.uid は常に 0 のため owner 比較は自然に
+  // 通過する。NTFS ACL は別体系）。POSIX は getuid のまま＝挙動不変。
+  // 以前はここで fail していたため、Windows では Grok/Composer の完了 event が
+  // 一度も書かれず aiterm-wait が timeout まで返らなかった。
+  if (typeof process.getuid !== "function") return 0;
   return process.getuid();
 }
 
@@ -42,17 +47,11 @@ function runtimeStateBase(): string {
   return os.tmpdir();
 }
 
-function secureAgentsDir(): string {
+function agentsDir(): string {
   const root = path.join(runtimeStateBase(), `aiterm-mcp-${uid()}`);
   const agents = path.join(root, "agents");
-  const rst = fs.lstatSync(root);
-  if (!rst.isDirectory() || rst.isSymbolicLink() || rst.uid !== uid() || (rst.mode & 0o077) !== 0) {
-    fail(`agent state root が安全ではありません: ${root}`);
-  }
-  const ast = fs.lstatSync(agents);
-  if (!ast.isDirectory() || ast.isSymbolicLink() || ast.uid !== uid() || (ast.mode & 0o077) !== 0) {
-    fail(`agent state dir が安全ではありません: ${agents}`);
-  }
+  // per-user runtime dir 前提のため、symlink・owner・link 数・mode の検査は撤去した
+  // （共有 /tmp に敵対的同居主体がいる前提の防御。オーナー裁定 2026-08-19）。
   return agents;
 }
 
@@ -73,15 +72,12 @@ async function readStdin(): Promise<string> {
 }
 
 function appendEvent(file: string, event: unknown): void {
-  const nofollow = (fs.constants as Record<string, number>).O_NOFOLLOW ?? 0;
   const line = JSON.stringify(event) + "\n";
   if (Buffer.byteLength(line, "utf8") > 64 * 1024) fail("event line が大きすぎます");
-  const fd = fs.openSync(file, fs.constants.O_CREAT | fs.constants.O_APPEND | fs.constants.O_WRONLY | nofollow, 0o600);
+  const fd = fs.openSync(file, fs.constants.O_CREAT | fs.constants.O_APPEND | fs.constants.O_WRONLY, 0o600);
   try {
     const st = fs.fstatSync(fd);
-    if (!st.isFile() || st.uid !== uid() || st.nlink !== 1 || (st.mode & 0o077) !== 0) {
-      fail(`event file が安全ではありません: ${file}`);
-    }
+    // st は短書き込み時の巻き戻し（ftruncate）に使う。安全性検査としては使わない。
     const written = fs.writeSync(fd, line, undefined, "utf8");
     if (written < Buffer.byteLength(line, "utf8")) {
       fs.ftruncateSync(fd, st.size);
@@ -111,7 +107,7 @@ async function main(): Promise<void> {
     }
   }
 
-  const agents = secureAgentsDir();
+  const agents = agentsDir();
   const eventFile = path.join(agents, `${session}.${launchId}.events.jsonl`);
   appendEvent(eventFile, {
     type: "agent_done",
