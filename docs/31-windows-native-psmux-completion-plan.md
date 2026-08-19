@@ -1,6 +1,6 @@
 # 31. Windows native psmux 移行の完成 campaign 計画正本
 
-**状態**: 進行中（2026-08-19 着手）
+**状態**: P1〜P5完了・P6（dotagents戻し）のみ残（2026-08-19）
 **対象 branch**: `feat/windows-native-psmux`（main から1コミット先行・`e3f5fc8`）
 **レーン**: 統括レーン（複数repo書込み調整＋多段連鎖受入＋H操作を含む）
 
