@@ -73,7 +73,7 @@ core.__testSetAgentTuiReadyStableSamples(1);
 const skip = hasTmux ? undefined : "tmux 未インストール";
 // 製品側 currentUid()（src/core.ts）と同じ規則。Windows(native) は getuid を持たないので 0。
 // getuid の有無を skip 条件に使わない（Windows の agent 覆域が丸ごと消えるため）。
-const testUid = () => (typeof process.getuid === "function" ? testUid() : 0);
+const testUid = () => (typeof process.getuid === "function" ? process.getuid() : 0);
 const skipAgentDone = hasTmux ? undefined : "tmux 未インストール";
 // Windows は grok/composer launcher が Windows native の grok.exe を強制するため、
 // POSIX script の fake grok bin による起動組立テストは設計どおり session 作成前に拒否される。
