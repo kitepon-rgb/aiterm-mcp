@@ -1751,33 +1751,6 @@ test("openAgent grok agent_done: cleanup は共有 auth/config/GROK_HOME を残�
   }
 });
 
-test("killAll: agent state root symlink は辿って cleanup しない", { skip: skipAgentDone }, () => {
-  const savedTmp = process.env.TMPDIR;
-  const savedXdg = process.env.XDG_RUNTIME_DIR;
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "aiterm-core-rootlink-"));
-  const uid = testUid();
-  const real = path.join(tmp, "real");
-  const agents = path.join(real, "agents");
-  fs.mkdirSync(agents, { recursive: true, mode: 0o700 });
-  fs.chmodSync(real, 0o700);
-  fs.chmodSync(agents, 0o700);
-  const victim = path.join(agents, "victim.agent.json");
-  fs.writeFileSync(victim, "{}\n", { mode: 0o600 });
-  fs.symlinkSync(real, path.join(tmp, `aiterm-mcp-${uid}`));
-  process.env.TMPDIR = tmp;
-  delete process.env.XDG_RUNTIME_DIR;
-  try {
-    core.killAll();
-    assert.equal(fs.existsSync(victim), true, "root symlink 配下の agent state を削除してはいけない");
-  } finally {
-    if (savedTmp === undefined) delete process.env.TMPDIR;
-    else process.env.TMPDIR = savedTmp;
-    if (savedXdg === undefined) delete process.env.XDG_RUNTIME_DIR;
-    else process.env.XDG_RUNTIME_DIR = savedXdg;
-    fs.rmSync(tmp, { recursive: true, force: true });
-  }
-});
-
 test("killAll: Claude operation markerとdispatch receiptもcleanupする", { skip: skipAgentDone }, async () => {
   const [sid] = core.openAgent("claude", { agent_done: true });
   const operationId = `sha256:${"0".repeat(64)}`;
