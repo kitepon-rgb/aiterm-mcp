@@ -2,6 +2,26 @@
 
 このファイルが aiterm-mcp の運用・設計・履歴の正本です（全 host 共通。Claude Code は CLAUDE.md の `@AGENTS.md` 経由で同じ内容を読む）。設計の詳細は `docs/00_overview.md` から辿り、特に `docs/01_design-plan.md` と関連 ADR を読む。
 
+> **v0.27.0（2026-08-19・source）**: Windows基盤をWSL橋からnative psmuxへ置換した`e3f5fc8`の完成形。
+> 前提だったpsmux忠実度修正3件（pipe-pane直接ファイルsink・paste逐語hex wire・前面
+> `#{pane_current_command}`）はquolu名義のupstream貢献 psmux/psmux#577 としてmergeされ、
+> **psmux v3.3.8**（2026-08-18公開）へ収録された。maintainerはreview修正`0509351`を上乗せ
+> （chained sinkのclient socket継承除去・`nul:` device gapの閉鎖・CI teardownのpid化）。
+> この端末は公式v3.3.8バイナリ（sha256一致確認済み）へ差し替え、psmux単体で3修正を再実測、
+> aiterm実E2E（claude_agent起動→`aiterm-wait` done→逐語transcript回収→close→残骸ゼロ）を
+> 正規版上で通過した。オーナー裁定（2026-08-19）により、共有/tmpの敵対的同居主体を前提とした
+> 安全設備（agent state系のsymlink・hard link・owner uid比較・mode bit検査・`O_NOFOLLOW`）を
+> 全プラットフォームで撤去（詳細はdesign-plan §9決定10・docs/31）。テスト側のgetuid述語を
+> 製品側`currentUid()`と同規則へ揃えてWindows覆域を回復した結果、`grok-stop-hook`がWindowsで
+> 即failしGrok/Composerの完了eventが一度も書かれない実バグ（e3f5fc8がclaude側だけ修理した
+> 取り残し）と、受入契約が通したscript binをcontrol command（`claude auth status`）が実行
+> できない整合性欠陥を検出し、どちらも根治した。**受入証跡の訂正**: `e3f5fc8`コミット文の
+> 「Windows skipは…1件のみ」は実測と不一致（当時の実態はskip 155件）。本版の実測はfull
+> regression 344件・pass 299・fail 0・skip 45（22件はWindowsのnative grok.exe強制による
+> fake bin不可＝POSIX 3環境が同経路を検証、残りはPOSIX固有fixture・環境要因）。Windows
+> nativeの前提はpsmux ≥ 3.3.8とGit for Windows。工程正本はdocs/31、公開はP4（4環境CI）〜
+> P5（release）で完遂する。
+>
 > **v0.26.0（2026-08-15・公開完了）**: Windows hostの`grok_agent`／`composer_agent`はWindows nativeの
 > `grok.exe`だけを起動する（オーナー裁定: WindowsネイティブはWindowsネイティブで完結させ、WSL2へ
 > vendor状態を持ち込まない。ClaudeやCodexと同じ整列）。WSL側grokを起動するとsession記録がWSL home側へ

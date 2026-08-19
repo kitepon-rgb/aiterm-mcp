@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-08-19
+
+### Changed
+
+- **Windows基盤をWSL橋からnative psmuxへ置換**（`e3f5fc8`＋本版で完成）。全tmux呼び出しは
+  tmux CLI互換のnative psmux（`-L` namespace隔離・`AITERM_PSMUX`上書き可）を直接叩き、
+  pane shellはGit for Windowsの`bash.exe`（`AITERM_BASH`上書き可）。WSL2・interop anchor・
+  `/mnt/c`変換・`WSLENV`搬送は全廃。前提のpsmux忠実度修正3件（pipe-pane直接ファイルsink・
+  paste逐語hex wire・前面`#{pane_current_command}`）はupstream貢献 psmux/psmux#577 として
+  mergeされ **psmux v3.3.8** に収録＝Windows nativeの動作前提はpsmux ≥ 3.3.8。
+- **共有/tmpの敵対的同居主体を前提とした安全設備を全プラットフォームで撤去**
+  （オーナー裁定 2026-08-19）: agent state系のsymlink・hard link・owner uid比較・
+  mode bit検査・`O_NOFOLLOW`。対応OSの既定配置（`XDG_RUNTIME_DIR`／per-user tmp）では
+  前提が成立しないため。短書き込み検出、`dev`/`ino`同一性（operation相関）、size上限、
+  作成時0o600/0o700は維持。Grok auth検証とsend/wait lockは対象外（撤去していない）。
+
+### Fixed
+
+- **Windowsで`grok_agent`／`composer_agent`の完了eventが一度も書かれなかった**:
+  `grok-stop-hook`が`process.getuid`不在で即failしていた（claude側だけ修理され
+  grok側が取り残されていた）。`aiterm-wait`が常に600秒timeoutする実害の根治。
+- **受入契約が通したscript binをcontrol commandが実行できなかった**: Windowsで
+  shebang script（受入が正式に許す形）をGit Bash経由、`.cmd`/`.bat`をshell経由で
+  実行する。従来は`claude auth status --json` preflightが必ず失敗し起動不能だった。
+
+### Tests
+
+- テスト側の`process.getuid`ハードコード述語を製品側`currentUid()`と同規則へ揃え、
+  Windows覆域を回復（skip 155→45・full 344件でfail 0）。fake vendor bin・Throughline
+  fixtureをWindows実行形へ移植。撤去済み安全設備を検証していたテストは削除し、
+  「envの任意pathへ書かない」等の撤去と無関係な不変条件は残して固定。
+
 ## [0.26.0] - 2026-08-15
 
 ### Changed
