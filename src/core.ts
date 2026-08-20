@@ -1832,13 +1832,20 @@ function codexConfigSummary(configPath: string): string {
   return `共有 config: ${bits.join(" / ")}`;
 }
 
-function createClaudeCorrelationSettings(name: string, launchId: string): string {
+function createClaudeCorrelationSettings(
+  name: string,
+  launchId: string,
+  model: string | null,
+  effort: string | null,
+): string {
   const hookScript = claudeHookScriptPath();
   if (!fs.existsSync(hookScript)) {
     throw new AitermError(`Claude Stop hook wrapper が見つかりません。npm run build を実行してください: ${hookScript}`, 2);
   }
   const settings = agentManagedClaudeSettingsPath(name, launchId);
   writeJson0600(settings, {
+    ...(model ? { model } : {}),
+    ...(effort ? { effortLevel: effort } : {}),
     hooks: {
       Stop: [
         {
@@ -2406,13 +2413,15 @@ function createClaudeAgentMetadata(
   launchOperationId: string | null,
   launchRequestDigest: string | null,
   lineageContext: AgentLineageContext,
+  model: string | null,
+  effort: string | null,
 ): AgentMetadata {
   const launchId = randomBytes(16).toString("hex");
   const eventFile = agentEventPath(name, launchId);
   const resultFile = agentClaudeResultPath(name, launchId);
   createEmpty0600(eventFile);
   createEmpty0600(resultFile);
-  const claudeSettings = createClaudeCorrelationSettings(name, launchId);
+  const claudeSettings = createClaudeCorrelationSettings(name, launchId, model, effort);
   const meta: AgentMetadata = {
     kind: "claude",
     aiterm_session: name,
@@ -5042,6 +5051,8 @@ export function openAgent(
             launchOperationId,
             launchRequestDigest,
             lineageContext,
+            model,
+            effort,
           )
         : kind === "codex"
         ? createCodexAgentMetadata(sid, cwd, opts.prompt ? "pending" : "none", { model, effort }, writeScope, lineageContext)

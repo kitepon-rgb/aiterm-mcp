@@ -1280,7 +1280,8 @@ test("openAgent claude agent_done: 通常settingsへStop hookとlineageを追加
     assert.ok(fs.existsSync(meta.result_file));
     assert.equal(meta.claude_mcp_config, undefined, "user MCP snapshotを作らない");
     const settings = JSON.parse(fs.readFileSync(meta.claude_settings, "utf8"));
-    assert.deepEqual(Object.keys(settings), ["hooks"]);
+    assert.equal(settings.model, "claude-sonnet-4-6");
+    assert.equal(settings.effortLevel, "high");
     assert.match(settings.hooks.Stop[0].hooks[0].command, /claude-stop-hook\.js/);
     assert.ok(settings.hooks.Stop[0].hooks[0].command.startsWith("'node' "), "hook実行時にPATHからnodeを解決する");
     assert.equal(settings.hooks.Stop[0].hooks[0].command.includes(process.execPath), false, "版付きnode実体を焼き付けない");

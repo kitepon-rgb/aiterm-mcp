@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.1] - 2026-08-20
+
+### Fixed
+
+- `claude_agent` が `--model` / `--effort` を渡しても、launch 固有 `--settings` に
+  model が無く Claude Code 既定（Fable 5 / high）へ落ちていた。要求した model と
+  effort をその settings JSON へ焼き、席が Fable 固定にならないようにした。
+
 ## [0.27.0] - 2026-08-19
 
 ### Changed
