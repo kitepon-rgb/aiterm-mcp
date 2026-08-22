@@ -166,3 +166,56 @@ export function loadPtyBufferChunk(
 export function pasteBufferBaseArgs(): string[] {
   return isWin ? ["paste-buffer", "-d"] : ["paste-buffer", "-d", "-r"];
 }
+
+// new-session -f 用の空 config（端末個人の設定ファイルを読まない）。Windows は NUL デバイス。
+export const TMUX_EMPTY_CONFIG = isWin ? "NUL" : "/dev/null";
+
+// 人が同じ session を覗く/介入するための attach コマンド。
+// Windows は native psmux（tmux CLI 互換）を -L namespace で叩く。
+export function attachCommand(name: string): string {
+  return isWin ? `psmux -L ${WIN_NS} attach -t ${name}` : `tmux -S ${SOCK} attach -t ${name}`;
+}
+
+// Windows（psmux）の #{pane_current_command} は "bash.exe" やフルパス形で報告しうる。
+// SHELLS 等の POSIX 名集合と突合できるよう、basename・.exe 除去・小文字化へ正規化する
+// （Windows の実行ファイル名は case-insensitive）。POSIX は従来どおり無加工。
+export function normalizePaneCommand(cmd: string): string {
+  if (!isWin) return cmd;
+  return path.basename(cmd).replace(/\.exe$/i, "").toLowerCase();
+}
+
+// Windows の fs.Stats.mode は POSIX permission bit を持たず、常に 666/777 相当を報告する
+// （NTFS ACL は別体系）。既知制約の明示的受容として、Windows では group/other bit 検証を
+// 常に「問題なし」とする。isFile・nlink・owner・size 等の共通検証は呼び手が維持する。
+export function modeBitsWorldAccessible(mode: number): boolean {
+  return !isWin && (mode & 0o077) !== 0;
+}
+export function modeBitsWritableByOthers(mode: number): boolean {
+  return !isWin && (mode & 0o022) !== 0;
+}
+
+// pane 内で使う cwd 引数。Windows の起動コマンドは native psmux pane の Git Bash で走るため、
+// Windows パスを forward slash 形へ変換して渡す（POSIX は無加工）。
+export function paneCwdArgument(cwd: string): string {
+  return isWin ? cwd.replace(/\\/g, "/") : cwd;
+}
+
+// Windows 専用: pipe-pane のログは psmux server 側の in-process sink が書く＝完了検知と
+// 書き手が別 process のため、完了/セッション消滅の報告後も末尾数百バイトが遅れて現れうる。
+// 完了と判定する直前にログサイズが伸びなくなるまで待ち、末尾欠けの出力を返さないようにする
+// （POSIX の tmux は /bin/sh sink・同一 fs で実測上不要のため即返る）。
+export async function settlePaneLog(logPath: string, pollSeconds: number): Promise<void> {
+  if (!isWin) return;
+  let prev = -1;
+  for (let i = 0; i < 8; i++) {
+    let sz = 0;
+    try {
+      sz = fs.statSync(logPath).size;
+    } catch {
+      sz = 0;
+    }
+    if (sz === prev) return;
+    prev = sz;
+    await new Promise<void>((res) => setTimeout(res, pollSeconds * 1000));
+  }
+}

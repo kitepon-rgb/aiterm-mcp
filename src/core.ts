@@ -25,6 +25,13 @@ import {
   tmuxCommand,
   loadPtyBufferChunk,
   pasteBufferBaseArgs,
+  TMUX_EMPTY_CONFIG,
+  attachCommand,
+  normalizePaneCommand,
+  settlePaneLog,
+  modeBitsWorldAccessible,
+  modeBitsWritableByOthers,
+  paneCwdArgument,
 } from "./tmux-runtime.js";
 import { resolveAgentBin, spawnAgentControlCommand, resolveThroughlineBin, runThroughlineHandoffContext, isUsableExecutableFile, isWindowsNativeExecutable, isUsableAgentExecutableFile, agentBinForPaneShell, resolveWinPaneShell } from "./agent-resolver.js";
 export { AitermError } from "./errors.js";
@@ -157,12 +164,7 @@ function sessionExists(name: string): boolean {
 function paneCurrentCommand(name: string): string {
   const r = tmux("display-message", "-p", "-t", name, "#{pane_current_command}");
   if (r.code !== 0) return "";
-  const cmd = r.stdout.trim();
-  // Windows（psmux）は "bash.exe" やフルパス形で報告しうる。SHELLS 等の POSIX 名
-  // 集合と突合できるよう、basename・.exe 除去・小文字化へ正規化する（Windows の
-  // 実行ファイル名は case-insensitive）。POSIX は従来どおり無加工。
-  if (!isWin) return cmd;
-  return path.basename(cmd).replace(/\.exe$/i, "").toLowerCase();
+  return normalizePaneCommand(r.stdout.trim());
 }
 
 function pasteBufferSupportsNoSanitizeFlag(): boolean {
@@ -415,8 +417,7 @@ function readLastcmd(name: string): string {
 }
 
 export function attachHint(name: string): string {
-  // Windows は native psmux（tmux CLI 互換）を -L namespace で叩く。
-  const cmd = isWin ? `psmux -L ${WIN_NS} attach -t ${name}` : `tmux -S ${SOCK} attach -t ${name}`;
+  const cmd = attachCommand(name);
   return (
     `このセッションを自分の目で見る/介入する:\n` +
     `  ${cmd}\n` +
@@ -544,24 +545,6 @@ function captureScreen(name: string, lines: number): string {
 
 const sleep = (ms: number) => new Promise<void>((res) => setTimeout(res, ms));
 
-// Windows 専用: pipe-pane のログは psmux server 側の in-process sink が書く＝完了検知と
-// 書き手が別 process のため、完了/セッション消滅の報告後も末尾数百バイトが遅れて現れうる。
-// 完了と判定する直前にログサイズが伸びなくなるまで待ち、readOutput が末尾欠けの出力を
-// 返さないようにする（POSIX の tmux は /bin/sh sink・同一 fs で実測上不要）。
-async function settleWinLog(name: string): Promise<void> {
-  let prev = -1;
-  for (let i = 0; i < 8; i++) {
-    let sz = 0;
-    try {
-      sz = fs.statSync(logpath(name)).size;
-    } catch {
-      sz = 0;
-    }
-    if (sz === prev) return;
-    prev = sz;
-    await sleep(POLL * 1000);
-  }
-}
 
 /** 完了境界: dead / mark sentinel 一致 / until 一致 / (出力静止 ∧ シェル復帰)=quiescent / (ネスト中＋until/mark無しで出力静止)=nested(未確定・早期返却) / timeout。 */
 async function waitCompletion(
@@ -629,7 +612,7 @@ async function waitCompletion(
         } catch {
           /* noop */
         }
-        if (isWin) await settleWinLog(name);
+        await settlePaneLog(logpath(name), POLL);
         return [true, "mark"];
       }
       if (until && until(neu)) return [true, "until"];
@@ -638,7 +621,7 @@ async function waitCompletion(
     // 静止時のみ has-session を叩いて dead を判定する。dead 検出は最大 1 poll 遅れるだけ。
     const growing = lastSize !== null && size > lastSize;
     if (!growing && !sessionExists(name)) {
-      if (isWin) await settleWinLog(name);
+      await settlePaneLog(logpath(name), POLL);
       return [true, "dead"];
     }
     if (size === lastSize) {
@@ -653,7 +636,7 @@ async function waitCompletion(
         if (safeStatSize(logpath(name)) !== size) {
           stable = 0;
         } else if (!until && !markActive && SHELLS.has(fg)) {
-          if (isWin) await settleWinLog(name);
+          await settlePaneLog(logpath(name), POLL);
           return [true, "quiescent"]; // 出力静止 ∧ シェル復帰 ＝ 確証つき完了
         } else if (!until && !markActive && fg !== "") {
           // ネスト中（前面が ssh/docker/REPL 等でシェル集合外）は quiescence の「シェル復帰」条件を
@@ -662,7 +645,7 @@ async function waitCompletion(
           // until/markActive のときは指定した証拠を待つべく早期返却せず、shell builtinや
           // 非シェル前面（sleep 等）でも待ち続ける。
           // fg==="" は前面コマンド取得失敗＝ネスト断定不可なので早期返却せず従来どおり timeout まで待つ。
-          if (isWin) await settleWinLog(name);
+          await settlePaneLog(logpath(name), POLL);
           return [false, "nested"];
         }
       }
@@ -740,8 +723,8 @@ export function openSession(name?: string | null, shell = "bash"): [string, stri
     if (sessionExists(nm)) {
       if (explicit) throw new AitermError(`session '${nm}' は既に存在します（list で確認）`, 2);
     } else {
-      // -f は端末個人の設定ファイルを読まないための空 config（Windows は NUL デバイス）。
-      const r = tmux("new-session", "-d", "-s", nm, ...banner, "-f", isWin ? "NUL" : "/dev/null", shell);
+      // -f は端末個人の設定ファイルを読まないための空 config。
+      const r = tmux("new-session", "-d", "-s", nm, ...banner, "-f", TMUX_EMPTY_CONFIG, shell);
       if (r.code === 0) break;
       // 自動採番かつ「重複名」由来の失敗（他エージェントが同名を先に取った）なら次名でリトライ。
       const dup = /duplicate|already exists/i.test(r.stderr);
@@ -1685,10 +1668,9 @@ function resolveAndValidateGrokAuth(srcHome: string): string | null {
   try {
     fd = fs.openSync(authPath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
     const st = fs.fstatSync(fd);
-    // Windows の fs.Stats.mode は POSIX permission bit を持たず、常に 666/777 相当を報告する
-    // （NTFS ACL は別体系）。currentUid と同じ既知制約の明示的受容として、Windows では
-    // group/other bit 検証を行わない。isFile・nlink・owner・size・O_NOFOLLOW・realpath 検証は共通に維持する。
-    const worldAccessible = !isWin && (st.mode & 0o077) !== 0;
+    // isFile・nlink・owner・size・O_NOFOLLOW・realpath 検証は全OS共通に維持する
+    // （mode bit 検証のOS差は tmux-runtime の modeBits* が所有）。
+    const worldAccessible = modeBitsWorldAccessible(st.mode);
     if (!st.isFile() || st.nlink !== 1 || st.uid !== currentUid() || worldAccessible || st.size > GROK_AUTH_MAX_BYTES) {
       throw new AitermError("Grok 認証正本の安全検証に失敗しました", 2);
     }
@@ -1705,8 +1687,7 @@ function resolveAndValidateGrokAuth(srcHome: string): string | null {
       // /tmp のような root 所有 + sticky の共有 directory は、本人所有の private な
       // 直下 directory を他 UID が rename/unlink できないため許可する。sticky 無しの
       // group/other writable 祖先は path swap が可能なので従来どおり拒否する。
-      // Windows は directory も mode bit を持たない（常に 777 相当）ため、同じ受容で除外する。
-      const writableByOthers = !isWin && (dirSt.mode & 0o022) !== 0;
+      const writableByOthers = modeBitsWritableByOthers(dirSt.mode);
       const protectedSharedRoot = dirSt.uid === 0 && (dirSt.mode & 0o1000) !== 0;
       if (
         !dirSt.isDirectory()
@@ -3019,7 +3000,7 @@ function readClaudeResultText(
     st.isSymbolicLink() ||
     st.uid !== currentUid() ||
     st.nlink !== 1 ||
-    (!isWin && (st.mode & 0o077) !== 0) ||
+    modeBitsWorldAccessible(st.mode) ||
     st.size > CLAUDE_RESULT_MAX_BYTES + 4096
   ) {
     throw new AitermError("Claude result file の安全検証に失敗しました", 2);
@@ -4743,9 +4724,7 @@ export function openAgent(
     );
   }
   const binForCmd = agentBinForPaneShell(bin);
-  // Windows native pane（psmux + Git Bash）は Windows パスをそのまま扱える。
-  // Git Bash の cd はドライブパスを forward slash 形で受けるのが安全。
-  const cwdForCmd = cwd && isWin ? cwd.replace(/\\/g, "/") : cwd;
+  const cwdForCmd = cwd ? paneCwdArgument(cwd) : cwd;
   const grokAuthPath = agentDone && (kind === "grok" || kind === "composer") ? resolveAndValidateGrokAuth(realGrokHome()) : null;
   if (kind === "grok" || kind === "composer") {
     const requestedModel = model ?? (kind === "composer" ? GROK_MODEL_DEFAULTS.composer : null);

@@ -47,7 +47,7 @@ VendorAdapter が持つ関心事（棚卸しの (a)〜(j) に対応）: 起動�
 ## 工程（Phase）
 
 - **P0 ベースライン**: `npm test` full green を macOS で確認し件数を記録。→ **完了（2026-08-23）: 346件・pass 345・fail 0・skip 1（HEAD 2d357c3）**。characterization は既存 suite（344件・4環境CI）を正とし、移設 seam に既存カバーが無い場合だけ focused test を先行追加する。
-- **P1 OS層集約**: core.ts / agent-resolver.ts の isWin 分岐を `tmux-runtime.ts`（→ `os/` へ改名は最後）へ移設。wave単位: ①buffer系（load/paste）②sink/settle系③path/実行ファイル判定系。各waveは独立revert可能なcommit＋focused test。
+- **P1 OS層集約**: core.ts の isWin 分岐を `tmux-runtime.ts`（→ `os/` へ改名は最後）へ移設。wave単位: ①buffer系（load/paste）②sink/settle/session系③mode bit・パス変換系。各waveは独立revert可能なcommit＋focused test。→ **実装完了（2026-08-23）: core.ts の isWin 実分岐は grok系 native 実行ファイル強制の1箇所（vendor×OS交差・P3で移設）だけに縮小。focused 220件 green。受入は4環境CI green後**。補足裁定: agent-resolver.ts は設計上「OS分岐の所有者」なので isWin 残置は正、vendor 知識の解きほぐしだけを P3 で行う。
 - **P2 vendor adapter骨格**: `vendors/types.ts` の interface を定義し、純粋な vendor 専用関数（codex transcript 群・grok completion 群・claude result/auth 群）を逐語移設。core.ts は re-export で呼び出し面を維持。
 - **P3 ホットスポット解体**: `buildAgentCmd`・`isAgentTuiReady`・`observeAgentDone`・`readAgentTranscript`・`configureAgent`・`openAgent`・`dispatchAgentTurn` を adapter メソッド呼び出しへ置換。1関数=1受入単位。
 - **P4 最終確認**: ローカル full regression → push → 4環境CI full green。
