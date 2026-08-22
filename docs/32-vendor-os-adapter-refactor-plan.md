@@ -51,7 +51,7 @@ VendorAdapter が持つ関心事（棚卸しの (a)〜(j) に対応）: 起動�
 - **P2 vendor adapter骨格**: 純粋な vendor 専用関数（codex transcript 群・grok completion 群・claude result/auth 群）を vendors/ へ逐語移設。→ **完了（2026-08-23）**: 実装裁定として `types.ts` の形式的 interface/registry は採らず、「共有プリミティブ層 `agent-shared.ts` ＋ vendor 別ファイル direct import ＋ core 所有サービス（transcript行読取・rate limit検知）は引数注入」で一方向依存（core → vendors → agent-shared → tmux-runtime/errors）を実現した。3 vendor に registry の間接は過剰（最小実装原則）。w1=agent-shared / w2=grok / w3=codex / w4=claude。
 - **P3 ホットスポット解体**: → **完了（2026-08-23・scope精緻化）**: 移設対象は「純粋な vendor ロジック」に限定——w1=起動引数・起動note・env（buildXxxAgentCmd/xxxLaunchNote/grokEnvTokens）、w2=画面判定（xxxTuiReady・composerマーカーregex・Codexメニュー解析・Grok footer確認）、w3=transcript抽出本体（codex/grokTranscriptText）とmetadata生成（createXxxAgentMetadata）。`configureAgent`/`dispatchAgentTurn`/`openAgent` の進行役フロー・operation marker 家族・event file 解析は core の PTY サービスと本質的に結合するため core に残し、分岐は移設済み vendor 関数を呼ぶ薄い形へ縮小した（注入だらけの全面 adapter 化は可読性を下げ最小実装に反する、の裁定）。core.ts は 4,912→3,647 行、vendor分岐（`kind ===`）は約90→39箇所（残りは薄い dispatch と進行役の分岐）、isWin 実分岐は 1箇所（grok native 強制・vendor×OS交差の宣言的 gate）。
 - **P4 最終確認**: ローカル full regression → push → 4環境CI full green。
-- **P5 公開**: 挙動不変につき patch bump（0.27.7）で release 連鎖（npm provenance / GitHub Release＋MCPB / Registry / global install / 公開後smoke）。受入 ADR を起こす。
+- **P5 公開**: 挙動不変につき patch bump（0.27.7）で release 連鎖（npm provenance / GitHub Release＋MCPB / Registry / global install / 公開後smoke）。受入 ADR を起こす。→ **0.27.7 は公開後 smoke で起動不能を検出**: package.json `files` の `dist/*.js` glob が新設 `dist/vendors/` を同梱せず、公開版が `ERR_MODULE_NOT_FOUND`（repo 内 dist で回る 4環境CI では構造的に検出不能）。失敗 tag は動かさず、files 修正＋`npm pack --dry-run` の tarball 同梱回帰テストを加えた **0.27.8 を修正公開版**とする。公開後 smoke が P5 に必須である実証例。
 
 ## 並列化検討の結論（委譲契約12節・campaign単位で一度）
 

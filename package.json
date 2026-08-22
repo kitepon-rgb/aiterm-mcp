@@ -1,6 +1,6 @@
 {
   "name": "aiterm-mcp",
-  "version": "0.27.7",
+  "version": "0.27.8",
   "mcpName": "io.github.kitepon/aiterm-mcp",
   "description": "Persistent tmux terminal MCP for launching and driving Claude, Codex, Grok, or Composer from any MCP client, cross-vendor or same-vendor. Also runs durable PTY sessions for SSH, containers, and REPLs.",
   "keywords": [
@@ -45,6 +45,7 @@
   },
   "files": [
     "dist/*.js",
+    "dist/vendors/*.js",
     "README.md",
     "LICENSE"
   ],

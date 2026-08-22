@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.27.7] - 2026-08-23
+## [0.27.8] - 2026-08-23
+
+### Fixed
+
+- 0.27.7 の npm package に `dist/vendors/` が同梱されず、公開版が起動時
+  `ERR_MODULE_NOT_FOUND` になっていた（package.json `files` の `dist/*.js` glob が
+  サブディレクトリを含まなかった）。`dist/vendors/*.js` を files へ追加し、
+  `npm pack --dry-run` で build 済み runtime dist の全 .js が tarball に含まれることを
+  固定する回帰テストを追加した（repo 内 dist で回る CI では検出できない欠陥クラスの封じ）。
+
+## [0.27.7] - 2026-08-23（npm同梱漏れにより公開版は起動不能・0.27.8が修正版）
 
 ### Changed
 

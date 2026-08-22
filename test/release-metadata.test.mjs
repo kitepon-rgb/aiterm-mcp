@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
-import { access, readFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { access, readdir, readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
 
 test('server.json version stays in lockstep with package.json', async () => {
   const [pkg, server, mcpbManifest] = await Promise.all([
@@ -56,6 +61,25 @@ test('clean build ships only the active managed stop hooks', async () => {
     access(new URL('../dist/codex-stop-hook.js', import.meta.url)),
     { code: 'ENOENT' },
   );
+});
+
+test('npm pack はbuild済みdistの全ランタイム.jsを同梱する', async () => {
+  // 実被弾（v0.27.7）: files の "dist/*.js" glob がサブディレクトリを含まず、公開packageに
+  // dist/vendors/ が入らないまま publish され、公開版が ERR_MODULE_NOT_FOUND で起動不能だった。
+  // repo内 dist で回る CI では検出できないため、tarball 同梱一覧そのものを固定する。
+  const root = fileURLToPath(new URL('..', import.meta.url));
+  const { stdout } = await execFileAsync('npm', ['pack', '--dry-run', '--json'], { cwd: root, maxBuffer: 16 * 1024 * 1024 });
+  const packed = new Set(JSON.parse(stdout)[0].files.map((f) => f.path));
+  // 対象は tsc が生成する runtime dist（直下と vendors/）だけ。dist/ に残り得る
+  // MCPB staging 等の生成残骸は publish 対象ではないため見ない。
+  const distJs = (await readdir(new URL('../dist', import.meta.url), { recursive: true }))
+    .map((f) => f.split('\\').join('/'))
+    .filter((f) => f.endsWith('.js') && (!f.includes('/') || f.startsWith('vendors/')))
+    .map((f) => `dist/${f}`);
+  assert.ok(distJs.some((f) => f.startsWith('dist/vendors/')), 'dist/vendors/*.js がbuildされていません');
+  for (const f of distJs) {
+    assert.ok(packed.has(f), `${f} が npm pack に同梱されていません（package.json files を確認）`);
+  }
 });
 
 async function readJson(url) {
