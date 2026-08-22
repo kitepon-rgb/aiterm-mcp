@@ -3319,11 +3319,15 @@ export interface AgentWaitObservation {
 }
 
 // vendor 別の利用上限バナー。検知は「報告」専用で、完了判定や自動復旧には使わない。
-// grok は 2026-08-22 の実バナーで検証済み。codex は既知文言の保守的な登録。
+// 出典（2026-08-22）: grok は live 実バナーで検証、codex/claude はインストール済み実バイナリの
+// 埋込文字列から抽出（codex: "You've hit your usage limit for" / claude: "Usage limit reached ·
+// continuing automatically when it resets"。Claude Code はリセット時に自動継続する設計なので、
+// この報告は「今は上限で止まっている」の観測であり恒久停止を意味しない）。
 const AGENT_RATE_LIMIT_PATTERNS: Partial<Record<AgentKind, RegExp[]>> = {
   grok: [/You hit your weekly limit/i, /Weekly limit left:\s*0%/i],
   composer: [/You hit your weekly limit/i, /Weekly limit left:\s*0%/i],
   codex: [/You'?ve hit your usage limit/i],
+  claude: [/Usage limit reached/i],
 };
 const AGENT_RATE_LIMIT_SCAN_BYTES = 16 * 1024;
 // pane log の末尾から上限バナーを探す。読めない・無い・対象 vendor でないは全て null（誤検知より取りこぼし側へ倒す）。
