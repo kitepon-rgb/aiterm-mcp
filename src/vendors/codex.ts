@@ -6,6 +6,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { AitermError } from "../errors.js";
 import {
+  shq,
+  subagentInstruction,
+  writeScopeLaunchNote,
   safeStatSize,
   readFileRange,
   sleep,
@@ -342,4 +345,57 @@ export async function observeCodexDone(
     if (performance.now() >= deadline) return observation(timeout === 0 ? "running" : "timeout");
     await sleep(AGENT_DONE_POLL_MS);
   }
+}
+
+export function buildCodexAgentCmd(
+  bin: string,
+  model: string | null,
+  effort: string | null,
+  prompt: string | null,
+  meta: AgentMetadata | null,
+): string {
+  const parts: string[] = [shq(bin)];
+  // `codex --help` で確認した実在フラグ。read-only 宣言だけはCLI sandboxへ落とし、
+  // launcher自身が実効能力壁を作る。パス説明はCodex CLIに同等のallowlist引数がないため宣言のまま残す。
+  if (meta?.kind === "codex" && meta.write_scope === "read-only") parts.push("--sandbox", "read-only");
+  // model/effort は共有configを書き換えず、CLI引数で明示して起動単位に優先する。
+  if (model) parts.push("-m", shq(model));
+  if (effort) parts.push("-c", `model_reasoning_effort=${shq(effort)}`);
+  if (meta?.kind === "codex" && meta.hook_route === "shared_codex_home") {
+    parts.push("-c", `developer_instructions=${shq(subagentInstruction(meta))}`);
+  }
+  if (prompt) parts.push(shq(prompt)); // 初手プロンプト（任意）
+  return parts.join(" ");
+}
+
+// 起動応答にモデル/effort の実効値と出所を明示する。codex は端末 config のピン（model /
+// model_reasoning_effort）が対話子へ波及する構造のため、引数・端末config継承・CLI既定の
+// どれで起動したかを起動時点で可視化し、実効 effort=ultra は proactive 自動委譲 ON を警告する。
+export function codexLaunchNote(
+  model: string | null,
+  effort: string | null,
+  meta: AgentMetadata | null,
+): string {
+  const writeScopeNote = writeScopeLaunchNote("codex", meta?.write_scope);
+  const configPath =
+    meta?.kind === "codex" && meta.codex_home
+      ? path.join(meta.codex_home, "config.toml")
+      : path.join(realCodexHome(), "config.toml");
+  const pins = readCodexConfigPins(configPath);
+  const describePin = (arg: string | null, pin: CodexConfigPin): string =>
+    arg
+      ? `${arg}（引数）`
+      : pin.present
+        ? pin.value
+          ? `${pin.value}（端末config継承）`
+          : "端末config継承（値未解析）"
+        : "CLI既定";
+  const effectiveEffort = effort ?? (pins.effort.present ? pins.effort.value : null);
+  const launch =
+    `起動設定: model=${describePin(model, pins.model)} effort=${describePin(effort, pins.effort)}。` +
+    (effectiveEffort === "ultra"
+      ? "⚠ effort=ultra は max 推論＋proactive 自動委譲 ON（子エージェント自動生成・使用量急増に注意）。"
+      : "");
+  const summary = meta?.kind === "codex" && meta.codex_home ? codexConfigSummary(configPath) : "";
+  return (summary ? `${launch}\n${summary}\n` : launch) + writeScopeNote;
 }

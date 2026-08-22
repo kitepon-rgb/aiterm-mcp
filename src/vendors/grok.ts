@@ -9,6 +9,9 @@ import { AitermError } from "../errors.js";
 import { modeBitsWorldAccessible, modeBitsWritableByOthers } from "../tmux-runtime.js";
 import { spawnAgentControlCommand } from "../agent-resolver.js";
 import {
+  shq,
+  subagentInstruction,
+  writeScopeLaunchNote,
   currentUid,
   safeStatSize,
   readFileRange,
@@ -278,4 +281,54 @@ export async function observeGrokDone(
     if (performance.now() >= deadline) return observation(timeout === 0 ? "running" : "timeout");
     await sleep(AGENT_DONE_POLL_MS);
   }
+}
+
+export function buildGrokAgentCmd(
+  kind: "grok" | "composer",
+  bin: string,
+  model: string | null,
+  effort: string | null,
+  prompt: string | null,
+  meta: AgentMetadata | null,
+): string {
+  const parts: string[] = [shq(bin)];
+  // grok / composer は同じ grok CLI をモデル違いで起動する。
+  parts.push("--no-auto-update");
+  if (meta?.kind === "grok" || meta?.kind === "composer") parts.push("--no-alt-screen");
+  parts.push("--model", shq(model ?? GROK_MODEL_DEFAULTS[kind]));
+  if (effort) parts.push("--reasoning-effort", shq(effort));
+  if ((meta?.kind === "grok" || meta?.kind === "composer") && meta.write_scope === "read-only") {
+    // read-only は sandbox が実効書込み禁止を作るため、MCP ツール許可ダイアログの自動承認を
+    // 付けても能力は増えない。無人 subagent が初回 MCP 使用の許可待ちで停止する実障害への対処。
+    // read-only 以外の launch には付けない＝権限拡大しない。
+    parts.push("--sandbox", "read-only", "--always-approve");
+  }
+  if ((meta?.kind === "grok" || meta?.kind === "composer") && meta.hook_route === "shared_grok_home") {
+    parts.push("--session-id", shq(meta.vendor_session_id ?? ""), "--rules", shq(subagentInstruction(meta)));
+  }
+  if ((meta?.kind === "grok" || meta?.kind === "composer") && prompt) parts.push("--verbatim");
+  if (prompt) parts.push(shq(prompt)); // 初手プロンプト（任意）
+  return parts.join(" ");
+}
+
+export function grokLaunchNote(
+  kind: "grok" | "composer",
+  model: string | null,
+  effort: string | null,
+  meta: AgentMetadata | null,
+): string {
+  const writeScopeNote = writeScopeLaunchNote(kind, meta?.write_scope);
+  return (
+    `起動設定: model=${model ?? GROK_MODEL_DEFAULTS[kind]}（${model ? "引数" : "ツール既定"}）。` +
+    `effort=${effort ?? "CLI／model既定"}。` + writeScopeNote
+  );
+}
+
+// grok/composer: 検証済み auth 正本をそのままの path 形で渡す。Windows では native 強制により
+// vendor は Windows process なので、Windows ドライブパスが正しい形（WSL 形への変換はしない）。
+export function grokEnvTokens(meta: AgentMetadata): string[] {
+  return [
+    ...(meta.grok_auth_path ? [`GROK_AUTH_PATH=${shq(meta.grok_auth_path)}`] : []),
+    "GROK_DISABLE_AUTOUPDATER=1",
+  ];
 }

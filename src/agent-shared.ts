@@ -226,3 +226,49 @@ export interface AgentWaitObservation {
 export function writeAgentMetadata(meta: AgentMetadata): void {
   writeJson0600(agentMetadataPath(meta.aiterm_session, meta.launch_id), meta);
 }
+
+export function agentLabel(kind: AgentKind): string {
+  return kind === "claude"
+    ? "Claude Code"
+    : kind === "composer"
+    ? "Grok Build(Composer)"
+    : kind === "grok"
+      ? "Grok Build(Grok)"
+      : "Codex";
+}
+
+export function subagentInstruction(meta: AgentMetadata): string {
+  if (
+    meta.agent_role !== "subagent" ||
+    !meta.parent_session_id ||
+    !Number.isSafeInteger(meta.delegation_depth) ||
+    !meta.lineage ||
+    meta.delegation_allowed !== true
+  ) {
+    throw new AitermError("sub-agent instructionに必要なlineage metadataがありません", 2);
+  }
+  return [
+    "<aiterm_subagent_context>",
+    "あなたはaitermから起動されたsub-agentであり、root agentではありません。",
+    `AITERM_AGENT_LAUNCH_ID=${meta.launch_id}`,
+    `role=${meta.agent_role}`,
+    `parent_session_id=${meta.parent_session_id}`,
+    `delegation_depth=${meta.delegation_depth}`,
+    `lineage=${meta.lineage}`,
+    "delegation_allowed=true",
+    "任務の所有権を保ち、結果を親へ返してください。必要なら追加のsub-agentへ委譲してよいです。",
+    "ただし、同じ任務全体を同型agentへ反射的に丸投げして自己複製ループを作らないでください。",
+    "</aiterm_subagent_context>",
+  ].join("\n");
+}
+
+// launch noteのwrite_scope説明。文言はkindに依存する分岐まで含めて単一実装で持つ
+// （vendor別noteへ複製すると文言が発散する）。
+export function writeScopeLaunchNote(kind: AgentKind, writeScope: string | undefined): string {
+  return writeScope === undefined
+    ? ""
+    : (kind === "codex" || kind === "grok" || kind === "composer") && writeScope === "read-only"
+      ? `\n能力宣言: write_scope=${JSON.stringify(writeScope)}。${agentLabel(kind)} CLIへ --sandbox read-only を付与し、書込みを実効禁止。` +
+        (kind === "codex" ? "" : "MCPツール許可は --always-approve で自動承認（sandbox内のため能力拡大なし）。")
+      : `\n能力宣言: write_scope=${JSON.stringify(writeScope)}。パス単位のsandbox allowlistに対応するCLI引数がないため宣言の記録のみ（構造的unsupported）。`;
+}

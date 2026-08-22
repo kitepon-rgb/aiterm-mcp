@@ -12,6 +12,8 @@ import {
   currentUid,
   writeJson0600,
   shq,
+  subagentInstruction,
+  writeScopeLaunchNote,
   assertSessionName,
   agentsDir,
   LAUNCH_ID_RE,
@@ -195,4 +197,39 @@ export function assertClaudeAuthenticationReady(bin: string): void {
       "`claude auth status --json` と `claude doctor` が成功することを通常端末で確認してください。",
     2,
   );
+}
+
+export function buildClaudeAgentCmd(
+  bin: string,
+  model: string | null,
+  effort: string | null,
+  prompt: string | null,
+  meta: AgentMetadata | null,
+): string {
+  const parts: string[] = [shq(bin)];
+  if (meta?.kind === "claude") {
+    parts.push(
+      "--setting-sources",
+      shq("user,project,local"),
+      "--settings",
+      shq(meta.claude_settings ?? ""),
+      "--session-id",
+      shq(meta.vendor_session_id ?? ""),
+      "--append-system-prompt",
+      shq(subagentInstruction(meta)),
+    );
+  }
+  if (model) parts.push("--model", shq(model));
+  if (effort) parts.push("--effort", shq(effort));
+  if (prompt) parts.push(shq(prompt)); // 初手プロンプト（任意）
+  return parts.join(" ");
+}
+
+export function claudeLaunchNote(
+  model: string | null,
+  effort: string | null,
+  meta: AgentMetadata | null,
+): string {
+  const writeScopeNote = writeScopeLaunchNote("claude", meta?.write_scope);
+  return `起動設定: model=${model ?? "CLI既定"} effort=${effort ?? "CLI既定"}。${writeScopeNote}`;
 }

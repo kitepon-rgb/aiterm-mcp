@@ -57,6 +57,8 @@ import {
   agentWaitLockPath,
   writeAgentMetadata,
   AGENT_EVENT_TAIL_BYTES,
+  agentLabel,
+  subagentInstruction,
 } from "./agent-shared.js";
 import type {
   AgentKind,
@@ -75,6 +77,9 @@ import {
   latestGrokCompletion,
   grokInitializationComplete,
   observeGrokDone,
+  buildGrokAgentCmd,
+  grokLaunchNote,
+  grokEnvTokens,
 } from "./vendors/grok.js";
 import {
   realCodexHome,
@@ -87,6 +92,8 @@ import {
   codexTranscriptSessionId,
   latestCodexCompletion,
   observeCodexDone,
+  buildCodexAgentCmd,
+  codexLaunchNote,
 } from "./vendors/codex.js";
 import type { CodexConfigPin } from "./vendors/codex.js";
 import {
@@ -102,6 +109,8 @@ import {
   validateOperationId,
   readClaudeResultText,
   assertClaudeAuthenticationReady,
+  buildClaudeAgentCmd,
+  claudeLaunchNote,
 } from "./vendors/claude.js";
 import { resolveAgentBin, spawnAgentControlCommand, resolveThroughlineBin, runThroughlineHandoffContext, isUsableExecutableFile, isWindowsNativeExecutable, isUsableAgentExecutableFile, agentBinForPaneShell, resolveWinPaneShell } from "./agent-resolver.js";
 export { AitermError } from "./errors.js";
@@ -1301,31 +1310,6 @@ function agentLineageFields(context: AgentLineageContext): Pick<
     lineage: context.lineage,
     delegation_allowed: context.delegationAllowed,
   };
-}
-
-function subagentInstruction(meta: AgentMetadata): string {
-  if (
-    meta.agent_role !== "subagent" ||
-    !meta.parent_session_id ||
-    !Number.isSafeInteger(meta.delegation_depth) ||
-    !meta.lineage ||
-    meta.delegation_allowed !== true
-  ) {
-    throw new AitermError("sub-agent instructionに必要なlineage metadataがありません", 2);
-  }
-  return [
-    "<aiterm_subagent_context>",
-    "あなたはaitermから起動されたsub-agentであり、root agentではありません。",
-    `AITERM_AGENT_LAUNCH_ID=${meta.launch_id}`,
-    `role=${meta.agent_role}`,
-    `parent_session_id=${meta.parent_session_id}`,
-    `delegation_depth=${meta.delegation_depth}`,
-    `lineage=${meta.lineage}`,
-    "delegation_allowed=true",
-    "任務の所有権を保ち、結果を親へ返してください。必要なら追加のsub-agentへ委譲してよいです。",
-    "ただし、同じ任務全体を同型agentへ反射的に丸投げして自己複製ループを作らないでください。",
-    "</aiterm_subagent_context>",
-  ].join("\n");
 }
 
 interface ClaudeOperationMarker {
@@ -3519,51 +3503,9 @@ function buildAgentCmd(
   prompt: string | null,
   meta: AgentMetadata | null = null,
 ): string {
-  const parts: string[] = [shq(bin)];
-  if (kind === "claude") {
-    if (meta?.kind === "claude") {
-      parts.push(
-        "--setting-sources",
-        shq("user,project,local"),
-        "--settings",
-        shq(meta.claude_settings ?? ""),
-        "--session-id",
-        shq(meta.vendor_session_id ?? ""),
-        "--append-system-prompt",
-        shq(subagentInstruction(meta)),
-      );
-    }
-    if (model) parts.push("--model", shq(model));
-    if (effort) parts.push("--effort", shq(effort));
-  } else if (kind === "codex") {
-    // `codex --help` で確認した実在フラグ。read-only 宣言だけはCLI sandboxへ落とし、
-    // launcher自身が実効能力壁を作る。パス説明はCodex CLIに同等のallowlist引数がないため宣言のまま残す。
-    if (meta?.kind === "codex" && meta.write_scope === "read-only") parts.push("--sandbox", "read-only");
-    // model/effort は共有configを書き換えず、CLI引数で明示して起動単位に優先する。
-    if (model) parts.push("-m", shq(model));
-    if (effort) parts.push("-c", `model_reasoning_effort=${shq(effort)}`);
-    if (meta?.kind === "codex" && meta.hook_route === "shared_codex_home") {
-      parts.push("-c", `developer_instructions=${shq(subagentInstruction(meta))}`);
-    }
-  } else {
-    // grok / composer は同じ grok CLI をモデル違いで起動する。
-    parts.push("--no-auto-update");
-    if (meta?.kind === "grok" || meta?.kind === "composer") parts.push("--no-alt-screen");
-    parts.push("--model", shq(model ?? GROK_MODEL_DEFAULTS[kind]));
-    if (effort) parts.push("--reasoning-effort", shq(effort));
-    if ((meta?.kind === "grok" || meta?.kind === "composer") && meta.write_scope === "read-only") {
-      // read-only は sandbox が実効書込み禁止を作るため、MCP ツール許可ダイアログの自動承認を
-      // 付けても能力は増えない。無人 subagent が初回 MCP 使用の許可待ちで停止する実障害への対処。
-      // read-only 以外の launch には付けない＝権限拡大しない。
-      parts.push("--sandbox", "read-only", "--always-approve");
-    }
-    if ((meta?.kind === "grok" || meta?.kind === "composer") && meta.hook_route === "shared_grok_home") {
-      parts.push("--session-id", shq(meta.vendor_session_id ?? ""), "--rules", shq(subagentInstruction(meta)));
-    }
-    if ((meta?.kind === "grok" || meta?.kind === "composer") && prompt) parts.push("--verbatim");
-  }
-  if (prompt) parts.push(shq(prompt)); // 初手プロンプト（任意）
-  return parts.join(" ");
+  if (kind === "claude") return buildClaudeAgentCmd(bin, model, effort, prompt, meta);
+  if (kind === "codex") return buildCodexAgentCmd(bin, model, effort, prompt, meta);
+  return buildGrokAgentCmd(kind, bin, model, effort, prompt, meta);
 }
 
 function agentEnvPrefix(meta: AgentMetadata | null, sid: string, envVars: string[] = []): string {
@@ -3586,72 +3528,20 @@ function agentEnvPrefix(meta: AgentMetadata | null, sid: string, envVars: string
       `AITERM_AGENT_DELEGATION_ALLOWED=${shq(meta.delegation_allowed === true ? "true" : "false")}`,
     ];
     if (meta.kind === "claude" || meta.kind === "codex") return common;
-    // grok/composer: 検証済み auth 正本をそのままの path 形で渡す。Windows では native 強制により
-    // vendor は Windows process なので、Windows ドライブパスが正しい形（WSL 形への変換はしない）。
-    return [
-      ...(meta.grok_auth_path ? [`GROK_AUTH_PATH=${shq(meta.grok_auth_path)}`] : []),
-      "GROK_DISABLE_AUTOUPDATER=1",
-      ...common,
-    ];
+    return [...grokEnvTokens(meta), ...common];
   })();
   return tokens.length ? tokens.join(" ") + " " : "";
 }
 
-function agentLabel(kind: AgentKind): string {
-  return kind === "claude"
-    ? "Claude Code"
-    : kind === "composer"
-    ? "Grok Build(Composer)"
-    : kind === "grok"
-      ? "Grok Build(Grok)"
-      : "Codex";
-}
-
-// 起動応答にモデル/effort の実効値と出所を明示する。codex は端末 config のピン（model /
-// model_reasoning_effort）が対話子へ波及する構造のため、引数・端末config継承・CLI既定の
-// どれで起動したかを起動時点で可視化し、実効 effort=ultra は proactive 自動委譲 ON を警告する。
 function buildAgentLaunchNote(
   kind: AgentKind,
   model: string | null,
   effort: string | null,
   meta: AgentMetadata | null,
 ): string {
-  const writeScopeNote = meta?.write_scope === undefined
-    ? ""
-    : (kind === "codex" || kind === "grok" || kind === "composer") && meta.write_scope === "read-only"
-      ? `\n能力宣言: write_scope=${JSON.stringify(meta.write_scope)}。${agentLabel(kind)} CLIへ --sandbox read-only を付与し、書込みを実効禁止。` +
-        (kind === "codex" ? "" : "MCPツール許可は --always-approve で自動承認（sandbox内のため能力拡大なし）。")
-      : `\n能力宣言: write_scope=${JSON.stringify(meta.write_scope)}。パス単位のsandbox allowlistに対応するCLI引数がないため宣言の記録のみ（構造的unsupported）。`;
-  if (kind === "claude") {
-    return `起動設定: model=${model ?? "CLI既定"} effort=${effort ?? "CLI既定"}。${writeScopeNote}`;
-  }
-  if (kind !== "codex") {
-    return (
-      `起動設定: model=${model ?? GROK_MODEL_DEFAULTS[kind]}（${model ? "引数" : "ツール既定"}）。` +
-      `effort=${effort ?? "CLI／model既定"}。` + writeScopeNote
-    );
-  }
-  const configPath =
-    meta?.kind === "codex" && meta.codex_home
-      ? path.join(meta.codex_home, "config.toml")
-      : path.join(realCodexHome(), "config.toml");
-  const pins = readCodexConfigPins(configPath);
-  const describePin = (arg: string | null, pin: CodexConfigPin): string =>
-    arg
-      ? `${arg}（引数）`
-      : pin.present
-        ? pin.value
-          ? `${pin.value}（端末config継承）`
-          : "端末config継承（値未解析）"
-        : "CLI既定";
-  const effectiveEffort = effort ?? (pins.effort.present ? pins.effort.value : null);
-  const launch =
-    `起動設定: model=${describePin(model, pins.model)} effort=${describePin(effort, pins.effort)}。` +
-    (effectiveEffort === "ultra"
-      ? "⚠ effort=ultra は max 推論＋proactive 自動委譲 ON（子エージェント自動生成・使用量急増に注意）。"
-      : "");
-  const summary = meta?.kind === "codex" && meta.codex_home ? codexConfigSummary(configPath) : "";
-  return (summary ? `${launch}\n${summary}\n` : launch) + writeScopeNote;
+  if (kind === "claude") return claudeLaunchNote(model, effort, meta);
+  if (kind !== "codex") return grokLaunchNote(kind, model, effort, meta);
+  return codexLaunchNote(model, effort, meta);
 }
 
 function claudeLaunchRequestDigest({
