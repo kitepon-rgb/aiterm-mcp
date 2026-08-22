@@ -1,0 +1,37 @@
+// aiterm のエラー基盤。AitermError と telemetry 所有の失敗経路だけを持つ末端モジュール。
+import { recordRuntimeError, type RuntimeErrorCode } from "./runtime-error-store.js";
+
+export class AitermError extends Error {
+  code: number;
+  constructor(message: string, code = 1) {
+    super(message);
+    this.code = code;
+  }
+}
+
+export class TelemetryOwnedError extends AitermError {
+  readonly telemetryCode: RuntimeErrorCode;
+  constructor(message: string, code: number, telemetryCode: RuntimeErrorCode, cause?: unknown) {
+    super(message, code);
+    this.name = "TelemetryOwnedError";
+    this.telemetryCode = telemetryCode;
+    if (cause !== undefined) (this as Error & { cause?: unknown }).cause = cause;
+  }
+}
+
+export function telemetryOwnedFailure(telemetryCode: RuntimeErrorCode, error: unknown, fallbackCode = 1): TelemetryOwnedError {
+  if (error instanceof TelemetryOwnedError) return error;
+  recordRuntimeError(telemetryCode);
+  const message = error instanceof Error ? error.message : String(error);
+  const code = error instanceof AitermError ? error.code : fallbackCode;
+  return new TelemetryOwnedError(message, code, telemetryCode, error);
+}
+export function ownTelemetryFailure(telemetryCode: RuntimeErrorCode, error: unknown, fallbackCode = 1): never {
+  throw telemetryOwnedFailure(telemetryCode, error, fallbackCode);
+}
+
+export function ptyDependencyError(message: string, observe = true): never {
+  const error = new AitermError(message, 2);
+  if (observe) ownTelemetryFailure("AITERM.PTY_DEPENDENCY_UNAVAILABLE", error, 2);
+  throw error;
+}
