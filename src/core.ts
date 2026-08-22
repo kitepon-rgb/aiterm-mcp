@@ -33,6 +33,18 @@ import {
   modeBitsWritableByOthers,
   paneCwdArgument,
 } from "./tmux-runtime.js";
+import {
+  sleep,
+  currentUid,
+  runtimeStateBase,
+  safeStatSize,
+  readFileRange,
+  writeJson0600,
+  writeText0600,
+  createEmpty0600,
+  shq,
+} from "./agent-shared.js";
+import type { AgentKind, AgentMetadata, InitialPromptState } from "./agent-shared.js";
 import { resolveAgentBin, spawnAgentControlCommand, resolveThroughlineBin, runThroughlineHandoffContext, isUsableExecutableFile, isWindowsNativeExecutable, isUsableAgentExecutableFile, agentBinForPaneShell, resolveWinPaneShell } from "./agent-resolver.js";
 export { AitermError } from "./errors.js";
 export { tmuxSpawnEnv } from "./tmux-runtime.js";
@@ -62,8 +74,7 @@ const LAUNCH_ID_RE = /^[0-9a-f]{32}$/;
 const OPERATION_ID_RE = /^sha256:[0-9a-f]{64}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const AGENT_LINEAGE_RE = /^[A-Za-z0-9_.:-]+(?:>[A-Za-z0-9_.:-]+)*$/;
-export type AgentKind = "claude" | "codex" | "grok" | "composer";
-type InitialPromptState = "none" | "not_sent" | "sent" | "pending" | "done" | "failed";
+export type { AgentKind } from "./agent-shared.js";
 
 const AGENT_DONE_POLL_MS = 100;
 const AGENT_DONE_SETTLE_MIN_MS = 250;
@@ -228,29 +239,6 @@ function assertSendTextSize(text: string, context = "送信文字列"): void {
 function assertSessionName(name: string): void {
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(name))
     throw new AitermError(`session 名は英数字と _ - のみ・64文字以内にしてください: ${JSON.stringify(name)}`, 2);
-}
-
-function currentUid(): number {
-  // Windows(native)は process.getuid を持たない。以前はここで throw していたが、
-  // agent metadata の存在確認経由で素の pty_send まで巻き込んで全 send を殺していた。
-  // Windows の fs.Stats.uid は常に 0 なので、ここも 0 を返せば owner 比較
-  // (st.uid !== currentUid()) は自然に通過する。Windows は POSIX owner 検証を
-  // 持たない（NTFS ACL は別体系）という既知の制約の明示的受容であり、POSIX 側は
-  // getuid をそのまま返すため挙動不変。
-  if (typeof process.getuid !== "function") return 0;
-  return process.getuid();
-}
-
-function runtimeStateBase(): string {
-  const xdg = process.env.XDG_RUNTIME_DIR;
-  if (xdg) {
-    try {
-      if (fs.statSync(xdg).isDirectory()) return xdg;
-    } catch {
-      /* XDG_RUNTIME_DIR が壊れている CI/非 login 環境では os.tmpdir() に戻す */
-    }
-  }
-  return os.tmpdir();
 }
 
 function stateRoot(): string {
@@ -543,7 +531,6 @@ function captureScreen(name: string, lines: number): string {
   return r.code === 0 ? r.stdout : "";
 }
 
-const sleep = (ms: number) => new Promise<void>((res) => setTimeout(res, ms));
 
 
 /** 完了境界: dead / mark sentinel 一致 / until 一致 / (出力静止 ∧ シェル復帰)=quiescent / (ネスト中＋until/mark無しで出力静止)=nested(未確定・早期返却) / timeout。 */
@@ -1272,34 +1259,6 @@ export function killAll(): string {
 }
 
 // ── agent_done: vendor の構造化完了記録を PTY 送信の完了境界として使う ────
-interface AgentMetadata {
-  kind: AgentKind;
-  aiterm_session: string;
-  launch_id: string;
-  event_file: string;
-  created_at: string;
-  cwd: string | null;
-  // launcher の能力宣言。省略時は能力制限なし。
-  write_scope?: string;
-  vendor_session_id: string | null;
-  initial_prompt: InitialPromptState;
-  launch_operation_id?: string | null;
-  launch_request_digest?: string | null;
-  hook_route: "shared_claude_settings" | "shared_codex_home" | "shared_grok_home";
-  completion_route?: "codex_transcript" | "grok_transcript";
-  agent_role?: "subagent";
-  parent_session_id?: string;
-  delegation_depth?: number;
-  lineage?: string;
-  delegation_allowed?: true;
-  node_platform: NodeJS.Platform;
-  codex_home?: string;
-  claude_settings?: string;
-  result_file?: string;
-  grok_home?: string;
-  grok_auth_path?: string | null;
-}
-
 interface AgentLineageContext {
   agentRole: "subagent";
   parentSessionId: string;
@@ -1497,73 +1456,6 @@ function claudeHookScriptPath(): string {
 // hook は server と同じ継承 PATH から node を毎回解決し、安定した package script を実行する。
 function nodeHookCommand(hookScript: string): string {
   return `${shq("node")} ${shq(hookScript)}`;
-}
-
-function safeStatSize(p: string): number {
-  try {
-    return fs.statSync(p).size;
-  } catch {
-    return 0;
-  }
-}
-
-function readFileRange(p: string, from: number, to: number): Buffer {
-  const len = Math.max(0, to - from);
-  if (len === 0) return Buffer.alloc(0);
-  let fd: number | undefined;
-  try {
-    fd = fs.openSync(p, "r");
-    const buf = Buffer.alloc(len);
-    const n = fs.readSync(fd, buf, 0, len, from);
-    return n === len ? buf : buf.subarray(0, Math.max(0, n));
-  } catch {
-    return Buffer.alloc(0);
-  } finally {
-    if (fd !== undefined) {
-      try {
-        fs.closeSync(fd);
-      } catch {
-        /* noop */
-      }
-    }
-  }
-}
-
-function writeJson0600(p: string, v: unknown): void {
-  // truncate-in-place はクラッシュ/ENOSPC の窓で空・途中 JSON を残すので、temp→rename の原子的置換にする
-  const tmp = `${p}.${randomBytes(6).toString("hex")}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(v, null, 2) + "\n", { mode: 0o600, flag: "wx" });
-  try {
-    fs.chmodSync(tmp, 0o600);
-  } catch {
-    /* noop */
-  }
-  try {
-    fs.renameSync(tmp, p);
-  } catch (e) {
-    try {
-      fs.unlinkSync(tmp);
-    } catch {
-      /* noop */
-    }
-    throw e;
-  }
-}
-
-function writeText0600(p: string, text: string): void {
-  fs.writeFileSync(p, text, { mode: 0o600 });
-  try {
-    fs.chmodSync(p, 0o600);
-  } catch {
-    /* noop */
-  }
-}
-
-function createEmpty0600(p: string): void {
-  // O_EXCL が「既存 path なら失敗」を保証するため、新規作成の一意性はこれで足りる。
-  // O_NOFOLLOW は撤去した（オーナー裁定 2026-08-19）。
-  const fd = fs.openSync(p, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY, 0o600);
-  fs.closeSync(fd);
 }
 
 function realCodexHome(): string {
@@ -4393,11 +4285,6 @@ export function vendorLauncherDiagnostic(kind: AgentKind): DiagnosticStatus {
   } catch {
     return "unverified";
   }
-}
-
-// 単一引用符で安全に包む（' は '\'' で脱出）。send は raw:true で送るため自前で quote する。
-function shq(s: string): string {
-  return `'${s.replace(/'/g, "'\\''")}'`;
 }
 
 // grok CLI はモデル未指定だと端末側 default に従うため、ツール契約として既定 slug を固定する。
