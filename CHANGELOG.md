@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.7] - 2026-08-23
+
+### Changed
+
+- vendor固有コードとOS固有コードを専用モジュールへ分離した（外部挙動不変のリファクタ・
+  campaign正本は docs/32）。`src/vendors/{claude,codex,grok}.ts` が各ベンダーの起動引数・
+  ready/画面判定・完了検出・transcript回収・metadata生成・auth/catalog検証を所有し、
+  `src/agent-shared.ts` がvendor中立の共有プリミティブ（state path・metadata型・完了event型・
+  lineage）を所有する。psmuxのOS差（load-buffer一時ファイル・paste-buffer -r非対応・
+  pipe-pane sink settle・NUL device・mode bit検証可否・Git Bash cwd変換）は
+  `src/tmux-runtime.ts` へ集約した。依存方向は core → vendors → agent-shared →
+  (tmux-runtime, errors) の一方向。公開tool面・schema・receipt・エラーメッセージ・
+  タイミング定数は不変。core.ts は 4,912→3,647行。
+
 ## [0.27.3] - 2026-08-22
 
 ### Fixed
