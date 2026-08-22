@@ -2,7 +2,9 @@
 // tmux-runtime / errors 以外の内部moduleへ依存しない（依存方向: core → vendors → agent-shared）。
 import * as fs from "node:fs";
 import * as os from "node:os";
+import * as path from "node:path";
 import { randomBytes } from "node:crypto";
+import { AitermError } from "./errors.js";
 
 export type AgentKind = "claude" | "codex" | "grok" | "composer";
 export type InitialPromptState = "none" | "not_sent" | "sent" | "pending" | "done" | "failed";
@@ -130,4 +132,92 @@ export function createEmpty0600(p: string): void {
 // 単一引用符で安全に包む（' は '\'' で脱出）。send は raw:true で送るため自前で quote する。
 export function shq(s: string): string {
   return `'${s.replace(/'/g, "'\\''")}'`;
+}
+
+export const LAUNCH_ID_RE = /^[0-9a-f]{32}$/;
+export const AGENT_DONE_POLL_MS = 100;
+export const AGENT_EVENT_MAX_BYTES = 1024 * 1024;
+export const CODEX_TRANSCRIPT_INCREMENT_MAX_BYTES = 16 * 1024 * 1024;
+export const GROK_TRANSCRIPT_INCREMENT_MAX_BYTES = 16 * 1024 * 1024;
+
+// session 名はファイルパス（logpath 等）と pipe-pane の /bin/sh 文字列へ流れる。英数 _ - のみ・64字に
+// 限定し、パストラバーサル（../）とシェルインジェクション（' でのクオート破り・$・; 等）を全入口で断つ。
+export function assertSessionName(name: string): void {
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(name))
+    throw new AitermError(`session 名は英数字と _ - のみ・64文字以内にしてください: ${JSON.stringify(name)}`, 2);
+}
+
+export function stateRoot(): string {
+  const uid = currentUid();
+  const base = runtimeStateBase();
+  return path.join(base, `aiterm-mcp-${uid}`);
+}
+
+export function ensureStateRoot(): string {
+  // state root は OS が与える per-user runtime dir（XDG_RUNTIME_DIR / os.tmpdir()）の下に作る。
+  // 以前はここで symlink・owner・mode を検査していたが、共有 /tmp に敵対的な同居主体がいる
+  // 前提の防御であり、対応 OS の既定配置では成立しない（オーナー裁定 2026-08-19）。
+  // 作成時の 0o700 は検査ではなく妥当な既定として残す。経路の異常は以降の
+  // open/stat が OS エラーとしてそのまま露出させる。
+  const root = stateRoot();
+  fs.mkdirSync(root, { recursive: true, mode: 0o700 });
+  fs.mkdirSync(path.join(root, "agents"), { recursive: true, mode: 0o700 });
+  return root;
+}
+
+export function agentsDir(): string {
+  return path.join(ensureStateRoot(), "agents");
+}
+
+export function agentEventPath(name: string, launchId: string): string {
+  assertSessionName(name);
+  if (!LAUNCH_ID_RE.test(launchId)) throw new AitermError(`launch_id が不正です: ${launchId}`, 2);
+  return path.join(agentsDir(), `${name}.${launchId}.events.jsonl`);
+}
+
+export function agentMetadataPath(name: string, launchId: string): string {
+  assertSessionName(name);
+  if (!LAUNCH_ID_RE.test(launchId)) throw new AitermError(`launch_id が不正です: ${launchId}`, 2);
+  return path.join(agentsDir(), `${name}.${launchId}.agent.json`);
+}
+
+export function agentWaitLockPath(name: string, launchId: string): string {
+  assertSessionName(name);
+  if (!LAUNCH_ID_RE.test(launchId)) throw new AitermError(`launch_id が不正です: ${launchId}`, 2);
+  return path.join(agentsDir(), `${name}.${launchId}.wait.lock`);
+}
+
+export interface AgentDoneEvent {
+  type: "agent_done";
+  vendor: AgentKind;
+  aiterm_session: string;
+  launch_id: string;
+  vendor_session_id: string | null;
+  turn_id: string | null;
+  operation_id: string | null;
+  reason: string;
+  done_status: "turn_done";
+  stop_hook_active?: boolean;
+  result_digest?: string;
+  result_bytes?: number;
+  at: string;
+}
+
+export interface AgentWaitObservation {
+  schema: "aiterm.agent-wait-result.v1";
+  session_id: string;
+  launch_id: string;
+  vendor: AgentKind;
+  // running は timeout=0（待たずに一度だけ観測する照会）専用の「まだ終わっていない」。
+  // timeout は「指定秒だけ待って終わらなかった」で、両者を1語に潰さない（ADR 0018）。
+  // rate_limited は vendor の利用上限バナーを pane log で観測した「モデルが応答できない」。
+  // 完了でも沈黙でもない typed な回答として親へ返す（実被弾 2026-08-22: Grok weekly limit で
+  // 完了 event が永遠に出ず、waiter は timeout の沈黙か auth 誤診しか返せなかった）。
+  outcome: "done" | "running" | "timeout" | "closed" | "rate_limited";
+  operation_id: string | null;
+  vendor_session_id: string | null;
+  turn_id: string | null;
+  malformed_events: number;
+  at: string | null;
+  rate_limit: string | null;
 }

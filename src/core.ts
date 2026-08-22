@@ -43,8 +43,37 @@ import {
   writeText0600,
   createEmpty0600,
   shq,
+  LAUNCH_ID_RE,
+  AGENT_DONE_POLL_MS,
+  AGENT_EVENT_MAX_BYTES,
+  CODEX_TRANSCRIPT_INCREMENT_MAX_BYTES,
+  GROK_TRANSCRIPT_INCREMENT_MAX_BYTES,
+  assertSessionName,
+  stateRoot,
+  ensureStateRoot,
+  agentsDir,
+  agentEventPath,
+  agentMetadataPath,
+  agentWaitLockPath,
 } from "./agent-shared.js";
-import type { AgentKind, AgentMetadata, InitialPromptState } from "./agent-shared.js";
+import type {
+  AgentKind,
+  AgentMetadata,
+  InitialPromptState,
+  AgentDoneEvent,
+  AgentWaitObservation,
+} from "./agent-shared.js";
+import {
+  GROK_MODEL_DEFAULTS,
+  realGrokHome,
+  resolveAndValidateGrokAuth,
+  assertGrokModelAvailable,
+  grokEventsTranscript,
+  grokCompletionEvent,
+  latestGrokCompletion,
+  grokInitializationComplete,
+  observeGrokDone,
+} from "./vendors/grok.js";
 import { resolveAgentBin, spawnAgentControlCommand, resolveThroughlineBin, runThroughlineHandoffContext, isUsableExecutableFile, isWindowsNativeExecutable, isUsableAgentExecutableFile, agentBinForPaneShell, resolveWinPaneShell } from "./agent-resolver.js";
 export { AitermError } from "./errors.js";
 export { tmuxSpawnEnv } from "./tmux-runtime.js";
@@ -70,22 +99,17 @@ const NON_POSIX_MARK_SHELLS = new Set(["fish", "csh", "tcsh"]);
 // エコーは rc=%d(リテラル)。数字アンカーでエコーに免疫化し、部分一致による早期誤完了を防ぐ（B1）。
 // send の printf 書式（`rc=%d`）と対で保守すること。
 const MARK_DONE_RE = /<<<AITERM_DONE rc=[0-9]+>>>/;
-const LAUNCH_ID_RE = /^[0-9a-f]{32}$/;
 const OPERATION_ID_RE = /^sha256:[0-9a-f]{64}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const AGENT_LINEAGE_RE = /^[A-Za-z0-9_.:-]+(?:>[A-Za-z0-9_.:-]+)*$/;
 export type { AgentKind } from "./agent-shared.js";
 
-const AGENT_DONE_POLL_MS = 100;
 const AGENT_DONE_SETTLE_MIN_MS = 250;
 const AGENT_DONE_SCREEN_SETTLE_POLL_MS = 100;
 const AGENT_DONE_SCREEN_SETTLE_MAX_POLLS = 5;
 const AGENT_DONE_SCREEN_SETTLE_MIN_SAMPLES = 3;
 const AGENT_SUBMIT_DELAY_MS = 250;
-const AGENT_EVENT_MAX_BYTES = 1024 * 1024;
 const AGENT_EVENT_TAIL_BYTES = 64 * 1024;
-const CODEX_TRANSCRIPT_INCREMENT_MAX_BYTES = 16 * 1024 * 1024;
-const GROK_TRANSCRIPT_INCREMENT_MAX_BYTES = 16 * 1024 * 1024;
 const AGENT_METADATA_NEGATIVE_CACHE_TTL_MS = 2_000;
 const AGENT_TUI_READY_TIMEOUT_MS = 30_000;
 const AGENT_TUI_READY_POLL_MS = 500;
@@ -98,9 +122,6 @@ const AGENT_SUBMIT_RESIDUE_POLL_MS = 300;
 const AGENT_SUBMIT_RESIDUE_MAX_SAMPLES = 5;
 const AGENT_SUBMIT_RESIDUE_TAIL_CHARS = 32;
 const AGENT_SUBMIT_RESIDUE_MIN_TAIL_CHARS = 8;
-const GROK_AUTH_MAX_BYTES = 64 * 1024;
-const GROK_MODELS_MAX_BYTES = 1024 * 1024;
-const GROK_MODELS_TIMEOUT_MS = 15_000;
 const CLAUDE_RESULT_MAX_BYTES = 4 * 1024 * 1024;
 
 // 出力削減（RTK の CAP 思想を移植）
@@ -232,53 +253,6 @@ function assertSendTextSize(text: string, context = "送信文字列"): void {
   if (bytes > MAX_SEND_BYTES) {
     throw new AitermError(`${context}が${MAX_SEND_BYTES} bytesを超えています（${bytes} bytes）`, 2);
   }
-}
-
-// session 名はファイルパス（logpath 等）と pipe-pane の /bin/sh 文字列へ流れる。英数 _ - のみ・64字に
-// 限定し、パストラバーサル（../）とシェルインジェクション（' でのクオート破り・$・; 等）を全入口で断つ。
-function assertSessionName(name: string): void {
-  if (!/^[A-Za-z0-9_-]{1,64}$/.test(name))
-    throw new AitermError(`session 名は英数字と _ - のみ・64文字以内にしてください: ${JSON.stringify(name)}`, 2);
-}
-
-function stateRoot(): string {
-  const uid = currentUid();
-  const base = runtimeStateBase();
-  return path.join(base, `aiterm-mcp-${uid}`);
-}
-
-function ensureStateRoot(): string {
-  // state root は OS が与える per-user runtime dir（XDG_RUNTIME_DIR / os.tmpdir()）の下に作る。
-  // 以前はここで symlink・owner・mode を検査していたが、共有 /tmp に敵対的な同居主体がいる
-  // 前提の防御であり、対応 OS の既定配置では成立しない（オーナー裁定 2026-08-19）。
-  // 作成時の 0o700 は検査ではなく妥当な既定として残す。経路の異常は以降の
-  // open/stat が OS エラーとしてそのまま露出させる。
-  const root = stateRoot();
-  fs.mkdirSync(root, { recursive: true, mode: 0o700 });
-  fs.mkdirSync(path.join(root, "agents"), { recursive: true, mode: 0o700 });
-  return root;
-}
-
-function agentsDir(): string {
-  return path.join(ensureStateRoot(), "agents");
-}
-
-function agentEventPath(name: string, launchId: string): string {
-  assertSessionName(name);
-  if (!LAUNCH_ID_RE.test(launchId)) throw new AitermError(`launch_id が不正です: ${launchId}`, 2);
-  return path.join(agentsDir(), `${name}.${launchId}.events.jsonl`);
-}
-
-function agentMetadataPath(name: string, launchId: string): string {
-  assertSessionName(name);
-  if (!LAUNCH_ID_RE.test(launchId)) throw new AitermError(`launch_id が不正です: ${launchId}`, 2);
-  return path.join(agentsDir(), `${name}.${launchId}.agent.json`);
-}
-
-function agentWaitLockPath(name: string, launchId: string): string {
-  assertSessionName(name);
-  if (!LAUNCH_ID_RE.test(launchId)) throw new AitermError(`launch_id が不正です: ${launchId}`, 2);
-  return path.join(agentsDir(), `${name}.${launchId}.wait.lock`);
 }
 
 function agentManagedClaudeSettingsPath(name: string, launchId: string): string {
@@ -1359,22 +1333,6 @@ function subagentInstruction(meta: AgentMetadata): string {
   ].join("\n");
 }
 
-interface AgentDoneEvent {
-  type: "agent_done";
-  vendor: AgentKind;
-  aiterm_session: string;
-  launch_id: string;
-  vendor_session_id: string | null;
-  turn_id: string | null;
-  operation_id: string | null;
-  reason: string;
-  done_status: "turn_done";
-  stop_hook_active?: boolean;
-  result_digest?: string;
-  result_bytes?: number;
-  at: string;
-}
-
 interface ClaudeOperationMarker {
   operationId: string | null;
 }
@@ -1545,98 +1503,6 @@ function createClaudeCorrelationSettings(
     },
   });
   return settings;
-}
-
-function realGrokHome(): string {
-  return path.resolve(process.env.GROK_HOME || path.join(process.env.HOME ?? os.homedir(), ".grok"));
-}
-
-function resolveAndValidateGrokAuth(srcHome: string): string | null {
-  const inheritedSet = Object.prototype.hasOwnProperty.call(process.env, "GROK_AUTH_PATH");
-  const inherited = process.env.GROK_AUTH_PATH;
-  if (inheritedSet && (!inherited || !path.isAbsolute(inherited))) throw new AitermError("GROK_AUTH_PATH は空でない絶対パスで指定してください", 2);
-  const authPath = inherited ?? path.join(srcHome, "auth.json");
-  let fd: number | undefined;
-  try {
-    fd = fs.openSync(authPath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
-    const st = fs.fstatSync(fd);
-    // isFile・nlink・owner・size・O_NOFOLLOW・realpath 検証は全OS共通に維持する
-    // （mode bit 検証のOS差は tmux-runtime の modeBits* が所有）。
-    const worldAccessible = modeBitsWorldAccessible(st.mode);
-    if (!st.isFile() || st.nlink !== 1 || st.uid !== currentUid() || worldAccessible || st.size > GROK_AUTH_MAX_BYTES) {
-      throw new AitermError("Grok 認証正本の安全検証に失敗しました", 2);
-    }
-    const value: unknown = JSON.parse(fs.readFileSync(fd, "utf8"));
-    if (!value || typeof value !== "object" || Array.isArray(value)) throw new AitermError("Grok 認証正本のJSONが不正です", 2);
-    // auth file 自体は O_NOFOLLOW で開いているが、中間 directory の symlink は辿り得る。
-    // vendor に渡す正本を path swap の入口にしないため、字句正規化した絶対 path と realpath を
-    // 一致させ、canonical な祖先も root まで検証する。same-UID race の排他は vendor lock の責務。
-    const lexicalPath = path.resolve(authPath);
-    const canonicalPath = fs.realpathSync(authPath);
-    if (lexicalPath !== canonicalPath) throw new AitermError("Grok 認証正本の path に symlink を含められません", 2);
-    for (let dir = path.dirname(canonicalPath); ; dir = path.dirname(dir)) {
-      const dirSt = fs.lstatSync(dir);
-      // /tmp のような root 所有 + sticky の共有 directory は、本人所有の private な
-      // 直下 directory を他 UID が rename/unlink できないため許可する。sticky 無しの
-      // group/other writable 祖先は path swap が可能なので従来どおり拒否する。
-      const writableByOthers = modeBitsWritableByOthers(dirSt.mode);
-      const protectedSharedRoot = dirSt.uid === 0 && (dirSt.mode & 0o1000) !== 0;
-      if (
-        !dirSt.isDirectory()
-        || dirSt.isSymbolicLink()
-        || (dirSt.uid !== currentUid() && dirSt.uid !== 0)
-        || (writableByOthers && !protectedSharedRoot)
-      ) {
-        throw new AitermError("Grok 認証正本の祖先 directory が安全ではありません", 2);
-      }
-      const parent = path.dirname(dir);
-      if (parent === dir) break;
-    }
-    return canonicalPath;
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "ENOENT" && !inheritedSet && process.env.XAI_API_KEY) return null;
-    if (e instanceof AitermError) throw e;
-    throw new AitermError((e as NodeJS.ErrnoException).code === "ENOENT" ? "Grok 認証正本が見つかりません。先に grok login が必要です" : "Grok 認証正本を安全に開けません", 2);
-  } finally {
-    if (fd !== undefined) fs.closeSync(fd);
-  }
-}
-
-function grokModelCatalog(bin: string, cwd: string): string[] {
-  const result = spawnAgentControlCommand(bin, ["models"], cwd, {
-    cwd,
-    encoding: "utf8",
-    env: process.env,
-    timeout: GROK_MODELS_TIMEOUT_MS,
-    maxBuffer: GROK_MODELS_MAX_BYTES,
-    windowsHide: true,
-  });
-  if (result.error || result.status !== 0) {
-    const detail = result.error?.message || result.stderr?.trim() || `exit=${result.status ?? "unknown"}`;
-    throw new AitermError(`Grok model catalog を取得できません: ${detail}`, 2);
-  }
-  const text = result.stdout.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
-  const marker = "Available models:";
-  const start = text.indexOf(marker);
-  if (start < 0) throw new AitermError("Grok model catalog の出力形式が不正です（Available models がありません）", 2);
-  const models: string[] = [];
-  for (const line of text.slice(start + marker.length).split(/\r?\n/)) {
-    const match = line.match(/^\s{2}[-*]\s+(.+?)(?:\s+\(default\))?\s*$/);
-    if (match?.[1]) models.push(match[1]);
-  }
-  if (models.length === 0) throw new AitermError("Grok model catalog に利用可能なmodelがありません", 2);
-  return models;
-}
-
-function assertGrokModelAvailable(bin: string, cwd: string, model: string): void {
-  const models = grokModelCatalog(bin, cwd);
-  if (!models.includes(model)) {
-    throw new AitermError(
-      `Grok model catalog に ${JSON.stringify(model)} がありません。利用可能: ${models.join(", ")}。` +
-        "別modelへfallbackせず起動を中止しました",
-      2,
-    );
-  }
 }
 
 function writeAgentMetadata(meta: AgentMetadata): void {
@@ -2468,7 +2334,7 @@ function bindCompletedInitialPrompt(meta: AgentMetadata): void {
     return;
   }
   if ((meta.kind === "grok" || meta.kind === "composer") && meta.completion_route === "grok_transcript") {
-    if (!latestGrokCompletion(meta)) {
+    if (!latestGrokCompletion(meta, readTranscriptLines)) {
       throw new AitermError(
         `agent session '${meta.aiterm_session}' は起動時 prompt の完了待ちです。${agentWaitGuide(meta.aiterm_session)}`,
         2,
@@ -2514,7 +2380,7 @@ function tryLoadAgentMetadata(name: string): AgentMetadata | null {
 function latestAgentDoneEvent(meta: AgentMetadata, expectedOperationId: string | null = null): AgentDoneEvent | null {
   if (meta.kind === "codex") return latestCodexCompletion(meta);
   if ((meta.kind === "grok" || meta.kind === "composer") && meta.completion_route === "grok_transcript") {
-    return latestGrokCompletion(meta);
+    return latestGrokCompletion(meta, readTranscriptLines);
   }
   const size = safeStatSize(meta.event_file);
   if (size === 0) return null;
@@ -2768,75 +2634,6 @@ function latestCodexCompletion(meta: AgentMetadata): AgentDoneEvent | null {
     }
   }
   return latest;
-}
-
-function grokSessionDirectory(meta: AgentMetadata): string | null {
-  if ((meta.kind !== "grok" && meta.kind !== "composer") || !meta.grok_home || !meta.vendor_session_id) return null;
-  const cwd = meta.cwd ?? process.cwd();
-  return path.join(meta.grok_home, "sessions", encodeURIComponent(cwd), meta.vendor_session_id);
-}
-
-function grokEventsTranscript(meta: AgentMetadata): string | null {
-  const dir = grokSessionDirectory(meta);
-  return dir ? path.join(dir, "events.jsonl") : null;
-}
-
-function grokCompletionEvent(meta: AgentMetadata, record: any): AgentDoneEvent | null {
-  if (
-    (meta.kind !== "grok" && meta.kind !== "composer") ||
-    record?.type !== "turn_ended" ||
-    (record?.outcome !== "completed" && record?.outcome !== "cancelled")
-  ) return null;
-  const turnId = typeof record?.ts === "string" || typeof record?.ts === "number" ? String(record.ts) : null;
-  return {
-    type: "agent_done",
-    vendor: meta.kind,
-    aiterm_session: meta.aiterm_session,
-    launch_id: meta.launch_id,
-    vendor_session_id: meta.vendor_session_id,
-    turn_id: turnId,
-    operation_id: null,
-    reason: `Grok transcript turn_ended:${record.outcome}`,
-    done_status: "turn_done",
-    stop_hook_active: false,
-    at: typeof record?.ts === "string" ? record.ts : new Date().toISOString(),
-  };
-}
-
-function latestGrokCompletion(meta: AgentMetadata): AgentDoneEvent | null {
-  const transcript = grokEventsTranscript(meta);
-  if (!transcript || !fs.existsSync(transcript)) return null;
-  let latest: AgentDoneEvent | null = null;
-  for (const line of readTranscriptLines(transcript)) {
-    if (!line.trim()) continue;
-    try {
-      latest = grokCompletionEvent(meta, JSON.parse(line)) ?? latest;
-    } catch {
-      // 末尾書込み中のlineは次の観測で完結してから読む。
-    }
-  }
-  return latest;
-}
-
-function grokInitializationComplete(meta: AgentMetadata): boolean {
-  const transcript = grokEventsTranscript(meta);
-  if (!transcript || !fs.existsSync(transcript)) return false;
-  const size = safeStatSize(transcript);
-  const from = Math.max(0, size - GROK_TRANSCRIPT_INCREMENT_MAX_BYTES);
-  const lines = readFileRange(transcript, from, size).toString("utf8").split("\n");
-  if (from > 0) lines.shift();
-  for (let index = lines.length - 1; index >= 0; index -= 1) {
-    const line = lines[index].trim();
-    if (!line) continue;
-    try {
-      const record = JSON.parse(line);
-      if (record?.type === "mcp_init_completed") return true;
-      if (record?.type === "mcp_init_started") return false;
-    } catch {
-      // 末尾書込み中や無関係な破損lineはready判定を進めない。
-    }
-  }
-  return false;
 }
 
 function agentCompletionCursor(meta: AgentMetadata): number {
@@ -3164,24 +2961,7 @@ export function agentWaitGuide(session?: string): string {
   return `完了通知は ${agentWaitLaunchForm(cmd)} で受ける（親はここで待たない・polling 不要）。receipt の outcome=done を確認してから再取得する。`;
 }
 
-export interface AgentWaitObservation {
-  schema: "aiterm.agent-wait-result.v1";
-  session_id: string;
-  launch_id: string;
-  vendor: AgentKind;
-  // running は timeout=0（待たずに一度だけ観測する照会）専用の「まだ終わっていない」。
-  // timeout は「指定秒だけ待って終わらなかった」で、両者を1語に潰さない（ADR 0018）。
-  // rate_limited は vendor の利用上限バナーを pane log で観測した「モデルが応答できない」。
-  // 完了でも沈黙でもない typed な回答として親へ返す（実被弾 2026-08-22: Grok weekly limit で
-  // 完了 event が永遠に出ず、waiter は timeout の沈黙か auth 誤診しか返せなかった）。
-  outcome: "done" | "running" | "timeout" | "closed" | "rate_limited";
-  operation_id: string | null;
-  vendor_session_id: string | null;
-  turn_id: string | null;
-  malformed_events: number;
-  at: string | null;
-  rate_limit: string | null;
-}
+export type { AgentWaitObservation } from "./agent-shared.js";
 
 // vendor 別の利用上限バナー。検知は「報告」専用で、完了判定や自動復旧には使わない。
 // 出典（2026-08-22）: grok は live 実バナーで検証、codex/claude はインストール済み実バイナリの
@@ -3297,89 +3077,6 @@ async function observeCodexDone(
   }
 }
 
-async function observeGrokDone(
-  meta: AgentMetadata,
-  timeout: number,
-  requestedCursor: number | null | undefined,
-): Promise<AgentWaitObservation> {
-  const metadataFile = agentMetadataPath(meta.aiterm_session, meta.launch_id);
-  const transcript = grokEventsTranscript(meta);
-  if (!transcript) throw new AitermError("Grok transcriptのsession相関情報がありません", 2);
-  const startOffset = requestedCursor ?? safeStatSize(transcript);
-  let cursor = startOffset;
-  let carry = "";
-  let malformedEvents = 0;
-  let discardLeadingFragment = false;
-  let initializedBoundary = false;
-  const deadline = performance.now() + timeout * 1000;
-  const observation = (
-    outcome: AgentWaitObservation["outcome"],
-    ev: AgentDoneEvent | null = null,
-    rateLimit: string | null = null,
-  ): AgentWaitObservation => ({
-    schema: "aiterm.agent-wait-result.v1",
-    session_id: meta.aiterm_session,
-    launch_id: meta.launch_id,
-    vendor: meta.kind,
-    outcome,
-    operation_id: null,
-    vendor_session_id: meta.vendor_session_id,
-    turn_id: ev?.turn_id ?? null,
-    malformed_events: malformedEvents,
-    at: ev?.at ?? null,
-    rate_limit: rateLimit,
-  });
-
-  for (;;) {
-    if (!fs.existsSync(metadataFile)) return observation("closed");
-    if (fs.existsSync(transcript)) {
-      if (!initializedBoundary) {
-        if (cursor > 0) {
-          const previous = readFileRange(transcript, cursor - 1, cursor).toString("utf8");
-          discardLeadingFragment = previous !== "\n";
-        }
-        initializedBoundary = true;
-      }
-      const size = safeStatSize(transcript);
-      if (size < cursor) {
-        throw new AitermError("Grok transcript が完了待機中に短くなりました。該当セッションを閉じて起動し直してください。", 2);
-      }
-      if (size - startOffset > GROK_TRANSCRIPT_INCREMENT_MAX_BYTES) {
-        throw new AitermError("Grok transcript のturn増分が大きすぎます。該当セッションを閉じて起動し直してください。", 2);
-      }
-      if (size > cursor) {
-        carry += readFileRange(transcript, cursor, size).toString("utf8");
-        cursor = size;
-        const parts = carry.split("\n");
-        carry = parts.pop() ?? "";
-        if (discardLeadingFragment && parts.length > 0) {
-          parts.shift();
-          discardLeadingFragment = false;
-        }
-        for (const line of parts) {
-          if (!line.trim()) continue;
-          if (Buffer.byteLength(line, "utf8") > AGENT_EVENT_MAX_BYTES) {
-            malformedEvents++;
-            continue;
-          }
-          try {
-            const done = grokCompletionEvent(meta, JSON.parse(line));
-            if (done) return observation("done", done);
-          } catch {
-            malformedEvents++;
-          }
-        }
-      }
-    }
-    {
-      const limited = detectAgentRateLimit(meta.kind, meta.aiterm_session);
-      if (limited) return observation("rate_limited", null, limited);
-    }
-    if (performance.now() >= deadline) return observation(timeout === 0 ? "running" : "timeout");
-    await sleep(AGENT_DONE_POLL_MS);
-  }
-}
-
 // 外部waiterプロセス用の純リーダー観測。lock・PTY・metadata書込・dispatch状態には一切触れない。
 // Codexはrollout transcript、他vendorはevent fileを増分走査し、vendor_session_idのbind永続化を
 // 行わない（waiterは観測者であって所有者でない）。
@@ -3400,7 +3097,7 @@ export async function observeAgentDone(
     return observeCodexDone(meta, timeout, o.cursor);
   }
   if ((meta.kind === "grok" || meta.kind === "composer") && meta.completion_route === "grok_transcript") {
-    return observeGrokDone(meta, timeout, o.cursor);
+    return observeGrokDone(meta, timeout, o.cursor, detectAgentRateLimit);
   }
   const metadataFile = agentMetadataPath(meta.aiterm_session, meta.launch_id);
   // 境界の優先順: dispatch receipt の event_cursor（起動順序に依存しない）→ operation相関
@@ -4287,13 +3984,6 @@ export function vendorLauncherDiagnostic(kind: AgentKind): DiagnosticStatus {
   }
 }
 
-// grok CLI はモデル未指定だと端末側 default に従うため、ツール契約として既定 slug を固定する。
-// codex は既定 slug を持たず端末 config／CLI 既定に委ねる（起動応答で実効値を報告する）。
-// grok 既定は dotagents 規範（docs/02_models.md: xAI 旗艦 = grok-4.6）に従う。
-const GROK_MODEL_DEFAULTS: Record<"grok" | "composer", string> = {
-  grok: "grok-4.6",
-  composer: "grok-composer-2.5-fast",
-};
 const CLAUDE_EFFORTS = new Set(["low", "medium", "high", "xhigh", "max"]);
 
 function buildAgentCmd(
