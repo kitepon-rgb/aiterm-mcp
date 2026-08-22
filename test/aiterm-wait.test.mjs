@@ -291,9 +291,15 @@ test("observe: 不正cursorは拒否", async () => {
 // ---- CLI black-box ----
 
 function runCli(args, env) {
+  // Windows native は TMPDIR を持たない。TEMP/TMP を渡さないと子の SOCKDIR が
+  // os.tmpdir() へ落ち、親が書いた pane log と置き場がずれる。
   return spawnSync(process.execPath, [CLI, ...args], {
     encoding: "utf8",
-    env: { PATH: process.env.PATH, XDG_RUNTIME_DIR: env, HOME: process.env.HOME, TMPDIR: process.env.TMPDIR },
+    env: {
+      PATH: process.env.PATH, XDG_RUNTIME_DIR: env, HOME: process.env.HOME,
+      TMPDIR: process.env.TMPDIR, TEMP: process.env.TEMP, TMP: process.env.TMP,
+      USERPROFILE: process.env.USERPROFILE, SYSTEMROOT: process.env.SYSTEMROOT,
+    },
   });
 }
 
@@ -476,7 +482,12 @@ test("cli: 不正--cursorはexit 1", () => {
 
 // ---- rate limit 検知（2026-08-22 実被弾: Grok weekly limit で waiter が沈黙/auth誤診）----
 
-const SOCKDIR_FOR_TEST = path.join(process.env.TMPDIR ?? "/tmp", "claude-tmux-sockets");
+// 製品側 SOCKDIR（src/tmux-runtime.ts）と同じ規則。Windows native は TMPDIR を持たず
+// TEMP→os.tmpdir() へ落ちるため、POSIX 前提で組むと pane log の置き場がずれてテストが落ちる。
+const SOCKDIR_FOR_TEST = path.join(
+  process.env.TMPDIR ?? (process.platform === "win32" ? process.env.TEMP ?? os.tmpdir() : "/tmp"),
+  "claude-tmux-sockets",
+);
 
 function writePaneLog(name, text) {
   fs.mkdirSync(SOCKDIR_FOR_TEST, { recursive: true });
