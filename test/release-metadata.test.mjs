@@ -68,7 +68,12 @@ test('npm pack はbuild済みdistの全ランタイム.jsを同梱する', async
   // dist/vendors/ が入らないまま publish され、公開版が ERR_MODULE_NOT_FOUND で起動不能だった。
   // repo内 dist で回る CI では検出できないため、tarball 同梱一覧そのものを固定する。
   const root = fileURLToPath(new URL('..', import.meta.url));
-  const { stdout } = await execFileAsync('npm', ['pack', '--dry-run', '--json'], { cwd: root, maxBuffer: 16 * 1024 * 1024 });
+  // Windows の npm 実体は npm.cmd のため、shell 経由でないと spawn ENOENT になる。
+  const { stdout } = await execFileAsync('npm', ['pack', '--dry-run', '--json'], {
+    cwd: root,
+    maxBuffer: 16 * 1024 * 1024,
+    shell: process.platform === 'win32',
+  });
   const packed = new Set(JSON.parse(stdout)[0].files.map((f) => f.path));
   // 対象は tsc が生成する runtime dist（直下と vendors/）だけ。dist/ に残り得る
   // MCPB staging 等の生成残骸は publish 対象ではないため見ない。
