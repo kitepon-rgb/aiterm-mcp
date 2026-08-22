@@ -137,6 +137,7 @@ export function shq(s: string): string {
 export const LAUNCH_ID_RE = /^[0-9a-f]{32}$/;
 export const AGENT_DONE_POLL_MS = 100;
 export const AGENT_EVENT_MAX_BYTES = 1024 * 1024;
+export const AGENT_EVENT_TAIL_BYTES = 64 * 1024;
 export const CODEX_TRANSCRIPT_INCREMENT_MAX_BYTES = 16 * 1024 * 1024;
 export const GROK_TRANSCRIPT_INCREMENT_MAX_BYTES = 16 * 1024 * 1024;
 
@@ -220,4 +221,8 @@ export interface AgentWaitObservation {
   malformed_events: number;
   at: string | null;
   rate_limit: string | null;
+}
+
+export function writeAgentMetadata(meta: AgentMetadata): void {
+  writeJson0600(agentMetadataPath(meta.aiterm_session, meta.launch_id), meta);
 }
