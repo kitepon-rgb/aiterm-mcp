@@ -2427,9 +2427,14 @@ function loadAgentMetadata(name: string): AgentMetadata {
     };
   }
   if (m.kind === "codex") {
-    const expectedHome = realCodexHome();
-    if (m.hook_route !== "shared_codex_home" || m.completion_route !== "codex_transcript" || m.codex_home !== expectedHome) {
-      throw new AitermError("agent metadata の path が現在の secure state root と一致しません", 2);
+    // codex_home は起動時に記録した per-launch の正本を信じる。現在の process env
+    // （realCodexHome()）との等値を要求すると、席専用 CODEX_HOME で起動した正当な
+    // session が別の aiterm instance から全部拒否される（2026-08-22 実測: peertable の
+    // 席へ pty_key できず円卓が停止した）。検証は形（絶対パス）だけにする。
+    const recordedHome = m.codex_home;
+    if (m.hook_route !== "shared_codex_home" || m.completion_route !== "codex_transcript"
+      || typeof recordedHome !== "string" || !path.isAbsolute(recordedHome)) {
+      throw new AitermError("agent metadata の codex_home が不正です（絶対パスの記録が必要）", 2);
     }
     return {
       kind: "codex",
@@ -2445,20 +2450,24 @@ function loadAgentMetadata(name: string): AgentMetadata {
       completion_route: "codex_transcript",
       ...loadAgentLineageFields(m, true),
       node_platform: process.platform,
-      codex_home: expectedHome,
+      codex_home: recordedHome,
     };
   }
-  const expectedGrokHome = realGrokHome();
+  // grok_home も codex_home と同じ理由で per-launch の記録値を正とする（席専用 GROK_HOME）。
+  // 認証正本の照合も記録された home に対して行う——現在の env の home と比較すると、
+  // 席専用 home で起動した session が別 instance から拒否される。
+  const recordedGrokHome = m.grok_home;
   if (
     m.hook_route !== "shared_grok_home" ||
     m.completion_route !== "grok_transcript" ||
-    m.grok_home !== expectedGrokHome ||
+    typeof recordedGrokHome !== "string" ||
+    !path.isAbsolute(recordedGrokHome) ||
     typeof m.vendor_session_id !== "string" ||
     !UUID_RE.test(m.vendor_session_id)
   ) {
-    throw new AitermError("agent metadata の path が現在の secure state root と一致しません", 2);
+    throw new AitermError("agent metadata の grok_home が不正です（絶対パスの記録が必要）", 2);
   }
-  const expectedAuthPath = resolveAndValidateGrokAuth(realGrokHome());
+  const expectedAuthPath = resolveAndValidateGrokAuth(recordedGrokHome);
   if ((typeof m.grok_auth_path === "string" ? m.grok_auth_path : null) !== expectedAuthPath) {
     throw new AitermError("agent metadata の認証正本が現在の設定と一致しません", 2);
   }
@@ -2476,7 +2485,7 @@ function loadAgentMetadata(name: string): AgentMetadata {
     completion_route: "grok_transcript",
     ...loadAgentLineageFields(m, true),
     node_platform: process.platform,
-    grok_home: expectedGrokHome,
+    grok_home: recordedGrokHome,
     grok_auth_path: expectedAuthPath,
   };
 }
