@@ -96,9 +96,8 @@ export async function main(argv: string[]): Promise<void> {
           vendor: "grok",
           rate_limit: limited,
           message:
-            "Grok が利用上限に達している（pane に上限バナーを確認）。認証正本の不在は上限時に " +
-            "CLI が auth を無効化した可能性があり、未ログインの誤診に注意。リセット待ち・" +
-            "クレジット購入・席の model/vendor 変更のいずれかで対応する",
+            "Grok が利用上限に達している。別のベンダーのモデルに切り替えてください。" +
+            "（認証正本の不在は上限時に CLI が auth を自壊させた痕跡で、未ログインの誤診に注意）",
         });
         process.exitCode = 6;
         return;
