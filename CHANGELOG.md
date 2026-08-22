@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.2] - 2026-08-22
+
+### Changed
+
+- OS依存コードを独立モジュールへ分離した（挙動不変のリファクタ）。errors（AitermErrorと
+  telemetry所有の失敗経路）、tmux-runtime（tmux/psmuxの解決・socket/namespace・locale注入・
+  起動）、agent-resolver（claude/codex/grok/throughline/pane shellの実行ファイル解決と
+  起動経路）、runtime-error-os（パス規約・Windows DACL・host profile・process観測・
+  force kill）。OS分岐の規約は各モジュールだけが所有し、core.tsとruntime-error-store.tsは
+  OS非依存ロジックに保つ。
+
+### Fixed
+
+- process start identity の `ps -o lstart=` 観測が observer の locale に依存していた
+  （lstart の日付書式は LC_TIME で変わる。Lattice 0.63.4 で実被弾した同族の罠）。
+  観測 env を `LC_ALL=C` へ固定した。
+- smoke の公開version検査が 0.27.0 固定のまま 0.27.1 が release され、`npm test` が
+  素で赤になっていた。versionへ追随した。
+
 ## [0.27.1] - 2026-08-20
 
 ### Fixed
