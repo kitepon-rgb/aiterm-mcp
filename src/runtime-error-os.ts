@@ -114,7 +114,11 @@ export function processStartIdentity(pid: number, platform: NodeJS.Platform, tim
     const value = result.status === 0 ? (result.stdout ?? "").trim() : "";
     return /^\d+$/.test(value) ? `win32:${value}` : null;
   }
-  const result = spawnSync("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8", timeout: 1000, maxBuffer: 4096 });
+  // lstart の日付書式は LC_TIME で変わり、locale の違う観測者間で identity が割れる
+  // （caveat: ps-locale-lstart-lc-time-ascii-argv-lc-ctype-digest。Lattice 0.63.4 と同じ固定）
+  const result = spawnSync("ps", ["-o", "lstart=", "-p", String(pid)], {
+    encoding: "utf8", timeout: 1000, maxBuffer: 4096, env: { ...process.env, LC_ALL: "C" },
+  });
   const value = result.status === 0 ? (result.stdout ?? "").trim() : "";
   return value ? `${platform}:${value}` : null;
 }
