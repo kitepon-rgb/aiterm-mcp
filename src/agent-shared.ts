@@ -272,3 +272,23 @@ export function writeScopeLaunchNote(kind: AgentKind, writeScope: string | undef
         (kind === "codex" ? "" : "MCPツール許可は --always-approve で自動承認（sandbox内のため能力拡大なし）。")
       : `\n能力宣言: write_scope=${JSON.stringify(writeScope)}。パス単位のsandbox allowlistに対応するCLI引数がないため宣言の記録のみ（構造的unsupported）。`;
 }
+
+export interface AgentLineageContext {
+  agentRole: "subagent";
+  parentSessionId: string;
+  delegationDepth: number;
+  lineage: string;
+  delegationAllowed: true;
+}
+export function agentLineageFields(context: AgentLineageContext): Pick<
+  AgentMetadata,
+  "agent_role" | "parent_session_id" | "delegation_depth" | "lineage" | "delegation_allowed"
+> {
+  return {
+    agent_role: context.agentRole,
+    parent_session_id: context.parentSessionId,
+    delegation_depth: context.delegationDepth,
+    lineage: context.lineage,
+    delegation_allowed: context.delegationAllowed,
+  };
+}

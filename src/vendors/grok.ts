@@ -5,6 +5,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { randomBytes, randomUUID } from "node:crypto";
 import { AitermError } from "../errors.js";
 import { modeBitsWorldAccessible, modeBitsWritableByOthers } from "../tmux-runtime.js";
 import { spawnAgentControlCommand } from "../agent-resolver.js";
@@ -17,11 +18,15 @@ import {
   readFileRange,
   sleep,
   agentMetadataPath,
+  writeAgentMetadata,
+  agentEventPath,
+  createEmpty0600,
+  agentLineageFields,
   AGENT_DONE_POLL_MS,
   AGENT_EVENT_MAX_BYTES,
   GROK_TRANSCRIPT_INCREMENT_MAX_BYTES,
 } from "../agent-shared.js";
-import type { AgentKind, AgentMetadata, AgentDoneEvent, AgentWaitObservation } from "../agent-shared.js";
+import type { AgentKind, AgentMetadata, AgentDoneEvent, AgentWaitObservation, InitialPromptState, AgentLineageContext } from "../agent-shared.js";
 
 const GROK_AUTH_MAX_BYTES = 64 * 1024;
 const GROK_MODELS_MAX_BYTES = 1024 * 1024;
@@ -354,4 +359,75 @@ export function grokFooterHasConfiguration(screen: string, model: string | null,
     if (effort && !line.includes(`(${effort})`)) return false;
     return modelLabel !== null || effort !== null;
   });
+}
+
+// 最後のuser発話以降のassistantメッセージをchat_history.jsonlから抽出する。
+export function grokTranscriptText(
+  meta: AgentMetadata,
+  readTranscriptLines: (file: string) => string[],
+  transcriptUnavailable: () => never,
+): string {
+  if (!meta.grok_home || !meta.vendor_session_id) transcriptUnavailable();
+  // cwd 未指定で起動した TUI はサーバープロセスの cwd を継承する。metadata に null が残る既存
+  // launch との互換のため、その実際の起動 cwd を path 導出に使う（launch 側は変更しない）。
+  const cwd = meta.cwd ?? process.cwd();
+  const transcript = path.join(
+    meta.grok_home,
+    "sessions",
+    encodeURIComponent(cwd),
+    meta.vendor_session_id,
+    "chat_history.jsonl",
+  );
+  const lines = readTranscriptLines(transcript);
+  let lastUser = -1;
+  const records: any[] = [];
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    try {
+      const record = JSON.parse(line);
+      records.push(record);
+      if (record?.type === "user" && !("synthetic_reason" in record)) lastUser = records.length - 1;
+    } catch {
+      // 外部 transcript の壊れた1行は残りの完結行を読む妨げにしない。
+    }
+  }
+  return records
+    .slice(lastUser + 1)
+    .filter((record) => record?.type === "assistant" && typeof record?.content === "string")
+    .map((record) => record.content)
+    .join("\n");
+}
+
+export function createGrokAgentMetadata(
+  kind: "grok" | "composer",
+  name: string,
+  cwd: string | null,
+  initialPrompt: InitialPromptState,
+  authPath: string | null,
+  writeScope?: string,
+  lineageContext?: AgentLineageContext,
+): AgentMetadata {
+  const launchId = randomBytes(16).toString("hex");
+  const eventFile = agentEventPath(name, launchId);
+  createEmpty0600(eventFile);
+  const grokHome = realGrokHome();
+  const meta: AgentMetadata = {
+    kind,
+    aiterm_session: name,
+    launch_id: launchId,
+    event_file: eventFile,
+    created_at: new Date().toISOString(),
+    cwd,
+    ...(writeScope === undefined ? {} : { write_scope: writeScope }),
+    vendor_session_id: randomUUID(),
+    initial_prompt: initialPrompt,
+    hook_route: "shared_grok_home",
+    completion_route: "grok_transcript",
+    ...(lineageContext ? agentLineageFields(lineageContext) : {}),
+    node_platform: process.platform,
+    grok_home: grokHome,
+    grok_auth_path: authPath,
+  };
+  writeAgentMetadata(meta);
+  return meta;
 }

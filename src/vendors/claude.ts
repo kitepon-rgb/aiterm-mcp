@@ -3,7 +3,7 @@
 // 依存方向を core → vendors → agent-shared の一方向に保つ。
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { AitermError } from "../errors.js";
 import { modeBitsWorldAccessible } from "../tmux-runtime.js";
@@ -14,11 +14,15 @@ import {
   shq,
   subagentInstruction,
   writeScopeLaunchNote,
+  agentEventPath,
+  createEmpty0600,
+  writeAgentMetadata,
+  agentLineageFields,
   assertSessionName,
   agentsDir,
   LAUNCH_ID_RE,
 } from "../agent-shared.js";
-import type { AgentMetadata, AgentDoneEvent } from "../agent-shared.js";
+import type { AgentMetadata, AgentDoneEvent, InitialPromptState, AgentLineageContext } from "../agent-shared.js";
 
 export const OPERATION_ID_RE = /^sha256:[0-9a-f]{64}$/;
 export const CLAUDE_RESULT_MAX_BYTES = 4 * 1024 * 1024;
@@ -240,3 +244,40 @@ export function claudeTuiReady(screen: string): boolean {
 
 // submit座礁観測のcomposer領域マーカー（ready判定と同じ記号を行頭基準で探す）。
 export const CLAUDE_COMPOSER_MARKER_RE = /^\s*❯/;
+
+export function createClaudeAgentMetadata(
+  name: string,
+  cwd: string | null,
+  initialPrompt: InitialPromptState,
+  launchOperationId: string | null,
+  launchRequestDigest: string | null,
+  lineageContext: AgentLineageContext,
+  model: string | null,
+  effort: string | null,
+): AgentMetadata {
+  const launchId = randomBytes(16).toString("hex");
+  const eventFile = agentEventPath(name, launchId);
+  const resultFile = agentClaudeResultPath(name, launchId);
+  createEmpty0600(eventFile);
+  createEmpty0600(resultFile);
+  const claudeSettings = createClaudeCorrelationSettings(name, launchId, model, effort);
+  const meta: AgentMetadata = {
+    kind: "claude",
+    aiterm_session: name,
+    launch_id: launchId,
+    event_file: eventFile,
+    created_at: new Date().toISOString(),
+    cwd,
+    vendor_session_id: randomUUID(),
+    initial_prompt: initialPrompt,
+    launch_operation_id: launchOperationId,
+    launch_request_digest: launchRequestDigest,
+    hook_route: "shared_claude_settings",
+    ...agentLineageFields(lineageContext),
+    node_platform: process.platform,
+    claude_settings: claudeSettings,
+    result_file: resultFile,
+  };
+  writeAgentMetadata(meta);
+  return meta;
+}

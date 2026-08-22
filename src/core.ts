@@ -59,6 +59,7 @@ import {
   AGENT_EVENT_TAIL_BYTES,
   agentLabel,
   subagentInstruction,
+  agentLineageFields,
 } from "./agent-shared.js";
 import type {
   AgentKind,
@@ -66,6 +67,7 @@ import type {
   InitialPromptState,
   AgentDoneEvent,
   AgentWaitObservation,
+  AgentLineageContext,
 } from "./agent-shared.js";
 import {
   GROK_MODEL_DEFAULTS,
@@ -83,6 +85,8 @@ import {
   grokTuiReady,
   GROK_COMPOSER_MARKER_RE,
   grokFooterHasConfiguration,
+  grokTranscriptText,
+  createGrokAgentMetadata,
 } from "./vendors/grok.js";
 import {
   realCodexHome,
@@ -102,6 +106,8 @@ import {
   codexModelChoice,
   codexEffortChoice,
   codexMoreReasoningChoice,
+  codexTranscriptText,
+  createCodexAgentMetadata,
 } from "./vendors/codex.js";
 import type { CodexConfigPin } from "./vendors/codex.js";
 import {
@@ -121,6 +127,7 @@ import {
   claudeLaunchNote,
   claudeTuiReady,
   CLAUDE_COMPOSER_MARKER_RE,
+  createClaudeAgentMetadata,
 } from "./vendors/claude.js";
 import { resolveAgentBin, spawnAgentControlCommand, resolveThroughlineBin, runThroughlineHandoffContext, isUsableExecutableFile, isWindowsNativeExecutable, isUsableAgentExecutableFile, agentBinForPaneShell, resolveWinPaneShell } from "./agent-resolver.js";
 export { AitermError } from "./errors.js";
@@ -1247,14 +1254,6 @@ export function killAll(): string {
 }
 
 // ── agent_done: vendor の構造化完了記録を PTY 送信の完了境界として使う ────
-interface AgentLineageContext {
-  agentRole: "subagent";
-  parentSessionId: string;
-  delegationDepth: number;
-  lineage: string;
-  delegationAllowed: true;
-}
-
 interface AgentLineageSeed {
   parentSessionId: string;
   delegationDepth: number;
@@ -1306,19 +1305,6 @@ function createAgentLineageContext(
     delegationDepth: seed.delegationDepth,
     lineage,
     delegationAllowed: true,
-  };
-}
-
-function agentLineageFields(context: AgentLineageContext): Pick<
-  AgentMetadata,
-  "agent_role" | "parent_session_id" | "delegation_depth" | "lineage" | "delegation_allowed"
-> {
-  return {
-    agent_role: context.agentRole,
-    parent_session_id: context.parentSessionId,
-    delegation_depth: context.delegationDepth,
-    lineage: context.lineage,
-    delegation_allowed: context.delegationAllowed,
   };
 }
 
@@ -1832,109 +1818,6 @@ function liveWaitLocks(name: string | null): Array<{ session: string; pid: numbe
 
 
 
-function createClaudeAgentMetadata(
-  name: string,
-  cwd: string | null,
-  initialPrompt: InitialPromptState,
-  launchOperationId: string | null,
-  launchRequestDigest: string | null,
-  lineageContext: AgentLineageContext,
-  model: string | null,
-  effort: string | null,
-): AgentMetadata {
-  const launchId = randomBytes(16).toString("hex");
-  const eventFile = agentEventPath(name, launchId);
-  const resultFile = agentClaudeResultPath(name, launchId);
-  createEmpty0600(eventFile);
-  createEmpty0600(resultFile);
-  const claudeSettings = createClaudeCorrelationSettings(name, launchId, model, effort);
-  const meta: AgentMetadata = {
-    kind: "claude",
-    aiterm_session: name,
-    launch_id: launchId,
-    event_file: eventFile,
-    created_at: new Date().toISOString(),
-    cwd,
-    vendor_session_id: randomUUID(),
-    initial_prompt: initialPrompt,
-    launch_operation_id: launchOperationId,
-    launch_request_digest: launchRequestDigest,
-    hook_route: "shared_claude_settings",
-    ...agentLineageFields(lineageContext),
-    node_platform: process.platform,
-    claude_settings: claudeSettings,
-    result_file: resultFile,
-  };
-  writeAgentMetadata(meta);
-  return meta;
-}
-
-function createCodexAgentMetadata(
-  name: string,
-  cwd: string | null,
-  initialPrompt: InitialPromptState,
-  overrides: { model?: string | null; effort?: string | null } = {},
-  writeScope?: string,
-  lineageContext?: AgentLineageContext,
-): AgentMetadata {
-  const launchId = randomBytes(16).toString("hex");
-  const eventFile = agentEventPath(name, launchId);
-  createEmpty0600(eventFile);
-  const codexHome = realCodexHome();
-  const meta: AgentMetadata = {
-    kind: "codex",
-    aiterm_session: name,
-    launch_id: launchId,
-    event_file: eventFile,
-    created_at: new Date().toISOString(),
-    cwd,
-    ...(writeScope === undefined ? {} : { write_scope: writeScope }),
-    vendor_session_id: null,
-    initial_prompt: initialPrompt,
-    hook_route: "shared_codex_home",
-    completion_route: "codex_transcript",
-    ...(lineageContext ? agentLineageFields(lineageContext) : {}),
-    node_platform: process.platform,
-    codex_home: codexHome,
-  };
-  writeAgentMetadata(meta);
-  return meta;
-}
-
-function createGrokAgentMetadata(
-  kind: "grok" | "composer",
-  name: string,
-  cwd: string | null,
-  initialPrompt: InitialPromptState,
-  authPath: string | null,
-  writeScope?: string,
-  lineageContext?: AgentLineageContext,
-): AgentMetadata {
-  const launchId = randomBytes(16).toString("hex");
-  const eventFile = agentEventPath(name, launchId);
-  createEmpty0600(eventFile);
-  const grokHome = realGrokHome();
-  const meta: AgentMetadata = {
-    kind,
-    aiterm_session: name,
-    launch_id: launchId,
-    event_file: eventFile,
-    created_at: new Date().toISOString(),
-    cwd,
-    ...(writeScope === undefined ? {} : { write_scope: writeScope }),
-    vendor_session_id: randomUUID(),
-    initial_prompt: initialPrompt,
-    hook_route: "shared_grok_home",
-    completion_route: "grok_transcript",
-    ...(lineageContext ? agentLineageFields(lineageContext) : {}),
-    node_platform: process.platform,
-    grok_home: grokHome,
-    grok_auth_path: authPath,
-  };
-  writeAgentMetadata(meta);
-  return meta;
-}
-
 function loadAgentLineageFields(m: Partial<AgentMetadata>, required: boolean): ReturnType<typeof agentLineageFields> | {} {
   const present =
     m.agent_role !== undefined ||
@@ -2440,72 +2323,9 @@ export async function readAgentTranscript(
     if (!done) transcriptUnavailable();
     text = readClaudeResultText(meta, done, operationId, transcriptUnavailable);
   } else if (meta.kind === "codex") {
-    if (!meta.codex_home) transcriptUnavailable();
-    const transcript = findLatestCodexTranscript(meta.codex_home, meta.vendor_session_id);
-    if (!transcript) transcriptUnavailable();
-    const lines = readTranscriptLines(transcript);
-    const matching: string[] = [];
-    let finalAnswer = "";
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      let record: any;
-      try {
-        record = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      const payload = record?.payload;
-      if (
-        record?.type === "response_item" &&
-        payload?.type === "message" &&
-        payload?.role === "assistant" &&
-        payload?.internal_chat_message_metadata_passthrough?.turn_id === turnId &&
-        Array.isArray(payload?.content)
-      ) {
-        for (const item of payload.content) {
-          if (item?.type === "output_text" && typeof item.text === "string") matching.push(item.text);
-        }
-      }
-      if (
-        record?.type === "event_msg" &&
-        payload?.type === "agent_message" &&
-        payload?.phase === "final_answer" &&
-        typeof payload?.message === "string"
-      ) {
-        finalAnswer = payload.message;
-      }
-    }
-    text = matching.join("\n") || finalAnswer;
+    text = codexTranscriptText(meta, turnId, readTranscriptLines, transcriptUnavailable);
   } else {
-    if (!meta.grok_home) transcriptUnavailable();
-    // cwd 未指定で起動した TUI はサーバープロセスの cwd を継承する。metadata に null が残る既存
-    // launch との互換のため、その実際の起動 cwd を path 導出に使う（launch 側は変更しない）。
-    const cwd = meta.cwd ?? process.cwd();
-    const transcript = path.join(
-      meta.grok_home,
-      "sessions",
-      encodeURIComponent(cwd),
-      meta.vendor_session_id,
-      "chat_history.jsonl",
-    );
-    const lines = readTranscriptLines(transcript);
-    let lastUser = -1;
-    const records: any[] = [];
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      try {
-        const record = JSON.parse(line);
-        records.push(record);
-        if (record?.type === "user" && !("synthetic_reason" in record)) lastUser = records.length - 1;
-      } catch {
-        // 外部 transcript の壊れた1行は残りの完結行を読む妨げにしない。
-      }
-    }
-    text = records
-      .slice(lastUser + 1)
-      .filter((record) => record?.type === "assistant" && typeof record?.content === "string")
-      .map((record) => record.content)
-      .join("\n");
+    text = grokTranscriptText(meta, readTranscriptLines, transcriptUnavailable);
   }
 
   if (!text.trim()) transcriptNotFound(meta.kind);

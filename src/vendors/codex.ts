@@ -4,6 +4,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { randomBytes } from "node:crypto";
 import { AitermError } from "../errors.js";
 import {
   shq,
@@ -14,12 +15,15 @@ import {
   sleep,
   agentMetadataPath,
   writeAgentMetadata,
+  agentEventPath,
+  createEmpty0600,
+  agentLineageFields,
   AGENT_DONE_POLL_MS,
   AGENT_EVENT_MAX_BYTES,
   AGENT_EVENT_TAIL_BYTES,
   CODEX_TRANSCRIPT_INCREMENT_MAX_BYTES,
 } from "../agent-shared.js";
-import type { AgentKind, AgentMetadata, AgentDoneEvent, AgentWaitObservation } from "../agent-shared.js";
+import type { AgentKind, AgentMetadata, AgentDoneEvent, AgentWaitObservation, InitialPromptState, AgentLineageContext } from "../agent-shared.js";
 
 export function realCodexHome(): string {
   return process.env.CODEX_HOME || path.join(process.env.HOME ?? os.homedir(), ".codex");
@@ -443,4 +447,81 @@ export function codexMoreReasoningChoice(screen: string): string | null {
     if (match) return match[1];
   }
   return null;
+}
+
+// 回収対象turnの最終assistantメッセージをroot rollout transcriptから抽出する。
+export function codexTranscriptText(
+  meta: AgentMetadata,
+  turnId: string | null,
+  readTranscriptLines: (file: string) => string[],
+  transcriptUnavailable: () => never,
+): string {
+  if (!meta.codex_home || !meta.vendor_session_id) transcriptUnavailable();
+  const transcript = findLatestCodexTranscript(meta.codex_home, meta.vendor_session_id);
+  if (!transcript) transcriptUnavailable();
+  const lines = readTranscriptLines(transcript);
+  const matching: string[] = [];
+  let finalAnswer = "";
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    let record: any;
+    try {
+      record = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const payload = record?.payload;
+    if (
+      record?.type === "response_item" &&
+      payload?.type === "message" &&
+      payload?.role === "assistant" &&
+      payload?.internal_chat_message_metadata_passthrough?.turn_id === turnId &&
+      Array.isArray(payload?.content)
+    ) {
+      for (const item of payload.content) {
+        if (item?.type === "output_text" && typeof item.text === "string") matching.push(item.text);
+      }
+    }
+    if (
+      record?.type === "event_msg" &&
+      payload?.type === "agent_message" &&
+      payload?.phase === "final_answer" &&
+      typeof payload?.message === "string"
+    ) {
+      finalAnswer = payload.message;
+    }
+  }
+  return matching.join("\n") || finalAnswer;
+}
+
+export function createCodexAgentMetadata(
+  name: string,
+  cwd: string | null,
+  initialPrompt: InitialPromptState,
+  overrides: { model?: string | null; effort?: string | null } = {},
+  writeScope?: string,
+  lineageContext?: AgentLineageContext,
+): AgentMetadata {
+  const launchId = randomBytes(16).toString("hex");
+  const eventFile = agentEventPath(name, launchId);
+  createEmpty0600(eventFile);
+  const codexHome = realCodexHome();
+  const meta: AgentMetadata = {
+    kind: "codex",
+    aiterm_session: name,
+    launch_id: launchId,
+    event_file: eventFile,
+    created_at: new Date().toISOString(),
+    cwd,
+    ...(writeScope === undefined ? {} : { write_scope: writeScope }),
+    vendor_session_id: null,
+    initial_prompt: initialPrompt,
+    hook_route: "shared_codex_home",
+    completion_route: "codex_transcript",
+    ...(lineageContext ? agentLineageFields(lineageContext) : {}),
+    node_platform: process.platform,
+    codex_home: codexHome,
+  };
+  writeAgentMetadata(meta);
+  return meta;
 }
