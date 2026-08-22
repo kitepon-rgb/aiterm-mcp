@@ -473,3 +473,64 @@ test("cli: 不正--cursorはexit 1", () => {
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+// ---- rate limit 検知（2026-08-22 実被弾: Grok weekly limit で waiter が沈黙/auth誤診）----
+
+const SOCKDIR_FOR_TEST = path.join(process.env.TMPDIR ?? "/tmp", "claude-tmux-sockets");
+
+function writePaneLog(name, text) {
+  fs.mkdirSync(SOCKDIR_FOR_TEST, { recursive: true });
+  const p = path.join(SOCKDIR_FOR_TEST, `${name}.log`);
+  fs.writeFileSync(p, text);
+  return p;
+}
+
+test("detectAgentRateLimit: grok の実バナー（ANSI混じり）を検知する", () => {
+  const name = `rl-unit-${process.pid}`;
+  const log = writePaneLog(
+    name,
+    "\x1b[1m  You hit your weekly limit.\x1b[0m\n  You can continue by purchasing more credits.\n"
+  );
+  try {
+    assert.equal(core.detectAgentRateLimit("grok", name), "You hit your weekly limit");
+    assert.equal(core.detectAgentRateLimit("codex", name), null);
+  } finally {
+    fs.rmSync(log, { force: true });
+  }
+});
+
+test("detectAgentRateLimit: バナー無し・log無しは null（誤検知しない）", () => {
+  const name = `rl-none-${process.pid}`;
+  assert.equal(core.detectAgentRateLimit("grok", name), null);
+  const log = writePaneLog(name, "normal output\nWeekly limit left: 42%\n");
+  try {
+    assert.equal(core.detectAgentRateLimit("grok", name), null);
+  } finally {
+    fs.rmSync(log, { force: true });
+  }
+});
+
+test("cli: Grok auth消失でも上限バナーがあれば AGENT_RATE_LIMITED / exit 6", async () => {
+  await withStateRoot(async (agents) => {
+    const name = "rl-authgone";
+    const grokHome = path.join(path.dirname(agents), "grok-home-empty");
+    fs.mkdirSync(grokHome, { mode: 0o700 });
+    writeMeta(agents, name, "grok", {
+      hook_route: "shared_grok_home",
+      completion_route: "grok_transcript",
+      grok_home: grokHome,
+      grok_auth_path: path.join(grokHome, "auth.json"),
+    });
+    const log = writePaneLog(name, "  You hit your weekly limit.\n");
+    try {
+      const res = runCli(["--session", name, "--timeout", "0"], path.dirname(path.dirname(agents)));
+      const body = JSON.parse(res.stdout.trim().split("\n").pop());
+      assert.equal(res.status, 6);
+      assert.equal(body.code, "AGENT_RATE_LIMITED");
+      assert.equal(body.vendor, "grok");
+      assert.equal(body.rate_limit, "You hit your weekly limit");
+    } finally {
+      fs.rmSync(log, { force: true });
+    }
+  });
+});

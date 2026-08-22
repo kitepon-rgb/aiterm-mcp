@@ -3306,12 +3306,42 @@ export interface AgentWaitObservation {
   vendor: AgentKind;
   // running は timeout=0（待たずに一度だけ観測する照会）専用の「まだ終わっていない」。
   // timeout は「指定秒だけ待って終わらなかった」で、両者を1語に潰さない（ADR 0018）。
-  outcome: "done" | "running" | "timeout" | "closed";
+  // rate_limited は vendor の利用上限バナーを pane log で観測した「モデルが応答できない」。
+  // 完了でも沈黙でもない typed な回答として親へ返す（実被弾 2026-08-22: Grok weekly limit で
+  // 完了 event が永遠に出ず、waiter は timeout の沈黙か auth 誤診しか返せなかった）。
+  outcome: "done" | "running" | "timeout" | "closed" | "rate_limited";
   operation_id: string | null;
   vendor_session_id: string | null;
   turn_id: string | null;
   malformed_events: number;
   at: string | null;
+  rate_limit: string | null;
+}
+
+// vendor 別の利用上限バナー。検知は「報告」専用で、完了判定や自動復旧には使わない。
+// grok は 2026-08-22 の実バナーで検証済み。codex は既知文言の保守的な登録。
+const AGENT_RATE_LIMIT_PATTERNS: Partial<Record<AgentKind, RegExp[]>> = {
+  grok: [/You hit your weekly limit/i, /Weekly limit left:\s*0%/i],
+  composer: [/You hit your weekly limit/i, /Weekly limit left:\s*0%/i],
+  codex: [/You'?ve hit your usage limit/i],
+};
+const AGENT_RATE_LIMIT_SCAN_BYTES = 16 * 1024;
+// pane log の末尾から上限バナーを探す。読めない・無い・対象 vendor でないは全て null（誤検知より取りこぼし側へ倒す）。
+export function detectAgentRateLimit(kind: AgentKind, aitermSession: string): string | null {
+  const patterns = AGENT_RATE_LIMIT_PATTERNS[kind];
+  if (!patterns) return null;
+  const file = logpath(aitermSession);
+  let size: number;
+  try { size = fs.statSync(file).size; } catch { return null; }
+  if (size === 0) return null;
+  let text: string;
+  try { text = readFileRange(file, Math.max(0, size - AGENT_RATE_LIMIT_SCAN_BYTES), size).toString("utf8"); } catch { return null; }
+  const clean = text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+  for (const re of patterns) {
+    const match = clean.match(re);
+    if (match) return match[0];
+  }
+  return null;
 }
 
 async function observeCodexDone(
@@ -3331,6 +3361,7 @@ async function observeCodexDone(
   const observation = (
     outcome: AgentWaitObservation["outcome"],
     ev: AgentDoneEvent | null = null,
+    rateLimit: string | null = null,
   ): AgentWaitObservation => ({
     schema: "aiterm.agent-wait-result.v1",
     session_id: meta.aiterm_session,
@@ -3342,6 +3373,7 @@ async function observeCodexDone(
     turn_id: ev?.turn_id ?? null,
     malformed_events: malformedEvents,
     at: ev?.at ?? null,
+    rate_limit: rateLimit,
   });
 
   for (;;) {
@@ -3387,6 +3419,10 @@ async function observeCodexDone(
         }
       }
     }
+    {
+      const limited = detectAgentRateLimit(meta.kind, meta.aiterm_session);
+      if (limited) return observation("rate_limited", null, limited);
+    }
     if (performance.now() >= deadline) return observation(timeout === 0 ? "running" : "timeout");
     await sleep(AGENT_DONE_POLL_MS);
   }
@@ -3410,6 +3446,7 @@ async function observeGrokDone(
   const observation = (
     outcome: AgentWaitObservation["outcome"],
     ev: AgentDoneEvent | null = null,
+    rateLimit: string | null = null,
   ): AgentWaitObservation => ({
     schema: "aiterm.agent-wait-result.v1",
     session_id: meta.aiterm_session,
@@ -3421,6 +3458,7 @@ async function observeGrokDone(
     turn_id: ev?.turn_id ?? null,
     malformed_events: malformedEvents,
     at: ev?.at ?? null,
+    rate_limit: rateLimit,
   });
 
   for (;;) {
@@ -3464,6 +3502,10 @@ async function observeGrokDone(
         }
       }
     }
+    {
+      const limited = detectAgentRateLimit(meta.kind, meta.aiterm_session);
+      if (limited) return observation("rate_limited", null, limited);
+    }
     if (performance.now() >= deadline) return observation(timeout === 0 ? "running" : "timeout");
     await sleep(AGENT_DONE_POLL_MS);
   }
@@ -3502,6 +3544,7 @@ export async function observeAgentDone(
   const observation = (
     outcome: AgentWaitObservation["outcome"],
     ev: AgentDoneEvent | null = null,
+    rateLimit: string | null = null,
   ): AgentWaitObservation => ({
     schema: "aiterm.agent-wait-result.v1",
     session_id: meta.aiterm_session,
@@ -3513,6 +3556,7 @@ export async function observeAgentDone(
     turn_id: ev?.turn_id ?? null,
     malformed_events: malformedEvents,
     at: ev?.at ?? null,
+    rate_limit: rateLimit,
   });
   for (;;) {
     if (!fs.existsSync(metadataFile)) return observation("closed");
@@ -3538,6 +3582,10 @@ export async function observeAgentDone(
     }
     // timeout=0 は「待たずに一度だけ見る」照会＝未完了は失敗ではなく running。
     // 1秒以上を指定した待機の未完了は従来どおり timeout で、待ち方の意味は変えない。
+    {
+      const limited = detectAgentRateLimit(meta.kind, meta.aiterm_session);
+      if (limited) return observation("rate_limited", null, limited);
+    }
     if (performance.now() >= deadline) return observation(timeout === 0 ? "running" : "timeout");
     await sleep(AGENT_DONE_POLL_MS);
   }
