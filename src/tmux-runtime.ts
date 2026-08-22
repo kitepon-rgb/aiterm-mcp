@@ -144,3 +144,25 @@ export function tmuxCommandWithInput(
 export function tmuxCommand(observe: boolean, ...args: string[]): { code: number; stdout: string; stderr: string } {
   return tmuxCommandWithInput(observe, undefined, ...args);
 }
+
+// psmux の load-buffer は stdin (`-`) 非対応で path 位置引数だけを取る。
+// Windows は owner-only の SOCKDIR 内へ一時ファイル経由で渡し、POSIX は stdin で渡す。
+export function loadPtyBufferChunk(
+  observe: boolean,
+  bufferName: string,
+  chunk: string,
+): { code: number; stdout: string; stderr: string } {
+  if (!isWin) return tmuxCommandWithInput(observe, chunk, "load-buffer", "-b", bufferName, "-");
+  const chunkFile = path.join(SOCKDIR, `${bufferName}.chunk`);
+  try {
+    fs.writeFileSync(chunkFile, chunk, { encoding: "utf8" });
+    return tmuxCommand(observe, "load-buffer", "-b", bufferName, chunkFile);
+  } finally {
+    try { fs.unlinkSync(chunkFile); } catch { /* noop */ }
+  }
+}
+
+// -r: LF→CR 置換を無効化。psmux は -r 非対応（受理フラグは d/p/b/t のみ）のため Windows では付けない。
+export function pasteBufferBaseArgs(): string[] {
+  return isWin ? ["paste-buffer", "-d"] : ["paste-buffer", "-d", "-r"];
+}

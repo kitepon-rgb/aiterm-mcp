@@ -16,7 +16,16 @@ import { fileURLToPath } from "node:url";
 import * as rtk from "./rtk.js";
 import { recordRuntimeError, type RuntimeErrorCode } from "./runtime-error-store.js";
 import { AitermError, TelemetryOwnedError, telemetryOwnedFailure, ownTelemetryFailure, ptyDependencyError } from "./errors.js";
-import { isWin, SOCKDIR, SOCK, WIN_NS, tmuxSpawnEnv, tmuxCommand, tmuxCommandWithInput } from "./tmux-runtime.js";
+import {
+  isWin,
+  SOCKDIR,
+  SOCK,
+  WIN_NS,
+  tmuxSpawnEnv,
+  tmuxCommand,
+  loadPtyBufferChunk,
+  pasteBufferBaseArgs,
+} from "./tmux-runtime.js";
 import { resolveAgentBin, spawnAgentControlCommand, resolveThroughlineBin, runThroughlineHandoffContext, isUsableExecutableFile, isWindowsNativeExecutable, isUsableAgentExecutableFile, agentBinForPaneShell, resolveWinPaneShell } from "./agent-resolver.js";
 export { AitermError } from "./errors.js";
 export { tmuxSpawnEnv } from "./tmux-runtime.js";
@@ -136,9 +145,6 @@ const KEYMAP: Record<string, string> = {
 
 function tmux(...args: string[]): { code: number; stdout: string; stderr: string } {
   return tmuxCommand(true, ...args);
-}
-function tmuxWithInput(input: string, ...args: string[]): { code: number; stdout: string; stderr: string } {
-  return tmuxCommandWithInput(true, input, ...args);
 }
 function tmuxCleanup(...args: string[]): { code: number; stdout: string; stderr: string } {
   return tmuxCommand(false, ...args);
@@ -893,20 +899,7 @@ export function send(name: string, text: string, o: SendOpts = {}): string {
         i > 0
           ? " 先行chunkはPTYに入力済みでEnterは未送信です。再送前に入力を確認・消去してください。"
           : "";
-      // psmux の load-buffer は stdin (`-`) 非対応で path 位置引数だけを取る。
-      // Windows は owner-only の SOCKDIR 内へ一時ファイル経由で渡す。
-      let loaded: { code: number; stdout: string; stderr: string };
-      if (isWin) {
-        const chunkFile = path.join(SOCKDIR, `${bufferName}.chunk`);
-        try {
-          fs.writeFileSync(chunkFile, chunks[i], { encoding: "utf8" });
-          loaded = tmux("load-buffer", "-b", bufferName, chunkFile);
-        } finally {
-          try { fs.unlinkSync(chunkFile); } catch { /* noop */ }
-        }
-      } else {
-        loaded = tmuxWithInput(chunks[i], "load-buffer", "-b", bufferName, "-");
-      }
+      const loaded = loadPtyBufferChunk(true, bufferName, chunks[i]);
       if (loaded.code !== 0) {
         tmuxCleanup("delete-buffer", "-b", bufferName);
         throw new AitermError(
@@ -915,10 +908,9 @@ export function send(name: string, text: string, o: SendOpts = {}): string {
           2,
         );
       }
-      // -r: LF→CR 置換を無効化。-Sは対応新版だけでvis(3)制御文字変換を無効化する。
+      // -Sは対応新版だけでvis(3)制御文字変換を無効化する。
       // send 自身の raw/sanitize 契約だけを真実とし、tmux 側で黙って再変換させない。
-      // psmux は -r 非対応（受理フラグは d/p/b/t のみ）のため Windows では付けない。
-      const pasteArgs = isWin ? ["paste-buffer", "-d"] : ["paste-buffer", "-d", "-r"];
+      const pasteArgs = pasteBufferBaseArgs();
       if (o.bracketedPaste) pasteArgs.push("-p");
       if (pasteSupportsNoSanitize) pasteArgs.push("-S");
       pasteArgs.push("-b", bufferName, "-t", name);
