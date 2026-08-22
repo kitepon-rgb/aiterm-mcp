@@ -332,3 +332,26 @@ export function grokEnvTokens(meta: AgentMetadata): string[] {
     "GROK_DISABLE_AUTOUPDATER=1",
   ];
 }
+
+export function grokTuiReady(screen: string): boolean {
+  // Grok Build 0.2.117 は起動完了後に製品名を消し、model footerだけを残す。
+  // Composerも同じfrontendでmodel名だけが異なるため、両方をvendor UIの根拠にする。
+  // Windows native grok.exe（1.0.4 実測）は入力欄markerを `❯` でなく `>` で描画するため両方を受ける。
+  const grokFrontend = screen.includes("Grok Build") || /\b(?:Grok|Composer)\s+[\w.()-]+/.test(screen);
+  return grokFrontend && /(^|\n|\s)[❯>]/.test(screen);
+}
+
+// submit座礁観測のcomposer領域マーカー（Windows native描画の `>` も ready 判定と同様に受ける）。
+export const GROK_COMPOSER_MARKER_RE = /(^|\s)[❯>]/;
+
+export function grokFooterHasConfiguration(screen: string, model: string | null, effort: string | null): boolean {
+  const modelMatch = model?.match(/^grok-(\d+(?:\.\d+)*)$/) ?? null;
+  if (model && !modelMatch) return false;
+  const modelLabel = modelMatch ? `Grok ${modelMatch[1]}` : null;
+  return screen.split("\n").some((line) => {
+    if (!line.includes("·")) return false;
+    if (modelLabel && !line.includes(`${modelLabel} (`)) return false;
+    if (effort && !line.includes(`(${effort})`)) return false;
+    return modelLabel !== null || effort !== null;
+  });
+}

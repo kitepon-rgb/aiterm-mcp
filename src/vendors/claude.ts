@@ -233,3 +233,10 @@ export function claudeLaunchNote(
   const writeScopeNote = writeScopeLaunchNote("claude", meta?.write_scope);
   return `起動設定: model=${model ?? "CLI既定"} effort=${effort ?? "CLI既定"}。${writeScopeNote}`;
 }
+
+export function claudeTuiReady(screen: string): boolean {
+  return screen.includes("Claude Code") && /(^|\n)\s*❯/.test(screen);
+}
+
+// submit座礁観測のcomposer領域マーカー（ready判定と同じ記号を行頭基準で探す）。
+export const CLAUDE_COMPOSER_MARKER_RE = /^\s*❯/;

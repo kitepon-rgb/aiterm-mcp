@@ -80,6 +80,9 @@ import {
   buildGrokAgentCmd,
   grokLaunchNote,
   grokEnvTokens,
+  grokTuiReady,
+  GROK_COMPOSER_MARKER_RE,
+  grokFooterHasConfiguration,
 } from "./vendors/grok.js";
 import {
   realCodexHome,
@@ -94,6 +97,11 @@ import {
   observeCodexDone,
   buildCodexAgentCmd,
   codexLaunchNote,
+  codexTuiReady,
+  CODEX_COMPOSER_MARKER_RE,
+  codexModelChoice,
+  codexEffortChoice,
+  codexMoreReasoningChoice,
 } from "./vendors/codex.js";
 import type { CodexConfigPin } from "./vendors/codex.js";
 import {
@@ -111,6 +119,8 @@ import {
   assertClaudeAuthenticationReady,
   buildClaudeAgentCmd,
   claudeLaunchNote,
+  claudeTuiReady,
+  CLAUDE_COMPOSER_MARKER_RE,
 } from "./vendors/claude.js";
 import { resolveAgentBin, spawnAgentControlCommand, resolveThroughlineBin, runThroughlineHandoffContext, isUsableExecutableFile, isWindowsNativeExecutable, isUsableAgentExecutableFile, agentBinForPaneShell, resolveWinPaneShell } from "./agent-resolver.js";
 export { AitermError } from "./errors.js";
@@ -2715,21 +2725,9 @@ export async function observeAgentDone(
 
 
 function isAgentTuiReady(kind: AgentKind, screen: string): boolean {
-  if (kind === "claude") {
-    return screen.includes("Claude Code") && /(^|\n)\s*❯/.test(screen);
-  }
-  if (kind === "codex") {
-    // 起動直後は製品header、長寿命sessionでは常駐footerがCodex TUIの識別子になる。
-    // capture-paneは直近45行だけなので、会話が進むとheaderは正常に画面外へ流れる。
-    const codexFrontend = screen.includes("OpenAI Codex")
-      || /(^|\n)\s*\S+\s+(?:low|medium|high|xhigh|max|ultra)(?:\s+fast)?\s+·\s+\S.*$/m.test(screen);
-    return codexFrontend && /(^|\n)\s*[›>]/.test(screen);
-  }
-  // Grok Build 0.2.117 は起動完了後に製品名を消し、model footerだけを残す。
-  // Composerも同じfrontendでmodel名だけが異なるため、両方をvendor UIの根拠にする。
-  // Windows native grok.exe（1.0.4 実測）は入力欄markerを `❯` でなく `>` で描画するため両方を受ける。
-  const grokFrontend = screen.includes("Grok Build") || /\b(?:Grok|Composer)\s+[\w.()-]+/.test(screen);
-  return grokFrontend && /(^|\n|\s)[❯>]/.test(screen);
+  if (kind === "claude") return claudeTuiReady(screen);
+  if (kind === "codex") return codexTuiReady(screen);
+  return grokTuiReady(screen);
 }
 
 // Codex/Claude は実行中に「(esc to interrupt)」を表示する（実機採取）。startup 側の処理
@@ -2836,7 +2834,7 @@ function agentSubmitResidueOnScreen(kind: AgentKind, screen: string, tail: strin
   // 入力欄マーカーは ready 判定と同じ記号を行頭基準で探す。submit 済みの transcript echo は
   // マーカー行より上に出るため、最後のマーカー行以降だけを composer 領域として見る。
   // grok/composer は Windows native 描画（`>`・実測 1.0.4）も ready 判定と同様に受ける。
-  const markerRe = kind === "codex" ? /^\s*[›>]/ : kind === "claude" ? /^\s*❯/ : /(^|\s)[❯>]/;
+  const markerRe = kind === "codex" ? CODEX_COMPOSER_MARKER_RE : kind === "claude" ? CLAUDE_COMPOSER_MARKER_RE : GROK_COMPOSER_MARKER_RE;
   let markerIdx = -1;
   for (let i = lines.length - 1; i >= 0; i--) {
     if (markerRe.test(lines[i])) {
@@ -3114,18 +3112,6 @@ function lineCounts(screen: string): Map<string, number> {
   return counts;
 }
 
-function grokFooterHasConfiguration(screen: string, model: string | null, effort: string | null): boolean {
-  const modelMatch = model?.match(/^grok-(\d+(?:\.\d+)*)$/) ?? null;
-  if (model && !modelMatch) return false;
-  const modelLabel = modelMatch ? `Grok ${modelMatch[1]}` : null;
-  return screen.split("\n").some((line) => {
-    if (!line.includes("·")) return false;
-    if (modelLabel && !line.includes(`${modelLabel} (`)) return false;
-    if (effort && !line.includes(`(${effort})`)) return false;
-    return modelLabel !== null || effort !== null;
-  });
-}
-
 async function waitForGrokConfigurationResult(
   name: string,
   before: string,
@@ -3162,40 +3148,6 @@ function sendMenuChoice(name: string, choice: string): void {
   if (sent.code !== 0) {
     throw new AitermError(`agent設定の選択を送れませんでした: ${sent.stderr.trim() || `code=${sent.code}`}`, 2);
   }
-}
-
-function codexModelChoice(screen: string, model: string): string | null {
-  for (const line of screen.slice(screen.lastIndexOf("Select Model and Effort")).split("\n")) {
-    const match = line.match(/^\s*(?:›\s*)?(\d+)\.\s+(\S+)/);
-    if (match?.[2] === model) return match[1];
-  }
-  return null;
-}
-
-function codexEffortChoice(screen: string, effort: string): string | null {
-  const labels: Record<string, RegExp> = {
-    low: /^Low\b/i,
-    medium: /^Medium\b/i,
-    high: /^High\b/i,
-    xhigh: /^Extra high\b/i,
-    max: /^Max\b/i,
-    ultra: /^Ultra\b/i,
-  };
-  const wanted = labels[effort.toLowerCase()];
-  if (!wanted) return null;
-  for (const line of screen.split("\n")) {
-    const match = line.match(/^\s*(?:›\s*)?(\d+)\.\s+(.+?)\s{2,}/);
-    if (match && wanted.test(match[2])) return match[1];
-  }
-  return null;
-}
-
-function codexMoreReasoningChoice(screen: string): string | null {
-  for (const line of screen.split("\n")) {
-    const match = line.match(/^\s*(?:›\s*)?(\d+)\.\s+More reasoning/);
-    if (match) return match[1];
-  }
-  return null;
 }
 
 /** 同じ対話sessionを保ったまま、vendor標準の操作でmodel／effortを変更する。 */

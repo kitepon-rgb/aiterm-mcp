@@ -399,3 +399,48 @@ export function codexLaunchNote(
   const summary = meta?.kind === "codex" && meta.codex_home ? codexConfigSummary(configPath) : "";
   return (summary ? `${launch}\n${summary}\n` : launch) + writeScopeNote;
 }
+
+export function codexTuiReady(screen: string): boolean {
+  // 起動直後は製品header、長寿命sessionでは常駐footerがCodex TUIの識別子になる。
+  // capture-paneは直近45行だけなので、会話が進むとheaderは正常に画面外へ流れる。
+  const codexFrontend = screen.includes("OpenAI Codex")
+    || /(^|\n)\s*\S+\s+(?:low|medium|high|xhigh|max|ultra)(?:\s+fast)?\s+·\s+\S.*$/m.test(screen);
+  return codexFrontend && /(^|\n)\s*[›>]/.test(screen);
+}
+
+// submit座礁観測のcomposer領域マーカー（ready判定と同じ記号を行頭基準で探す）。
+export const CODEX_COMPOSER_MARKER_RE = /^\s*[›>]/;
+
+export function codexModelChoice(screen: string, model: string): string | null {
+  for (const line of screen.slice(screen.lastIndexOf("Select Model and Effort")).split("\n")) {
+    const match = line.match(/^\s*(?:›\s*)?(\d+)\.\s+(\S+)/);
+    if (match?.[2] === model) return match[1];
+  }
+  return null;
+}
+
+export function codexEffortChoice(screen: string, effort: string): string | null {
+  const labels: Record<string, RegExp> = {
+    low: /^Low\b/i,
+    medium: /^Medium\b/i,
+    high: /^High\b/i,
+    xhigh: /^Extra high\b/i,
+    max: /^Max\b/i,
+    ultra: /^Ultra\b/i,
+  };
+  const wanted = labels[effort.toLowerCase()];
+  if (!wanted) return null;
+  for (const line of screen.split("\n")) {
+    const match = line.match(/^\s*(?:›\s*)?(\d+)\.\s+(.+?)\s{2,}/);
+    if (match && wanted.test(match[2])) return match[1];
+  }
+  return null;
+}
+
+export function codexMoreReasoningChoice(screen: string): string | null {
+  for (const line of screen.split("\n")) {
+    const match = line.match(/^\s*(?:›\s*)?(\d+)\.\s+More reasoning/);
+    if (match) return match[1];
+  }
+  return null;
+}
