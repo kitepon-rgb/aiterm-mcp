@@ -7,7 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.27.2] - 2026-08-22
+## [0.27.3] - 2026-08-22
+
+### Fixed
+
+- agent metadata の codex_home / grok_home 照合が「現在の process env の home と等しいこと」を
+  要求し、席専用 CODEX_HOME / GROK_HOME で起動した正当な session が別の aiterm instance から
+  拒否された（2026-08-22 実測: 承認ダイアログで停止した席を親が救えず円卓が止まった）。
+  per-launch の記録値を正とし、検証は絶対パスの形だけにする。
+- Windows CI の listSessions テストが、psmux の pane_current_command が起動直後に
+  git→bash と遷移するレースで落ちた（v0.27.1/0.27.2 の publish を連続で止めた）。
+  行が安定するまで待ってから基準を取る。
+
+## [0.27.2] - 2026-08-22（CI 失敗により未 publish）
 
 ### Changed
 

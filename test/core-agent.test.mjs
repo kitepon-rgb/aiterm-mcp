@@ -783,7 +783,16 @@ test("listSessions: agent 行だけに agent 情報を追加し、通常 session
     const plain = "list_plain";
     const agent = "list_agent";
     core.openSession(plain);
-    const plainBefore = core.listSessions().split("\n").find((line) => line.startsWith(`${plain}\t`));
+    // Windows(psmux) は pane_current_command が起動直後 git→bash と遷移する。行が
+    // 2回連続で同じになるまで待ってから基準を取る（遷移中を「不変の基準」にしない）。
+    const plainRow = () => core.listSessions().split("\n").find((line) => line.startsWith(`${plain}\t`));
+    let plainBefore = plainRow();
+    for (let i = 0; i < 20; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      const next = plainRow();
+      if (next === plainBefore) break;
+      plainBefore = next;
+    }
     const [sid] = core.openAgent("codex", { session_name: agent, agent_done: true });
     try {
       const rows = core.listSessions().split("\n");
