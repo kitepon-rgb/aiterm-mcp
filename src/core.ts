@@ -90,7 +90,7 @@ import {
   grokFooterHasConfiguration,
   grokTranscriptText,
   createGrokAgentMetadata,
-} from "./vendors/grok.js";
+} from "./harnesses/grok.js";
 import {
   realCodexHome,
   readCodexConfigPins,
@@ -111,8 +111,8 @@ import {
   codexMoreReasoningChoice,
   codexTranscriptText,
   createCodexAgentMetadata,
-} from "./vendors/codex.js";
-import type { CodexConfigPin } from "./vendors/codex.js";
+} from "./harnesses/codex.js";
+import type { CodexConfigPin } from "./harnesses/codex.js";
 import {
   OPERATION_ID_RE,
   CLAUDE_RESULT_MAX_BYTES,
@@ -131,7 +131,7 @@ import {
   claudeTuiReady,
   CLAUDE_COMPOSER_MARKER_RE,
   createClaudeAgentMetadata,
-} from "./vendors/claude.js";
+} from "./harnesses/claude.js";
 import {
   bindCursorTranscriptSession,
   cursorTurnBoundary,
@@ -147,7 +147,7 @@ import {
   cursorTuiReady,
   CURSOR_COMPOSER_MARKER_RE,
   validateCursorModelEffort,
-} from "./vendors/cursor.js";
+} from "./harnesses/cursor.js";
 import { resolveAgentBin, spawnAgentControlCommand, resolveThroughlineBin, runThroughlineHandoffContext, isUsableExecutableFile, isWindowsNativeExecutable, isUsableAgentExecutableFile, agentBinForPaneShell, resolveWinPaneShell } from "./agent-resolver.js";
 export { AitermError } from "./errors.js";
 export { tmuxSpawnEnv } from "./tmux-runtime.js";
@@ -1276,7 +1276,7 @@ export function killAll(): string {
   return "killed all sessions on this socket";
 }
 
-// ── agent_done: vendor の構造化完了記録を PTY 送信の完了境界として使う ────
+// ── agent_done: harness の構造化完了記録を PTY 送信の完了境界として使う ────
 interface AgentLineageSeed {
   parentSessionId: string;
   delegationDepth: number;
@@ -1378,7 +1378,7 @@ interface AgentDoneWaitResult {
 }
 
 interface AgentDoneScanResult extends AgentDoneWaitResult {
-  ambiguousVendorSession: boolean;
+  ambiguousHarnessSession: boolean;
 }
 
 interface AgentScreenSample {
@@ -2108,20 +2108,20 @@ function scanAgentDoneLines(
     const ev = parsed.event;
     if (!ev) continue;
     if (expectedOperationId && ev.operation_id !== expectedOperationId) continue;
-    if (meta.vendor_session_id) return { event: ev, malformedEvents, ambiguousVendorSession: false };
+    if (meta.vendor_session_id) return { event: ev, malformedEvents, ambiguousHarnessSession: false };
     if (
       candidate?.vendor_session_id &&
       ev.vendor_session_id &&
       candidate.vendor_session_id !== ev.vendor_session_id
     ) {
-      return { event: null, malformedEvents, ambiguousVendorSession: true };
+      return { event: null, malformedEvents, ambiguousHarnessSession: true };
     }
     if (!candidate) candidate = ev;
   }
-  return { event: candidate, malformedEvents, ambiguousVendorSession: false };
+  return { event: candidate, malformedEvents, ambiguousHarnessSession: false };
 }
 
-function bindAgentVendorSession(meta: AgentMetadata, ev: AgentDoneEvent): void {
+function bindAgentHarnessSession(meta: AgentMetadata, ev: AgentDoneEvent): void {
   if (!meta.vendor_session_id && ev.vendor_session_id) {
     meta.vendor_session_id = ev.vendor_session_id;
   }
@@ -2140,7 +2140,7 @@ function bindCompletedInitialPrompt(meta: AgentMetadata): void {
         2,
       );
     }
-    bindAgentVendorSession(meta, done);
+    bindAgentHarnessSession(meta, done);
     setInitialPromptState(meta, "done");
     return;
   }
@@ -2152,7 +2152,7 @@ function bindCompletedInitialPrompt(meta: AgentMetadata): void {
         2,
       );
     }
-    bindAgentVendorSession(meta, done);
+    bindAgentHarnessSession(meta, done);
     setInitialPromptState(meta, "done");
     return;
   }
@@ -2177,7 +2177,7 @@ function bindCompletedInitialPrompt(meta: AgentMetadata): void {
   const lines = text.split("\n");
   const tail = lines.pop() ?? "";
   const scanned = scanAgentDoneLines(lines, meta);
-  if (scanned.ambiguousVendorSession) {
+  if (scanned.ambiguousHarnessSession) {
     throw new AitermError("agent event file に複数の vendor_session_id が混在しています。該当セッションを閉じて起動し直してください。", 2);
   }
   if (!scanned.event) {
@@ -2188,7 +2188,7 @@ function bindCompletedInitialPrompt(meta: AgentMetadata): void {
       2,
     );
   }
-  bindAgentVendorSession(meta, scanned.event);
+  bindAgentHarnessSession(meta, scanned.event);
   setInitialPromptState(meta, "done");
 }
 
@@ -2251,7 +2251,7 @@ function completedClaudeOperationEvent(meta: AgentMetadata, operationId: string)
   return match;
 }
 
-function recoverAgentVendorSession(meta: AgentMetadata): void {
+function recoverAgentHarnessSession(meta: AgentMetadata): void {
   if (meta.vendor_session_id) return;
   if (meta.kind === "codex") {
     const transcript = bindCodexTranscriptSession(meta);
@@ -2277,14 +2277,14 @@ function recoverAgentVendorSession(meta: AgentMetadata): void {
   const lines = text.split("\n");
   lines.pop(); // hook は newline 完結eventだけを確定済みとして扱う。
   const scanned = scanAgentDoneLines(lines, meta);
-  if (scanned.ambiguousVendorSession) {
+  if (scanned.ambiguousHarnessSession) {
     throw new AitermError(
       "agent event file に複数の vendor_session_id が混在しています。該当セッションを閉じて起動し直してください。",
       2,
     );
   }
   if (!scanned.event?.vendor_session_id) return;
-  bindAgentVendorSession(meta, scanned.event);
+  bindAgentHarnessSession(meta, scanned.event);
   writeAgentMetadata(meta);
 }
 
@@ -2359,7 +2359,7 @@ async function settlePublishedClaudeCompletionMarker(
   return active;
 }
 
-/** agent vendor の構造化 transcript から直近完了ターンの最終回答を読む。 */
+/** agent harness の構造化 transcript から直近完了ターンの最終回答を読む。 */
 export async function readAgentTranscript(
   name: string,
   o: { lines?: number | null; operation_id?: string | null } = {},
@@ -2378,8 +2378,8 @@ export async function readAgentTranscript(
     }
   }
   // wait timeout は「失敗」ではなく状態不明。後着した同一launchの完了eventから
-  // vendor session をbindし、promptを再送せず結果だけ回収できるようにする。
-  recoverAgentVendorSession(meta);
+  // harness session をbindし、promptを再送せず結果だけ回収できるようにする。
+  recoverAgentHarnessSession(meta);
   if (!meta.vendor_session_id) {
     throw new AitermError(
       `agent session '${name}' はまだターンが完了していません。agent_done 完了後に再取得してください。${agentWaitGuide(name)}`,
@@ -2512,7 +2512,7 @@ export function agentWaitGuide(session?: string): string {
 
 export type { AgentWaitObservation } from "./agent-shared.js";
 
-// vendor 別の利用上限バナー。検知は「報告」専用で、完了判定や自動復旧には使わない。
+// harness 別の利用上限バナー。検知は「報告」専用で、完了判定や自動復旧には使わない。
 // 出典（2026-08-22）: grok は live 実バナーで検証、codex/claude はインストール済み実バイナリの
 // 埋込文字列から抽出（codex: "You've hit your usage limit for" / claude: "Usage limit reached ·
 // continuing automatically when it resets"。Claude Code はリセット時に自動継続する設計なので、
@@ -2524,7 +2524,7 @@ const AGENT_RATE_LIMIT_PATTERNS: Partial<Record<AgentKind, RegExp[]>> = {
   claude: [/Usage limit reached/i],
 };
 const AGENT_RATE_LIMIT_SCAN_BYTES = 16 * 1024;
-// pane log の末尾から上限バナーを探す。読めない・無い・対象 vendor でないは全て null（誤検知より取りこぼし側へ倒す）。
+// pane log の末尾から上限バナーを探す。読めない・無い・対象 harness でないは全て null（誤検知より取りこぼし側へ倒す）。
 export function detectAgentRateLimit(kind: AgentKind, aitermSession: string): string | null {
   const patterns = AGENT_RATE_LIMIT_PATTERNS[kind];
   if (!patterns) return null;
@@ -2610,7 +2610,7 @@ export async function observeAgentDone(
       carry = parts.pop() ?? "";
       const scanned = scanAgentDoneLines(parts, meta, operationId);
       malformedEvents += scanned.malformedEvents;
-      if (scanned.ambiguousVendorSession) {
+      if (scanned.ambiguousHarnessSession) {
         throw new AitermError("agent event file に複数の vendor_session_id が混在しています。該当セッションを閉じて起動し直してください。", 2);
       }
       if (scanned.event) return observation("done", scanned.event);
@@ -2929,7 +2929,7 @@ async function sendAgentPromptText(name: string, text: string): Promise<void> {
 
 export interface InitialAgentPromptResult {
   text: string;
-  // 初回 prompt を dispatch した場合のvendor完了正本境界。ready 失敗で未送信なら null。
+  // 初回 prompt を dispatch した場合のharness完了正本境界。ready 失敗で未送信なら null。
   event_cursor: number | null;
   // submit座礁観測。true=composerに残存を確認（未submitの疑い）/ false=残存を観測せず / null=判定不能・未実施。
   submit_residue: boolean | null;
@@ -3055,7 +3055,7 @@ async function waitForGrokConfigurationResult(
     if (error) throw new AitermError(`Grokの設定変更に失敗しました: ${error}`, 2);
     if (added.some((line) => /^(?:Switched to |✓?\s*Default model:)/.test(line))) return;
     // Grok Build 1.0.3では成功通知が次の再描画で消えることがある。変更前には無かった
-    // target model／effortが常駐footerへ現れた場合も、vendor自身の最終状態として受理する。
+    // target model／effortが常駐footerへ現れた場合も、harness自身の最終状態として受理する。
     if (!footerAlreadyMatched && grokFooterHasConfiguration(screen, model, effort)) return;
     await sleep(100);
   } while (performance.now() < deadline);
@@ -3069,7 +3069,7 @@ function sendMenuChoice(name: string, choice: string): void {
   }
 }
 
-/** 同じ対話sessionを保ったまま、vendor標準の操作でmodel／effortを変更する。 */
+/** 同じ対話sessionを保ったまま、harness標準の操作でmodel／effortを変更する。 */
 export async function configureAgent(
   name: string,
   opts: { model?: string | null; reasoning_effort?: string | null },
@@ -3216,7 +3216,7 @@ export function __testCodexConfigureChoices(screen: string, model: string, effor
 }
 
 // v0.16.0: 親をブロックする wait 経路は廃止した。send は ready gate と submit 分離を内蔵した
-// dispatch として即返り、event_cursor（送信直前のvendor完了正本境界）を receipt で返す。
+// dispatch として即返り、event_cursor（送信直前のharness完了正本境界）を receipt で返す。
 // 完了通知は aiterm-wait（--cursor で境界を渡す）、回収は pty_read / claude_turn recover が担う。
 export async function dispatchAgentTurn(
   name: string,
@@ -3350,7 +3350,7 @@ function inspectClaudeOperation(
   const done = completedClaudeOperationEvent(meta, operationId);
   if (!done) return { ...base, status: "unknown", raw_output: null, reason: "result_unknown" };
   if (!meta.vendor_session_id && done.vendor_session_id) {
-    bindAgentVendorSession(meta, done);
+    bindAgentHarnessSession(meta, done);
     writeAgentMetadata(meta);
   }
   const rawOutput = readClaudeResultText(meta, done, operationId, transcriptUnavailable);
@@ -3402,8 +3402,8 @@ function portableForkPrompt(sourceSessionId: string, mission: string): string {
   return composePortableForkPrompt((value as { context: string }).context, mission);
 }
 
-/** vendor CLI の存在だけを安全に要約する。認証状態・実行出力・解決先 path は返さない。 */
-export function vendorLauncherDiagnostic(kind: AgentKind): DiagnosticStatus {
+/** harness CLI の存在だけを安全に要約する。認証状態・実行出力・解決先 path は返さない。 */
+export function harnessLauncherDiagnostic(kind: AgentKind): DiagnosticStatus {
   try {
     return resolveAgentBin(kind) ? "ready" : "not_applicable";
   } catch {
@@ -3629,7 +3629,7 @@ export function openAgent(
   // grok.exe で実測済み（2026-08-15）。
   // Windows の grok/composer は Windows native の grok.exe だけを起動する（オーナー裁定 2026-08-15:
   // WindowsネイティブはWindowsネイティブで完結させ、WSL2へ持ち込まない）。WSL 側 grok を起動すると
-  // vendor 実体が WSL process になり、auth・session 記録（events/chat_history）が WSL home 側へ分裂して
+  // harness 実体が WSL process になり、auth・session 記録（events/chat_history）が WSL home 側へ分裂して
   // transcript／completion を回収できない（実被弾: 2026-08-15 olc-plan-review-grok2）。
   if (isWin && (kind === "grok" || kind === "composer") && !isWindowsNativeExecutable(bin)) {
     ownTelemetryFailure(
@@ -3761,7 +3761,7 @@ export async function openAgentWithInitialPrompt(
     throw new AitermError("launch_operation_idはpromptなしのClaude相関launchだけで指定できます", 2);
   }
   // v0.16.0: launcher は常に managed（Stop hook つき）で立つ。手動運転したい場合は
-  // pty_open で素の PTY を開き、vendor CLI を自分で send する。
+  // pty_open で素の PTY を開き、harness CLI を自分で send する。
   // 第3要素は「起動時点でturnが走っているか」の event_cursor: Grok/Composer/Cursor の argv prompt は
   // event file 新規作成直後の起動＝境界0、prompt なしの起動は turn なし＝null。
   if (!prompt || (kind !== "codex" && kind !== "claude")) {

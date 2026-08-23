@@ -48,10 +48,10 @@ export function cursorTranscriptRoot(meta: AgentMetadata): string | null {
   return path.join(meta.cursor_home, "projects", cursorWorkspaceId(meta.cwd ?? process.cwd()), "agent-transcripts");
 }
 
-export function cursorTranscriptForSession(meta: AgentMetadata, vendorSessionId: string): string | null {
+export function cursorTranscriptForSession(meta: AgentMetadata, harnessSessionId: string): string | null {
   const root = cursorTranscriptRoot(meta);
-  if (!root || !UUID_RE.test(vendorSessionId)) return null;
-  return path.join(root, vendorSessionId, `${vendorSessionId}.jsonl`);
+  if (!root || !UUID_RE.test(harnessSessionId)) return null;
+  return path.join(root, harnessSessionId, `${harnessSessionId}.jsonl`);
 }
 
 export function listCursorTranscripts(meta: AgentMetadata): string[] {
@@ -120,9 +120,9 @@ export function cursorTranscriptSessionId(file: string): string | null {
 export function bindCursorTranscriptSession(meta: AgentMetadata): string | null {
   const transcript = cursorTranscript(meta);
   if (!transcript) return null;
-  const vendorSessionId = cursorTranscriptSessionId(transcript);
-  if (vendorSessionId && !meta.vendor_session_id) {
-    meta.vendor_session_id = vendorSessionId;
+  const harnessSessionId = cursorTranscriptSessionId(transcript);
+  if (harnessSessionId && !meta.vendor_session_id) {
+    meta.vendor_session_id = harnessSessionId;
     writeAgentMetadata(meta);
   }
   return transcript;
@@ -130,7 +130,7 @@ export function bindCursorTranscriptSession(meta: AgentMetadata): string | null 
 
 export function cursorCompletionEvent(
   meta: AgentMetadata,
-  vendorSessionId: string | null,
+  harnessSessionId: string | null,
   record: any,
   turnId: string,
 ): AgentDoneEvent | null {
@@ -140,7 +140,7 @@ export function cursorCompletionEvent(
     vendor: "cursor",
     aiterm_session: meta.aiterm_session,
     launch_id: meta.launch_id,
-    vendor_session_id: vendorSessionId,
+    vendor_session_id: harnessSessionId,
     turn_id: turnId,
     operation_id: null,
     reason: `Cursor transcript turn_ended:${record.status}`,
@@ -200,12 +200,12 @@ export function latestCursorCompletion(
 ): AgentDoneEvent | null {
   const transcript = cursorTranscript(meta);
   if (!transcript) return null;
-  const vendorSessionId = meta.vendor_session_id ?? cursorTranscriptSessionId(transcript);
+  const harnessSessionId = meta.vendor_session_id ?? cursorTranscriptSessionId(transcript);
   // callerとの共通signatureを保つ。Cursorのturn境界はbyte列でなくuser turn数を使う。
   void readTranscriptLines;
   const state = cursorTranscriptState(transcript);
   return state.terminalRecord
-    ? cursorCompletionEvent(meta, vendorSessionId, state.terminalRecord, `cursor:${state.userTurns}`)
+    ? cursorCompletionEvent(meta, harnessSessionId, state.terminalRecord, `cursor:${state.userTurns}`)
     : null;
 }
 
@@ -246,8 +246,8 @@ export async function observeCursorDone(
       const state = cursorTranscriptState(transcript);
       malformedEvents = state.malformedEvents;
       if (state.userTurns > startBoundary && state.terminalRecord) {
-        const vendorSessionId = meta.vendor_session_id ?? cursorTranscriptSessionId(transcript);
-        const done = cursorCompletionEvent(meta, vendorSessionId, state.terminalRecord, `cursor:${state.userTurns}`);
+        const harnessSessionId = meta.vendor_session_id ?? cursorTranscriptSessionId(transcript);
+        const done = cursorCompletionEvent(meta, harnessSessionId, state.terminalRecord, `cursor:${state.userTurns}`);
         if (done) return observation("done", done);
       }
     }

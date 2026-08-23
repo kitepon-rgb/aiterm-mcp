@@ -1,6 +1,6 @@
 // Claude Code 固有の制御。完了正本は launch 固有 Stop hook が書く event/result（ADR 0025）。
 // core 所有のサービス（transcript 不在エラー）は引数で注入し、
-// 依存方向を core → vendors → agent-shared の一方向に保つ。
+// 依存方向を core → harnesses → agent-shared の一方向に保つ。
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
@@ -60,7 +60,7 @@ export function agentClaudeDispatchReceiptPath(name: string, launchId: string, o
 }
 
 function claudeHookScriptPath(): string {
-  // この module は dist/vendors/ に置かれるが、stop hook 実体は dist/ 直下に build される。
+  // この module は dist/harnesses/ に置かれるが、stop hook 実体は dist/ 直下に build される。
   return path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "claude-stop-hook.js");
 }
 

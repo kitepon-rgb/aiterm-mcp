@@ -1,7 +1,7 @@
 // Grok / Composer 固有の制御。Composer は grok CLI の別モデル起動プリセットであり、
 // モデル既定値と表示名以外は Grok と完全共通（実測 2026-08-23 棚卸し・docs/32）。
 // core 所有のサービス（transcript 行読取・rate limit 検知）は引数で注入し、
-// 依存方向を core → vendors → agent-shared の一方向に保つ。
+// 依存方向を core → harnesses → agent-shared の一方向に保つ。
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -63,8 +63,8 @@ export function resolveAndValidateGrokAuth(srcHome: string): string | null {
     const value: unknown = JSON.parse(fs.readFileSync(fd, "utf8"));
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new AitermError("Grok 認証正本のJSONが不正です", 2);
     // auth file 自体は O_NOFOLLOW で開いているが、中間 directory の symlink は辿り得る。
-    // vendor に渡す正本を path swap の入口にしないため、字句正規化した絶対 path と realpath を
-    // 一致させ、canonical な祖先も root まで検証する。same-UID race の排他は vendor lock の責務。
+    // harness に渡す正本を path swap の入口にしないため、字句正規化した絶対 path と realpath を
+    // 一致させ、canonical な祖先も root まで検証する。same-UID race の排他は harness lock の責務。
     const lexicalPath = path.resolve(authPath);
     const canonicalPath = fs.realpathSync(authPath);
     if (lexicalPath !== canonicalPath) throw new AitermError("Grok 認証正本の path に symlink を含められません", 2);
@@ -332,7 +332,7 @@ export function grokLaunchNote(
 }
 
 // grok/composer: 検証済み auth 正本をそのままの path 形で渡す。Windows では native 強制により
-// vendor は Windows process なので、Windows ドライブパスが正しい形（WSL 形への変換はしない）。
+// harness は Windows process なので、Windows ドライブパスが正しい形（WSL 形への変換はしない）。
 export function grokEnvTokens(meta: AgentMetadata): string[] {
   return [
     ...(meta.grok_auth_path ? [`GROK_AUTH_PATH=${shq(meta.grok_auth_path)}`] : []),
@@ -342,7 +342,7 @@ export function grokEnvTokens(meta: AgentMetadata): string[] {
 
 export function grokTuiReady(screen: string): boolean {
   // Grok Build 0.2.117 は起動完了後に製品名を消し、model footerだけを残す。
-  // Composerも同じfrontendでmodel名だけが異なるため、両方をvendor UIの根拠にする。
+  // Composerも同じfrontendでmodel名だけが異なるため、両方をharness UIの根拠にする。
   // Windows native grok.exe（1.0.4 実測）は入力欄markerを `❯` でなく `>` で描画するため両方を受ける。
   const grokFrontend = screen.includes("Grok Build") || /\b(?:Grok|Composer)\s+[\w.()-]+/.test(screen);
   return grokFrontend && /(^|\n|\s)[❯>]/.test(screen);

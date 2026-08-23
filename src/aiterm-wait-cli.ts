@@ -2,7 +2,7 @@
 // aiterm-wait — agent turn 完了eventの純リーダー観測CLI。
 // 完了/timeout/close を1行のJSON receiptで返してexitする。lock・PTY・dispatch状態には一切触れない。
 // 親AIホストのバックグラウンドタスクとして起動し、exitを「観測終了の通知」として使う。
-// exit≠完了: exit code は outcome を映す（0=done / 5=running=未完了 / 3=timeout=未完了 / 4=closed / 6=rate_limited=vendor利用上限 / 1=エラー）。
+// exit≠完了: exit code は outcome を映す（0=done / 5=running=未完了 / 3=timeout=未完了 / 4=closed / 6=rate_limited=harness利用上限 / 1=エラー）。
 // --timeout 0 は待たずに一度だけ観測する照会で、未完了は running（timeout と混同させない）。
 // receipt の outcome が正で、done 以外は未完了。timeout の既定は core の DEFAULT_AGENT_DONE_TIMEOUT（600秒）。
 import { fileURLToPath } from "node:url";

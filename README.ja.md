@@ -18,7 +18,7 @@
 
 > **あなたの AI に、ほかの AI を操らせる。** `agent_launch`の1回の呼び出しで、実行基盤harnessとmodelを別々に選び、永続sessionを受け取る。CursorでGPT／Claude／Grokを選んでも、session・hook・transcriptはCursorが所有する。
 >
-> **これは何か:** AI が握る 1 本の永続 MCP 端末——その中に他のコーディングエージェントも起動できる。`ssh`・`docker exec`・REPL・別エージェントの TUI は、すべてその 1 本の端末の中へ「送るだけのテキスト」として入れ子になる。仕組みはあえて素朴——MCP クライアントが相手エージェントの端末を 1 ターンずつ操作するだけ。隠れたプロトコルも・aiterm独自の共有メモリ層も・自律的な交渉も無い。起動したagentは、直接CLIと同じproject／vendorの通常memory・設定を読む。
+> **これは何か:** AI が握る 1 本の永続 MCP 端末——その中に他のコーディングエージェントも起動できる。`ssh`・`docker exec`・REPL・別エージェントの TUI は、すべてその 1 本の端末の中へ「送るだけのテキスト」として入れ子になる。仕組みはあえて素朴——MCP クライアントが相手エージェントの端末を 1 ターンずつ操作するだけ。隠れたプロトコルも・aiterm独自の共有メモリ層も・自律的な交渉も無い。起動したagentは、直接CLIと同じproject／harnessの通常memory・設定を読む。
 >
 > **人が tmux に張り付く必要はない。** aiterm は MCP 越しにプログラムから駆動されるので、「AI が別のエージェントを起動して操作する」のに端末の前に誰も座らなくていい——オーケストレーションのループ・CI ステップ・cron から動かせる。
 >
@@ -118,17 +118,17 @@ serverがMCP processより先に起動していても、古いserver環境に席
 常駐するmodel／effort footerと入力欄でCodexを識別する。idle sessionをそのまま変更でき、
 caller側の画面再描画、再試行、agent再起動は不要。
 
-**v0.24.0では起動中agentの設定変更を追加。** `agent_configure`はvendor標準操作を使って、
-起動中のCodex／Claudeのmodelとreasoning effortを変更する。PTY、vendor session、会話contextは維持する。
+**v0.24.0では起動中agentの設定変更を追加。** `agent_configure`はharness標準操作を使って、
+起動中のCodex／Claudeのmodelとreasoning effortを変更する。PTY、harness session、会話contextは維持する。
 
-**v0.23.0では、ローカル完結の別vendor向けportable forkを追加した。** どのlauncherでも
+**v0.23.0では、ローカル完結の別harness向けportable forkを追加した。** どのlauncherでも
 `throughline_source_session`と新しいミッションを`prompt`へ渡すと、PTY作成前にローカルの
 Throughlineから対象sessionの読み取り専用handoff contextを取得する。返された記憶はそのまま
 ミッションの前へ置かれ、元sessionのDB所属は移動もcopyもされない。Throughlineが無い、または
 結果が不正／空ならclean launchへfallbackせず明示失敗する。引数を省略した通常起動は従来どおり。
 
 **v0.22.0では4 launcherを完全なプロジェクト共同作業員へ戻した。** 直接CLIを起動した時と同じ
-`HOME`、作業tree、vendor home、project/user/local設定、MCP、plugin、skill、permission、trust、memory、
+`HOME`、作業tree、harness home、project/user/local設定、MCP、plugin、skill、permission、trust、memory、
 session historyをそのまま使う。aitermがlaunchごとに分離するのは完了相関stateだけ。子には
 `role=subagent`、親session、delegation depth、lineage、`delegation_allowed=true`を注入する。
 孫以降への再委譲は禁止せず、孫はdepth 2と伸びたlineageを受け取る。既存receiptの
@@ -488,7 +488,7 @@ self-hostedのmacOS native・Linux native・Windows native・WSL2で同じ`npm t
 OS別の縮小suiteで代用しません。tag起点のnpm公開は4環境greenとtagged commitの`origin/main`
 祖先確認を通過した後だけ実行します。
 
-共通進行は`src/core.ts`、harness固有は`src/vendors/`、OS差は`src/tmux-runtime.ts`／`src/agent-resolver.ts`、reducerは`src/rtk.ts`、公開面は`src/index.ts`が所有する。設計の出発点と reducer の移植元（pytest reducer は本家 rtk 0.42.0 と一致するよう移植・ただし上記の `FAILED` 行の差異は意図的・回帰テストで固定）は `prototype/python/` を参照。
+共通進行は`src/core.ts`、harness固有は`src/harnesses/`、OS差は`src/tmux-runtime.ts`／`src/agent-resolver.ts`、reducerは`src/rtk.ts`、公開面は`src/index.ts`が所有する。設計の出発点と reducer の移植元（pytest reducer は本家 rtk 0.42.0 と一致するよう移植・ただし上記の `FAILED` 行の差異は意図的・回帰テストで固定）は `prototype/python/` を参照。
 
 ## 試す
 

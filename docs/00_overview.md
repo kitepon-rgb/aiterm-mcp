@@ -18,16 +18,16 @@ Cursor Agent CLI契約は[ADR 0038](adr/0038-harness-launch-api-and-cursor-agent
 - [../CONTRIBUTING.md](../CONTRIBUTING.md) - contributor向け依存、コード所有、テスト、portable context境界。
 - [../SECURITY.md](../SECURITY.md) - 最新0.xだけを支える公開方針と、PTY／launcher入力の運用境界。
 - [01_design-plan.md](01_design-plan.md) - PTYモデルと現行設計。v0.22.0項より後ろのmanaged記述は明示された履歴。
-- [adr/0014-agent-tui-ready-stabilization.md](adr/0014-agent-tui-ready-stabilization.md) - vendor TUI readyの連続安定化と、長寿命Codexのheader／model・effort・任意`fast` footer識別契約。
+- [adr/0014-agent-tui-ready-stabilization.md](adr/0014-agent-tui-ready-stabilization.md) - harness TUI readyの連続安定化と、長寿命Codexのheader／model・effort・任意`fast` footer識別契約。
 - [27-agent-configure-release-plan.md](27-agent-configure-release-plan.md) - `agent_configure`のv0.24.0公開受入、v0.24.1停止記録、長寿命Codex ready／runtime queue根治版v0.24.2の公開工程。
 - [28-agent-env-vars-release-plan.md](28-agent-env-vars-release-plan.md) - 現在のMCP processから指定名だけを互換launcherへ渡すv0.24.3の設計・公開受入。現行`agent_launch`も同じharness共通契約を継承する。
 - [29-grok-composer-agent-parity-plan.md](29-grok-composer-agent-parity-plan.md) - Grok／Composerの起動時model・effort・read-only、同一session設定変更、live catalog fail-loudをClaude／Codex共通面へ揃えたv0.25.0 source／v0.25.1公開工程。
 - [30-factory-ci-repository-transfer-release-plan.md](30-factory-ci-repository-transfer-release-plan.md) - 正規repo／registry名、self-hosted 4環境同一full CI、OIDC Trusted Publisher、v0.25.1公開修理の現行契約。
 - [BUGHUB_RUNTIME_ERROR_STORE_PLAN.md](BUGHUB_RUNTIME_ERROR_STORE_PLAN.md) - runtime error storeのprivacy／bakery queue契約とv0.24.2のprogress-based deadline根治。
 - [adr/0025-shared-agent-environment-and-lineage.md](adr/0025-shared-agent-environment-and-lineage.md) - 通常project／user環境共有、指定`env_vars`の起動単位overlay、sub-agent自己認識、委譲lineageの現行Decision。
-- [adr/0029-grok-composer-agent-parity-scope.md](adr/0029-grok-composer-agent-parity-scope.md) - 4vendor共通面の同等化範囲とGrok live catalog不在時のfail-loud Decision。
+- [adr/0029-grok-composer-agent-parity-scope.md](adr/0029-grok-composer-agent-parity-scope.md) - 4harness共通面の同等化範囲とGrok live catalog不在時のfail-loud Decision。
 - [adr/0030-release-0.25.1-acceptance.md](adr/0030-release-0.25.1-acceptance.md) - Grok／Composer parity、Organization工場CI、npm／Release／Official Registry、registry由来実席のv0.25.1公開受入。
-- [adr/0027-release-0.23.0-acceptance.md](adr/0027-release-0.23.0-acceptance.md) - v0.23.0 portable forkの公開・install・cross-vendor live smoke受入記録。
+- [adr/0027-release-0.23.0-acceptance.md](adr/0027-release-0.23.0-acceptance.md) - v0.23.0 portable forkの公開・install・cross-harness live smoke受入記録。
 - [adr/0026-release-0.22.0-acceptance.md](adr/0026-release-0.22.0-acceptance.md) - v0.22.0の公開・install・live smoke受入記録。
 - [PROMOTION.md](PROMOTION.md) - 現行公開状態と配布運用。
 
@@ -38,10 +38,10 @@ Cursor Agent CLI契約は[ADR 0038](adr/0038-harness-launch-api-and-cursor-agent
 - [09_codex-agent-prompt-ux-plan.md](09_codex-agent-prompt-ux-plan.md) - `codex_agent(prompt=...)` の長文/日本語 prompt、初回 `agent_done` 待ち、agent TUI 読み取り UX を hardening する計画と実装記録。
 - [10_gpt56-model-alignment-plan.md](10_gpt56-model-alignment-plan.md) - GPT-5.6/Grok 4.5 世代へのモデル整合（v0.11.0 で消化済み）。
 - [11_audit-2026-07-11.md](11_audit-2026-07-11.md) - v0.11.0 全域監査＋実動作確認の確定指摘（チェックボックス＝修正 TODO 兼用）・棄却台帳・残余検証点。
-- [12_agent-transcript-read-plan.md](12_agent-transcript-read-plan.md) - `pty_read(agent_transcript:true)` で長い TUI 回答を回収する設計史。現行pathは通常vendor homeを使う。
+- [12_agent-transcript-read-plan.md](12_agent-transcript-read-plan.md) - `pty_read(agent_transcript:true)` で長い TUI 回答を回収する設計史。現行pathは通常harness homeを使う。
 - [13_native-factory-diagnostics-plan.md](13_native-factory-diagnostics-plan.md) - factory 向け read-only diagnostics の公開契約・privacy 境界・検証 TODO。
 - [15_claude-agent-plan.md](15_claude-agent-plan.md) - 永続PTY上の対話型`claude_agent`、operation相関、構造化`claude_turn`、権限確認用`claude_approval`の設計史。旧settings隔離はADR 0025で置換済み。
-- [26-throughline-portable-fork-plan.md](26-throughline-portable-fork-plan.md) - Throughlineの読み取り専用handoff contextを4 launcherへ注入し、元DBのsession所属を変えずに別vendorへportable forkするv0.23.0の実装・受入計画。
+- [26-throughline-portable-fork-plan.md](26-throughline-portable-fork-plan.md) - Throughlineの読み取り専用handoff contextを4 launcherへ注入し、元DBのsession所属を変えずに別harnessへportable forkするv0.23.0の実装・受入計画。
 - [23_managed-claude-user-mcp-plan.md](23_managed-claude-user-mcp-plan.md) - v0.21.4の歴史的工程。環境境界はADR 0025で全面置換済み。
 - [24_shared-agent-environment-plan.md](24-shared-agent-environment-plan.md) - 4 launcherを通常CLIと同じ環境へ戻した完了済みLattice工程の判断正本。
 

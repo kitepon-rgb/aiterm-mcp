@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.2] - 2026-08-24
+
+### Changed
+
+- 内部用語をharnessへ統一した（オーナー裁定: AIの実行基盤分類を「vendor」でなく「harness」と呼ぶ）。
+  `src/vendors/`を`src/harnesses/`へ改名し、内部識別子（`harnessLauncherDiagnostic`等）とコメント・
+  現役文書の分類語をharnessへ置換した。挙動・15-tool API・schemaは不変。
+- 互換のため公開wire契約は据え置く: receipt／event fileの`vendor`・`vendor_session_id`field、
+  diagnosticsの`vendor_dependencies`、runtime error code `AITERM.VENDOR_LAUNCHER_FAILED`は
+  従来どおり（正本fieldは0.28.0以降`harness`）。
+
 ## [0.28.1] - 2026-08-24
 
 ### Changed

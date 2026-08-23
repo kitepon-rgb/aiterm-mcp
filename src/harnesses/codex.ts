@@ -1,6 +1,6 @@
 // Codex 固有の制御。完了正本は root rollout transcript の task_complete（ADR 0022）。
 // core 所有のサービス（transcript 行読取・rate limit 検知）は引数で注入し、
-// 依存方向を core → vendors → agent-shared の一方向に保つ。
+// 依存方向を core → harnesses → agent-shared の一方向に保つ。
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -84,7 +84,7 @@ export function codexConfigSummary(configPath: string): string {
   return `共有 config: ${bits.join(" / ")}`;
 }
 
-export function findLatestCodexTranscript(codexHome: string, vendorSessionId: string): string | null {
+export function findLatestCodexTranscript(codexHome: string, harnessSessionId: string): string | null {
   const sessionsDir = path.join(codexHome, "sessions");
   let latestFile: string | null = null;
   let latestMtime = -Infinity;
@@ -101,7 +101,7 @@ export function findLatestCodexTranscript(codexHome: string, vendorSessionId: st
         visit(file);
         continue;
       }
-      if (!entry.isFile() || !entry.name.startsWith("rollout-") || !entry.name.endsWith(".jsonl") || !entry.name.includes(vendorSessionId)) continue;
+      if (!entry.isFile() || !entry.name.startsWith("rollout-") || !entry.name.endsWith(".jsonl") || !entry.name.includes(harnessSessionId)) continue;
       try {
         const mtimeMs = fs.statSync(file).mtimeMs;
         if (mtimeMs > latestMtime) {
@@ -214,9 +214,9 @@ export function codexRootTranscript(meta: AgentMetadata): string | null {
 export function bindCodexTranscriptSession(meta: AgentMetadata): string | null {
   const transcript = codexRootTranscript(meta);
   if (!transcript) return null;
-  const vendorSessionId = codexTranscriptSessionId(transcript);
-  if (vendorSessionId && !meta.vendor_session_id) {
-    meta.vendor_session_id = vendorSessionId;
+  const harnessSessionId = codexTranscriptSessionId(transcript);
+  if (harnessSessionId && !meta.vendor_session_id) {
+    meta.vendor_session_id = harnessSessionId;
     writeAgentMetadata(meta);
   }
   return transcript;
@@ -224,7 +224,7 @@ export function bindCodexTranscriptSession(meta: AgentMetadata): string | null {
 
 export function codexCompletionEvent(
   meta: AgentMetadata,
-  vendorSessionId: string | null,
+  harnessSessionId: string | null,
   record: any,
 ): AgentDoneEvent | null {
   if (
@@ -238,7 +238,7 @@ export function codexCompletionEvent(
     vendor: "codex",
     aiterm_session: meta.aiterm_session,
     launch_id: meta.launch_id,
-    vendor_session_id: vendorSessionId,
+    vendor_session_id: harnessSessionId,
     turn_id: record.payload.turn_id,
     operation_id: null,
     reason: "Codex transcript task_complete",
@@ -254,12 +254,12 @@ export function latestCodexCompletion(
 ): AgentDoneEvent | null {
   const transcript = codexRootTranscript(meta);
   if (!transcript) return null;
-  const vendorSessionId = meta.vendor_session_id ?? codexTranscriptSessionId(transcript);
+  const harnessSessionId = meta.vendor_session_id ?? codexTranscriptSessionId(transcript);
   let latest: AgentDoneEvent | null = null;
   for (const line of readTranscriptLines(transcript)) {
     if (!line.trim()) continue;
     try {
-      latest = codexCompletionEvent(meta, vendorSessionId, JSON.parse(line)) ?? latest;
+      latest = codexCompletionEvent(meta, harnessSessionId, JSON.parse(line)) ?? latest;
     } catch {
       // Codexが末尾を書込み中なら、その行は次の観測で完結してから読む。
     }
@@ -328,7 +328,7 @@ export async function observeCodexDone(
           parts.shift();
           discardLeadingFragment = false;
         }
-        const vendorSessionId = meta.vendor_session_id ?? codexTranscriptSessionId(transcript);
+        const harnessSessionId = meta.vendor_session_id ?? codexTranscriptSessionId(transcript);
         for (const line of parts) {
           if (!line.trim()) continue;
           if (Buffer.byteLength(line, "utf8") > AGENT_EVENT_MAX_BYTES) {
@@ -336,7 +336,7 @@ export async function observeCodexDone(
             continue;
           }
           try {
-            const done = codexCompletionEvent(meta, vendorSessionId, JSON.parse(line));
+            const done = codexCompletionEvent(meta, harnessSessionId, JSON.parse(line));
             if (done) return observation("done", done);
           } catch {
             malformedEvents++;

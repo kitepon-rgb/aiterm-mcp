@@ -51,10 +51,10 @@ function fail(e: unknown): ToolResult {
  */
 async function factoryDiagnostics(): Promise<string> {
   const ptyList = core.readOnlyPtyListDiagnostic();
-  const claude = core.vendorLauncherDiagnostic("claude");
-  const codex = core.vendorLauncherDiagnostic("codex");
-  const grok = core.vendorLauncherDiagnostic("grok");
-  const cursor = core.vendorLauncherDiagnostic("cursor");
+  const claude = core.harnessLauncherDiagnostic("claude");
+  const codex = core.harnessLauncherDiagnostic("codex");
+  const grok = core.harnessLauncherDiagnostic("grok");
+  const cursor = core.harnessLauncherDiagnostic("cursor");
   const runtimeErrors = await runtimeErrorStoreDiagnostic();
   const overall = ptyList.status === "unverified" || runtimeErrors.status === "unverified" ? "unverified" : "ready";
   return JSON.stringify({
@@ -221,7 +221,7 @@ server.registerTool(
     description:
       "セッションの出力をトークン削減して読む（既定は前回読取位置からの増分）。" +
       "削減: 制御文字除去 / 反復圧縮 / head+tail 折りたたみ＋復元ヒント＋メタ併記。" +
-      "agent_transcript:true は agent session の直近完了ターンの最終 assistant メッセージを公開されたvendor記録から平文で返す。" +
+      "agent_transcript:true は agent session の直近完了ターンの最終 assistant メッセージを公開されたharness記録から平文で返す。" +
       "長い回答が screen tail で切れた時の回収用。",
     inputSchema: {
       session_id: z.string(),

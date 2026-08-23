@@ -18,7 +18,7 @@
 
 > **Let your AI orchestrate other AIs.** One `agent_launch` call selects the execution harness separately from its model and hands you a persistent session to drive. Cursor can run GPT, Claude, or Grok while Cursor still owns the session, hooks, and transcript.
 >
-> **What it is:** one persistent MCP terminal your AI drives — and can launch other coding agents into. `ssh`, `docker exec`, a REPL, or another agent's TUI all nest inside that one terminal as just text you send in. The mechanism is deliberately plain — your MCP client drives the other agent's terminal turn by turn: no hidden protocol, no separate aiterm-owned shared-memory layer, no autonomous negotiation. Launched agents still read the normal project and vendor memory/configuration that a direct CLI launch would use.
+> **What it is:** one persistent MCP terminal your AI drives — and can launch other coding agents into. `ssh`, `docker exec`, a REPL, or another agent's TUI all nest inside that one terminal as just text you send in. The mechanism is deliberately plain — your MCP client drives the other agent's terminal turn by turn: no hidden protocol, no separate aiterm-owned shared-memory layer, no autonomous negotiation. Launched agents still read the normal project and harness memory/configuration that a direct CLI launch would use.
 >
 > **No human at a tmux required.** aiterm is driven programmatically over MCP, so an AI can launch and drive another agent with no one sitting in the terminal — from an orchestration loop, a CI step, or a cron job.
 >
@@ -96,7 +96,7 @@ toolchain behind kitepon.dev's products.
 
 Fifteen tools: six **PTY tools** — `pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list` — to open, drive, and read one persistent terminal; one canonical **agent launcher**, `agent_launch`, which selects `claude-code`, `codex-cli`, `grok-cli`, or `cursor-cli` as the execution harness; four deprecated launcher aliases kept for migration; `agent_configure`; `claude_turn`; `claude_approval`; and `diagnostics`. The backend is **tmux**, so sessions survive even if the MCP server or the AI client restarts.
 
-**v0.28.0 separates the execution harness from the model.** The harness owns the agent loop, authentication, hooks, session, and transcript; `model` is what that harness runs. Cursor Agent CLI can therefore select GPT, Claude, or Grok without changing the completion contract from Cursor hooks to another vendor's. Grok Composer is a Grok CLI model preset, not another harness: use `harness: "grok-cli", model: "grok-composer-2.5-fast"`. The old four launcher tools are thin compatibility aliases over the same implementation.
+**v0.28.0 separates the execution harness from the model.** The harness owns the agent loop, authentication, hooks, session, and transcript; `model` is what that harness runs. Cursor Agent CLI can therefore select GPT, Claude, or Grok without changing the completion contract from Cursor hooks to another harness's. Grok Composer is a Grok CLI model preset, not another harness: use `harness: "grok-cli", model: "grok-composer-2.5-fast"`. The old four launcher tools are thin compatibility aliases over the same implementation.
 
 **v0.25.2 stabilizes repeated in-place configuration changes, including Grok 4.6.** If Grok Build
 1.0.3 redraws before its `/model` success notice can be observed, aiterm confirms the requested model/effort
@@ -107,7 +107,7 @@ round a failure into success; explicit `grok-4.6` launch and configuration still
 `reasoning_effort`, enforce `write_scope: "read-only"` with `--sandbox read-only`, and support
 in-place model/effort changes through `agent_configure`. Before creating a PTY, aiterm checks an
 explicit Grok/Composer model—and Composer's default model—against the live `grok models` catalog.
-An unavailable model fails visibly instead of letting the vendor CLI fall back to another model.
+An unavailable model fails visibly instead of letting the harness CLI fall back to another model.
 
 **v0.24.3 forwards explicitly selected launcher environment variables from the current MCP process.**
 Pass variable names in `env_vars`; aiterm reads their current values at launch and injects only the
@@ -121,11 +121,11 @@ startup header has scrolled out of the captured pane, aiterm recognizes Codex by
 model/effort footer together with the input prompt. An idle session is therefore configured
 directly; callers do not need to redraw the TUI, retry, or restart the agent.
 
-**v0.24.0 adds in-place agent configuration.** `agent_configure` uses each vendor's
+**v0.24.0 adds in-place agent configuration.** `agent_configure` uses each harness's
 native controls to change the model and/or reasoning effort of a running Codex or Claude
-session while preserving its PTY, vendor session, and conversation context.
+session while preserving its PTY, harness session, and conversation context.
 
-**v0.23.0 adds a local, cross-vendor portable fork.** Pass `throughline_source_session`
+**v0.23.0 adds a local, cross-harness portable fork.** Pass `throughline_source_session`
 with a mission in `prompt` to any launcher, and aiterm asks the locally installed Throughline
 for that session's read-only handoff context before creating the PTY. The exact returned memory
 is prepended to the mission without moving or copying the source session's database ownership.
@@ -133,7 +133,7 @@ If Throughline is missing or returns an invalid/empty result, launch fails visib
 fallback. Omitting the field preserves the ordinary clean launch.
 
 **v0.22.0 makes launched agents full project collaborators.** All four launchers now use the
-same normal `HOME`, working tree, vendor home, project/user/local configuration, MCP servers,
+same normal `HOME`, working tree, harness home, project/user/local configuration, MCP servers,
 plugins, skills, permissions, trust, memory, and session history as a direct CLI launch. Aiterm
 isolates only its own per-launch completion correlation state. Every child is told that it is a
 sub-agent and receives its parent session, delegation depth, lineage, and
@@ -150,7 +150,7 @@ structured launch receipts so a supplied scope and its enforcement status are re
 v0.20.3 prevents concurrent
 correlated Claude/Fable sessions from turning one broken login into many competing login
 flows. Every new Claude launch verifies the
-vendor-owned shared credential store before creating a PTY, while healthy credentials
+harness-owned shared credential store before creating a PTY, while healthy credentials
 remain reusable across concurrent and repeated sessions. The v0.20 line also distinguishes
 a non-blocking `aiterm-wait --timeout 0` observation (`running`, exit 5) from a real timed-out
 wait. The v0.19 line added the correlated Claude approval relay,
@@ -228,14 +228,14 @@ The canonical harness choices are:
 
 `env_vars` is an allowlist of environment-variable **names**, not a name/value map. At launch,
 aiterm reads each valid name from its current MCP process, shell-quotes present values, and places
-them on that one vendor launch command. Missing names are omitted; invalid shell variable names
+them on that one harness launch command. Missing names are omitted; invalid shell variable names
 fail before session creation. There is no implicit whole-environment copy, tmux-server restart,
 retry, or fallback. Values do not enter the MCP tool arguments, but they are delivered through the
-PTY launch command and retained in aiterm's per-session `.lastcmd`; the launched vendor and other
+PTY launch command and retained in aiterm's per-session `.lastcmd`; the launched harness and other
 processes with access to the same OS user may read them. Use this for non-secret seat identity and
 workflow variables, not as a secret transport.
 
-The selected harness CLI must be installed and authenticated. Aiterm resolves `CLAUDE_BIN` / `CODEX_BIN` / `GROK_BIN` / `CURSOR_AGENT_BIN`, then the documented default binary, then `PATH`. Cursor resolution deliberately uses `cursor-agent`, never the ambiguous `agent` name. Claude and Cursor authentication are checked before a PTY exists, so a failed preflight leaves no session. All harnesses use their normal vendor-owned credential and configuration stores in place.
+The selected harness CLI must be installed and authenticated. Aiterm resolves `CLAUDE_BIN` / `CODEX_BIN` / `GROK_BIN` / `CURSOR_AGENT_BIN`, then the documented default binary, then `PATH`. Cursor resolution deliberately uses `cursor-agent`, never the ambiguous `agent` name. Claude and Cursor authentication are checked before a PTY exists, so a failed preflight leaves no session. All harnesses use their normal harness-owned credential and configuration stores in place.
 
 Portable fork is optional. When `throughline_source_session` is present, `prompt` is the required
 new mission and `launch_operation_id` cannot be combined with it. aiterm resolves Throughline via
@@ -531,7 +531,7 @@ runners; it does not replace any OS with a reduced suite. Tag-triggered npm publ
 after all four environments pass and the tagged commit is confirmed on `origin/main`. The native
 Windows runner needs psmux ≥ 3.3.8 and Git for Windows on its PATH, and must run as an
 interactive Windows user; `NETWORK SERVICE` lacks the per-user environment the pane shell and
-vendor CLIs rely on and is not a valid runner identity (the separate WSL2 runner still owns the
+harness CLIs rely on and is not a valid runner identity (the separate WSL2 runner still owns the
 initialized WSL distro).
 
 Logic lives in `src/core.ts` (tmux control, reduction, completion detection, safety, agent launch) and `src/rtk.ts` (per-command reducers); `src/index.ts` is the MCP surface. The design origin and the reducer's porting source (the pytest reducer is ported to match upstream rtk 0.42.0, except the deliberate `FAILED`-line difference noted above, and is locked by regression tests) are in `prototype/python/`.
@@ -552,7 +552,7 @@ If aiterm let your AI hand a task to another agent — or saved you a round-trip
 ## Shared agent environment
 
 All harnesses use the caller's normal project and user environment. Aiterm does not copy,
-symlink, filter, or replace vendor configuration, authentication, MCP, plugin, skill, permission,
+symlink, filter, or replace harness configuration, authentication, MCP, plugin, skill, permission,
 trust, memory, or history stores. Cleanup removes only aiterm-owned launch metadata and completion
 correlation files.
 

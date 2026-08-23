@@ -1,5 +1,5 @@
-// vendor中立の共有プリミティブ。core と vendors/ の両方が依存する最下層で、
-// tmux-runtime / errors 以外の内部moduleへ依存しない（依存方向: core → vendors → agent-shared）。
+// harness中立の共有プリミティブ。core と harnesses/ の両方が依存する最下層で、
+// tmux-runtime / errors 以外の内部moduleへ依存しない（依存方向: core → harnesses → agent-shared）。
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -215,7 +215,7 @@ export interface AgentWaitObservation {
   harness: AgentHarness;
   // running は timeout=0（待たずに一度だけ観測する照会）専用の「まだ終わっていない」。
   // timeout は「指定秒だけ待って終わらなかった」で、両者を1語に潰さない（ADR 0018）。
-  // rate_limited は vendor の利用上限バナーを pane log で観測した「モデルが応答できない」。
+  // rate_limited は harness の利用上限バナーを pane log で観測した「モデルが応答できない」。
   // 完了でも沈黙でもない typed な回答として親へ返す（実被弾 2026-08-22: Grok weekly limit で
   // 完了 event が永遠に出ず、waiter は timeout の沈黙か auth 誤診しか返せなかった）。
   outcome: "done" | "running" | "timeout" | "closed" | "rate_limited";
@@ -279,7 +279,7 @@ export function subagentInstruction(meta: AgentMetadata): string {
 }
 
 // launch noteのwrite_scope説明。文言はkindに依存する分岐まで含めて単一実装で持つ
-// （vendor別noteへ複製すると文言が発散する）。
+// （harness別noteへ複製すると文言が発散する）。
 export function writeScopeLaunchNote(kind: AgentKind, writeScope: string | undefined): string {
   return writeScope === undefined
     ? ""

@@ -18,7 +18,7 @@ import {
   latestCursorCompletion,
   observeCursorDone,
   validateCursorModelEffort,
-} from "../dist/vendors/cursor.js";
+} from "../dist/harnesses/cursor.js";
 
 test("Cursor resolver: 曖昧な agent ではなく公式 cursor-agent だけを解決する", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "aiterm-cursor-resolver-"));

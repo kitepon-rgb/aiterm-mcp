@@ -3258,7 +3258,7 @@ test("agent bin: ディレクトリや非実行fileをreadyにしない", () => 
   const saved = process.env.CODEX_BIN;
   process.env.CODEX_BIN = os.tmpdir();
   try {
-    assert.equal(core.vendorLauncherDiagnostic("codex"), "unverified");
+    assert.equal(core.harnessLauncherDiagnostic("codex"), "unverified");
     assert.throws(
       () => core.openAgent("codex", {}),
       (e) => e.code === 2 && /CODEX_BIN/.test(e.message),
