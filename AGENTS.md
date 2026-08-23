@@ -2,14 +2,20 @@
 
 このファイルが aiterm-mcp の運用・設計・履歴の正本です（全 host 共通。Claude Code は CLAUDE.md の `@AGENTS.md` 経由で同じ内容を読む）。設計の詳細は `docs/00_overview.md` から辿り、特に `docs/01_design-plan.md` と関連 ADR を読む。
 
-> **v0.27.9（2026-08-23・source）**: Windows native の PowerShell pane で
+> **v0.27.9（2026-08-23・公開済み）**: Windows native の PowerShell pane で
 > `pty_send(mark:true)` がPOSIX用`printf`を連結し、コマンド本体成功後にsentinelを生成できず
 > timeoutしていた欠陥を根治。前面が`powershell`／`pwsh`ならPowerShell構文を使い、成功`rc=0`／
 > 失敗`rc=1`を実行時生成する。command echoは`rc={0}`のままなので数字アンカーの早期誤完了防止を
 > 維持する。POSIX形式は不変、fish/csh/tcshは従来どおり送信前に拒否。Windows native focused
 > regressionでPowerShellの遅延成功・失敗とPOSIX既存2経路を確認した。最終実装はPowerShell固有処理を
 > `tmux-runtime.ts`だけに置き、runtime純粋testでPOSIX byte不変とWindows分岐を固定。日本語READMEに残っていた
-> 廃止済みWSL bridge要件もnative psmux 3.3.8+契約へ訂正。公開受入はADR 0037を正とする。
+> 廃止済みWSL bridge要件もnative psmux 3.3.8+契約へ訂正。release commit `ee1f069`、main CI
+> `32617127573`、tag CI／npm publish `32617554934`、Registry workflow `32617776592`はsuccess。
+> npm 0.27.9、GitHub Release＋MCPB、Official Registry、global install 0.27.9、公開MCP 14 tools、
+> installed runtime JS 17/17 byte一致まで成立。registry由来global processのPowerShell live smokeだけは、
+> この端末のpsmux 3.3.8が新session processをclientへ登録できない外部runtime状態により`pty_open`で未完。
+> tag CIのclean Windows namespaceでは同じlive regressionがpassしているが代替成功には数えない。
+> 公開受入と未完条件はADR 0037を正とする。
 
 > **v0.27.0（2026-08-19・source）**: Windows基盤をWSL橋からnative psmuxへ置換した`e3f5fc8`の完成形。
 > 前提だったpsmux忠実度修正3件（pipe-pane直接ファイルsink・paste逐語hex wire・前面
