@@ -184,6 +184,19 @@ export function normalizePaneCommand(cmd: string): string {
   return path.basename(cmd).replace(/\.exe$/i, "").toLowerCase();
 }
 
+// mark sentinel のOS差は端末runtimeが所有する。Windows native paneでPowerShellが前面なら
+// PowerShellの状態構文を使い、それ以外は既存のPOSIX形式を維持する。
+const WINDOWS_POWERSHELL_COMMANDS = new Set(["powershell", "pwsh"]);
+export function appendMarkSentinel(text: string, foreground: string): string {
+  if (isWin && WINDOWS_POWERSHELL_COMMANDS.has(foreground)) {
+    // command echoに完成済みrc=<数字>を含めない。{0}を実行時formatして早期誤完了を防ぐ。
+    return text +
+      "; if ($?) { [Console]::WriteLine([Environment]::NewLine + ('<<<AITERM_DONE rc={0}>>>' -f 0)) }" +
+      " else { [Console]::WriteLine([Environment]::NewLine + ('<<<AITERM_DONE rc={0}>>>' -f 1)) }";
+  }
+  return text + `; printf '\\n<<<AITERM_DONE rc=%d>>>\\n' "$?"`;
+}
+
 // Windows の fs.Stats.mode は POSIX permission bit を持たず、常に 666/777 相当を報告する
 // （NTFS ACL は別体系）。既知制約の明示的受容として、Windows では group/other bit 検証を
 // 常に「問題なし」とする。isFile・nlink・owner・size 等の共通検証は呼び手が維持する。

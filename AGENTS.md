@@ -2,6 +2,15 @@
 
 このファイルが aiterm-mcp の運用・設計・履歴の正本です（全 host 共通。Claude Code は CLAUDE.md の `@AGENTS.md` 経由で同じ内容を読む）。設計の詳細は `docs/00_overview.md` から辿り、特に `docs/01_design-plan.md` と関連 ADR を読む。
 
+> **v0.27.9（2026-08-23・source）**: Windows native の PowerShell pane で
+> `pty_send(mark:true)` がPOSIX用`printf`を連結し、コマンド本体成功後にsentinelを生成できず
+> timeoutしていた欠陥を根治。前面が`powershell`／`pwsh`ならPowerShell構文を使い、成功`rc=0`／
+> 失敗`rc=1`を実行時生成する。command echoは`rc={0}`のままなので数字アンカーの早期誤完了防止を
+> 維持する。POSIX形式は不変、fish/csh/tcshは従来どおり送信前に拒否。Windows native focused
+> regressionでPowerShellの遅延成功・失敗とPOSIX既存2経路を確認した。最終実装はPowerShell固有処理を
+> `tmux-runtime.ts`だけに置き、runtime純粋testでPOSIX byte不変とWindows分岐を固定。日本語READMEに残っていた
+> 廃止済みWSL bridge要件もnative psmux 3.3.8+契約へ訂正。公開受入はADR 0037を正とする。
+
 > **v0.27.0（2026-08-19・source）**: Windows基盤をWSL橋からnative psmuxへ置換した`e3f5fc8`の完成形。
 > 前提だったpsmux忠実度修正3件（pipe-pane直接ファイルsink・paste逐語hex wire・前面
 > `#{pane_current_command}`）はquolu名義のupstream貢献 psmux/psmux#577 としてmergeされ、
@@ -323,7 +332,7 @@
 
 **v0.11.0（2026-07-11・GPT-5.6/Grok 4.5 世代整合＝docs/10 消化）**: ①3ツールに `model` 引数を追加（codex=`-m`、grok/composer=`--model` 上書き。空/空白は session 前拒否）。②`grok_agent` の既定モデルを stale な `grok-build` から **`grok-4.5`** へ更新（ライブカタログ実測に整合）。③codex managed `CODEX_HOME` の config.toml copy は、引数で渡した `model`/`reasoning_effort` に対応する top-level ピンを上書き（端末の ultra ピン等が対話子へ黙って波及しない。渡さないキーとテーブル以降は原文保持）。④grok/composer への `reasoning_effort` 指定は**起動前に明示エラー**（grok CLI の `--effort` は headless 専用・対話 TUI では警告の上無視されるため。旧 `low/medium/high/xhigh/max` enum は撤去）。⑤codex 起動応答に実効 model/effort と出所（引数／端末config継承／CLI既定）を常時明示し、実効 effort=ultra は proactive 自動委譲 ON の警告付き。前提検証順は model/effort→bin→cwd。
 
-**2026-07-05〜07 の主な挙動変更（利用時に留意）**: ①`pty_read` の `until` は**既定でリテラル部分一致**（正規表現は `until_regex:true` でオプトイン）。②`pty_send(mark:true)` は `pty_read(wait:true)` が **until 無しでも sentinel を自動検出**して完了確定する（ネスト・非シェル前面でも効く。mark は POSIX シェル前提＝fish/csh は拒否）。③`read rtk:true` の pytest は**収集エラーを緑/無害に偽装しない**。④破壊ゲートに `rm -rf ./*`・引用符付き root・`..`・`./` を追加。⑤`screen+wait`・`full+lines` が機能化。⑥エージェント起動フラグ・モデル ID は実 CLI で裏取り済み（`codex 'prompt'`／`-c model_reasoning_effort=`／grok `--model grok-build|grok-composer-2.5-fast --effort <lvl>`）。⑦`agent_done:true` は managed vendor home を使い、通常 hook file を触らず Stop hook を aiterm 単独所有にする。未 bind の初回送信では vendor TUI の入力欄 ready gate を通し、未 ready なら送信前エラーにする。Codex TUI では text 投入直後の Enter が submit として落ちる罠があり、agent_done 経路だけ text と Enter を分離して短い delay を挟む。Grok/Composer は `--no-auto-update`・fake `HOME`・managed `GROK_HOME` で compat hook/plugin 混入を抑え、OAuth は検証済み通常auth正本を`GROK_AUTH_PATH`でvendorへ渡し、managed homeへauth/lockを置かない。Grok/Composer 実 smoke は `grok login` 後に通過済み。
+**2026-07-05〜07 の主な挙動変更（利用時に留意）**: ①`pty_read` の `until` は**既定でリテラル部分一致**（正規表現は `until_regex:true` でオプトイン）。②`pty_send(mark:true)` は `pty_read(wait:true)` が **until 無しでも sentinel を自動検出**して完了確定する（POSIX shellとPowerShellに対応。PowerShellは成功0／失敗1、fish/csh/tcshは拒否）。③`read rtk:true` の pytest は**収集エラーを緑/無害に偽装しない**。④破壊ゲートに `rm -rf ./*`・引用符付き root・`..`・`./` を追加。⑤`screen+wait`・`full+lines` が機能化。⑥エージェント起動フラグ・モデル ID は実 CLI で裏取り済み（`codex 'prompt'`／`-c model_reasoning_effort=`／grok `--model grok-build|grok-composer-2.5-fast --effort <lvl>`）。⑦`agent_done:true` は managed vendor home を使い、通常 hook file を触らず Stop hook を aiterm 単独所有にする。未 bind の初回送信では vendor TUI の入力欄 ready gate を通し、未 ready なら送信前エラーにする。Codex TUI では text 投入直後の Enter が submit として落ちる罠があり、agent_done 経路だけ text と Enter を分離して短い delay を挟む。Grok/Composer は `--no-auto-update`・fake `HOME`・managed `GROK_HOME` で compat hook/plugin 混入を抑え、OAuth は検証済み通常auth正本を`GROK_AUTH_PATH`でvendorへ渡し、managed homeへauth/lockを置かない。Grok/Composer 実 smoke は `grok login` 後に通過済み。
 
 履歴メモ: v0.4.1 は発見性メタ/README 刷新のリリース、v0.7.0 は対話エージェント起動3ツール追加、v0.9.0 は `agent_done` 公開、v0.9.1 は Codex managed home allowlist hardening、v0.10.0 は Codex launcher 初回 prompt wait 公開、v0.11.0 はモデル整合（`model` 引数・`grok-4.5` 既定・effort 実態合わせ）公開、v0.12.0 は全域監査の確定修正（stale wait lock 回収・close/killAll のプロセス間ガード・出力削減の行内キャップ・UTF-8 先頭境界・pytest 証拠ガード・破壊ゲートの `--`／rtk 変換後・line_range 逆転エラー・pty_list agent 列・codex managed config 可視化）＋新機能 `pty_read(agent_transcript:true)`（長い TUI 回答を vendor transcript から回収）公開、v0.12.1 は監査 C 節の hardening 全消化（stop hook short-write ガード・agent events の 64KB tail 読み・非 agent read の negative-cache）。詳細な版別差分は `CHANGELOG.md` と `docs/archive/` を参照する。
 

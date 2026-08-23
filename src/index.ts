@@ -136,7 +136,8 @@ server.registerTool(
         .default(false)
         .describe(
           "完了 sentinel(終了コード付き)で包む。pty_read(wait:true) が until 無しでも自動検出して" +
-            "完了確定する（ネスト中や非シェル前面でも効く確実な完了検出。手で until を組む必要なし）。" +
+            "完了確定する（POSIX shell と PowerShell に対応。PowerShell の rc は成功0／失敗1。" +
+            "fish/csh/tcsh は未対応として送信前に拒否）。" +
             " enter:false と併用すると sentinel が実行されず完了検出が発火しない（送信後に pty_key(\"Enter\") で実行される）。",
         ),
       force: z

@@ -28,6 +28,7 @@ import {
   TMUX_EMPTY_CONFIG,
   attachCommand,
   normalizePaneCommand,
+  appendMarkSentinel,
   settlePaneLog,
   modeBitsWorldAccessible,
   modeBitsWritableByOthers,
@@ -805,10 +806,11 @@ export function send(name: string, text: string, o: SendOpts = {}): string {
   assertInitialPromptNotPendingForSend(name, !!o.force);
   assertManagedClaudeCredentialCommandNotSent(name, text);
   text = prepareSendText(text, o);
+  let fg = "";
   if (o.mark) {
     // mark の sentinel は POSIX シェル構文。前面が fish/csh/tcsh 等の非 POSIX 対話シェルだと "$?" が
     // 壊れて sentinel が成立しない。黙って壊れた完了検出を作らず、明示エラーで until を促す（B8）。
-    const fg = paneCurrentCommand(name);
+    fg = paneCurrentCommand(name);
     if (NON_POSIX_MARK_SHELLS.has(fg)) {
       throw new AitermError(
         `mark は POSIX シェル(bash/sh/zsh/dash)前提です。前面が ${fg} のため sentinel の "$?" が` +
@@ -832,7 +834,7 @@ export function send(name: string, text: string, o: SendOpts = {}): string {
     writeLastcmd(name, text); // read rtk の reducer 分類用（書換/mark 前の素のコマンド）
     if (o.rtk) text = rtkRewrite(text);
     if (o.rtk && !o.force) assertNotDestructive(text, 3, "rtk 変換後: ");
-    if (o.mark) text = text + `; printf '\\n<<<AITERM_DONE rc=%d>>>\\n' "$?"`;
+    if (o.mark) text = appendMarkSentinel(text, fg);
     assertSendTextSize(text, o.rtk || o.mark ? "変換後の送信文字列" : "送信文字列");
     const reportedText = text;
     if (!o.raw && text.includes("\n") && ATOMIC_MULTILINE_SHELLS.has(paneCurrentCommand(name))) {

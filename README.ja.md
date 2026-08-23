@@ -151,7 +151,7 @@ runtime-error store は canonical dotagents config の `collection.enabled: true
 場合だけ収集し、既定OFF、network送信は行いません。tag起点CIのnpm provenance（OIDC Trusted
 Publishing）で公開し、GitHub Release が Official MCP Registry を再登録します。
 
-**状態:** 開発継続中 · この分野では新参で、別の形に賭けている（[既存手段との比較](#既存手段との比較)参照）· 動作対象は Linux · WSL2 · macOS · Windows ネイティブ（core PTY ツール。`agent_done` は現時点では POSIX/WSL/macOS のみ）· MIT · [変更履歴](CHANGELOG.md)。
+**状態:** 開発継続中 · この分野では新参で、別の形に賭けている（[既存手段との比較](#既存手段との比較)参照）· 動作対象は Linux · WSL2 · macOS · Windows ネイティブ（4 launcher と相関付き完了を含む）· MIT · [変更履歴](CHANGELOG.md)。
 
 ## なぜ今
 
@@ -430,7 +430,7 @@ handoff contextを前置きできる。この任意経路は`throughline >= 0.9.
 
 ### 完了検出（5 層）
 
-`pty_read({ wait: true })`は通常PTYを5層で判定し、agent sessionは第6の正確な層を使う。Codexは通常rolloutの`task_complete`、Grok/Composerは通常sessionの`turn_ended`、Claudeは通常settingsへ加算したlaunch相関Stop eventを`aiterm-wait --cursor`が観測する。親はブロックもポーリングもしない。Grok/Composerは`mcp_init_completed`確認前に入力欄が見えても送信しない。
+`pty_read({ wait: true })`は通常PTYを、process終了／`mark:true` sentinel／`until`一致／shell復帰を伴う出力静止／timeoutの5層で判定する。`mark`はPOSIX shellでは終了コード、PowerShellでは成功`0`／失敗`1`を出力する。fish/csh/tcshはどちらの状態取得構文にも従わないため送信前に拒否する。agent sessionは第6の正確な層を使う。Codexは通常rolloutの`task_complete`、Grok/Composerは通常sessionの`turn_ended`、Claudeは通常settingsへ加算したlaunch相関Stop eventを`aiterm-wait --cursor`が観測する。親はブロックもポーリングもしない。Grok/Composerは`mcp_init_completed`確認前に入力欄が見えても送信しない。
 
 ### トークン削減
 
@@ -442,18 +442,18 @@ handoff contextを前置きできる。この任意経路は`throughline >= 0.9.
 
 `pty_send` は送信前に破壊的コマンド（`rm -rf /`, `mkfs`, `dd of=/dev/…`, `DROP TABLE` 等）を遮断し（`force: true` で越える）、ESC・ブラケットペースト終端などをサニタイズする。`pty_read` は既定で制御文字を無害化して返す（`raw: true` はバイトをそのまま返す）。これは**サンドボックスではなく tripwire**（[既知の制約](#既知の制約バグではなく仕様)参照）。
 
-1回の `pty_send` が受理する本文はUTF-8で最大64KiB。同一sessionへの送信はaiterm processをまたいで直列化し、chunk同士の混線を防ぐ。macOSでは長いPTY入力の欠落を避けるためUTF-8境界を壊さない256-byte単位でtmux pasteし、Linux/WSLでは上限内を1回でpasteする。POSIX shellが前面にいる時のsanitize済み複数行は、改行を含まない単一の`eval`入力へ符号化する。shellがscript全体を所有してから先頭行を実行するため、途中で起動したpager／REPLが後続行を対話キーとして奪わない。単一行、`raw:true`、非shell前面は従来どおり直接PTYへpasteする。agent dispatch の paste はさらに tmux bracketed paste（`paste-buffer -p`）を使う: bracketed paste mode を要求している pane（vendor TUI）へは各 chunk を `ESC[200~/201~` で包んで届け、チャンク投入中のキー解釈による語中文字化け・submit 取り落としを抑える。途中chunkが失敗した場合は部分送信済みであることを明示し、自動でEnterを押さない。送信processの異常終了でlockが残った場合は送信前にfail-closedする。そのsessionを `pty_close` して作り直すか、全sessionを破棄できる場合だけ `pty_kill_all` で安全に掃除する。
+1回の `pty_send` が受理する本文はUTF-8で最大64KiB。同一sessionへの送信はaiterm processをまたいで直列化し、chunk同士の混線を防ぐ。全OSで長いPTY入力の欠落を避けるためUTF-8境界を壊さない256-byte単位でpasteし、chunk間に10msのdrain間隔を置く。POSIX shellが前面にいる時のsanitize済み複数行は、改行を含まない単一の`eval`入力へ符号化する。shellがscript全体を所有してから先頭行を実行するため、途中で起動したpager／REPLが後続行を対話キーとして奪わない。単一行、`raw:true`、非shell前面は従来どおり直接PTYへpasteする。agent dispatch の paste はさらに tmux bracketed paste（`paste-buffer -p`）を使う: bracketed paste mode を要求している pane（vendor TUI）へは各 chunk を `ESC[200~/201~` で包んで届け、チャンク投入中のキー解釈による語中文字化け・submit 取り落としを抑える。途中chunkが失敗した場合は部分送信済みであることを明示し、自動でEnterを押さない。送信processの異常終了でlockが残った場合は送信前にfail-closedする。そのsessionを `pty_close` して作り直すか、全sessionを破棄できる場合だけ `pty_kill_all` で安全に掃除する。
 
 ## 人が覗く
 
-セッションは共有 tmux ソケット上にある。`pty_open`（および各エージェント起動ツール）の戻り値に表示される `tmux -S … attach -t <id>` で人間が同じ端末に入って介入できる（抜けるのは `Ctrl-b d`）——起動した Claude/Codex/Grok/Composer のセッションを見たり、途中でキーボードを引き取ったりもできる。
+セッションは共有 tmux socket（Windows nativeはpsmux namespace）上にある。`pty_open`（および各エージェント起動ツール）の戻り値に表示される `tmux -S … attach -t <id>`、Windowsでは`psmux -L … attach -t <id>`で人間が同じ端末に入って介入できる（抜けるのは `Ctrl-b d`）——起動した Claude/Codex/Grok/Composer のセッションを見たり、途中でキーボードを引き取ったりもできる。
 
 ## 要件
 
 - **Node.js >= 18**
-- **tmux**（実行時の前提。`tmux -V` で確認。未導入なら `apt install tmux` / `brew install tmux`）
+- **tmux または psmux**（実行時の前提）
   - **macOS / Linux / WSL2** は tmux を直接使う。macOS は同梱されないので `brew install tmux` で導入する。MCP クライアントがターミナルでなく **GUI から起動**された場合、Homebrew の bin（Apple Silicon: `/opt/homebrew/bin`、Intel: `/usr/local/bin`）が `PATH` に入らないことがある。その場合 aiterm が自動で探索するか、**`AITERM_TMUX=/path/to/tmux`** で明示指定する。
-  - **Windows ネイティブ**には tmux が無いため、aiterm は裏で **WSL の中の tmux** を透過的に使う。[WSL](https://learn.microsoft.com/ja-jp/windows/wsl/) を導入・初期化し、**WSL のディストリ内に tmux を入れる**こと（`sudo apt install tmux`）。`wsl tmux -V` で確認できる。セッション・ソケット・人の `attach` はすべて WSL 側にあり、AI は Windows 側のコマンドから操作するだけ。（Windows のツールは SSH と同じく入れ子で握る: `pty_send "powershell.exe …"` で PowerShell に入る。）
+  - **Windows ネイティブ**は WSL を使わず、tmux CLI互換の [psmux](https://github.com/psmux/psmux) **3.3.8以上**を直接使う（`winget install marlocarlo.psmux`）。pane shell用に Git for Windows も必要。解決先は **`AITERM_PSMUX`**／**`AITERM_BASH`** で上書きできる。Windows toolはSSHと同じく入れ子で握れ、`pty_send "powershell.exe"`でPowerShellへ入れる。
 - **エージェント起動ツール**を使う場合: 対応するベンダー CLI が導入・認証済みであること——`claude_agent` は `claude`、`codex_agent` は `codex`、`grok_agent` / `composer_agent` は `grok`。portable forkだけは追加で`throughline >= 0.9.0`が必要だが、通常のclean launchには不要。（PTY ツールだけ使うなら不要。）
 - 任意: [`rtk`](https://github.com/rtk-ai/rtk) バイナリ（`pty_send` の `rtk: true` 委譲で使う。無くても動く）
 

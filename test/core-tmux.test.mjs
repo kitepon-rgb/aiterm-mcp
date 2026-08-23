@@ -21,6 +21,10 @@ const skip = hasTmux ? undefined : "tmux 未インストール";
 // B8: 非 POSIX 対話シェル(csh/tcsh/fish)前面での mark 拒否を実テストする。csh は macOS 標準。
 const hasCsh = spawnSync(process.platform === "win32" ? "where" : "which", ["csh"]).status === 0;
 const skipB8 = hasTmux && hasCsh ? undefined : "tmux か csh 未インストール";
+const hasPowerShell =
+  process.platform === "win32" && spawnSync("where", ["powershell"]).status === 0;
+const skipPowerShellMark =
+  hasTmux && hasPowerShell ? undefined : "Windows、psmux、Windows PowerShell が必要";
 const SESS = "selftest";
 // 安全策（多層防御）: 破壊ゲートテストは万一ゲートをすり抜けても実害が出ないよう、session を
 // 使い捨てサンドボックスへ cd してから走らせる。過去のインシデント（未ビルドの新ゲートケースを
@@ -406,9 +410,30 @@ test("send mark + read wait: 遅延コマンドでエコー早期完了しない
   }
 });
 
-// B8: mark の sentinel は POSIX シェル構文（"$?"）。前面が非 POSIX 対話シェル(csh/tcsh/fish)なら
+// Windows ネイティブの既定対話シェルでも mark を完了証拠として使えることを固定する。
+// command echo に完成済み sentinel を含めると早期完了するため、遅延出力も必ず観測する。
+test("send mark + read wait: PowerShell で sentinel を実行時生成する", { skip: skipPowerShellMark }, async () => {
+  const ps = "selftest_powershell_mark";
+  core.openSession(ps, "powershell");
+  try {
+    core.send(ps, "Start-Sleep -Milliseconds 600; Write-Output POWERSHELL_DELAYED_DONE", { mark: true });
+    const out = await core.readOutput(ps, { wait: true, timeout: 6 });
+    assert.ok(out.includes("POWERSHELL_DELAYED_DONE"), `PowerShell の実出力を待つこと: ${out}`);
+    assert.match(out, /<<<AITERM_DONE rc=0>>>/, `PowerShell の成功状態を出力すること: ${out}`);
+    assert.match(out, /is_complete=True via mark/, `mark 完了であること: ${out}`);
+
+    core.send(ps, "Write-Error POWERSHELL_EXPECTED_FAILURE -ErrorAction Continue", { mark: true });
+    const failed = await core.readOutput(ps, { wait: true, timeout: 6 });
+    assert.match(failed, /<<<AITERM_DONE rc=1>>>/, `PowerShell の失敗状態を 1 で出力すること: ${failed}`);
+    assert.match(failed, /is_complete=True via mark/, `失敗時も mark 完了であること: ${failed}`);
+  } finally {
+    core.closeSession(ps);
+  }
+});
+
+// B8: mark はPOSIXとPowerShellに対応する。どちらの状態取得構文にも従わないcsh/tcsh/fishなら
 // 黙って壊れた完了検出を作らず、明示エラー(code2)で拒否する。ssh/docker→リモート bash は前面が
-// "ssh"/"docker" で本集合に含まれず許可される（＝mark の主要用途を壊さない）。
+// "ssh"/"docker" で本集合に含まれずPOSIX形式を使う（＝mark の主要用途を壊さない）。
 test("send mark: 非 POSIX 前面シェル(csh)では mark を拒否", { skip: skipB8 }, async () => {
   const b8 = "selftest_b8";
   core.openSession(b8);

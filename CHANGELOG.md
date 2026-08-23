@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.9] - 2026-08-23
+
+### Fixed
+
+- Windows native の PowerShell pane で `pty_send(mark:true)` が POSIX 用 `printf` を
+  連結して失敗し、コマンド本体が成功しても完了 sentinel を生成できず timeout していた。
+  前面が `powershell` / `pwsh` のときは PowerShell 構文で sentinel を実行時生成し、
+  成功を `rc=0`、失敗を `rc=1` として返す。command echo は `rc={0}` のままなので
+  数字アンカーによる早期完了防止を維持する。POSIX shell の既存形式は変更しない。
+- 日本語 README の Windows 要件が廃止済み WSL bridge の説明を残していたため、現行の
+  native psmux 3.3.8+ と Git for Windows を使う契約へ訂正した。
+
 ## [0.27.8] - 2026-08-23
 
 ### Fixed
