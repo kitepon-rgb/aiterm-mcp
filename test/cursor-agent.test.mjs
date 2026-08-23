@@ -23,14 +23,24 @@ import {
 test("Cursor resolver: 曖昧な agent ではなく公式 cursor-agent だけを解決する", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "aiterm-cursor-resolver-"));
   const localBin = path.join(root, ".local", "bin");
-  const cursorAgent = path.join(localBin, "cursor-agent");
-  const ambiguousAgent = path.join(localBin, "agent");
+  const cursorInstallDir = process.platform === "win32"
+    ? path.join(root, "AppData", "Local", "cursor-agent")
+    : localBin;
+  const cursorAgent = path.join(cursorInstallDir, process.platform === "win32" ? "cursor-agent.cmd" : "cursor-agent");
+  const ambiguousAgent = path.join(localBin, process.platform === "win32" ? "agent.cmd" : "agent");
   fs.mkdirSync(localBin, { recursive: true });
+  fs.mkdirSync(cursorInstallDir, { recursive: true });
   fs.writeFileSync(cursorAgent, "#!/bin/sh\nexit 0\n", { mode: 0o700 });
   fs.writeFileSync(ambiguousAgent, "#!/bin/sh\nexit 7\n", { mode: 0o700 });
-  const previous = { HOME: process.env.HOME, PATH: process.env.PATH, CURSOR_AGENT_BIN: process.env.CURSOR_AGENT_BIN };
+  const previous = {
+    HOME: process.env.HOME,
+    PATH: process.env.PATH,
+    LOCALAPPDATA: process.env.LOCALAPPDATA,
+    CURSOR_AGENT_BIN: process.env.CURSOR_AGENT_BIN,
+  };
   process.env.HOME = root;
   process.env.PATH = localBin;
+  if (process.platform === "win32") process.env.LOCALAPPDATA = path.join(root, "AppData", "Local");
   delete process.env.CURSOR_AGENT_BIN;
   try {
     assert.equal(resolveAgentBin("cursor"), cursorAgent);
