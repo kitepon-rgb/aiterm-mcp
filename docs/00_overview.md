@@ -64,6 +64,7 @@ managed home、fake `HOME`、設定snapshotの記述は
 - [adr/0024-managed-claude-user-mcp-inheritance.md](adr/0024-managed-claude-user-mcp-inheritance.md) - v0.21.4の歴史的Decision。ADR 0025で全面的にSuperseded。
 - [25-shared-agent-environment-characterization.md](25-shared-agent-environment-characterization.md) - 3 CLIの通常環境、追加instruction、共有home上の完了相関を実測した実装前記録。
 - [adr/0038-harness-launch-api-and-cursor-agent-cli.md](adr/0038-harness-launch-api-and-cursor-agent-cli.md) - 実行基盤（harness）とmodelを分離した単一`agent_launch`、Cursor Agent CLI adapter、旧4入口の互換alias化。
+- [adr/0039-release-0.28.0-acceptance.md](adr/0039-release-0.28.0-acceptance.md) - harness標準起動APIとCursor Agent CLIの4環境CI、npm／Release／Official Registry、標準global install、公開版Cursor実席の受入記録。
 
 ## 運用メモ
 

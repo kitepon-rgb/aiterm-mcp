@@ -2,7 +2,7 @@
 
 このファイルが aiterm-mcp の運用・設計・履歴の正本です（全 host 共通。Claude Code は CLAUDE.md の `@AGENTS.md` 経由で同じ内容を読む）。設計の詳細は `docs/00_overview.md` から辿り、特に `docs/01_design-plan.md` と関連 ADR を読む。
 
-> **v0.28.0（2026-08-24・source）**: agent起動を単一の`agent_launch({harness, model?, ...})`へ標準化し、
+> **v0.28.0（2026-08-24・公開完了）**: agent起動を単一の`agent_launch({harness, model?, ...})`へ標準化し、
 > harness（agent loop・認証・hook・session・transcriptを所有する実行基盤）とmodelを別軸にした。
 > `claude-code`／`codex-cli`／`grok-cli`／`cursor-cli`を選べ、Cursor harness上でGPT／Claude／Grokを
 > 選んでも完了相関はCursor方式のまま。Composerは別harnessでなくGrok CLIのmodel preset。
@@ -17,6 +17,11 @@
 > 公開前MCPB smokeで、stagingが`dist`直下だけをcopyし`dist/vendors/*.js`を欠いた起動不能archiveを
 > validatorが通す既存欠陥を検出した。runtime JavaScriptの再帰copyへ直し、staged serverの15 tools／
 > `cursor-cli` schema／stderr 0を確認、release-metadata testで同梱集合を固定した。
+> release commit `26ac8cb`、main CI `32664712823`、tag CI／npm publish `32664978268`、Registry workflow
+> `32664978093`はsuccess。npm provenance、GitHub Release＋MCPB、Official Registry active/latest、
+> npm由来global install 0.28.0、3 bins、15 tools、installed runtime JS 18/18一致を確認した。公開版の
+> Cursor実席は`cursor:1`回収→同一sessionをLuna highへ変更→follow-up `cursor:2`回収→close→残骸ゼロ、
+> stderr 0まで通過。公開受入はADR 0039を正とする。
 >
 > **v0.27.9（2026-08-23・公開済み）**: Windows native の PowerShell pane で
 > `pty_send(mark:true)` がPOSIX用`printf`を連結し、コマンド本体成功後にsentinelを生成できず

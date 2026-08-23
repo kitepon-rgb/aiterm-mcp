@@ -63,3 +63,5 @@ byte EOFは単調境界ではない。よって未接続hookを正本にせず�
 - 15-tool MCP schema、旧alias、起動・送信・待機・設定変更・一覧の`harness`相関をfocused testで固定する。
 - Cursor resolver、CLI引数、live model catalog、通常transcript bind／turn境界、model picker操作、共通入口routingをfocused testで固定する。
 - 実認証後に公式CLIで明示model launch→`aiterm-wait`→同一session model/effort変更→follow-up→transcript→closeを通し、公開後もregistry由来installで再確認する。
+
+公開受入は[ADR 0039](0039-release-0.28.0-acceptance.md)で完遂した。

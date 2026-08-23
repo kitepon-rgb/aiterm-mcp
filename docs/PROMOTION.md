@@ -13,6 +13,19 @@ output) is already committed — these steps activate it.
 
 ## Status (live)
 
+> **v0.28.0公開完了（2026-08-24）**: agent起動を単一の
+> `agent_launch({harness, model?, ...})`へ標準化し、Cursor Agent CLIを公式installer／標準transcript／
+> model pickerで追加した。旧4 launcherは互換aliasとして維持する。
+
+- ✅ main CI `32664712823`とtag CI／Trusted Publishing `32664978268`はself-hosted 4環境同一fullがgreen。
+- ✅ npm provenance 0.28.0、GitHub Release＋MCPB、Official Registry workflow `32664978093`、
+  registry `active`／`isLatest:true`。
+- ✅ npm由来global install、3 bins、15 tools、4 harness schema、stderr 0、runtime JS 18/18一致。
+- ✅ 公開版Cursor実席で起動→`cursor:1`回収→同一session model/effort変更→follow-up `cursor:2`回収→
+  transcript逐語一致→close→残骸ゼロ。公開受入は[ADR 0039](adr/0039-release-0.28.0-acceptance.md)。
+
+現行の完全公開済みchainはv0.28.0。以下の「現行」「直前」は各版公開時点の履歴として読む。
+
 > **v0.25.1公開完了（2026-08-14）**: 正規repositoryを`kitepon/aiterm-mcp`、Official MCP Registry名を
 > `io.github.kitepon/aiterm-mcp`へ統一する。最終CIはself-hostedのmacOS native・Linux native・
 > Windows native・WSL2で同じ`npm test`を同時実行する。失敗済み`v0.25.0`は移動せず、
