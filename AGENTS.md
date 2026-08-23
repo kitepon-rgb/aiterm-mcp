@@ -2,6 +2,14 @@
 
 このファイルが aiterm-mcp の運用・設計・履歴の正本です（全 host 共通。Claude Code は CLAUDE.md の `@AGENTS.md` 経由で同じ内容を読む）。設計の詳細は `docs/00_overview.md` から辿り、特に `docs/01_design-plan.md` と関連 ADR を読む。
 
+> **v0.28.2（2026-08-24・公開完了）**: 内部用語をvendorからharnessへ統一する挙動不変patch
+>（オーナー裁定のharness用語統一campaign）。`src/vendors/`→`src/harnesses/`、内部識別子・
+> コメント・現役文書を置換し、wire互換field（`vendor`／`vendor_session_id`／`vendor_dependencies`／
+> `AITERM.VENDOR_LAUNCHER_FAILED`）は据え置いた。macOS full 355 pass、release commit `b06e1a1`、
+> main CI `32672609610`、tag CI／npm publish `32672803173`、Registry workflow `32673122066`は
+> success。npm provenance、GitHub Release＋MCPB（staged initialize smoke 0.28.2・harnesses 4ファイル
+> 同梱確認）、global install後のMCP initialize smoke 0.28.2・stderr 0。公開受入はADR 0041を正とする。
+>
 > **v0.28.1（2026-08-24・公開完了）**: npm配布物へ入るREADMEを含め、現行正典をv0.28の実装へ全同期する
 > 文書patch。Windows nativeを廃止済みWSL bridgeで説明していたCONTRIBUTING／SECURITY／AGENTS／
 > design planをpsmux 3.3.8以上＋Git for Windowsのnative契約へ直し、15 tools、標準`agent_launch`、
