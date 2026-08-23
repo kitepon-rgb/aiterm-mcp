@@ -7,7 +7,8 @@ ready判定はv0.24.2へ継承した追補を正とする。Grok／Composerのmo
 live catalog fail-loud契約は[29-grok-composer-agent-parity-plan.md](29-grok-composer-agent-parity-plan.md)と
 [ADR 0029](adr/0029-grok-composer-agent-parity-scope.md)を正とする。v0.23.0のportable fork／v0.22.0の環境境界と矛盾する
 managed home、fake `HOME`、設定snapshotの記述は
-[ADR 0025](adr/0025-shared-agent-environment-and-lineage.md)が置換する。archive、release受入、evidence、RAG rawは
+[ADR 0025](adr/0025-shared-agent-environment-and-lineage.md)が置換する。標準`agent_launch`、harnessとmodelの分離、
+Cursor Agent CLI契約は[ADR 0038](adr/0038-harness-launch-api-and-cursor-agent-cli.md)を正とする。archive、release受入、evidence、RAG rawは
 当時の証拠なので現行文言へ書き換えない。
 
 ## 現行正典
@@ -19,7 +20,7 @@ managed home、fake `HOME`、設定snapshotの記述は
 - [01_design-plan.md](01_design-plan.md) - PTYモデルと現行設計。v0.22.0項より後ろのmanaged記述は明示された履歴。
 - [adr/0014-agent-tui-ready-stabilization.md](adr/0014-agent-tui-ready-stabilization.md) - vendor TUI readyの連続安定化と、長寿命Codexのheader／model・effort・任意`fast` footer識別契約。
 - [27-agent-configure-release-plan.md](27-agent-configure-release-plan.md) - `agent_configure`のv0.24.0公開受入、v0.24.1停止記録、長寿命Codex ready／runtime queue根治版v0.24.2の公開工程。
-- [28-agent-env-vars-release-plan.md](28-agent-env-vars-release-plan.md) - 現在のMCP processから指定名だけを4 launcherへ渡す根治とCodex v0.147 `fast` footer追補を含むv0.24.3の設計・公開受入。
+- [28-agent-env-vars-release-plan.md](28-agent-env-vars-release-plan.md) - 現在のMCP processから指定名だけを互換launcherへ渡すv0.24.3の設計・公開受入。現行`agent_launch`も同じharness共通契約を継承する。
 - [29-grok-composer-agent-parity-plan.md](29-grok-composer-agent-parity-plan.md) - Grok／Composerの起動時model・effort・read-only、同一session設定変更、live catalog fail-loudをClaude／Codex共通面へ揃えたv0.25.0 source／v0.25.1公開工程。
 - [30-factory-ci-repository-transfer-release-plan.md](30-factory-ci-repository-transfer-release-plan.md) - 正規repo／registry名、self-hosted 4環境同一full CI、OIDC Trusted Publisher、v0.25.1公開修理の現行契約。
 - [BUGHUB_RUNTIME_ERROR_STORE_PLAN.md](BUGHUB_RUNTIME_ERROR_STORE_PLAN.md) - runtime error storeのprivacy／bakery queue契約とv0.24.2のprogress-based deadline根治。

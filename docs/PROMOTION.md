@@ -13,6 +13,9 @@ output) is already committed — these steps activate it.
 
 ## Status (live)
 
+> **v0.28.1公開工程（2026-08-24）**: npm-visible READMEを含む現行正典をv0.28実装へ同期する
+> 文書patch。ランタイムと15-tool APIは0.28.0から不変で、archive／過去版ADR／RAG rawは書き換えない。
+
 > **v0.28.0公開完了（2026-08-24）**: agent起動を単一の
 > `agent_launch({harness, model?, ...})`へ標準化し、Cursor Agent CLIを公式installer／標準transcript／
 > model pickerで追加した。旧4 launcherは互換aliasとして維持する。

@@ -330,9 +330,9 @@ This registers it in `~/.claude.json`; you'll get an approval prompt the first t
 
 ## Headless: no human at the terminal
 
-Because an MCP client drives aiterm programmatically over stdio, everything above can run with **nobody sitting at a tmux**. A Claude or Codex session can call any launcher — including another instance of itself — then `pty_read` the result and act on it unattended. That makes aiterm a fit for exactly the places a human-driven terminal isn't:
+Because an MCP client drives aiterm programmatically over stdio, everything above can run with **nobody sitting at the terminal**. Any MCP-capable orchestrator can call `agent_launch` — including a harness matching itself — then `pty_read` the result and act on it unattended. That makes aiterm a fit for exactly the places a human-driven terminal isn't:
 
-- **Multi-agent orchestration** — an orchestrator hands sub-tasks to Claude / Codex / Grok / Composer, each in its own persistent session, and reads them all back.
+- **Multi-agent orchestration** — an orchestrator hands sub-tasks to Claude Code / Codex / Grok / Cursor harnesses, each in its own persistent session, and reads them all back. Composer remains a Grok CLI model preset.
 - **CI** — a job step can spin up an agent, drive it, and tear it down.
 - **cron** — a scheduled run can launch an agent and collect its output.
 
@@ -344,7 +344,7 @@ The terminal is real and shared, so a human *can* jump in ([A human can watch](#
 flowchart LR
     AI["AI / MCP client<br/>(the orchestrator)"] -->|"pty_send · agent_launch · agent_configure · claude_turn · claude_approval<br/>legacy launcher aliases · diagnostics"| S["aiterm-mcp<br/>stdio MCP · 15 tools"]
     S -->|"pty_read<br/>token-reduced"| AI
-    S -->|"tmux send-keys<br/>capture-pane"| P["persistent PTYs<br/>tmux · survive restarts"]
+    S -->|"tmux / psmux<br/>send · capture"| P["persistent PTYs<br/>survive restarts"]
     P -->|"ssh · docker · repl"| R["nested<br/>remote · container · REPL"]
     P -->|"launches a fresh PTY per agent"| A["another coding-agent harness<br/>Claude Code · Codex CLI · Grok CLI · Cursor CLI"]
 ```
@@ -380,10 +380,10 @@ aiterm also holds state across calls. The built-in tool runs each call in a fres
 
 ```text
 built-in shell  →  var=                   # empty; env dropped, cwd back at project root
-aiterm          →  cwd=/tmp var=hello123  # one tmux session holds both
+aiterm          →  cwd=/tmp var=hello123  # one persistent PTY holds both
 ```
 
-`cd` then set env then build, `ssh` once then run ten commands on the authenticated session, drive a live REPL or a launched agent's TUI turn by turn — one tmux session holds all of it. Reach for aiterm when the terminal has to remember something.
+`cd` then set env then build, `ssh` once then run ten commands on the authenticated session, drive a live REPL or a launched agent's TUI turn by turn — one persistent PTY holds all of it. Reach for aiterm when the terminal has to remember something.
 
 <sub>¹ Today's harness auto-offloads the ~192 KB dump to a file and previews only a ~2 KB head, so the token counts nearly tie; aiterm reports the accurate line count and lets `line_range="A:B"` pull any slice later, head or tail. ² The `rtk` grep reducer truncates long lines (~80 chars) and folds the overflow into `[+N more]`, which suits scanning; use the built-in tool when you need every full line.</sub>
 
@@ -393,7 +393,7 @@ aiterm sits at the intersection of two families: terminal-driving MCP servers, a
 
 |  | **aiterm-mcp** | one-shot shell MCP<br/>(e.g. `mcp-server-commands`) | terminal / SSH / tmux MCPs<br/>(e.g. `iterm-mcp`, `ssh-mcp`, `tmux-mcp`) | shared-tmux agent-to-agent<br/>(e.g. `smux`) |
 | --- | --- | --- | --- | --- |
-| Persistent session | ✅ tmux, survives restarts | ❌ new shell every call | ⚠️ varies | ✅ tmux |
+| Persistent session | ✅ tmux / psmux, survives restarts | ❌ new shell every call | ⚠️ varies | ✅ tmux |
 | SSH / containers / REPLs | nest with one `pty_send` | reconnect every command | ⚠️ often separate tools | ✅ tmux (human drives) |
 | Launch another agent in one call | ✅ `agent_launch(harness=…)` | ❌ | ❌ | ⚠️ agents join a human-run tmux via a CLI + skills |
 | Headless (no human at a tmux) | ✅ MCP-driven, programmatic | ✅ | ⚠️ varies | ❌ built around a human in the tmux |
@@ -401,7 +401,7 @@ aiterm sits at the intersection of two families: terminal-driving MCP servers, a
 | Token-reduced reads | ✅ per-command reducers | ❌ raw output | ⚠️ rarely | ❌ raw tmux |
 | Completion detection | 5-layer: exit / `mark` / `until` / quiescence / timeout | n/a (blocks per call) | ⚠️ prompt-match, fragile | ❌ agent reads the pane |
 | Destructive-command gate | ✅ tripwire (override with `force`) | ❌ | ⚠️ varies | ❌ |
-| Human can co-drive | ✅ shared tmux socket (`attach`) | ❌ | ⚠️ varies | ✅ (its core model) |
+| Human can co-drive | ✅ shared socket / namespace (`attach`) | ❌ | ⚠️ varies | ✅ (its core model) |
 
 ## Where aiterm fits
 
@@ -461,18 +461,18 @@ cannot be combined with `launch_operation_id`, and leaves the source session's d
 unchanged. Throughline is resolved through `THROUGHLINE_BIN` and then `PATH`; a missing or invalid
 export fails before the PTY exists instead of silently launching clean.
 
-When an agent's answer is longer than the on-screen tail (pane height ≈ 24 lines), callers recover it in full with `pty_read({ agent_transcript: true })`. It returns the most recently completed turn's final assistant message in plain text with no re-prompting. Claude reads the bounded owner-only result captured by the launch-correlated Stop hook and verifies its digest/byte count; it never reads Claude's private transcript. Durable machine callers should use `claude_turn`: `issue` sends once, `recover` never sends, `pending` is distinct from unsafe or malformed state, and only `completed` carries the exact verified `raw_output`. Codex uses the normal rollout transcript's `task_complete.turn_id`; Grok/Composer use their normal session history after the last real user row. Missing or ambiguous attribution remains an explicit error.
+When an agent's answer is longer than the on-screen tail (pane height ≈ 24 lines), callers recover it in full with `pty_read({ agent_transcript: true })`. It returns the most recently completed turn's final assistant message in plain text with no re-prompting. Claude reads the bounded owner-only result captured by the launch-correlated Stop hook and verifies its digest/byte count; it never reads Claude's private transcript. Durable machine callers should use `claude_turn`: `issue` sends once, `recover` never sends, `pending` is distinct from unsafe or malformed state, and only `completed` carries the exact verified `raw_output`. Codex uses the normal rollout transcript's `task_complete.turn_id`; Grok/Composer use their normal session history after the last real user row; Cursor uses the normal agent transcript bound to the launch ID and current turn. Missing or ambiguous attribution remains an explicit error.
 
 ### Completion detection (5 layers)
 
-`pty_read({ wait: true })` decides "is the command done?" via five layers: process exit / a `mark:true` sentinel / an `until` match / output quiescence with shell return / timeout. `mark` emits the shell's exit status on POSIX shells and `0` (success) or `1` (failure) on PowerShell; fish/csh/tcsh are rejected before send because they do not share either status syntax. When `mark` or `until` is active, that requested evidence takes precedence and a momentarily quiet shell cannot complete the read as quiescent. Agent sessions add a sixth exact layer: Codex observes normal rollout `task_complete`; Grok/Composer observe normal session `turn_ended`; Claude observes its additive launch-correlated Stop event. `aiterm-wait --cursor` performs that vendor-specific observation without the parent blocking or polling. Pre-send readiness failures are MCP errors, and late completion remains recoverable without resending.
+`pty_read({ wait: true })` decides "is the command done?" via five layers: process exit / a `mark:true` sentinel / an `until` match / output quiescence with shell return / timeout. `mark` emits the shell's exit status on POSIX shells and `0` (success) or `1` (failure) on PowerShell; fish/csh/tcsh are rejected before send because they do not share either status syntax. When `mark` or `until` is active, that requested evidence takes precedence and a momentarily quiet shell cannot complete the read as quiescent. Agent sessions add a sixth exact layer: Codex observes normal rollout `task_complete`; Grok/Composer observe normal session `turn_ended`; Claude observes its additive launch-correlated Stop event; Cursor observes `turn_ended(status:"success")` in the launch-bound normal agent transcript. `aiterm-wait --cursor` performs that harness-specific observation without the parent blocking or polling. Pre-send readiness failures are MCP errors, and late completion remains recoverable without resending.
 
 ### Completion push for parent agents (`aiterm-wait`)
 
 As of v0.16 a parent agent **never blocks** on aiterm — there is no wait parameter anywhere (v0.17 makes the waiter's exit codes mirror its outcome). The whole flow is dispatch + one universal waiter:
 
 1. Launch the child with `agent_launch({ harness: ... })`; every launch shares the normal project/user environment and adds only completion correlation plus lineage. Send a turn with plain `pty_send` (or `claude_turn issue` for durable Claude operations). The call returns immediately with an `event_cursor` in its structured receipt.
-2. Run `aiterm-wait --session <id> --cursor <event_cursor> [--operation sha256:<64hex>] [--timeout <sec>]`. It observes the vendor-native completion source, plus Claude's additive launch hook, as a **pure reader** and exits with a one-line `aiterm.agent-wait-result.v1` receipt. **Exit ≠ done**: the receipt's `outcome` is authoritative (`0` = `done`, `3` = `timeout`, `4` = `closed`, `1` = error).
+2. Run `aiterm-wait --session <id> --cursor <event_cursor> [--operation sha256:<64hex>] [--timeout <sec>]`. It observes the harness-owned completion source, plus Claude's additive launch hook, as a **pure reader** and exits with a one-line `aiterm.agent-wait-result.v1` receipt. **Exit ≠ done**: the receipt's `outcome` is authoritative (`0` = `done`, `3` = `timeout`, `4` = `closed`, `1` = error).
 3. **The parent never runs the waiter in its own foreground.** Waiting is correct — but the waiter is a separate process, not the parent's turn. A harness that re-invokes its agent when a background task exits (Claude Code) runs the waiter **in the background** and gets woken with zero polling. So that this is not left to interpretation, aiterm reads `clientInfo.name` from the MCP `initialize` handshake and its receipts name the concrete invocation for the detected host — for Claude Code, literally `Bash(command: "aiterm-wait …", run_in_background: true)`. Unknown or undeclared hosts get the generic "start it as a process that does not block the parent's turn" wording; nothing else about the contract changes. Every receipt leads with the same rule: dispatch and let go, then go do something else or end the turn.
 4. Collect the result exactly as before: `pty_read(agent_transcript: true)`, or `claude_turn recover` for durable Claude operations. The waiter carries the signal, never the payload.
 
@@ -490,18 +490,18 @@ As of v0.16 a parent agent **never blocks** on aiterm — there is no wait param
 
 Before sending, `pty_send` blocks destructive commands (`rm -rf /`, `mkfs`, `dd of=/dev/…`, `DROP TABLE`, …) — pass `force: true` to override — and sanitizes ESC / bracketed-paste terminators. `pty_read` neutralizes control characters in what it returns by default (`raw: true` returns the bytes verbatim). This is a **tripwire, not a sandbox** (see [Known constraints](#known-constraints-by-design-not-bugs)).
 
-Each `pty_send` accepts at most 64 KiB of UTF-8 text. Sends to the same session are serialized across aiterm processes so chunks cannot interleave. Every OS pastes through tmux in UTF-8-safe 256-byte chunks with a 10 ms drain interval; macOS, Linux, and WSL2 have all demonstrated silent middle/trailing loss when a long input is pushed without that boundary. Sanitized multiline text sent while a POSIX shell is in the foreground is encoded as one newline-free `eval` input: the shell receives the complete script before it runs the first line, so a pager or REPL started mid-script cannot consume later lines as interactive keystrokes. Single-line input, `raw:true`, and non-shell frontends remain direct PTY pastes. Agent dispatches additionally paste with tmux bracketed paste (`paste-buffer -p`): panes that requested bracketed-paste mode (the vendor TUIs) receive each chunk wrapped in `ESC[200~/201~`, hardening prompt injection against mid-word key-interpretation corruption and dropped submits. If a later chunk fails, aiterm reports the partial-send state and does not press Enter automatically. A lock left by a terminated sender fails closed before sending; close and recreate that session (or use `pty_kill_all` when every session is disposable) to clean it up safely.
+Each `pty_send` accepts at most 64 KiB of UTF-8 text. Sends to the same session are serialized across aiterm processes so chunks cannot interleave. Every OS pastes through its multiplexer in UTF-8-safe 256-byte chunks with a 10 ms drain interval; macOS, Linux, and WSL2 have all demonstrated silent middle/trailing loss when a long input is pushed without that boundary. Sanitized multiline text sent while a POSIX shell is in the foreground is encoded as one newline-free `eval` input: the shell receives the complete script before it runs the first line, so a pager or REPL started mid-script cannot consume later lines as interactive keystrokes. Single-line input, `raw:true`, and non-shell frontends remain direct PTY pastes. Agent dispatches additionally use the tmux-compatible bracketed-paste operation (`paste-buffer -p`): panes that requested bracketed-paste mode receive each chunk wrapped in `ESC[200~/201~`, hardening prompt injection against mid-word key-interpretation corruption and dropped submits. If a later chunk fails, aiterm reports the partial-send state and does not press Enter automatically. A lock left by a terminated sender fails closed before sending; close and recreate that session (or use `pty_kill_all` when every session is disposable) to clean it up safely.
 
 ## A human can watch
 
-Sessions live on a shared tmux socket. The `tmux -S … attach -t <id>` line printed by `pty_open` and `agent_launch` lets a human attach to the same terminal and intervene (`Ctrl-b d` to detach), including a Claude/Codex/Grok/Cursor harness session. On native Windows the printed line is the psmux form — `psmux -L <namespace> attach -t <id>` — pointing at the same Windows-native session.
+Sessions live on a shared tmux socket on POSIX or a shared psmux namespace on native Windows. The attach line printed by `pty_open` and `agent_launch` lets a human attach to the same terminal and intervene, including a Claude/Codex/Grok/Cursor harness session: `tmux -S … attach -t <id>` on POSIX, or `psmux -L <namespace> attach -t <id>` on native Windows.
 
 ## Requirements
 
 - **Node.js >= 18**
-- **tmux** (runtime prerequisite; check with `tmux -V`. Install with `apt install tmux` / `brew install tmux`)
+- **tmux or psmux** (platform runtime prerequisite)
   - **macOS / Linux / WSL2** run tmux directly. On macOS install it with `brew install tmux` (stock macOS ships none). If your MCP client is launched from the **GUI** rather than a terminal, Homebrew's bin (`/opt/homebrew/bin` on Apple Silicon, `/usr/local/bin` on Intel) may be off its `PATH`; aiterm auto-searches those locations, or set **`AITERM_TMUX=/path/to/tmux`** to point at it explicitly.
-  - **Native Windows** has no tmux, so aiterm drives [psmux](https://github.com/psmux/psmux) — a tmux-CLI-compatible native multiplexer — with a per-install `-L` namespace. **No WSL is required.** Install psmux **3.3.8 or newer** (`winget install marlocarlo.psmux`; 3.3.8 is the first release whose `pipe-pane` file sink, byte-exact `paste-buffer` wire, and foreground `#{pane_current_command}` behave the way aiterm's capture/dispatch paths rely on), plus [Git for Windows](https://gitforwindows.org/) whose `bash.exe` becomes the pane shell (System32's `bash.exe` is the WSL launcher and is deliberately not used). Override resolution with **`AITERM_PSMUX`** / **`AITERM_BASH`** when the binaries live elsewhere. You reach Windows tools the same way you reach SSH: `pty_send "powershell.exe …"` nests into PowerShell. `grok_agent`/`composer_agent` launch the **Windows-native** Grok CLI (`%USERPROFILE%\.grok\bin\grok.exe`, or `GROK_BIN` pointing at a `.exe`) as a Windows process, and a WSL-side grok is rejected before a session is created so vendor auth and session records never split across an OS boundary.
+  - **Native Windows** has no tmux, so aiterm drives [psmux](https://github.com/psmux/psmux) — a tmux-CLI-compatible native multiplexer — with a per-install `-L` namespace. **No WSL is required.** Install psmux **3.3.8 or newer** (`winget install marlocarlo.psmux`; 3.3.8 is the first release whose `pipe-pane` file sink, byte-exact `paste-buffer` wire, and foreground `#{pane_current_command}` behave the way aiterm's capture/dispatch paths rely on), plus [Git for Windows](https://gitforwindows.org/) whose `bash.exe` becomes the pane shell (System32's `bash.exe` is the WSL launcher and is deliberately not used). Override resolution with **`AITERM_PSMUX`** / **`AITERM_BASH`** when the binaries live elsewhere. You reach Windows tools the same way you reach SSH: `pty_send "powershell.exe …"` nests into PowerShell. The `grok-cli` harness and its deprecated aliases launch the **Windows-native** Grok CLI (`%USERPROFILE%\.grok\bin\grok.exe`, or `GROK_BIN` pointing at a `.exe`) as a Windows process, and a WSL-side grok is rejected before a session is created so product auth and session records never split across an OS boundary.
 - For **agent harnesses**: the selected CLI, installed and authenticated through its product owner's official path — `claude`, `codex`, `grok`, or Cursor's `cursor-agent`. Portable fork additionally needs `throughline >= 0.9.0`; ordinary clean launch does not. (Not needed if you only use the PTY tools.)
 - Optional: the [`rtk`](https://github.com/rtk-ai/rtk) binary (used by `pty_send`'s `rtk: true` delegation; works fine without it)
 
@@ -514,14 +514,14 @@ Sessions live on a shared tmux socket. The `tmux -S … attach -t <id>` line pri
 - **`pty_send({ rtk: true })` is single-line only and needs the external `rtk` binary** (passthrough without it). The `pty_read({ rtk: true })` reducer, by contrast, is self-contained and rtk-independent.
 - **The `pytest` reducer matches rtk 0.42.0** on test counts, the rule line, and `FAILURES`-block formatting (locked by regression tests). It **deliberately preserves the full failure reason** on the `FAILED` summary lines (emitted under `-ra`/`-rf`), whereas rtk 0.42.0 truncates the reason at the first `" - "` — a readability choice, so those lines are intentionally not byte-identical to rtk. The `[full output: …]` tee-pointer line rtk appends on large output is not reproduced on the read side.
 - **tmux is started with `-f /dev/null`**, so it does not read `~/.tmux.conf` (to keep behavior reproducible across machines).
-- **All sessions live on a single socket (`claude.sock` on POSIX).** `tmux … kill-server` removes them all.
+- **All sessions share one multiplexer endpoint** (`claude.sock` on POSIX, one psmux namespace on native Windows). The platform's `kill-server` command removes them all.
 
 ## Development
 
 ```bash
 npm install
 npm run build      # tsc → dist/
-npm test           # build, then the node:test regression suite (requires tmux)
+npm test           # build, then the node:test regression suite (requires tmux or psmux)
 npm link           # put `aiterm-mcp` on PATH locally
 ```
 

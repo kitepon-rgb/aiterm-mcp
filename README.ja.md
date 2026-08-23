@@ -304,9 +304,9 @@ claude mcp add --scope user --transport stdio aiterm -- aiterm-mcp
 
 ## ヘッドレス: 端末に人が居ない
 
-MCP クライアントが aiterm を stdio 越しにプログラムから駆動するので、上のすべては **tmux に誰も座らないまま**動く。Claude／Codexのどちらからでも、自分自身を含む任意のlauncherを呼び、`pty_read`で結果を読んで次へ進める——無人で。これは、人が操作する端末が向かない場所にこそ aiterm が合うということ:
+MCP クライアントが aiterm を stdio 越しにプログラムから駆動するので、上のすべては **端末に誰も座らないまま**動く。任意のMCP対応統括役が、自分と同じharnessを含む`agent_launch`を呼び、`pty_read`で結果を読んで次へ進める——無人で。これは、人が操作する端末が向かない場所にこそ aiterm が合うということ:
 
-- **複数エージェントのオーケストレーション** — 統括役がサブタスクを Claude / Codex / Grok / Composer に渡し、各々を専用の永続セッションに置き、全部を読み戻す。
+- **複数エージェントのオーケストレーション** — 統括役がサブタスクを Claude Code / Codex / Grok / Cursor harnessへ渡し、各々を専用の永続セッションに置き、全部を読み戻す。ComposerはGrok CLIのmodel presetとして扱う。
 - **CI** — ジョブのステップがエージェントを起こし、操作し、片付けられる。
 - **cron** — スケジュール実行がエージェントを起動して出力を回収できる。
 
@@ -318,7 +318,7 @@ MCP クライアントが aiterm を stdio 越しにプログラムから駆動�
 flowchart LR
     AI["AI / MCP client<br/>(the orchestrator)"] -->|"pty_send · agent_launch · agent_configure · claude_turn · claude_approval<br/>旧launcher alias · diagnostics"| S["aiterm-mcp<br/>stdio MCP · 15 tools"]
     S -->|"pty_read<br/>token-reduced"| AI
-    S -->|"tmux send-keys<br/>capture-pane"| P["persistent PTYs<br/>tmux · survive restarts"]
+    S -->|"tmux / psmux<br/>send · capture"| P["persistent PTYs<br/>再起動を跨ぐ"]
     P -->|"ssh · docker · repl"| R["nested<br/>remote · container · REPL"]
     P -->|"launches a fresh PTY per agent"| A["another coding-agent TUI<br/>Claude · Codex · Grok · Cursor"]
 ```
@@ -352,10 +352,10 @@ aiterm はセッションの状態も持ち越せる。組み込みツールは�
 
 ```text
 組み込みシェル  →  var=                   # 空。env は消え、cwd はプロジェクト直下に戻る
-aiterm          →  cwd=/tmp var=hello123  # 1 本の tmux セッションが両方を保つ
+aiterm          →  cwd=/tmp var=hello123  # 1 本の永続PTYが両方を保つ
 ```
 
-cd でディレクトリを移り、環境変数を立て、ビルドを走らせる。ssh で一度ログインして、その接続のまま 10 個コマンドを打つ。REPL や起動したエージェントの TUI を 1 ターンずつ操作する。こういう流れは、1 本の tmux セッションが状態を握っていて初めて成り立つ。端末に何かを覚えておいてほしいときは、aiterm を使う。
+cd でディレクトリを移り、環境変数を立て、ビルドを走らせる。ssh で一度ログインして、その接続のまま 10 個コマンドを打つ。REPL や起動したエージェントの TUI を 1 ターンずつ操作する。こういう流れは、1 本の永続PTYが状態を握っていて初めて成り立つ。端末に何かを覚えておいてほしいときは、aiterm を使う。
 
 <sub>¹ いまのハーネスは ~192 KB の出力をいったんファイルに逃がして、先頭 ~2 KB だけを見せる。そのためトークン数はほぼ並ぶ。aiterm は行数を正確に返すうえ、あとから `line_range="A:B"` で好きな範囲（先頭でも末尾でも）を取り出せる。² `rtk` の grep 縮約は長い行（~80 字）を切り詰めて、あふれを `[+N more]` にまとめる。ざっと眺めるには向くが、全行をそのまま読みたいときは組み込みツールを使う。</sub>
 
@@ -365,7 +365,7 @@ aiterm は 2 つの系譜の交点にいる——端末を操作する MCP サ�
 
 |  | **aiterm-mcp** | 1 コマンド毎の往復<br/>(例: `mcp-server-commands`) | terminal / SSH / tmux MCP<br/>(例: `iterm-mcp`, `ssh-mcp`, `tmux-mcp`) | 共有 tmux でエージェント同士<br/>(例: `smux`) |
 | --- | --- | --- | --- | --- |
-| 永続セッション | ✅ tmux・再起動を跨ぐ | ❌ 毎回新シェル | ⚠️ まちまち | ✅ tmux |
+| 永続セッション | ✅ tmux / psmux・再起動を跨ぐ | ❌ 毎回新シェル | ⚠️ まちまち | ✅ tmux |
 | SSH / コンテナ / REPL | `pty_send` 1 回でネスト | 毎コマンド接続し直し | ⚠️ ツールが分かれがち | ✅ tmux（人が操作） |
 | 1 コールで別エージェント起動 | ✅ `agent_launch(harness=…)` | ❌ | ❌ | ⚠️ 人が動かす tmux に CLI + skills で参加 |
 | ヘッドレス（人が tmux に居ない） | ✅ MCP 駆動・プログラム的 | ✅ | ⚠️ まちまち | ❌ 人が tmux に居る前提 |
@@ -373,7 +373,7 @@ aiterm は 2 つの系譜の交点にいる——端末を操作する MCP サ�
 | トークン削減読取 | ✅ コマンド別 reducer | ❌ 生出力 | ⚠️ ほぼ無し | ❌ 生 tmux |
 | 完了検出 | 5 層: 終了 / `mark` / `until` / 静止 / timeout | 無し（毎回ブロック） | ⚠️ プロンプト一致・脆い | ❌ エージェントがペインを読む |
 | 破壊コマンド遮断 | ✅ tripwire（`force` で越える） | ❌ | ⚠️ まちまち | ❌ |
-| 人が同時操作 | ✅ 共有 tmux ソケット（`attach`） | ❌ | ⚠️ まちまち | ✅（設計の芯） |
+| 人が同時操作 | ✅ 共有socket／namespace（`attach`） | ❌ | ⚠️ まちまち | ✅（設計の芯） |
 
 ## aiterm の立ち位置
 
@@ -448,7 +448,7 @@ handoff contextを前置きできる。この任意経路は`throughline >= 0.9.
 
 `pty_send` は送信前に破壊的コマンド（`rm -rf /`, `mkfs`, `dd of=/dev/…`, `DROP TABLE` 等）を遮断し（`force: true` で越える）、ESC・ブラケットペースト終端などをサニタイズする。`pty_read` は既定で制御文字を無害化して返す（`raw: true` はバイトをそのまま返す）。これは**サンドボックスではなく tripwire**（[既知の制約](#既知の制約バグではなく仕様)参照）。
 
-1回の `pty_send` が受理する本文はUTF-8で最大64KiB。同一sessionへの送信はaiterm processをまたいで直列化し、chunk同士の混線を防ぐ。全OSで長いPTY入力の欠落を避けるためUTF-8境界を壊さない256-byte単位でpasteし、chunk間に10msのdrain間隔を置く。POSIX shellが前面にいる時のsanitize済み複数行は、改行を含まない単一の`eval`入力へ符号化する。shellがscript全体を所有してから先頭行を実行するため、途中で起動したpager／REPLが後続行を対話キーとして奪わない。単一行、`raw:true`、非shell前面は従来どおり直接PTYへpasteする。agent dispatch の paste はさらに tmux bracketed paste（`paste-buffer -p`）を使う: bracketed paste mode を要求している pane（vendor TUI）へは各 chunk を `ESC[200~/201~` で包んで届け、チャンク投入中のキー解釈による語中文字化け・submit 取り落としを抑える。途中chunkが失敗した場合は部分送信済みであることを明示し、自動でEnterを押さない。送信processの異常終了でlockが残った場合は送信前にfail-closedする。そのsessionを `pty_close` して作り直すか、全sessionを破棄できる場合だけ `pty_kill_all` で安全に掃除する。
+1回の `pty_send` が受理する本文はUTF-8で最大64KiB。同一sessionへの送信はaiterm processをまたいで直列化し、chunk同士の混線を防ぐ。全OSで長いPTY入力の欠落を避けるためplatformのmultiplexerへUTF-8境界を壊さない256-byte単位でpasteし、chunk間に10msのdrain間隔を置く。POSIX shellが前面にいる時のsanitize済み複数行は、改行を含まない単一の`eval`入力へ符号化する。shellがscript全体を所有してから先頭行を実行するため、途中で起動したpager／REPLが後続行を対話キーとして奪わない。単一行、`raw:true`、非shell前面は従来どおり直接PTYへpasteする。agent dispatchはtmux互換のbracketed paste操作（`paste-buffer -p`）を使う: bracketed paste modeを要求しているpaneへは各chunkを`ESC[200~/201~`で包んで届け、chunk投入中のキー解釈による語中文字化け・submit取り落としを抑える。途中chunkが失敗した場合は部分送信済みであることを明示し、自動でEnterを押さない。送信processの異常終了でlockが残った場合は送信前にfail-closedする。そのsessionを `pty_close` して作り直すか、全sessionを破棄できる場合だけ `pty_kill_all` で安全に掃除する。
 
 ## 人が覗く
 
@@ -472,14 +472,14 @@ handoff contextを前置きできる。この任意経路は`throughline >= 0.9.
 - **`pty_send({ rtk: true })` は単行コマンドのみ＋外部 `rtk` バイナリが必要**（無ければ素通し）。一方 `pty_read({ rtk: true })` の reducer は自前実装で rtk 非依存。
 - **`pytest` reducer は件数・罫線・`FAILURES` ブロック整形が rtk 0.42.0 と byte 一致**（回帰テストで固定）。ただし `-ra`/`-rf` 時の `FAILED` 要約行の理由は**全文を保持する**（rtk 0.42.0 は最初の `" - "` 区切りで切るが、本実装は可読性優先で情報を残すため、この行は意図的に rtk と完全一致させない）。rtk が大出力時に付ける `[full output: …]`（tee ポインタ）行は read 側では再現しない。
 - **tmux は `-f /dev/null` 起動**なので `~/.tmux.conf` を読まない（環境差を排除するため）。
-- **全セッションが単一 socket（POSIX では `claude.sock`）上にある。** `tmux … kill-server` は全セッションを消す。
+- **全セッションが単一multiplexer endpoint（POSIXは`claude.sock`、Windows nativeは1つのpsmux namespace）を共有する。** platformの`kill-server` commandは全セッションを消す。
 
 ## 開発
 
 ```bash
 npm install
 npm run build      # tsc → dist/
-npm test           # build してから node:test 回帰スイート（tmux 必須）
+npm test           # build してから node:test 回帰スイート（tmux または psmux 必須）
 npm link           # ローカルで `aiterm-mcp` を PATH に
 ```
 
@@ -488,7 +488,7 @@ self-hostedのmacOS native・Linux native・Windows native・WSL2で同じ`npm t
 OS別の縮小suiteで代用しません。tag起点のnpm公開は4環境greenとtagged commitの`origin/main`
 祖先確認を通過した後だけ実行します。
 
-ロジックは `src/core.ts`（tmux 制御・削減・完了検出・安全・エージェント起動）と `src/rtk.ts`（コマンド別 reducer）、公開は `src/index.ts`。設計の出発点と reducer の移植元（pytest reducer は本家 rtk 0.42.0 と一致するよう移植・ただし上記の `FAILED` 行の差異は意図的・回帰テストで固定）は `prototype/python/` を参照。
+共通進行は`src/core.ts`、harness固有は`src/vendors/`、OS差は`src/tmux-runtime.ts`／`src/agent-resolver.ts`、reducerは`src/rtk.ts`、公開面は`src/index.ts`が所有する。設計の出発点と reducer の移植元（pytest reducer は本家 rtk 0.42.0 と一致するよう移植・ただし上記の `FAILED` 行の差異は意図的・回帰テストで固定）は `prototype/python/` を参照。
 
 ## 試す
 

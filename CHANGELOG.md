@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.1] - 2026-08-24
+
+### Changed
+
+- 現行正典をv0.28の実装へ全面同期した。Windows nativeはWSL bridgeでなくpsmux 3.3.8以上＋
+  Git for Windowsを直接使うこと、公開面は15 toolsで標準`agent_launch`と旧4 aliasを持つこと、
+  harness固有／OS固有コードの所有境界をCONTRIBUTING、SECURITY、README、AGENTS、design planへ反映した。
+- Cursorの通常agent transcriptによる回答回収と`turn_ended(status:"success")`完了相関、同一sessionの
+  model／effort変更、複数harness運用を英日READMEと設計正本へ補完した。archive、過去版ADR、RAG rawは
+  当時の証跡なので書き換えていない。
+- ランタイムコードと15-tool APIは0.28.0から不変。npmへ含まれるREADMEを同期して届けるため、
+  再公開不能な0.28.0を動かさず、文書同期版を0.28.1として公開する。
+
 ## [0.28.0] - 2026-08-24
 
 ### Added
@@ -1259,7 +1272,19 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.25.1...HEAD
+[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.28.1...HEAD
+[0.28.1]: https://github.com/kitepon/aiterm-mcp/compare/v0.28.0...v0.28.1
+[0.28.0]: https://github.com/kitepon/aiterm-mcp/compare/v0.27.9...v0.28.0
+[0.27.9]: https://github.com/kitepon/aiterm-mcp/compare/v0.27.8...v0.27.9
+[0.27.8]: https://github.com/kitepon/aiterm-mcp/compare/v0.27.7...v0.27.8
+[0.27.7]: https://github.com/kitepon/aiterm-mcp/compare/v0.27.3...v0.27.7
+[0.27.3]: https://github.com/kitepon/aiterm-mcp/compare/v0.27.2...v0.27.3
+[0.27.2]: https://github.com/kitepon/aiterm-mcp/compare/v0.27.1...v0.27.2
+[0.27.1]: https://github.com/kitepon/aiterm-mcp/compare/v0.27.0...v0.27.1
+[0.27.0]: https://github.com/kitepon/aiterm-mcp/compare/v0.26.0...v0.27.0
+[0.26.0]: https://github.com/kitepon/aiterm-mcp/compare/v0.25.3...v0.26.0
+[0.25.3]: https://github.com/kitepon/aiterm-mcp/compare/v0.25.2...v0.25.3
+[0.25.2]: https://github.com/kitepon/aiterm-mcp/compare/v0.25.1...v0.25.2
 [0.25.1]: https://github.com/kitepon/aiterm-mcp/compare/v0.25.0...v0.25.1
 [0.25.0]: https://github.com/kitepon/aiterm-mcp/compare/v0.24.3...v0.25.0
 [0.24.3]: https://github.com/kitepon/aiterm-mcp/compare/v0.24.2...v0.24.3
@@ -1290,6 +1315,9 @@ prototype (preserved under `prototype/python/` as the porting source and referen
 [0.15.0]: https://github.com/kitepon/aiterm-mcp/compare/v0.12.3...v0.15.0
 [0.12.3]: https://github.com/kitepon/aiterm-mcp/compare/v0.12.2...v0.12.3
 [0.12.2]: https://github.com/kitepon/aiterm-mcp/compare/v0.12.1...v0.12.2
+[0.12.1]: https://github.com/kitepon/aiterm-mcp/compare/v0.12.0...v0.12.1
+[0.12.0]: https://github.com/kitepon/aiterm-mcp/compare/v0.11.0...v0.12.0
+[0.11.0]: https://github.com/kitepon/aiterm-mcp/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/kitepon/aiterm-mcp/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/kitepon/aiterm-mcp/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/kitepon/aiterm-mcp/compare/v0.8.0...v0.9.0

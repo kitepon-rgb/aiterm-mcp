@@ -2,6 +2,13 @@
 
 このファイルが aiterm-mcp の運用・設計・履歴の正本です（全 host 共通。Claude Code は CLAUDE.md の `@AGENTS.md` 経由で同じ内容を読む）。設計の詳細は `docs/00_overview.md` から辿り、特に `docs/01_design-plan.md` と関連 ADR を読む。
 
+> **v0.28.1（2026-08-24・source）**: npm配布物へ入るREADMEを含め、現行正典をv0.28の実装へ全同期する
+> 文書patch。Windows nativeを廃止済みWSL bridgeで説明していたCONTRIBUTING／SECURITY／AGENTS／
+> design planをpsmux 3.3.8以上＋Git for Windowsのnative契約へ直し、15 tools、標準`agent_launch`、
+> 旧4 alias、Cursor通常transcript完了、harness／OSのコード所有境界を英日READMEと正典へ揃えた。
+> archive、過去版ADR、RAG rawは当時の証跡として不変。ランタイムコードと公開APIは0.28.0から不変で、
+> npm-visible文書を届けるため再公開不能な0.28.0は動かさず0.28.1へpatch bumpする。
+>
 > **v0.28.0（2026-08-24・公開完了）**: agent起動を単一の`agent_launch({harness, model?, ...})`へ標準化し、
 > harness（agent loop・認証・hook・session・transcriptを所有する実行基盤）とmodelを別軸にした。
 > `claude-code`／`codex-cli`／`grok-cli`／`cursor-cli`を選べ、Cursor harness上でGPT／Claude／Grokを
@@ -363,8 +370,8 @@
 
 履歴メモ: v0.4.1 は発見性メタ/README 刷新のリリース、v0.7.0 は対話エージェント起動3ツール追加、v0.9.0 は `agent_done` 公開、v0.9.1 は Codex managed home allowlist hardening、v0.10.0 は Codex launcher 初回 prompt wait 公開、v0.11.0 はモデル整合（`model` 引数・`grok-4.5` 既定・effort 実態合わせ）公開、v0.12.0 は全域監査の確定修正（stale wait lock 回収・close/killAll のプロセス間ガード・出力削減の行内キャップ・UTF-8 先頭境界・pytest 証拠ガード・破壊ゲートの `--`／rtk 変換後・line_range 逆転エラー・pty_list agent 列・codex managed config 可視化）＋新機能 `pty_read(agent_transcript:true)`（長い TUI 回答を vendor transcript から回収）公開、v0.12.1 は監査 C 節の hardening 全消化（stop hook short-write ガード・agent events の 64KB tail 読み・非 agent read の negative-cache）。詳細な版別差分は `CHANGELOG.md` と `docs/archive/` を参照する。
 
-- **実装は Node/TS**（要件: Node>=18 + tmux）。`src/index.ts`（`@modelcontextprotocol/sdk` で15ツール公開〔PTY 6＋標準agent起動1＋旧互換launcher 4＋起動中agent設定変更1＋read-only diagnostics 1＋構造化Claude caller 1＋Claude approval relay 1〕・stdio）/ `src/core.ts`（tmux 制御・出力削減・完了検出・安全ガード・harness共通の進行役〔launcher/dispatch/configure/approval フロー〕・rtk委譲。**stdout に出さない**＝通信を汚さない）/ **v0.27.7-0.27.8 で vendor/OS 固有コードを分離**（docs/32。0.27.7 は `files` glob が `dist/vendors/` を同梱せず公開版が起動不能＝0.27.8 が修正版。tarball 同梱はrelease-metadata testで固定済み）: `src/vendors/{claude,codex,grok,cursor}.ts`（各harnessの起動引数・ready/画面判定・完了検出・transcript回収・metadata生成・auth/catalog検証。composer は grok の別モデルpreset）/ `src/agent-shared.ts`（harness中立の共有プリミティブ: state path・metadata型・完了event型・lineage）/ `src/tmux-runtime.ts`（tmux/psmux の OS 差の全所有者）/ `src/agent-resolver.ts`（実行ファイル解決の OS 差）。依存方向は core → vendors → agent-shared → (tmux-runtime, errors) の一方向で、harness固有を直すなら vendors/、OS 固有なら tmux-runtime/agent-resolver、共通なら core を触る。/ `src/{claude,cursor}-stop-hook.ts`（hook本文分離）/ `src/runtime-error-store.ts`（explicit opt-in・固定 allowlist aggregate・strict validation・child orchestration）/ `src/runtime-error-worker.ts`（bounded isolation）/ `src/runtime-errors-cli.ts`（factory snapshot/ack）/ `src/rtk.ts`（コマンド別 reducer）/ `src/aiterm-wait-cli.ts`（親向け完了push用の純リーダー waiter。`core.observeAgentDone()` を呼ぶ薄い殻）。`npm run build` → `dist/`。`package.json` の bin は `aiterm-mcp` と `aiterm-runtime-errors` と `aiterm-wait`。
-- 削減と完了検出: `read` 既定で制御除去・反復圧縮・head+tail＋復元ヒント・メタ併記。`read rtk:true` は直前コマンド別の自前 reducer、`send rtk:true` は rtk バイナリへ委譲（rtk 不在は素通し）。完了検出は dead / `until` / quiescence(出力静止∧シェル復帰) / nested(ネスト中∧until無しで出力静止→確証不能ゆえ未確定で早期返却) / timeout。`until`／`mark`指定時はその証拠をquiescenceより優先する。長い入力は全OSでUTF-8安全な256byte chunk＋10ms drain間隔を通し、tmux成功時の黙ったPTY欠落を防ぐ。SSH/docker はツール化せず `send "ssh ..."` で入る（ネスト）。tmux 常駐ゆえプロセスをまたいで永続し、人は戻り値の `tmux -S … attach` で覗ける。
+- **実装は Node/TS**（要件: Node>=18 + tmux/psmux）。`src/index.ts`（`@modelcontextprotocol/sdk` で15ツール公開〔PTY 6＋標準agent起動1＋旧互換launcher 4＋起動中agent設定変更1＋read-only diagnostics 1＋構造化Claude caller 1＋Claude approval relay 1〕・stdio）/ `src/core.ts`（PTY制御・出力削減・完了検出・安全ガード・harness共通の進行役〔launcher/dispatch/configure/approval フロー〕・rtk委譲。**stdout に出さない**＝通信を汚さない）/ **v0.27.7-0.27.8 で vendor/OS 固有コードを分離**（docs/32。0.27.7 は `files` glob が `dist/vendors/` を同梱せず公開版が起動不能＝0.27.8 が修正版。tarball 同梱はrelease-metadata testで固定済み）: `src/vendors/{claude,codex,grok,cursor}.ts`（各harnessの起動引数・ready/画面判定・完了検出・transcript回収・metadata生成・auth/catalog検証。composer は grok の別モデルpreset）/ `src/agent-shared.ts`（harness中立の共有プリミティブ: state path・metadata型・完了event型・lineage）/ `src/tmux-runtime.ts`（tmux/psmux の OS 差の全所有者）/ `src/agent-resolver.ts`（実行ファイル解決の OS 差）。依存方向は core → vendors → agent-shared → (tmux-runtime, errors) の一方向で、harness固有を直すなら vendors/、OS 固有なら tmux-runtime/agent-resolver、共通なら core を触る。/ `src/claude-stop-hook.ts`・`src/grok-stop-hook.ts`（必要なharnessだけのhook本文分離。Cursor hookは持たない）/ `src/runtime-error-store.ts`（explicit opt-in・固定 allowlist aggregate・strict validation・child orchestration）/ `src/runtime-error-worker.ts`（bounded isolation）/ `src/runtime-errors-cli.ts`（factory snapshot/ack）/ `src/rtk.ts`（コマンド別 reducer）/ `src/aiterm-wait-cli.ts`（親向け完了push用の純リーダー waiter。`core.observeAgentDone()` を呼ぶ薄い殻）。`npm run build` → `dist/`。`package.json` の bin は `aiterm-mcp` と `aiterm-runtime-errors` と `aiterm-wait`。
+- 削減と完了検出: `read` 既定で制御除去・反復圧縮・head+tail＋復元ヒント・メタ併記。`read rtk:true` は直前コマンド別の自前 reducer、`send rtk:true` は rtk バイナリへ委譲（rtk 不在は素通し）。完了検出は dead / `until` / quiescence(出力静止∧シェル復帰) / nested(ネスト中∧until無しで出力静止→確証不能ゆえ未確定で早期返却) / timeout。`until`／`mark`指定時はその証拠をquiescenceより優先する。長い入力は全OSでUTF-8安全な256byte chunk＋10ms drain間隔を通し、multiplexer成功時の黙ったPTY欠落を防ぐ。SSH/docker はツール化せず `send "ssh ..."` で入る（ネスト）。tmux/psmux 常駐ゆえプロセスをまたいで永続し、人は戻り値のplatform別attach commandで覗ける。
 - 出力削減の自前移植 `src/rtk.ts`（要件C: rtk ファイル非複製・自作。**pytest は rtk 0.42.0 と一致**。ただし `FAILED` 要約行の理由は可読性優先で全文保持＝意図的に rtk と相違／grep／git status・log／簡易フィルタ）。
 - `docs/00_overview.md` — docs の入口。正典級文書と ADR の地図。
 - `docs/01_design-plan.md` — 設計の目的・判断・決定/未決事項の source of truth。**作業前に必ず読む。**
@@ -388,7 +395,7 @@ AI がローカル/SSH/コンテナを問わずターミナルを**永続セッ�
 - **起点となる 4 ツール**: `pty_open()` / `pty_send(id, text)` / `pty_read(id, timeout)` / `pty_close(id)`。SSH 接続は `pty_send(id, "ssh home\n")` のように表現する。
 - **バックエンド第一候補は tmux**（`capture-pane` で画面スナップショット・差分・再接続が得られる）。
 - **完了境界の検出は quiescence 方式が第一候補**: 画面出力が一定時間変化しなくなったら完了とみなす。プロンプト文字列マッチは弱い（PS1 カスタマイズ・ネストで層ごとにプロンプトが変わる・誤検出）ため採らない。
-- **適用対象は POSIX（Linux / WSL2 / macOS）を第一**とし、**Windows ネイティブも対応**（tmux が無いため全 tmux 呼び出しを `wsl.exe -e tmux` 経由へ橋渡しする。design-plan §9.6・§11 参照）。
+- **適用対象は POSIX（Linux / WSL2 / macOS）とWindowsネイティブ**。POSIXはtmux、Windowsネイティブはpsmux 3.3.8以上＋Git for Windowsを直接使い、WSL橋は使わない（design-plan §9.6参照）。
 
 ## 実装時に必ず踏む難所（design-plan §7・§10）
 
