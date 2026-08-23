@@ -2,12 +2,16 @@
 
 このファイルが aiterm-mcp の運用・設計・履歴の正本です（全 host 共通。Claude Code は CLAUDE.md の `@AGENTS.md` 経由で同じ内容を読む）。設計の詳細は `docs/00_overview.md` から辿り、特に `docs/01_design-plan.md` と関連 ADR を読む。
 
-> **v0.28.1（2026-08-24・source）**: npm配布物へ入るREADMEを含め、現行正典をv0.28の実装へ全同期する
+> **v0.28.1（2026-08-24・公開完了）**: npm配布物へ入るREADMEを含め、現行正典をv0.28の実装へ全同期する
 > 文書patch。Windows nativeを廃止済みWSL bridgeで説明していたCONTRIBUTING／SECURITY／AGENTS／
 > design planをpsmux 3.3.8以上＋Git for Windowsのnative契約へ直し、15 tools、標準`agent_launch`、
 > 旧4 alias、Cursor通常transcript完了、harness／OSのコード所有境界を英日READMEと正典へ揃えた。
 > archive、過去版ADR、RAG rawは当時の証跡として不変。ランタイムコードと公開APIは0.28.0から不変で、
-> npm-visible文書を届けるため再公開不能な0.28.0は動かさず0.28.1へpatch bumpする。
+> npm-visible文書を届けるため再公開不能な0.28.0は動かさず0.28.1へpatch bumpした。
+> release commit `987dfd6`、main CI `32671378001`、tag CI／npm publish `32671592943`、Registry workflow
+> `32671592614`はsuccess。4環境は各358 test・fail 0。npm provenance、GitHub Release＋MCPB、
+> Official Registry active/latest、標準global install 0.28.1、3 bins、15 tools、4 harness、stderr 0、
+> installed runtime JS 18/18一致、npm同梱READMEの現行文言を確認した。公開受入はADR 0040を正とする。
 >
 > **v0.28.0（2026-08-24・公開完了）**: agent起動を単一の`agent_launch({harness, model?, ...})`へ標準化し、
 > harness（agent loop・認証・hook・session・transcriptを所有する実行基盤）とmodelを別軸にした。

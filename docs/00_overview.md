@@ -66,6 +66,7 @@ Cursor Agent CLI契約は[ADR 0038](adr/0038-harness-launch-api-and-cursor-agent
 - [25-shared-agent-environment-characterization.md](25-shared-agent-environment-characterization.md) - 3 CLIの通常環境、追加instruction、共有home上の完了相関を実測した実装前記録。
 - [adr/0038-harness-launch-api-and-cursor-agent-cli.md](adr/0038-harness-launch-api-and-cursor-agent-cli.md) - 実行基盤（harness）とmodelを分離した単一`agent_launch`、Cursor Agent CLI adapter、旧4入口の互換alias化。
 - [adr/0039-release-0.28.0-acceptance.md](adr/0039-release-0.28.0-acceptance.md) - harness標準起動APIとCursor Agent CLIの4環境CI、npm／Release／Official Registry、標準global install、公開版Cursor実席の受入記録。
+- [adr/0040-release-0.28.1-acceptance.md](adr/0040-release-0.28.1-acceptance.md) - 現行正典の全同期、4環境CI、npm provenance、Release／Official Registry、標準global installの文書patch公開受入。
 
 ## 運用メモ
 
