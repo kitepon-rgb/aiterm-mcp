@@ -6,7 +6,9 @@ import * as path from "node:path";
 import { randomBytes } from "node:crypto";
 import { AitermError } from "./errors.js";
 
-export type AgentKind = "claude" | "codex" | "grok" | "composer";
+/** 既存launcher／stateとの互換に残す内部profile名。新規公開APIの選択軸は AgentHarness。 */
+export type AgentKind = "claude" | "codex" | "grok" | "composer" | "cursor";
+export type AgentHarness = "claude-code" | "codex-cli" | "grok-cli" | "cursor-cli";
 export type InitialPromptState = "none" | "not_sent" | "sent" | "pending" | "done" | "failed";
 
 export interface AgentMetadata {
@@ -22,8 +24,8 @@ export interface AgentMetadata {
   initial_prompt: InitialPromptState;
   launch_operation_id?: string | null;
   launch_request_digest?: string | null;
-  hook_route: "shared_claude_settings" | "shared_codex_home" | "shared_grok_home";
-  completion_route?: "codex_transcript" | "grok_transcript";
+  hook_route: "shared_claude_settings" | "shared_codex_home" | "shared_grok_home" | "shared_cursor_home";
+  completion_route?: "codex_transcript" | "grok_transcript" | "cursor_transcript";
   agent_role?: "subagent";
   parent_session_id?: string;
   delegation_depth?: number;
@@ -35,6 +37,7 @@ export interface AgentMetadata {
   result_file?: string;
   grok_home?: string;
   grok_auth_path?: string | null;
+  cursor_home?: string;
 }
 
 export const sleep = (ms: number) => new Promise<void>((res) => setTimeout(res, ms));
@@ -209,6 +212,7 @@ export interface AgentWaitObservation {
   session_id: string;
   launch_id: string;
   vendor: AgentKind;
+  harness: AgentHarness;
   // running は timeout=0（待たずに一度だけ観測する照会）専用の「まだ終わっていない」。
   // timeout は「指定秒だけ待って終わらなかった」で、両者を1語に潰さない（ADR 0018）。
   // rate_limited は vendor の利用上限バナーを pane log で観測した「モデルが応答できない」。
@@ -234,7 +238,19 @@ export function agentLabel(kind: AgentKind): string {
     ? "Grok Build(Composer)"
     : kind === "grok"
       ? "Grok Build(Grok)"
-      : "Codex";
+      : kind === "cursor"
+        ? "Cursor Agent CLI"
+        : "Codex";
+}
+
+export function agentHarness(kind: AgentKind): AgentHarness {
+  return kind === "claude"
+    ? "claude-code"
+    : kind === "codex"
+      ? "codex-cli"
+      : kind === "cursor"
+        ? "cursor-cli"
+        : "grok-cli";
 }
 
 export function subagentInstruction(meta: AgentMetadata): string {
@@ -267,6 +283,8 @@ export function subagentInstruction(meta: AgentMetadata): string {
 export function writeScopeLaunchNote(kind: AgentKind, writeScope: string | undefined): string {
   return writeScope === undefined
     ? ""
+    : kind === "cursor" && writeScope === "read-only"
+      ? `\n能力宣言: write_scope=${JSON.stringify(writeScope)}。Cursor Agent CLIへ --mode ask を付与し、書込みを実効禁止。`
     : (kind === "codex" || kind === "grok" || kind === "composer") && writeScope === "read-only"
       ? `\n能力宣言: write_scope=${JSON.stringify(writeScope)}。${agentLabel(kind)} CLIへ --sandbox read-only を付与し、書込みを実効禁止。` +
         (kind === "codex" ? "" : "MCPツール許可は --always-approve で自動承認（sandbox内のため能力拡大なし）。")

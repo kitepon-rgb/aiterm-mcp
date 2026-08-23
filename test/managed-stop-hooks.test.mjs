@@ -339,4 +339,3 @@ test("grok-stop-hook: env の任意 path を無視し導出 path にだけ書く
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
-

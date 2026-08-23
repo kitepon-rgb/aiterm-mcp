@@ -22,6 +22,7 @@ import {
   AGENT_EVENT_MAX_BYTES,
   AGENT_EVENT_TAIL_BYTES,
   CODEX_TRANSCRIPT_INCREMENT_MAX_BYTES,
+  agentHarness,
 } from "../agent-shared.js";
 import type { AgentKind, AgentMetadata, AgentDoneEvent, AgentWaitObservation, InitialPromptState, AgentLineageContext } from "../agent-shared.js";
 
@@ -290,6 +291,7 @@ export async function observeCodexDone(
     session_id: meta.aiterm_session,
     launch_id: meta.launch_id,
     vendor: "codex",
+    harness: agentHarness("codex"),
     outcome,
     operation_id: null,
     vendor_session_id: ev?.vendor_session_id ?? meta.vendor_session_id ?? null,

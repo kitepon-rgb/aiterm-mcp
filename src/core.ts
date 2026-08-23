@@ -59,11 +59,13 @@ import {
   writeAgentMetadata,
   AGENT_EVENT_TAIL_BYTES,
   agentLabel,
+  agentHarness,
   subagentInstruction,
   agentLineageFields,
 } from "./agent-shared.js";
 import type {
   AgentKind,
+  AgentHarness,
   AgentMetadata,
   InitialPromptState,
   AgentDoneEvent,
@@ -130,9 +132,26 @@ import {
   CLAUDE_COMPOSER_MARKER_RE,
   createClaudeAgentMetadata,
 } from "./vendors/claude.js";
+import {
+  bindCursorTranscriptSession,
+  cursorTurnBoundary,
+  latestCursorCompletion,
+  observeCursorDone,
+  cursorTranscriptText,
+  assertCursorAuthenticationReady,
+  assertCursorModelAvailable,
+  buildCursorAgentCmd,
+  createCursorAgentMetadata,
+  cursorLaunchNote,
+  cursorEffortNavigation,
+  cursorTuiReady,
+  CURSOR_COMPOSER_MARKER_RE,
+  validateCursorModelEffort,
+} from "./vendors/cursor.js";
 import { resolveAgentBin, spawnAgentControlCommand, resolveThroughlineBin, runThroughlineHandoffContext, isUsableExecutableFile, isWindowsNativeExecutable, isUsableAgentExecutableFile, agentBinForPaneShell, resolveWinPaneShell } from "./agent-resolver.js";
 export { AitermError } from "./errors.js";
 export { tmuxSpawnEnv } from "./tmux-runtime.js";
+export { agentHarness } from "./agent-shared.js";
 
 
 
@@ -157,7 +176,7 @@ const NON_POSIX_MARK_SHELLS = new Set(["fish", "csh", "tcsh"]);
 const MARK_DONE_RE = /<<<AITERM_DONE rc=[0-9]+>>>/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const AGENT_LINEAGE_RE = /^[A-Za-z0-9_.:-]+(?:>[A-Za-z0-9_.:-]+)*$/;
-export type { AgentKind } from "./agent-shared.js";
+export type { AgentKind, AgentHarness } from "./agent-shared.js";
 
 const AGENT_DONE_SETTLE_MIN_MS = 250;
 const AGENT_DONE_SCREEN_SETTLE_POLL_MS = 100;
@@ -340,11 +359,12 @@ function cleanupAgentState(name: string): void {
           f.endsWith(".claude-settings.json") ||
           f.endsWith(".claude-mcp.json") ||
           f.endsWith(".claude-result.json") ||
+          f.endsWith(".cursor-result.json") ||
           f.endsWith(".claude-operation.json") ||
           f.endsWith(".claude-approval.json") ||
           f.endsWith(".claude-dispatch")
         ) fs.unlinkSync(p);
-        else if (f.endsWith(".codex-home") || f.endsWith(".grok-home") || f.endsWith(".home")) {
+        else if (f.endsWith(".codex-home") || f.endsWith(".grok-home") || f.endsWith(".cursor-plugin") || f.endsWith(".home")) {
           fs.rmSync(p, { recursive: true, force: true });
         }
       } catch {
@@ -1091,6 +1111,7 @@ export function listSessions(): string {
         if (!meta) return line;
         const agent = [
           `agent=${meta.kind}`,
+          `harness=${agentHarness(meta.kind)}`,
           "agent_done=true",
           meta.write_scope === undefined ? null : `write_scope=${JSON.stringify(meta.write_scope)}`,
           meta.vendor_session_id ? `vendor_session_id=${meta.vendor_session_id}` : null,
@@ -1873,7 +1894,7 @@ function loadAgentMetadata(name: string): AgentMetadata {
   }
   const m = raw as Partial<AgentMetadata>;
   if (
-    (m.kind !== "claude" && m.kind !== "codex" && m.kind !== "grok" && m.kind !== "composer") ||
+    (m.kind !== "claude" && m.kind !== "codex" && m.kind !== "grok" && m.kind !== "composer" && m.kind !== "cursor") ||
     m.aiterm_session !== name ||
     typeof m.launch_id !== "string" ||
     !LAUNCH_ID_RE.test(m.launch_id)
@@ -1945,6 +1966,33 @@ function loadAgentMetadata(name: string): AgentMetadata {
       ...loadAgentLineageFields(m, true),
       node_platform: process.platform,
       codex_home: recordedHome,
+    };
+  }
+  if (m.kind === "cursor") {
+    const recordedHome = m.cursor_home;
+    if (
+      m.hook_route !== "shared_cursor_home" ||
+      m.completion_route !== "cursor_transcript" ||
+      typeof recordedHome !== "string" ||
+      !path.isAbsolute(recordedHome)
+    ) {
+      throw new AitermError("agent metadata の cursor_home が不正です（絶対パスの記録が必要）", 2);
+    }
+    return {
+      kind: "cursor",
+      aiterm_session: name,
+      launch_id: m.launch_id,
+      event_file: expectedEvent,
+      created_at: typeof m.created_at === "string" ? m.created_at : "",
+      cwd: typeof m.cwd === "string" ? m.cwd : null,
+      ...(typeof m.write_scope === "string" ? { write_scope: m.write_scope } : {}),
+      vendor_session_id: typeof m.vendor_session_id === "string" ? m.vendor_session_id : null,
+      initial_prompt: normalizeInitialPromptState(m.initial_prompt),
+      hook_route: "shared_cursor_home",
+      completion_route: "cursor_transcript",
+      ...loadAgentLineageFields(m, true),
+      node_platform: process.platform,
+      cursor_home: recordedHome,
     };
   }
   // grok_home も codex_home と同じ理由で per-launch の記録値を正とする（席専用 GROK_HOME）。
@@ -2096,6 +2144,18 @@ function bindCompletedInitialPrompt(meta: AgentMetadata): void {
     setInitialPromptState(meta, "done");
     return;
   }
+  if (meta.kind === "cursor" && meta.completion_route === "cursor_transcript") {
+    const done = latestCursorCompletion(meta, readTranscriptLines);
+    if (!done) {
+      throw new AitermError(
+        `agent session '${meta.aiterm_session}' は起動時 prompt の完了待ちです。${agentWaitGuide(meta.aiterm_session)}`,
+        2,
+      );
+    }
+    bindAgentVendorSession(meta, done);
+    setInitialPromptState(meta, "done");
+    return;
+  }
   if ((meta.kind === "grok" || meta.kind === "composer") && meta.completion_route === "grok_transcript") {
     if (!latestGrokCompletion(meta, readTranscriptLines)) {
       throw new AitermError(
@@ -2142,6 +2202,9 @@ function tryLoadAgentMetadata(name: string): AgentMetadata | null {
 
 function latestAgentDoneEvent(meta: AgentMetadata, expectedOperationId: string | null = null): AgentDoneEvent | null {
   if (meta.kind === "codex") return latestCodexCompletion(meta, readTranscriptLines);
+  if (meta.kind === "cursor" && meta.completion_route === "cursor_transcript") {
+    return latestCursorCompletion(meta, readTranscriptLines);
+  }
   if ((meta.kind === "grok" || meta.kind === "composer") && meta.completion_route === "grok_transcript") {
     return latestGrokCompletion(meta, readTranscriptLines);
   }
@@ -2196,6 +2259,12 @@ function recoverAgentVendorSession(meta: AgentMetadata): void {
     if (meta.initial_prompt === "pending" && latestCodexCompletion(meta, readTranscriptLines)) setInitialPromptState(meta, "done");
     return;
   }
+  if (meta.kind === "cursor") {
+    const transcript = bindCursorTranscriptSession(meta);
+    if (!transcript) return;
+    if (meta.initial_prompt === "pending" && latestCursorCompletion(meta, readTranscriptLines)) setInitialPromptState(meta, "done");
+    return;
+  }
   const size = safeStatSize(meta.event_file);
   if (size === 0) return;
   if (size > AGENT_EVENT_MAX_BYTES) {
@@ -2224,6 +2293,10 @@ function agentCompletionCursor(meta: AgentMetadata): number {
     const transcript = grokEventsTranscript(meta);
     return transcript ? safeStatSize(transcript) : 0;
   }
+  if (meta.kind === "cursor" && meta.completion_route === "cursor_transcript") {
+    bindCursorTranscriptSession(meta);
+    return cursorTurnBoundary(meta);
+  }
   if (meta.kind !== "codex") return safeStatSize(meta.event_file);
   const transcript = bindCodexTranscriptSession(meta);
   if (meta.completion_route !== "codex_transcript") {
@@ -2239,7 +2312,7 @@ function transcriptUnavailable(): never {
 
 function transcriptNotFound(vendor: AgentKind): never {
   throw new AitermError(
-    `最終 assistant メッセージを特定できませんでした（vendor=${vendor}）。screen で確認してください。`,
+    `最終 assistant メッセージを特定できませんでした（harness=${agentHarness(vendor)}, vendor=${vendor}）。screen で確認してください。`,
     2,
   );
 }
@@ -2324,6 +2397,8 @@ export async function readAgentTranscript(
   if (meta.kind === "claude") {
     if (!done) transcriptUnavailable();
     text = readClaudeResultText(meta, done, operationId, transcriptUnavailable);
+  } else if (meta.kind === "cursor") {
+    text = cursorTranscriptText(meta, readTranscriptLines, transcriptUnavailable);
   } else if (meta.kind === "codex") {
     text = codexTranscriptText(meta, turnId, readTranscriptLines, transcriptUnavailable);
   } else {
@@ -2338,6 +2413,7 @@ export async function readAgentTranscript(
     "agent_transcript",
     `vendor=${meta.kind}`,
     `turn_id=${turnId ?? "unknown"}`,
+    `harness=${agentHarness(meta.kind)}`,
     done?.operation_id ? `operation_id=${done.operation_id}` : null,
     `raw_chars=${rawChars}`,
   ].filter(Boolean).join(" ");
@@ -2373,6 +2449,7 @@ function agentReadMetadataSuffix(name: string, screen?: string): string {
   const bits = [
     "agent",
     `vendor=${meta.kind}`,
+    `harness=${agentHarness(meta.kind)}`,
     `initial_prompt=${meta.initial_prompt}`,
     `agent_event_seen=${ev ? "true" : "false"}`,
     "completion_attribution=none",
@@ -2466,7 +2543,7 @@ export function detectAgentRateLimit(kind: AgentKind, aitermSession: string): st
 }
 
 // 外部waiterプロセス用の純リーダー観測。lock・PTY・metadata書込・dispatch状態には一切触れない。
-// Codexはrollout transcript、他vendorはevent fileを増分走査し、vendor_session_idのbind永続化を
+// Codex/Cursor/Grokは各harnessのtranscript、Claudeはevent fileを増分走査し、vendor_session_idのbind永続化を
 // 行わない（waiterは観測者であって所有者でない）。
 export async function observeAgentDone(
   name: string,
@@ -2478,11 +2555,14 @@ export async function observeAgentDone(
     throw new AitermError("operation_id はClaude agent sessionだけで使用できます", 2);
   }
   if (o.cursor != null && (!Number.isInteger(o.cursor) || o.cursor < 0)) {
-    throw new AitermError("cursor は0以上の整数byte offsetで指定してください", 2);
+    throw new AitermError("cursor は0以上の整数完了境界で指定してください", 2);
   }
   const timeout = o.timeout ?? DEFAULT_AGENT_DONE_TIMEOUT;
   if (meta.kind === "codex" && meta.completion_route === "codex_transcript") {
     return observeCodexDone(meta, timeout, o.cursor, detectAgentRateLimit);
+  }
+  if (meta.kind === "cursor" && meta.completion_route === "cursor_transcript") {
+    return observeCursorDone(meta, timeout, o.cursor, detectAgentRateLimit);
   }
   if ((meta.kind === "grok" || meta.kind === "composer") && meta.completion_route === "grok_transcript") {
     return observeGrokDone(meta, timeout, o.cursor, detectAgentRateLimit);
@@ -2504,6 +2584,7 @@ export async function observeAgentDone(
     session_id: meta.aiterm_session,
     launch_id: meta.launch_id,
     vendor: meta.kind,
+    harness: agentHarness(meta.kind),
     outcome,
     operation_id: ev?.operation_id ?? operationId,
     vendor_session_id: ev?.vendor_session_id ?? meta.vendor_session_id ?? null,
@@ -2549,20 +2630,25 @@ export async function observeAgentDone(
 function isAgentTuiReady(kind: AgentKind, screen: string): boolean {
   if (kind === "claude") return claudeTuiReady(screen);
   if (kind === "codex") return codexTuiReady(screen);
+  if (kind === "cursor") return cursorTuiReady(screen);
   return grokTuiReady(screen);
 }
 
-// Codex/Claude は実行中に「(esc to interrupt)」を表示する（実機採取）。startup 側の処理
-// （MCP initialize 等）が走ったまま composer だけ描画されている画面は入力受付とみなさない。
+// Codex/Claude は実行中に「(esc to interrupt)」、Cursor は「Working」＋
+// 「ctrl+c to stop」を表示する（いずれも実機採取）。startup 側の処理（MCP initialize 等）が
+// 走ったまま古い composer がscrollbackに残る画面は入力受付とみなさない。
 // Grok/Composer は busy 表示文字列の実機根拠が未採取のため対象外（誤ブロックで起動不能にしない）。
-const AGENT_TUI_BUSY_KINDS: ReadonlySet<AgentKind> = new Set(["codex", "claude"]);
-const AGENT_TUI_BUSY_RE = /esc to interrupt/i;
+function isAgentTuiBusy(kind: AgentKind, screen: string): boolean {
+  if (kind === "cursor") return /ctrl\+c to stop/i.test(screen);
+  if (kind === "codex" || kind === "claude") return /esc to interrupt/i.test(screen);
+  return false;
+}
 
 // ready gate 用: 入力欄マーカーがあっても busy 表示中は ready と数えない。
 // frontend 推定（inferAgentFrontend）は「agent TUI が前面か」を見るだけなので isAgentTuiReady のまま。
 function isAgentTuiIdleReady(kind: AgentKind, screen: string): boolean {
   if (!isAgentTuiReady(kind, screen)) return false;
-  return !(AGENT_TUI_BUSY_KINDS.has(kind) && AGENT_TUI_BUSY_RE.test(screen));
+  return !isAgentTuiBusy(kind, screen);
 }
 
 async function waitAgentTuiReadyImpl(
@@ -2652,11 +2738,20 @@ function agentSubmitResidueTail(text: string): string | null {
 }
 
 function agentSubmitResidueOnScreen(kind: AgentKind, screen: string, tail: string): boolean | null {
+  // Cursorは送信成立後のactive turnで明示的な停止UIを出す。scrollbackに残った旧「>」を
+  // composerと誤認すると、実際には走っているpromptをsubmit座礁として報告してしまう。
+  if (kind === "cursor" && isAgentTuiBusy(kind, screen)) return false;
   const lines = screen.split("\n");
   // 入力欄マーカーは ready 判定と同じ記号を行頭基準で探す。submit 済みの transcript echo は
   // マーカー行より上に出るため、最後のマーカー行以降だけを composer 領域として見る。
   // grok/composer は Windows native 描画（`>`・実測 1.0.4）も ready 判定と同様に受ける。
-  const markerRe = kind === "codex" ? CODEX_COMPOSER_MARKER_RE : kind === "claude" ? CLAUDE_COMPOSER_MARKER_RE : GROK_COMPOSER_MARKER_RE;
+  const markerRe = kind === "codex"
+    ? CODEX_COMPOSER_MARKER_RE
+    : kind === "claude"
+      ? CLAUDE_COMPOSER_MARKER_RE
+      : kind === "cursor"
+        ? CURSOR_COMPOSER_MARKER_RE
+        : GROK_COMPOSER_MARKER_RE;
   let markerIdx = -1;
   for (let i = lines.length - 1; i >= 0; i--) {
     if (markerRe.test(lines[i])) {
@@ -2861,7 +2956,7 @@ export async function sendInitialAgentPrompt(
   if (!ready.ready) {
     return {
       text:
-        `initial_prompt=not_sent vendor=${meta.kind} ready=false samples=${ready.samples}\n` +
+        `initial_prompt=not_sent vendor=${meta.kind} ready=false samples=${ready.samples} harness=${agentHarness(meta.kind)}\n` +
         `agent session '${name}' の ${agentLabel(meta.kind)} TUI が入力受付状態になりません。prompt は送信していません。`,
       event_cursor: null,
       submit_residue: null,
@@ -2882,7 +2977,7 @@ export async function sendInitialAgentPrompt(
   const residue = await detectAgentSubmitResidue(name, meta.kind, text);
   return {
     text:
-      `initial_prompt=pending vendor=${meta.kind} event_cursor=${startOffset}\n` +
+      `initial_prompt=pending vendor=${meta.kind} event_cursor=${startOffset} harness=${agentHarness(meta.kind)}\n` +
       `起動時 prompt を送信した。${agentDispatchGuide(name, startOffset)}` +
       agentSubmitResidueWarning(name, residue.residue),
     event_cursor: startOffset,
@@ -2900,7 +2995,8 @@ export interface AgentDispatchReceipt {
   session_id: string;
   launch_id: string;
   vendor: AgentKind;
-  // vendor別完了正本のbyte境界（Codex=rollout transcript、他vendor=event file）。
+  harness: AgentHarness;
+  // harness別完了正本の境界（byte offsetとは限らない。Cursorはuser turn数）。
   event_cursor: number;
   operation_id: string | null;
   // submit座礁観測。true=composerに残存を確認（未submitの疑い）/ false=残存を観測せず
@@ -2912,6 +3008,7 @@ export interface AgentConfigureResult {
   schema: "aiterm.agent-configure-result.v1";
   session_id: string;
   provider: AgentKind;
+  harness: AgentHarness;
   model: string | null;
   reasoning_effort: string | null;
 }
@@ -3004,6 +3101,44 @@ export async function configureAgent(
       schema: "aiterm.agent-configure-result.v1",
       session_id: name,
       provider: "claude",
+      harness: agentHarness("claude"),
+      model,
+      reasoning_effort: effort,
+    };
+  }
+
+  if (meta.kind === "cursor") {
+    validateCursorModelEffort(model, effort);
+    if (!model) throw new AitermError("Cursorのreasoning_effort変更にはmodelも指定してください", 2);
+    const bin = resolveAgentBin("cursor");
+    if (!bin) throw new AitermError("Cursor Agent CLI の CLI が見つかりません", 2);
+    assertCursorModelAvailable(bin, meta.cwd ?? process.cwd(), model, effort);
+    // Cursor TUIの `/model <base model>` はmodelを直接切り替える一方、flatten済みcatalog ID
+    // （例: gpt-5.6-luna-high）を渡すとno matchesのfilter画面へ入る。effortは標準model pickerの
+    // parameter editorで選び、同じsessionと会話contextを保つ。
+    await sendAgentPromptText(name, `/model ${model}`);
+    const modelReady = await waitAgentTuiReady(name, meta, AGENT_TUI_READY_TIMEOUT_MS);
+    if (!modelReady.ready) throw new AitermError("Cursorのmodel変更完了を確認できません", 2);
+    if (effort) {
+      await sendAgentPromptText(name, "/model");
+      await waitForScreenText(name, "Available models");
+      sendMenuChoice(name, "Tab");
+      const parameterScreen = await waitForScreenText(name, "Edit Parameters");
+      const navigation = cursorEffortNavigation(parameterScreen, effort);
+      for (let i = 0; i < navigation.down; i++) sendMenuChoice(name, "Down");
+      sendMenuChoice(name, "Enter");
+      await waitForScreenText(name, `${navigation.label} ✓`);
+      sendMenuChoice(name, "Escape");
+      await waitForScreenText(name, "Available models");
+      sendMenuChoice(name, "Enter");
+      const effortReady = await waitAgentTuiReady(name, meta, AGENT_TUI_READY_TIMEOUT_MS);
+      if (!effortReady.ready) throw new AitermError("Cursorのreasoning effort変更完了を確認できません", 2);
+    }
+    return {
+      schema: "aiterm.agent-configure-result.v1",
+      session_id: name,
+      provider: "cursor",
+      harness: agentHarness("cursor"),
       model,
       reasoning_effort: effort,
     };
@@ -3025,6 +3160,7 @@ export async function configureAgent(
       schema: "aiterm.agent-configure-result.v1",
       session_id: name,
       provider: meta.kind,
+      harness: agentHarness(meta.kind),
       model,
       reasoning_effort: effort,
     };
@@ -3061,6 +3197,7 @@ export async function configureAgent(
     schema: "aiterm.agent-configure-result.v1",
     session_id: name,
     provider: "codex",
+    harness: agentHarness("codex"),
     model,
     reasoning_effort: effort,
   };
@@ -3108,6 +3245,11 @@ export async function dispatchAgentTurn(
     }
   }
   const startOffset = agentCompletionCursor(meta);
+  // promptなしで起動したCursorは、最初のdispatch時点ではtranscriptとの相関markerをまだ持たない。
+  // その1回だけlaunch contextを加え、以後はbind済みconversationへ通常textだけを送る。
+  const dispatchText = meta.kind === "cursor" && !meta.vendor_session_id
+    ? `${subagentInstruction(meta)}\n\n${text}`
+    : text;
   if (meta.kind === "claude") {
     // durable／anonymousを分岐する前に同じsend preflightを通す。拒否されるpromptの
     // receipt／active markerだけを残して、来ないStopを待つ状態を作らない。
@@ -3116,7 +3258,7 @@ export async function dispatchAgentTurn(
       reserveClaudeOperation(meta, operationId);
     } else reserveAnonymousClaudeTurn(meta);
   }
-  send(name, text, {
+  send(name, dispatchText, {
     enter: false,
     force: o.force,
     raw: o.raw,
@@ -3128,12 +3270,13 @@ export async function dispatchAgentTurn(
   // Codex TUI は literal text 投入直後の Enter を取り落とすことがある。agent 経路だけ submit を分離する。
   await sleep(AGENT_SUBMIT_DELAY_MS);
   sendKey(name, "Enter", { preserveAgentOperation: meta.kind === "claude" });
-  const residue = await detectAgentSubmitResidue(name, meta.kind, text);
+  const residue = await detectAgentSubmitResidue(name, meta.kind, dispatchText);
   return {
     schema: "aiterm.agent-dispatch.v1",
     session_id: meta.aiterm_session,
     launch_id: meta.launch_id,
     vendor: meta.kind,
+    harness: agentHarness(meta.kind),
     event_cursor: startOffset,
     operation_id: operationId,
     submit_residue: residue.residue,
@@ -3279,6 +3422,7 @@ function buildAgentCmd(
 ): string {
   if (kind === "claude") return buildClaudeAgentCmd(bin, model, effort, prompt, meta);
   if (kind === "codex") return buildCodexAgentCmd(bin, model, effort, prompt, meta);
+  if (kind === "cursor") return buildCursorAgentCmd(bin, model, effort, prompt, meta);
   return buildGrokAgentCmd(kind, bin, model, effort, prompt, meta);
 }
 
@@ -3301,7 +3445,7 @@ function agentEnvPrefix(meta: AgentMetadata | null, sid: string, envVars: string
       `AITERM_AGENT_LINEAGE=${shq(meta.lineage ?? `host-root>${meta.kind}:${sid}`)}`,
       `AITERM_AGENT_DELEGATION_ALLOWED=${shq(meta.delegation_allowed === true ? "true" : "false")}`,
     ];
-    if (meta.kind === "claude" || meta.kind === "codex") return common;
+    if (meta.kind === "claude" || meta.kind === "codex" || meta.kind === "cursor") return common;
     return [...grokEnvTokens(meta), ...common];
   })();
   return tokens.length ? tokens.join(" ") + " " : "";
@@ -3314,6 +3458,7 @@ function buildAgentLaunchNote(
   meta: AgentMetadata | null,
 ): string {
   if (kind === "claude") return claudeLaunchNote(model, effort, meta);
+  if (kind === "cursor") return cursorLaunchNote(model, effort, meta);
   if (kind !== "codex") return grokLaunchNote(kind, model, effort, meta);
   return codexLaunchNote(model, effort, meta);
 }
@@ -3403,6 +3548,7 @@ export function openAgent(
   if (effort && kind === "claude" && !CLAUDE_EFFORTS.has(effort)) {
     throw new AitermError("Claude Code の reasoning_effort は low/medium/high/xhigh/max のいずれかです", 2);
   }
+  if (kind === "cursor") validateCursorModelEffort(model, effort);
   const agentDone = !!opts.agent_done;
   const launchOperationId = opts.launch_operation_id == null
     ? null
@@ -3431,7 +3577,13 @@ export function openAgent(
     ownTelemetryFailure("AITERM.VENDOR_LAUNCHER_FAILED", error, 2);
   }
   if (!bin) {
-    const where = kind === "claude" ? "~/.local/bin/claude" : kind === "codex" ? "~/.local/bin/codex" : "~/.grok/bin/grok";
+    const where = kind === "claude"
+      ? "~/.local/bin/claude"
+      : kind === "codex"
+        ? "~/.local/bin/codex"
+        : kind === "cursor"
+          ? "~/.local/bin/cursor-agent"
+          : "~/.grok/bin/grok";
     ownTelemetryFailure("AITERM.VENDOR_LAUNCHER_FAILED", new AitermError(`${label} の CLI が見つかりません（${where} か PATH が必要）`, 2), 2);
   }
   // cwd 検証（session を作る前に。cd 失敗はシェル内で静かに死に「起動した」と偽成功を返すため）。
@@ -3469,6 +3621,7 @@ export function openAgent(
     return existingAgentLaunchResult("claude", opts.session_name as string, model, effort);
   }
   if (kind === "claude") assertClaudeAuthenticationReady(bin);
+  if (kind === "cursor") assertCursorAuthenticationReady(bin);
   // Windows の起動コマンドは native psmux pane の Git Bash で走る（WSL 橋・/mnt/c 変換は
   // e3f5fc8 で全廃。bin/cwd は Windows パスの forward slash 形のまま渡す）。
   // 未検証リスク: npm グローバル導入の codex.cmd/.bat シムの対話 TUI 描画は実 Windows でしか確認
@@ -3495,6 +3648,9 @@ export function openAgent(
   if (kind === "grok" || kind === "composer") {
     const requestedModel = model ?? (kind === "composer" ? GROK_MODEL_DEFAULTS.composer : null);
     if (requestedModel) assertGrokModelAvailable(bin, cwd ?? process.cwd(), requestedModel);
+  }
+  if (kind === "cursor" && model) {
+    assertCursorModelAvailable(bin, cwd ?? process.cwd(), model, effort);
   }
 
   let sid: string;
@@ -3525,7 +3681,9 @@ export function openAgent(
           )
         : kind === "codex"
         ? createCodexAgentMetadata(sid, cwd, opts.prompt ? "pending" : "none", { model, effort }, writeScope, lineageContext)
-        : createGrokAgentMetadata(kind, sid, cwd, opts.prompt ? "pending" : "none", grokAuthPath, writeScope, lineageContext)
+        : kind === "cursor"
+          ? createCursorAgentMetadata(sid, cwd, opts.prompt ? "pending" : "none", writeScope, lineageContext)
+          : createGrokAgentMetadata(kind, sid, cwd, opts.prompt ? "pending" : "none", grokAuthPath, writeScope, lineageContext)
       : null;
     if (meta) agentMetadataNegativeCache.delete(sid);
     launchNote = buildAgentLaunchNote(kind, model, effort, meta);
@@ -3554,7 +3712,7 @@ export function openAgent(
     throw failure;
   }
   const driveHint =
-    agentDone && kind === "claude"
+    agentDone
       ? `TUI の描画には数秒かかる。少し置いてから pty_read(${sid}, screen:true) で画面を読み、` +
         `turnはpty_send(${sid}, "...")で送る（自動で非ブロックdispatch＝投げっぱなしでよい・完了通知はaiterm-wait）。中断はpty_key(${sid}, "C-c")、` +
         `Stopが来ない場合の解除はpty_close(${sid})を使う。`
@@ -3604,7 +3762,7 @@ export async function openAgentWithInitialPrompt(
   }
   // v0.16.0: launcher は常に managed（Stop hook つき）で立つ。手動運転したい場合は
   // pty_open で素の PTY を開き、vendor CLI を自分で send する。
-  // 第3要素は「起動時点でturnが走っているか」の event_cursor: Grok/Composer の argv prompt は
+  // 第3要素は「起動時点でturnが走っているか」の event_cursor: Grok/Composer/Cursor の argv prompt は
   // event file 新規作成直後の起動＝境界0、prompt なしの起動は turn なし＝null。
   if (!prompt || (kind !== "codex" && kind !== "claude")) {
     const [sid, hint] = openAgent(kind, {
@@ -3618,7 +3776,7 @@ export async function openAgentWithInitialPrompt(
       write_scope: opts.write_scope,
       env_vars: opts.env_vars,
     });
-    // argv prompt（grok/composer）は composer を経由しないため submit 座礁観測の対象外。
+    // argv prompt（grok/composer/cursor）は composer を経由しないため submit 座礁観測の対象外。
     return [sid, hint, prompt ? 0 : null, null];
   }
   const [sid, hint] = openAgent(kind, {

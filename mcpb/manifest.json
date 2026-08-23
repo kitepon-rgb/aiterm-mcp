@@ -3,9 +3,9 @@
   "manifest_version": "0.3",
   "name": "aiterm-mcp",
   "display_name": "aiterm-mcp — Persistent AI terminals",
-  "version": "0.27.9",
-  "description": "Launch and drive Claude, Codex, Grok, or Composer from any MCP client, plus durable tmux terminals for SSH, containers, and REPLs.",
-  "long_description": "Give any MCP client one persistent terminal for SSH, containers, REPLs, and interactive coding-agent TUIs. A Claude or Codex caller can launch Claude, Codex, Grok, or Composer, either across vendors or within the same one, and drive the real TUI through MCP. Reads are token-reduced, sessions survive client restarts, and humans can attach to the shared tmux session.",
+  "version": "0.28.0",
+  "description": "Launch Claude Code, Codex CLI, Grok CLI, or Cursor Agent CLI through one harness API, plus durable terminals.",
+  "long_description": "Give any MCP client one persistent terminal for SSH, containers, REPLs, and interactive coding-agent TUIs. The canonical agent_launch tool selects the execution harness separately from its model, so Cursor may run GPT, Claude, or Grok while Cursor still owns the session, hooks, and transcript. Reads are token-reduced, sessions survive client restarts, and humans can attach to the shared tmux session.",
   "author": {
     "name": "Quo / クオ at kitepon.dev",
     "url": "https://x.com/QLyun35332"
@@ -54,24 +54,28 @@
       "description": "List the persistent terminal sessions owned by aiterm."
     },
     {
+      "name": "agent_launch",
+      "description": "Launch an agent through a canonical harness-based interface."
+    },
+    {
       "name": "claude_agent",
-      "description": "Launch an interactive Claude Code TUI in a managed persistent terminal."
+      "description": "Deprecated alias for agent_launch with the Claude Code harness."
     },
     {
       "name": "codex_agent",
-      "description": "Launch an interactive Codex CLI TUI in a managed persistent terminal."
+      "description": "Deprecated alias for agent_launch with the Codex CLI harness."
     },
     {
       "name": "grok_agent",
-      "description": "Launch an interactive Grok TUI in a managed persistent terminal."
+      "description": "Deprecated alias for agent_launch with the Grok CLI harness."
     },
     {
       "name": "composer_agent",
-      "description": "Launch an interactive Composer TUI in a managed persistent terminal."
+      "description": "Deprecated Grok CLI model-preset alias."
     },
     {
       "name": "agent_configure",
-      "description": "Change the model or reasoning effort of a running Claude, Codex, Grok, or Composer session."
+      "description": "Change the model or reasoning effort of a running Claude, Codex, Grok, Composer, or Cursor session."
     },
     {
       "name": "claude_turn",

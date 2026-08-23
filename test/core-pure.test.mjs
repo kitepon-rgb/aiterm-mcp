@@ -268,6 +268,16 @@ test("agent_done ready gate: Codex v0.147のfast入りfooterもreadyになる", 
   assert.equal(core.__testIsAgentTuiIdleReady("codex", screen), true);
 });
 
+test("Cursor ready gate: active turnのctrl+c停止UIとscrollback上の旧composerをreadyにしない", () => {
+  const startup = "Cursor Agent\n\n> \n\nGPT-5.4 Nano Low · ~/Developer/aiterm-mcp";
+  const idle = "Cursor Agent\n\n→ Add a follow-up\n\nGPT-5.4 Nano Low · ~/Developer/aiterm-mcp";
+  const busy = `${idle}\n⠰⠳ Working\n→ Add a follow-up  ctrl+c to stop`;
+  assert.equal(core.__testIsAgentTuiIdleReady("cursor", startup), true, "起動直後の空composerを受ける");
+  assert.equal(core.__testIsAgentTuiReady("cursor", busy), true, "frontend自体はCursorと認識する");
+  assert.equal(core.__testIsAgentTuiIdleReady("cursor", idle), true);
+  assert.equal(core.__testIsAgentTuiIdleReady("cursor", busy), false);
+});
+
 // ---------------------------------------------------------------- submit座礁観測（実被弾: 未submit promptがcomposerに2時間滞留）
 test("submit座礁観測: composer に送信 text の末尾が残存していれば residue=true", async () => {
   const text = "1. 既存 runtime event-store を読む\n2. byte-level fail closed を実装する";
@@ -310,6 +320,20 @@ test("submit座礁観測: 画面折返し（whitespace 差）を跨いでも末�
   const wrapped = "OpenAI Codex\n› 3. byte-level fail closed を critical\n  path に適用する";
   const result = await core.__testDetectAgentSubmitResidue("codex", text, [wrapped], { maxSamples: 1 });
   assert.equal(result.residue, true);
+});
+
+test("Cursor submit座礁観測: active turnはscrollbackの旧markerを残留入力と誤認しない", async () => {
+  const text = "まず5秒待ち、その後に次の1行だけ返してください。CURSOR_RESIDUE_FOLLOWUP";
+  const active = [
+    "Cursor Agent",
+    "> ",
+    "まず5秒待ち、その後に次の1行だけ返してください。CURSOR_RESIDUE_FOLLOWUP",
+    "⠰⠳ Working",
+    "→ Add a follow-up  ctrl+c to stop",
+  ].join("\n");
+  const result = await core.__testDetectAgentSubmitResidue("cursor", text, [active]);
+  assert.equal(result.residue, false);
+  assert.equal(result.samples, 1);
 });
 
 // tmuxSpawnEnv: C/POSIX/未設定 locale だけに UTF-8 LC_CTYPE を注入する（実挙動の破壊は
@@ -405,4 +429,3 @@ test("agentWaitGuide: 復旧案内は取りこぼしゼロの --cursor 0 を維�
   assert.match(guide, /親はここで待たない/, "復旧経路でも親を待たせない");
   assert.match(guide, /outcome=done/, "exit≠完了の判定基準を示す");
 });
-

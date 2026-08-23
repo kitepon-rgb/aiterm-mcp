@@ -1,6 +1,61 @@
 {
   "docs": [
     {
+      "slug": "cursor-agent-cli-installation-2026-08-24",
+      "topic": "agent-launchers",
+      "title": "Cursor Agent CLI installation",
+      "source_url": "https://cursor.com/docs/cli/installation",
+      "source_type": "official_docs",
+      "path": "sources/agent-launchers/cursor-agent-cli-installation-2026-08-24.md",
+      "tags": [
+        "cursor",
+        "agent-cli",
+        "installer",
+        "update"
+      ],
+      "summary": "Cursor Agent CLIの公式installer、cursor-agent/agentコマンド、update経路の公式仕様。",
+      "relevance": "工場とAitermが独自tarballでなく標準installer・self-updateを使う根拠。",
+      "chars": 7794,
+      "fetched": "2026-08-24"
+    },
+    {
+      "slug": "cursor-agent-cli-overview-2026-08-24",
+      "topic": "agent-launchers",
+      "title": "Cursor Agent CLI overview",
+      "source_url": "https://cursor.com/docs/cli/overview",
+      "source_type": "official_docs",
+      "path": "sources/agent-launchers/cursor-agent-cli-overview-2026-08-24.md",
+      "tags": [
+        "cursor",
+        "agent-cli",
+        "tui",
+        "model",
+        "session"
+      ],
+      "summary": "Cursor Agent CLIの対話TUI、非対話print、モデル選択、session継続、権限・sandboxの公式仕様。",
+      "relevance": "Aitermのcursor-cli harness起動引数と永続session契約の一次根拠。",
+      "chars": 12074,
+      "fetched": "2026-08-24"
+    },
+    {
+      "slug": "cursor-plugins-reference-2026-08-24",
+      "topic": "agent-launchers",
+      "title": "Cursor Plugins Reference",
+      "source_url": "https://prod.cursor.com/docs/reference/plugins",
+      "source_type": "official-docs",
+      "path": "sources/agent-launchers/cursor-plugins-reference-2026-08-24.md",
+      "tags": [
+        "cursor",
+        "plugins",
+        "hooks",
+        "agent-cli"
+      ],
+      "summary": "Cursor plugin manifest、component discovery、hooks/hooks.jsonの公式仕様。",
+      "relevance": "Aitermのlaunch単位Cursor pluginがuser/project設定を書換えずStop hookを加算する根拠。",
+      "chars": 42122,
+      "fetched": "2026-08-24"
+    },
+    {
       "slug": "grok-build-cli-agent-parity-e5fd481",
       "topic": "agent-launchers",
       "title": "Grok Build CLI model, reasoning effort, and sandbox flags",
@@ -876,6 +931,44 @@
       "relevance": "パラメータ(click_events, cmdline_url, exit code)まで含むパース仕様。read層でOSC 133を解釈する際の実装基準。",
       "chars": 6171,
       "fetched": "2026-06-01"
+    },
+    {
+      "slug": "cursor-cli-acp-2026-08-24",
+      "topic": "completion-detection",
+      "title": "Cursor CLI Agent Client Protocol",
+      "source_url": "https://prod.cursor.com/docs/cli/acp",
+      "source_type": "official_docs",
+      "path": "sources/completion-detection/cursor-cli-acp-2026-08-24.md",
+      "tags": [
+        "cursor",
+        "acp",
+        "stdio",
+        "session",
+        "completion"
+      ],
+      "summary": "Cursor Agent CLIをACP serverとして起動し、構造化session/promptで操作する公式仕様。",
+      "relevance": "TUI adapterと比較する構造化persistent harness経路、および将来のdone境界候補。",
+      "chars": 35626,
+      "fetched": "2026-08-24"
+    },
+    {
+      "slug": "cursor-hooks-2026-08-24",
+      "topic": "completion-detection",
+      "title": "Cursor Hooks",
+      "source_url": "https://prod.cursor.com/docs/hooks",
+      "source_type": "official_docs",
+      "path": "sources/completion-detection/cursor-hooks-2026-08-24.md",
+      "tags": [
+        "cursor",
+        "hooks",
+        "stop",
+        "sessionStart",
+        "completion"
+      ],
+      "summary": "Cursorのhook配置、lifecycle event、stop/sessionStart payloadとcommand実行契約。",
+      "relevance": "Cursor harness固有のsession相関と完了検出adapterを設計する一次根拠。",
+      "chars": 96742,
+      "fetched": "2026-08-24"
     },
     {
       "slug": "expect-man-page",
@@ -2166,5 +2259,5 @@
       "fetched": "2026-06-01"
     }
   ],
-  "updated": "2026-08-16"
+  "updated": "2026-08-24"
 }

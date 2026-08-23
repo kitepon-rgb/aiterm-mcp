@@ -666,6 +666,7 @@ test("agent_configure: Claudeへ/modelと/effortを同じsessionのまま送る"
       schema: "aiterm.agent-configure-result.v1",
       session_id: sid,
       provider: "claude",
+      harness: "claude-code",
       model: "opus",
       reasoning_effort: "high",
     });
@@ -697,6 +698,7 @@ test("target contract: Grok/Composerへ/modelと/effortを同じsessionのまま
             schema: "aiterm.agent-configure-result.v1",
             session_id: sid,
             provider: kind,
+            harness: "grok-cli",
             model,
             reasoning_effort: "high",
           });
@@ -705,6 +707,7 @@ test("target contract: Grok/Composerへ/modelと/effortを同じsessionのまま
             schema: "aiterm.agent-configure-result.v1",
             session_id: sid,
             provider: kind,
+            harness: "grok-cli",
             model: null,
             reasoning_effort: "medium",
           });
@@ -797,7 +800,7 @@ test("listSessions: agent 行だけに agent 情報を追加し、通常 session
     try {
       const rows = core.listSessions().split("\n");
       assert.equal(rows.find((line) => line.startsWith(`${plain}\t`)), plainBefore, "通常 session 行は変更しない");
-      assert.match(rows.find((line) => line.startsWith(`${sid}\t`)) ?? "", /\tagent=codex agent_done=true$/);
+      assert.match(rows.find((line) => line.startsWith(`${sid}\t`)) ?? "", /\tagent=codex harness=codex-cli agent_done=true$/);
     } finally {
       core.closeSession(sid);
       core.closeSession(plain);
@@ -1795,9 +1798,11 @@ test("openAgent agent_done: 既存 state root の stale metadata を掃除して
 
       await markFakeAgentReady(session, "codex");
       const receipt = await core.dispatchAgentTurn(session, "echo LOOSE_CLEANUP_BODY");
+      assert.equal(receipt.harness, "codex-cli");
       const observation = await core.observeAgentDone(session, { cursor: receipt.event_cursor, timeout: 0 });
       assert.equal(observation.outcome, "running");
       assert.equal(observation.vendor, "codex");
+      assert.equal(observation.harness, "codex-cli");
     } finally {
       core.closeSession(sid);
     }
@@ -1813,10 +1818,12 @@ test("dispatch/observe: Codex task_complete 到着まで transcript 正本を待
       const meta = JSON.parse(fs.readFileSync(path.join(agentStateDir(), metaFile), "utf8"));
       await markFakeAgentReady(sid, "codex");
       const receipt = await core.dispatchAgentTurn(sid, "echo AGENT_DONE_BODY");
+      assert.equal(receipt.harness, "codex-cli");
       scheduleCodexDone(meta);
       const observation = await core.observeAgentDone(sid, { cursor: receipt.event_cursor, timeout: 3 });
       assert.equal(observation.outcome, "done");
       assert.equal(observation.vendor, "codex");
+      assert.equal(observation.harness, "codex-cli");
       assert.equal(observation.turn_id, "turn-test");
     } finally {
       core.closeSession(sid);
@@ -1836,10 +1843,12 @@ test("dispatch/observe: Grok vendor event も待って suffix に vendor=grok �
         const meta = JSON.parse(fs.readFileSync(path.join(agentStateDir(), metaFile), "utf8"));
         await markFakeAgentReady(sid, "grok");
         const receipt = await core.dispatchAgentTurn(sid, "echo GROK_DONE_BODY");
+        assert.equal(receipt.harness, "grok-cli");
         scheduleAgentDone(meta, { turn_id: "prompt-test" }, 500);
         const observation = await core.observeAgentDone(sid, { cursor: receipt.event_cursor, timeout: 5 });
         assert.equal(observation.outcome, "done");
         assert.equal(observation.vendor, "grok");
+        assert.equal(observation.harness, "grok-cli");
         assert.equal(observation.turn_id, "prompt-test");
       } finally {
         core.closeSession(sid);
@@ -1857,17 +1866,20 @@ test("dispatch/observe: Claudeの同一PTY follow-upをStop resultと相関し�
     const meta = readAgentMeta(sid);
     await markFakeAgentReady(sid, "claude");
     const receipt = await core.dispatchAgentTurn(sid, "CLAUDE_FOLLOWUP_PROMPT");
+    assert.equal(receipt.harness, "claude-code");
     setTimeout(() => writeClaudeDone(meta, "Claude follow-up answer", {
       vendor_session_id: meta.vendor_session_id,
     }), 200);
     const observation = await core.observeAgentDone(sid, { cursor: receipt.event_cursor, timeout: 3 });
     assert.equal(observation.outcome, "done");
     assert.equal(observation.vendor, "claude");
+    assert.equal(observation.harness, "claude-code");
     assert.equal(observation.vendor_session_id, meta.vendor_session_id);
     assert.match(fs.readFileSync(sessionLogPath(sid), "utf8"), /CLAUDE_FOLLOWUP_PROMPT/);
     const transcript = await core.readAgentTranscript(sid);
     assert.match(transcript, /Claude follow-up answer/);
     assert.match(transcript, /agent_transcript vendor=claude turn_id=unknown/);
+    assert.match(transcript, /harness=claude-code/);
   } finally {
     core.closeSession(sid);
   }
@@ -2766,7 +2778,7 @@ test("readOutput: agent event は補助 metadata に出すが completion には�
       const meta = readAgentMeta(sid);
       appendCodexDone(meta, { turn_id: "stale-read-turn", vendor_session_id: "stale-vendor" });
       const out = await core.readOutput(sid, { screen: true, timeout: 0 });
-      assert.match(out, /agent vendor=codex/, `agent metadata: ${out}`);
+      assert.match(out, /agent vendor=codex harness=codex-cli/, `agent metadata: ${out}`);
       assert.match(out, /agent_event_seen=true/, `agent event seen: ${out}`);
       assert.match(out, /completion_attribution=none/, `agent attribution: ${out}`);
       assert.match(out, /last_turn_id=stale-read-turn/, `agent turn id: ${out}`);
@@ -3287,7 +3299,7 @@ test("readAgentTranscript: Codex の単一 output_text を直近完了 turn か�
       ]);
       const out = await core.readAgentTranscript(sid);
       assert.match(out, /Codex single answer/);
-      assert.match(out, /vendor=codex turn_id=transcript-turn-single raw_chars=19/);
+      assert.match(out, /vendor=codex turn_id=transcript-turn-single harness=codex-cli raw_chars=19/);
     } finally {
       core.closeSession(sid);
     }
@@ -3325,6 +3337,7 @@ test("readAgentTranscript: Claudeはprivate transcriptでなくhook-captured res
     const out = await core.readAgentTranscript(sid);
     assert.match(out, new RegExp(text));
     assert.match(out, /agent_transcript vendor=claude turn_id=unknown/);
+    assert.match(out, /harness=claude-code/);
 
     const forged = JSON.parse(fs.readFileSync(meta.result_file, "utf8"));
     forged.text = "別の本文";
@@ -3397,7 +3410,7 @@ test("readAgentTranscript: Grok は最後の実 user 入力以降の assistant �
         const out = await core.readAgentTranscript(sid);
         assert.doesNotMatch(out, /old answer|still old answer/);
         assert.match(out, /latest first\nlatest second/);
-        assert.match(out, /vendor=grok turn_id=transcript-turn-grok/);
+        assert.match(out, /vendor=grok turn_id=transcript-turn-grok harness=grok-cli/);
       } finally {
         core.closeSession(sid);
       }

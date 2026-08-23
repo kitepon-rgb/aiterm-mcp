@@ -63,6 +63,7 @@ managed home、fake `HOME`、設定snapshotの記述は
 - [adr/0023-release-0.21.3-acceptance.md](adr/0023-release-0.21.3-acceptance.md) - v0.21.3のmain／tag CI、npm provenance、GitHub Release、Official Registry、隔離／global installを固定した公開受入記録。
 - [adr/0024-managed-claude-user-mcp-inheritance.md](adr/0024-managed-claude-user-mcp-inheritance.md) - v0.21.4の歴史的Decision。ADR 0025で全面的にSuperseded。
 - [25-shared-agent-environment-characterization.md](25-shared-agent-environment-characterization.md) - 3 CLIの通常環境、追加instruction、共有home上の完了相関を実測した実装前記録。
+- [adr/0038-harness-launch-api-and-cursor-agent-cli.md](adr/0038-harness-launch-api-and-cursor-agent-cli.md) - 実行基盤（harness）とmodelを分離した単一`agent_launch`、Cursor Agent CLI adapter、旧4入口の互換alias化。
 
 ## 運用メモ
 

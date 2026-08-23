@@ -25,6 +25,7 @@ import {
   AGENT_DONE_POLL_MS,
   AGENT_EVENT_MAX_BYTES,
   GROK_TRANSCRIPT_INCREMENT_MAX_BYTES,
+  agentHarness,
 } from "../agent-shared.js";
 import type { AgentKind, AgentMetadata, AgentDoneEvent, AgentWaitObservation, InitialPromptState, AgentLineageContext } from "../agent-shared.js";
 
@@ -229,6 +230,7 @@ export async function observeGrokDone(
     session_id: meta.aiterm_session,
     launch_id: meta.launch_id,
     vendor: meta.kind,
+    harness: agentHarness(meta.kind),
     outcome,
     operation_id: null,
     vendor_session_id: meta.vendor_session_id,

@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-08-24
+
+### Added
+
+- 正規の単一起動入口`agent_launch({ harness, model?, ... })`を追加した。`harness`は
+  `claude-code`／`codex-cli`／`grok-cli`／`cursor-cli`で、agent loop・認証・hook・session・
+  transcriptを所有する実行基盤を表す。`model`は別軸で、Cursor harness上のGPT／Claude／Grokも
+  Cursor方式の完了相関を維持する。ComposerはGrok CLIのmodel presetとして指定する。
+- Cursor Agent CLI adapterを追加した。通常`~/.cursor`を共有し、初回user recordのlaunch IDで通常
+  agent transcriptを一意にbindする。末尾`turn_ended(status:"success")`を完了、同じturnのassistant textを
+  回答正本として、既存`aiterm-wait`／`pty_read(agent_transcript:true)`契約へ接続する。
+- Cursorの`write_scope:"read-only"`を公式`--mode ask`で実効化し、model＋effortは
+  現行`model-effort` IDへ変換してlive catalogへ照合する。起動中変更は標準`/model`とmodel pickerの
+  parameter editorを使う。CLI未導入・未認証・不正指定はPTY作成前に明示失敗する。
+
+### Changed
+
+- `claude_agent`／`codex_agent`／`grok_agent`／`composer_agent`はdeprecated thin aliasとなり、
+  正規入口と同じ共通実装へ流れる。旧receiptの`provider`は互換fieldとして残し、`harness`を追加した。
+- `pty_send`のagent dispatch、`aiterm-wait`、`agent_configure`、`pty_list`にも正規の`harness`を追加し、
+  起動後の操作でも同じ実行基盤語彙を使えるようにした。旧`vendor`／`provider`／`agent`は互換用に残す。
+- `event_cursor`はvendor別の完了正本境界を表すopaqueな0以上の整数とした。Cursorではfollow-up時に
+  直前末尾の`turn_ended`が書き換わる実挙動へ合わせ、単調に残るuser turn数を使う。
+- Cursor実行ファイルは`CURSOR_AGENT_BIN`、`~/.local/bin/cursor-agent`、PATH上の`cursor-agent`だけを
+  解決し、Grok等と衝突し得る曖昧な`agent`名を使わない。導入・更新はCursor公式installer／
+  `agent update`を正本とし、独自tarball経路を追加しない。
+
+### Fixed
+
+- MCPB stagingが`dist`直下のJavaScriptだけをcopyし、v0.27.7以降の`dist/vendors/*.js`を欠いた
+  起動不能archiveをvalidatorが通していた欠陥を修理した。runtime JavaScriptを再帰copyし、staged serverの
+  initialize／15-tool list／stderr 0まで公開前smokeで固定する。
+
 ## [0.27.9] - 2026-08-23
 
 ### Fixed

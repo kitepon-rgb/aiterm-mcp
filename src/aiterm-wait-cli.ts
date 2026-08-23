@@ -43,7 +43,7 @@ export function parseArgs(argv: string[]): WaitCommand {
         operationId = v;
       } else if (a === "--cursor") {
         if (cursor !== null) throw new Error(`--cursor が重複しています。${USAGE}`);
-        if (!/^\d+$/.test(v)) throw new Error(`--cursor は0以上の整数byte offsetだけを受理します。${USAGE}`);
+        if (!/^\d+$/.test(v)) throw new Error(`--cursor は0以上の整数完了境界だけを受理します。${USAGE}`);
         cursor = Number(v);
       } else {
         if (timeout !== null) throw new Error(`--timeout が重複しています。${USAGE}`);

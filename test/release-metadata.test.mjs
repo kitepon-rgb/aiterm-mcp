@@ -57,10 +57,9 @@ test('final CI measures dependency install separately from the four-environment 
 test('clean build ships only the active managed stop hooks', async () => {
   await access(new URL('../dist/claude-stop-hook.js', import.meta.url));
   await access(new URL('../dist/grok-stop-hook.js', import.meta.url));
-  await assert.rejects(
-    access(new URL('../dist/codex-stop-hook.js', import.meta.url)),
-    { code: 'ENOENT' },
-  );
+  for (const removed of ['codex-stop-hook.js', 'cursor-stop-hook.js']) {
+    await assert.rejects(access(new URL(`../dist/${removed}`, import.meta.url)), { code: 'ENOENT' });
+  }
 });
 
 test('npm pack はbuild済みdistの全ランタイム.jsを同梱する', async () => {
@@ -84,6 +83,20 @@ test('npm pack はbuild済みdistの全ランタイム.jsを同梱する', async
   assert.ok(distJs.some((f) => f.startsWith('dist/vendors/')), 'dist/vendors/*.js がbuildされていません');
   for (const f of distJs) {
     assert.ok(packed.has(f), `${f} が npm pack に同梱されていません（package.json files を確認）`);
+  }
+});
+
+test('MCPB staging はbuild済みdistの全ランタイム.jsを再帰的に同梱する', async () => {
+  // 実被弾（v0.28.0公開前）: stagingがdist直下の*.jsだけをcopyし、vendors/*.jsを欠いた
+  // 起動不能archiveをMCPB validatorが通した。archive構造でなくruntime import集合を固定する。
+  const root = fileURLToPath(new URL('..', import.meta.url));
+  await execFileAsync(process.execPath, ['scripts/build-mcpb.mjs'], { cwd: root });
+  const distJs = (await readdir(new URL('../dist', import.meta.url), { recursive: true }))
+    .map((f) => f.split('\\').join('/'))
+    .filter((f) => f.endsWith('.js') && !f.startsWith('mcpb-stage/'));
+  assert.ok(distJs.some((f) => f.startsWith('vendors/')), 'dist/vendors/*.js がbuildされていません');
+  for (const file of distJs) {
+    await access(new URL(`../dist/mcpb-stage/server/dist/${file}`, import.meta.url));
   }
 });
 

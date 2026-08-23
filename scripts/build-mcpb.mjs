@@ -20,10 +20,20 @@ rmSync(stageDir, { recursive: true, force: true });
 rmSync(join(distDir, "aiterm-mcp.mcpb"), { force: true });
 mkdirSync(serverDistDir, { recursive: true });
 
-for (const name of readdirSync(distDir)) {
-  if (!name.endsWith(".js")) continue;
-  cpSync(join(distDir, name), join(serverDistDir, name));
+function copyRuntimeJs(sourceDir, targetDir) {
+  for (const entry of readdirSync(sourceDir, { withFileTypes: true })) {
+    if (entry.name === "mcpb-stage") continue;
+    const source = join(sourceDir, entry.name);
+    const target = join(targetDir, entry.name);
+    if (entry.isDirectory()) {
+      mkdirSync(target, { recursive: true });
+      copyRuntimeJs(source, target);
+    } else if (entry.isFile() && entry.name.endsWith(".js")) {
+      cpSync(source, target);
+    }
+  }
 }
+copyRuntimeJs(distDir, serverDistDir);
 
 for (const name of ["package.json", "package-lock.json"]) {
   cpSync(join(root, name), join(serverDir, name));

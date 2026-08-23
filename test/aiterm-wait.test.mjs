@@ -134,6 +134,7 @@ test("observe: 待機後に届いたClaude eventでdone", async () => {
     assert.equal(r.schema, "aiterm.agent-wait-result.v1");
     assert.equal(r.outcome, "done");
     assert.equal(r.vendor, "claude");
+    assert.equal(r.harness, "claude-code");
     assert.equal(r.turn_id, "turn-1");
     assert.equal(r.vendor_session_id, VENDOR_SESSION);
     assert.equal(r.launch_id, LAUNCH);
@@ -313,6 +314,7 @@ test("cli: 完了済みclaude operationをreceiptで返しexit 0", async () => {
     const out = JSON.parse(r.stdout.trim());
     assert.equal(out.schema, "aiterm.agent-wait-result.v1");
     assert.equal(out.outcome, "done");
+    assert.equal(out.harness, "claude-code");
     assert.equal(out.operation_id, OPID);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });

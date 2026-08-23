@@ -1,5 +1,5 @@
 // smoke: 実際に `node dist/index.js` を起動し、initialize + tools/list を stdin にパイプ。
-// 検証: stdout は改行区切り JSON-RPC のみ（診断混入なし）／14 ツールが公開されている。
+// 検証: stdout は改行区切り JSON-RPC のみ（診断混入なし）／15 ツールが公開されている。
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -18,14 +18,14 @@ const PACKAGE = JSON.parse(fs.readFileSync(path.join(HERE, "..", "package.json")
 test("smoke: 公開versionはpackage・lock・server manifestで一致する", () => {
   const lock = JSON.parse(fs.readFileSync(path.join(HERE, "..", "package-lock.json"), "utf8"));
   const server = JSON.parse(fs.readFileSync(path.join(HERE, "..", "server.json"), "utf8"));
-  assert.equal(PACKAGE.version, "0.27.9", "PowerShell mark を修正した公開版");
+  assert.equal(PACKAGE.version, "0.28.0", "harness標準化とCursor Agent CLI追加版");
   assert.equal(lock.version, PACKAGE.version);
   assert.equal(lock.packages?.[""]?.version, PACKAGE.version);
   assert.equal(server.version, PACKAGE.version);
   assert.equal(server.packages?.[0]?.version, PACKAGE.version);
 });
 
-test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 14 ツール公開", async () => {
+test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 15 ツール公開", async () => {
   const tmpdir = fs.mkdtempSync(path.join(os.tmpdir(), "aiterm-diagnostics-"));
   const child = spawn(process.execPath, [ENTRY], {
     stdio: ["pipe", "pipe", "pipe"],
@@ -78,6 +78,7 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 14 ツール公�
   const names = (toolsResp.result?.tools ?? []).map((t) => t.name).sort();
   assert.deepEqual(names, [
     "agent_configure",
+    "agent_launch",
     "claude_agent",
     "claude_approval",
     "claude_turn",
@@ -100,13 +101,14 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 14 ツール公�
   assert.equal(ptySend.inputSchema.properties.lines, undefined);
   assert.equal(ptySend.outputSchema.properties.schema.const, "aiterm.pty-send-result.v1", "pty_send result schema");
   assert.deepEqual(ptySend.outputSchema.properties.mode.enum, ["sent", "agent_dispatch"], "pty_send mode schema");
+  assert.deepEqual(ptySend.outputSchema.properties.harness.anyOf[0].enum, ["claude-code", "codex-cli", "grok-cli", "cursor-cli"], "pty_send harness schema");
   assert.ok(
     ptySend.outputSchema.properties.event_cursor.anyOf?.some((v) => v.type === "integer"),
     "pty_send event_cursor schema",
   );
   // 非ブロック規範: dispatch 系の説明は「待たない」を明示し、foreground 実行へ誘導する
   // 抽象文（旧「ホストのバックグラウンドタスクとして実行」）へ戻らない。
-  const dispatchDescs = [ptySend, ...["claude_agent", "codex_agent", "grok_agent", "composer_agent"].map((n) => toolsResp.result.tools.find((t) => t.name === n))];
+  const dispatchDescs = [ptySend, ...["agent_launch", "claude_agent", "codex_agent", "grok_agent", "composer_agent"].map((n) => toolsResp.result.tools.find((t) => t.name === n))];
   for (const tool of dispatchDescs) {
     assert.match(tool.description, /投げっぱなしでよい/, `${tool.name}: 投げっぱなし許諾を明示する`);
     assert.match(tool.description, /親はここで待たない/, `${tool.name}: 親が待たないことを明示する`);
@@ -179,7 +181,14 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 14 ツール公�
   assert.ok(agentConfigure.inputSchema.properties.model.anyOf.some((entry) => entry.type === "string"));
   assert.ok(agentConfigure.inputSchema.properties.reasoning_effort.anyOf.some((entry) => entry.type === "string"));
   assert.equal(agentConfigure.outputSchema.properties.schema.const, "aiterm.agent-configure-result.v1");
-  assert.deepEqual(agentConfigure.outputSchema.properties.provider.enum, ["claude", "codex", "grok", "composer"]);
+  assert.deepEqual(agentConfigure.outputSchema.properties.provider.enum, ["claude", "codex", "grok", "composer", "cursor"]);
+  assert.deepEqual(agentConfigure.outputSchema.properties.harness.enum, ["claude-code", "codex-cli", "grok-cli", "cursor-cli"]);
+  const agentLaunch = toolsResp.result.tools.find((t) => t.name === "agent_launch");
+  assert.deepEqual(agentLaunch.inputSchema.properties.harness.enum, ["claude-code", "codex-cli", "grok-cli", "cursor-cli"]);
+  assert.deepEqual(agentLaunch.outputSchema.properties.harness.enum, ["claude-code", "codex-cli", "grok-cli", "cursor-cli"]);
+  assert.match(agentLaunch.description, /harnessはagent loop・認証・hook・transcriptを所有/);
+  assert.match(agentLaunch.description, /Cursor harnessからGPT／Claude／Grok等を選んでも/);
+  assert.match(agentLaunch.description, /Grok Composerは別harnessではなく/);
   assert.equal(codexAgent.inputSchema.properties.agent_done, undefined, "v0.16: launcher は常に managed");
   assert.equal(codexAgent.inputSchema.properties.wait, undefined, "v0.16: 初回prompt waitは廃止");
   assert.equal(codexAgent.inputSchema.properties.timeout, undefined);
@@ -196,6 +205,11 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 14 ツール公�
     assert.equal(tool.inputSchema.properties.throughline_source_session.minLength, 1, `${name} portable fork source is non-empty`);
     assert.equal(tool.outputSchema.properties.schema.const, "aiterm.agent-launch-result.v1", `${name} launch result schema`);
     assert.equal(tool.outputSchema.properties.provider.const, provider, `${name} provider固定`);
+    assert.equal(
+      tool.outputSchema.properties.harness.const,
+      provider === "claude" ? "claude-code" : provider === "codex" ? "codex-cli" : "grok-cli",
+      `${name} harness固定`,
+    );
     assert.equal(tool.outputSchema.properties.session_id.pattern, "^[A-Za-z0-9_-]{1,64}$", `${name} session ID schema`);
     assert.equal(tool.outputSchema.properties.managed_completion.type, "boolean", `${name} managed completion schema`);
   }

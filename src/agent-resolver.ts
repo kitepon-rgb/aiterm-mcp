@@ -1,4 +1,4 @@
-// エージェント CLI（claude / codex / grok）・Throughline・pane shell（Windows は Git Bash）の
+// エージェント CLI（claude / codex / grok / cursor-agent）・Throughline・pane shell（Windows は Git Bash）の
 // 実行ファイルをどう見つけ、どう起動するかの所有者（OS 分岐の所有者。tmux とは独立）。
 import { spawnSync, type SpawnSyncOptionsWithStringEncoding, type SpawnSyncReturns } from "node:child_process";
 import * as fs from "node:fs";
@@ -124,6 +124,8 @@ export function resolveAgentBin(kind: AgentKind): string | null {
       ? ["CLAUDE_BIN", [".local", "bin", "claude"], "claude"]
       : kind === "codex"
       ? ["CODEX_BIN", [".local", "bin", "codex"], "codex"]
+      : kind === "cursor"
+      ? ["CURSOR_AGENT_BIN", [".local", "bin", "cursor-agent"], "cursor-agent"]
       : ["GROK_BIN", [".grok", "bin", isWin ? "grok.exe" : "grok"], "grok"];
   const fromEnv = process.env[envVar as string];
   if (fromEnv) {
@@ -133,8 +135,18 @@ export function resolveAgentBin(kind: AgentKind): string | null {
     if (isUsableAgentExecutableFile(fromEnv)) return resolveWindowsCodexShim(kind, fromEnv);
     throw new AitermError(`${envVar} に指定された ${name} が存在しません: ${fromEnv}`, 2);
   }
-  const cand = path.join(home, ...(rel as string[]));
-  if (isUsableAgentExecutableFile(cand)) return resolveWindowsCodexShim(kind, cand);
+  const defaultCandidates = [path.join(home, ...(rel as string[]))];
+  if (kind === "cursor" && isWin && process.env.LOCALAPPDATA) {
+    // Cursor公式Windows installerは %LOCALAPPDATA%\cursor-agent をPATHへ追加し、
+    // cursor-agent.exe/cmdを置く。GUI hostの古いPATHでも公式配置を直接解決する。
+    defaultCandidates.unshift(
+      path.join(process.env.LOCALAPPDATA, "cursor-agent", "cursor-agent.exe"),
+      path.join(process.env.LOCALAPPDATA, "cursor-agent", "cursor-agent.cmd"),
+    );
+  }
+  for (const cand of defaultCandidates) {
+    if (isUsableAgentExecutableFile(cand)) return resolveWindowsCodexShim(kind, cand);
+  }
   const w = spawnSync(isWin ? "where" : "which", [name as string], {
     encoding: "utf8",
     timeout: 5000,

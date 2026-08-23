@@ -54,6 +54,7 @@ async function factoryDiagnostics(): Promise<string> {
   const claude = core.vendorLauncherDiagnostic("claude");
   const codex = core.vendorLauncherDiagnostic("codex");
   const grok = core.vendorLauncherDiagnostic("grok");
+  const cursor = core.vendorLauncherDiagnostic("cursor");
   const runtimeErrors = await runtimeErrorStoreDiagnostic();
   const overall = ptyList.status === "unverified" || runtimeErrors.status === "unverified" ? "unverified" : "ready";
   return JSON.stringify({
@@ -78,6 +79,11 @@ async function factoryDiagnostics(): Promise<string> {
         status: grok,
         optional: true,
         required_for: ["grok_agent", "composer_agent"],
+      },
+      cursor: {
+        status: cursor,
+        optional: true,
+        required_for: ["agent_launch"],
       },
     },
   });
@@ -153,7 +159,8 @@ server.registerTool(
       session_id: z.string(),
       event_cursor: z.number().int().nullable(),
       launch_id: z.string().nullable(),
-      vendor: z.enum(["claude", "codex", "grok", "composer"]).nullable(),
+      vendor: z.enum(["claude", "codex", "grok", "composer", "cursor"]).nullable(),
+      harness: z.enum(["claude-code", "codex-cli", "grok-cli", "cursor-cli"]).nullable(),
       // dispatch後のsubmit座礁観測（additive）。true=composerに送信textの残存を確認（submit未成立の疑い）/
       // false=残存を観測せず（成立の保証ではない）/ null=通常送信・判定不能。
       submit_residue: z.boolean().nullable(),
@@ -171,7 +178,7 @@ server.registerTool(
             {
               type: "text" as const,
               text:
-                `dispatchした（vendor=${receipt.vendor}）。\n` +
+                `dispatchした（harness=${receipt.harness}, vendor=${receipt.vendor}）。\n` +
                 core.agentDispatchGuide(receipt.session_id, receipt.event_cursor) +
                 core.agentSubmitResidueWarning(receipt.session_id, receipt.submit_residue),
             },
@@ -183,6 +190,7 @@ server.registerTool(
             event_cursor: receipt.event_cursor,
             launch_id: receipt.launch_id,
             vendor: receipt.vendor,
+            harness: receipt.harness,
             submit_residue: receipt.submit_residue,
           },
         };
@@ -197,6 +205,7 @@ server.registerTool(
           event_cursor: null,
           launch_id: null,
           vendor: null,
+          harness: null,
           submit_residue: null,
         },
       };
@@ -238,7 +247,7 @@ server.registerTool(
       agent_transcript: z
         .boolean()
         .default(false)
-        .describe("agent session の直近完了ターンの最終 assistant メッセージを返す。Claudeはlaunch相関付きStop hook result、他vendorは通常transcriptを使う。長い回答がscreen tailで切れた時の回収用"),
+        .describe("agent session の直近完了ターンの最終 assistant メッセージを返す。Claudeはlaunch相関付きStop hook result、他harnessは通常transcript／session historyを使う。長い回答がscreen tailで切れた時の回収用"),
       operation_id: z
         .string()
         .regex(/^sha256:[0-9a-f]{64}$/)
@@ -454,8 +463,8 @@ server.registerTool(
   "agent_configure",
   {
     description:
-      "起動済みのClaude／Codex／Grok／Composer agent sessionを再起動せず、会話contextを保ったままmodel／reasoning effortを変更する。" +
-      "Claude／Grok／ComposerはCLI標準の/model・/effort、CodexはCLI標準の/model選択画面を使う。",
+      "起動済みのClaude／Codex／Grok／Composer／Cursor agent sessionを再起動せず、会話contextを保ったままmodel／reasoning effortを変更する。" +
+      "各harnessのCLI標準model操作を使う。Cursorのreasoning_effort変更はmodelと同時指定する。",
     inputSchema: {
       session_id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
       model: z.string().min(1).nullish().describe("変更後のmodel。省略時はmodelを変更しない"),
@@ -464,7 +473,8 @@ server.registerTool(
     outputSchema: {
       schema: z.literal("aiterm.agent-configure-result.v1"),
       session_id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
-      provider: z.enum(["claude", "codex", "grok", "composer"]),
+      provider: z.enum(["claude", "codex", "grok", "composer", "cursor"]),
+      harness: z.enum(["claude-code", "codex-cli", "grok-cli", "cursor-cli"]),
       model: z.string().nullable(),
       reasoning_effort: z.string().nullable(),
     },
@@ -482,25 +492,30 @@ server.registerTool(
   },
 );
 
-// 対話型エージェント起動ツール（モデルごとに1つ＝ツール名/説明でどのモデルか一目で分かる）。
-// いずれも永続端末に TUI を起動し session_id を返す。以後 pty_read/pty_send で対話操作する。
-const agentModelDesc = (kind: "claude" | "codex" | "grok" | "composer") =>
+// 新規APIの選択軸はharness。旧4 launcher名は移行期間中の薄いaliasとして同じ実装へ流す。
+const kindForHarness = (harness: core.AgentHarness): core.AgentKind =>
+  harness === "claude-code" ? "claude" : harness === "codex-cli" ? "codex" : harness === "cursor-cli" ? "cursor" : "grok";
+const agentModelDesc = (kind: core.AgentKind) =>
   kind === "claude"
     ? "起動モデル（例: claude-sonnet-4-6）。省略時はClaude CLI既定"
     : kind === "codex"
     ? "起動モデル（例: gpt-5.6-sol / gpt-5.6-terra / gpt-5.6-luna）。省略時は端末 config／CLI 既定を継承" +
       "（端末側のピンがそのまま効く。実効値は起動応答に明示される）"
+    : kind === "cursor"
+      ? "Cursor Agent CLIで選ぶbase model（例: gpt-5.6-luna）。GPT／Claude／Grok等を選べ、effortは別指定。省略時はCursor既定"
     : `起動モデル。省略時は ${kind === "grok" ? "grok-4.6" : "grok-composer-2.5-fast"}。` +
       (kind === "composer"
         ? "既定／explicit modelを起動前にlive catalogへ照合し、不在ならfallbackせずエラー"
         : "explicit modelを起動前にlive catalogへ照合し、不在ならfallbackせずエラー");
-const agentEffortDesc = (kind: "claude" | "codex" | "grok" | "composer") =>
+const agentEffortDesc = (kind: core.AgentKind) =>
   kind === "claude"
     ? "Claude Code reasoning effort。low/medium/high/xhigh/max。省略時はCLI既定"
     : kind === "codex"
       ? "reasoning effort（思考レベル）。low/medium/high/xhigh/max/ultra（CLI／model 版依存）。" +
         "ultra は max 推論＋proactive 自動委譲 ON＝使用量急増注意（明示要求時のみ）。省略時は端末 config／CLI 既定。"
-      : "Grok Build reasoning effort。利用可能値はCLI／modelのlive catalogに従う。省略時はCLI／model既定。";
+      : kind === "cursor"
+        ? "Cursor catalogのeffort。指定時はmodel必須で、adapterが model-effort の正規IDへ変換してlive catalogに照合する。"
+        : "Grok Build reasoning effort。利用可能値はCLI／modelのlive catalogに従う。省略時はCLI／model既定。";
 // 全launcher共通の完了受信ガイド。待ちコマンドは起動応答の wait_command（初回prompt時）または
 // pty_send dispatch の event_cursor から組む。文型は NON_BLOCKING_RULE と同じく「待たない」が先。
 const agentCompletionDesc =
@@ -513,16 +528,63 @@ const agentEnvironmentDesc =
   `通常CLIと同じHOME・cwd・project/user/local設定・MCP・plugin・skill・permission/trustを共有する。` +
   `aitermは完了相関stateだけをlaunch単位で所有する。起動されたagentにはsub-agent自己認識、親session、` +
   `delegation depth/lineage、delegation_allowed=trueを注入し、必要な追加委譲は許可する。`;
+
+async function launchAgent(kind: core.AgentKind, args: any): Promise<any> {
+  const supportsWriteScope = kind !== "claude";
+  const { prompt, throughline_source_session, model, reasoning_effort, env_vars, cwd, session_name, launch_operation_id, write_scope } = args;
+  try {
+    if (!supportsWriteScope && write_scope !== undefined) {
+      throw new core.AitermError("claude-code harnessはwrite_scopeに対応していません。指定を外してください", 2);
+    }
+    const [sid, hint, eventCursor, submitResidue] = await core.openAgentWithInitialPrompt(kind, {
+      prompt: prompt ?? undefined,
+      throughline_source_session,
+      model: model ?? undefined,
+      reasoning_effort: reasoning_effort ?? undefined,
+      env_vars,
+      cwd: cwd ?? undefined,
+      session_name: session_name ?? undefined,
+      launch_operation_id: launch_operation_id ?? undefined,
+      ...(supportsWriteScope ? { write_scope } : {}),
+    });
+    const structured = {
+      schema: "aiterm.agent-launch-result.v1" as const,
+      provider: kind,
+      harness: core.agentHarness(kind),
+      session_id: sid,
+      managed_completion: true,
+      event_cursor: eventCursor,
+      wait_command: eventCursor === null ? null : `aiterm-wait --session ${sid} --cursor ${eventCursor}`,
+      submit_residue: submitResidue,
+      ...(supportsWriteScope && write_scope !== undefined
+        ? {
+            write_scope,
+            write_scope_enforcement:
+              write_scope === "read-only"
+                ? "enforced_read_only" as const
+                : "declaration_only_unsupported" as const,
+          }
+        : {}),
+    };
+    return {
+      content: [{ type: "text" as const, text: `session_id: ${sid}\n${hint}` }],
+      structuredContent: structured,
+    };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
 function registerAgentTool(
   toolName: string,
-  kind: "claude" | "codex" | "grok" | "composer",
+  kind: core.AgentKind,
   desc: string,
 ): void {
   const correlatedLaunchSchema: Record<string, z.ZodTypeAny> = {};
-  const supportsWriteScope = kind === "codex" || kind === "grok" || kind === "composer";
+  const supportsWriteScope = kind !== "claude";
   const writeScopeInputSchema: Record<string, z.ZodTypeAny> = supportsWriteScope
     ? {
-        write_scope: z.string().min(1).optional().describe("能力宣言。read-only、または書込みを許可するパスの説明文字列。Codex／Grok／Composerのread-onlyはCLI sandboxで実効禁止する"),
+        write_scope: z.string().min(1).optional().describe("能力宣言。read-only、または書込みを許可するパスの説明文字列。対応harnessのread-onlyはCLI標準のread-only面で実効禁止する"),
       }
     : {};
   const writeScopeOutputSchema: Record<string, z.ZodTypeAny> = supportsWriteScope
@@ -562,6 +624,7 @@ function registerAgentTool(
       outputSchema: {
         schema: z.literal("aiterm.agent-launch-result.v1"),
         provider: z.literal(kind),
+        harness: z.literal(core.agentHarness(kind)),
         session_id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
         managed_completion: z.boolean().describe("後方互換field。trueはaiterm完了相関が有効という意味で、project/user環境の隔離を意味しない"),
         // 起動時 prompt でturnが走っている時だけ非null（additive拡張）。wait_command はそのままホストの
@@ -574,52 +637,50 @@ function registerAgentTool(
         ...writeScopeOutputSchema,
       },
     },
-    async ({ prompt, throughline_source_session, model, reasoning_effort, env_vars, cwd, session_name, launch_operation_id, write_scope }: any) => {
-      try {
-        const [sid, hint, eventCursor, submitResidue] = await core.openAgentWithInitialPrompt(kind, {
-          prompt: prompt ?? undefined,
-          throughline_source_session,
-          model: model ?? undefined,
-          reasoning_effort: reasoning_effort ?? undefined,
-          env_vars,
-          cwd: cwd ?? undefined,
-          session_name: session_name ?? undefined,
-          launch_operation_id: launch_operation_id ?? undefined,
-          ...(supportsWriteScope ? { write_scope } : {}),
-        });
-        const structured = {
-          schema: "aiterm.agent-launch-result.v1" as const,
-          provider: kind,
-          session_id: sid,
-          managed_completion: true,
-          event_cursor: eventCursor,
-          wait_command: eventCursor === null ? null : `aiterm-wait --session ${sid} --cursor ${eventCursor}`,
-          submit_residue: submitResidue,
-          ...(supportsWriteScope && write_scope !== undefined
-            ? {
-                write_scope,
-                write_scope_enforcement:
-                  (kind === "codex" || kind === "grok" || kind === "composer") && write_scope === "read-only"
-                    ? "enforced_read_only" as const
-                    : "declaration_only_unsupported" as const,
-              }
-            : {}),
-        };
-        return {
-          content: [{ type: "text" as const, text: `session_id: ${sid}\n${hint}` }],
-          structuredContent: structured,
-        };
-      } catch (e) {
-        return fail(e);
-      }
-    },
+    async (args: any) => launchAgent(kind, args),
   );
 }
+
+server.registerTool(
+  "agent_launch",
+  {
+    description:
+      "エージェントを単一の標準入口から永続sessionへ起動する。harnessはagent loop・認証・hook・transcriptを所有する実行基盤、" +
+      "modelはそのharnessが選ぶ推論モデルであり別軸。Cursor harnessからGPT／Claude／Grok等を選んでも完了相関はCursor方式のまま。" +
+      "Grok Composerは別harnessではなく harness=grok-cli と model=grok-composer-2.5-fast で指定する。" +
+      agentEnvironmentDesc + agentCompletionDesc,
+    inputSchema: {
+      harness: z.enum(["claude-code", "codex-cli", "grok-cli", "cursor-cli"]).describe("agent loop・session・hook・transcript・認証を所有する実行基盤"),
+      prompt: z.string().nullish().describe("起動時に渡す初手プロンプト（任意）。送信後は待たずに即返る"),
+      throughline_source_session: z.string().min(1).optional().describe("同一端末のThroughline sessionから読み取り専用contextを初手へ注入する"),
+      model: z.string().nullish().describe("harnessが選ぶモデル。provider名ではなくlive catalog上のmodel ID"),
+      reasoning_effort: z.string().nullish().describe("harness adapterが標準CLI表現へ変換する思考レベル。Cursorではmodel同時指定が必要"),
+      env_vars: z.array(z.string()).optional().describe("現在のMCP processから継承する環境変数名"),
+      cwd: z.string().nullish().describe("作業ディレクトリ（絶対パス・任意）"),
+      session_name: z.string().nullish().describe("Aiterm session名（省略で自動採番）"),
+      write_scope: z.string().min(1).optional().describe("能力宣言。read-onlyは対応harnessの標準read-only面で実効禁止する"),
+      launch_operation_id: z.string().regex(/^sha256:[0-9a-f]{64}$/).optional().describe("Claude Codeのpromptなしexact replay相関だけで使用"),
+    },
+    outputSchema: {
+      schema: z.literal("aiterm.agent-launch-result.v1"),
+      harness: z.enum(["claude-code", "codex-cli", "grok-cli", "cursor-cli"]),
+      provider: z.enum(["claude", "codex", "grok", "composer", "cursor"]).describe("旧互換field。新規連携はharnessを使う"),
+      session_id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+      managed_completion: z.boolean(),
+      event_cursor: z.number().int().nullable(),
+      wait_command: z.string().nullable(),
+      submit_residue: z.boolean().nullable(),
+      write_scope: z.string().optional(),
+      write_scope_enforcement: z.enum(["enforced_read_only", "declaration_only_unsupported"]).optional(),
+    },
+  },
+  async ({ harness, ...args }: any) => launchAgent(kindForHarness(harness), args),
+);
 
 registerAgentTool(
   "claude_agent",
   "claude",
-  "【Claude Code (Anthropic)】の対話エージェントTUIを永続端末に起動する。`claude -p`ではなく、" +
+  "【旧互換alias。新規連携は agent_launch(harness=claude-code)】Claude Codeの対話エージェントTUIを永続端末に起動する。`claude -p`ではなく、" +
     "同じ利用者可視sessionへpty_sendで継続入力する。" +
     agentEnvironmentDesc +
     "通常settingsへlaunch固有Stop hook settingsを加算する。起動前に共有認証を構造化確認し、未認証ならsessionを作らない。" +
@@ -631,7 +692,7 @@ registerAgentTool(
 registerAgentTool(
   "codex_agent",
   "codex",
-  "【Codex (OpenAI)】の対話エージェント TUI を永続端末に起動する。実装・レビュー・調査を対話で回す。" +
+  "【旧互換alias。新規連携は agent_launch(harness=codex-cli)】Codexの対話エージェント TUI を永続端末に起動する。実装・レビュー・調査を対話で回す。" +
     agentEnvironmentDesc +
     "委譲契約を使う完全な呼び出し例: " +
     '`codex_agent({"prompt":"<依頼>","model":"gpt-5.6-sol","reasoning_effort":"high",' +
@@ -644,7 +705,7 @@ registerAgentTool(
 registerAgentTool(
   "grok_agent",
   "grok",
-  "【Grok Build の Grok モデル (既定 grok-4.6)】の対話エージェント TUI を永続端末に起動する。" +
+  "【旧互換alias。新規連携は agent_launch(harness=grok-cli)】Grok BuildのGrokモデル（既定 grok-4.6）の対話エージェント TUIを永続端末に起動する。" +
     agentEnvironmentDesc +
     "turn は pty_send で送る（自動で非ブロック dispatch になる）。" +
     agentCompletionDesc +
@@ -653,7 +714,7 @@ registerAgentTool(
 registerAgentTool(
   "composer_agent",
   "composer",
-  "【Grok Build の Composer モデル (既定 grok-composer-2.5-fast)】の対話エージェント TUI を永続端末に起動する。" +
+  "【旧互換alias。新規連携は agent_launch(harness=grok-cli, model=grok-composer-2.5-fast)】Grok BuildのComposerモデルを永続端末に起動する。" +
     agentEnvironmentDesc +
     "turn は pty_send で送る（自動で非ブロック dispatch になる）。" +
     agentCompletionDesc +

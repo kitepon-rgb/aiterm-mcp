@@ -4,7 +4,7 @@ AIターミナル直接操作プロジェクトの調査一次資料。`rag/sour
 忠実 Markdown 化した版（front-matter にメタdata）。
 **設計/実装の前にまずここを読み、該当資料を再利用する（再フェッチしない）。**
 
-- 総数: **108** 件 / 更新: 2026-08-16
+- 総数: **113** 件 / 更新: 2026-08-24
 - 取り込み: `python3 rag/ingest.py <sources.json>` → `python3 rag/build_index.py`
 - 統合分析: [briefs/](briefs/)
 
@@ -89,7 +89,7 @@ AIターミナル直接操作プロジェクトの調査一次資料。`rag/sour
   - 出典: <https://raw.githubusercontent.com/rusiaaman/wcgw/main/README.md> (github_readme, 14491 chars)
   - 効きどころ: 完了検出が二段(短timeoutで即抜け+出力ストリーム継続を見て待ち時間調整)で、純粋quiescenceとexit-codeの中間設計の実例。screen -xで人間が同一端末にアタッチ、背景コマンド多重化は我々のバックエンド選定(tmux代替案)とsend設計の比較対象。
 
-## 完了境界の検出 (completion-detection) — 24件
+## 完了境界の検出 (completion-detection) — 26件
 
 - [Phase 0 multi-agent smoke: AI CLI TUI done detection](sources/completion-detection/agent-cli-done-phase0-smoke-2026-07-07.md) — Codex/Grok/Composer の TUI Stop hook をマルチエージェントで実測した。hook 発火自体は確認できたが、Codex continuation と temporary home 差分が実装前ブロッカーとして残った。
   - 出典: <local:multi-agent-smoke-2026-07-07> (local_probe, 7446 chars)
@@ -115,6 +115,12 @@ AIターミナル直接操作プロジェクトの調査一次資料。`rag/sour
 - [OSC 133 - Shell Integration (Contour Terminal)](sources/completion-detection/contour-osc-133-spec.md) — OSC 133のA/B/C/Dを書式(OSC 133;Cmd[;Params]ST)とパラメータ付きで明示した仕様ページ。
   - 出典: <https://contour-terminal.org/vt-extensions/osc-133-shell-integration/> (spec, 6171 chars)
   - 効きどころ: パラメータ(click_events, cmdline_url, exit code)まで含むパース仕様。read層でOSC 133を解釈する際の実装基準。
+- [Cursor CLI Agent Client Protocol](sources/completion-detection/cursor-cli-acp-2026-08-24.md) — Cursor Agent CLIをACP serverとして起動し、構造化session/promptで操作する公式仕様。
+  - 出典: <https://prod.cursor.com/docs/cli/acp> (official_docs, 35626 chars)
+  - 効きどころ: TUI adapterと比較する構造化persistent harness経路、および将来のdone境界候補。
+- [Cursor Hooks](sources/completion-detection/cursor-hooks-2026-08-24.md) — Cursorのhook配置、lifecycle event、stop/sessionStart payloadとcommand実行契約。
+  - 出典: <https://prod.cursor.com/docs/hooks> (official_docs, 96742 chars)
+  - 効きどころ: Cursor harness固有のsession相関と完了検出adapterを設計する一次根拠。
 - [expect(1) man page (Don Libes)](sources/completion-detection/expect-man-page.md) — Don LibesによるExpect公式man。expect/spawn/sendとglob/-re/-exパターン、timeoutやprompt照合の挙動。
   - 出典: <https://www.tcl-lang.org/man/expect5.31/expect.1.html> (man, 76740 chars)
   - 効きどころ: prompt正規表現待ち受けの原典。pexpectが模した照合セマンティクスとtimeout設計の権威ソース。
@@ -299,8 +305,17 @@ AIターミナル直接操作プロジェクトの調査一次資料。`rag/sour
   - 出典: <https://invisible-island.net/xterm/xterm-paste64.html> (spec, 16092 chars)
   - 効きどころ: PTYへ「貼り付け相当」のテキストを送る際、ブラケットペーストの開始/終了マーカーと、その保護が制御文字混入には無力である(=送る前に我々がサニタイズ責任を持つ)という設計上の前提を一次仕様で確定できる。
 
-## agent-launchers — 4件
+## agent-launchers — 7件
 
+- [Cursor Agent CLI installation](sources/agent-launchers/cursor-agent-cli-installation-2026-08-24.md) — Cursor Agent CLIの公式installer、cursor-agent/agentコマンド、update経路の公式仕様。
+  - 出典: <https://cursor.com/docs/cli/installation> (official_docs, 7794 chars)
+  - 効きどころ: 工場とAitermが独自tarballでなく標準installer・self-updateを使う根拠。
+- [Cursor Agent CLI overview](sources/agent-launchers/cursor-agent-cli-overview-2026-08-24.md) — Cursor Agent CLIの対話TUI、非対話print、モデル選択、session継続、権限・sandboxの公式仕様。
+  - 出典: <https://cursor.com/docs/cli/overview> (official_docs, 12074 chars)
+  - 効きどころ: Aitermのcursor-cli harness起動引数と永続session契約の一次根拠。
+- [Cursor Plugins Reference](sources/agent-launchers/cursor-plugins-reference-2026-08-24.md) — Cursor plugin manifest、component discovery、hooks/hooks.jsonの公式仕様。
+  - 出典: <https://prod.cursor.com/docs/reference/plugins> (official-docs, 42122 chars)
+  - 効きどころ: Aitermのlaunch単位Cursor pluginがuser/project設定を書換えずStop hookを加算する根拠。
 - [Grok Build CLI model, reasoning effort, and sandbox flags](sources/agent-launchers/grok-build-cli-agent-parity-e5fd481.md) — Grok Build TUIの--model、--reasoning-effort（--effort alias）、--sandbox引数の一次実装。
   - 出典: <https://raw.githubusercontent.com/xai-org/grok-build/e5fd4816d43260c15ba785f103990c1ed6cea230/crates/codegen/xai-grok-pager/src/app/cli.rs> (official_source, 59351 chars)
   - 効きどころ: grok_agent/composer_agentの起動時model・effort・read-only同等化の根拠。

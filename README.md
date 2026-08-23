@@ -1,4 +1,4 @@
-> **From any MCP client, launch Claude, Codex, Grok, or Composer — cross-vendor or same-vendor — inside a persistent interactive TUI, with native features such as Codex slash commands and [`$imagegen`](https://learn.chatgpt.com/docs/image-generation#generate-or-edit-an-image) available.**
+> **From any MCP client, launch Claude Code, Codex CLI, Grok CLI, or Cursor Agent CLI through one harness API inside a persistent interactive TUI.**
 
 <p align="center">
   <img src=".github/og.png" alt="Aiterm — a shared forest observatory where different intelligences work in one persistent execution space" width="100%">
@@ -16,7 +16,7 @@
 
 > *(日本語: [README.ja.md](README.ja.md))*
 
-> **Let your AI orchestrate other AIs.** From any MCP client, one call spawns a coding agent (Claude, Codex, Grok, or Composer) inside a persistent terminal and hands you a session to drive: read what it's doing token-reduced, send it the next instruction. The caller and launched vendor are independent: Claude can launch Claude or Codex, and Codex can launch Claude or Codex.
+> **Let your AI orchestrate other AIs.** One `agent_launch` call selects the execution harness separately from its model and hands you a persistent session to drive. Cursor can run GPT, Claude, or Grok while Cursor still owns the session, hooks, and transcript.
 >
 > **What it is:** one persistent MCP terminal your AI drives — and can launch other coding agents into. `ssh`, `docker exec`, a REPL, or another agent's TUI all nest inside that one terminal as just text you send in. The mechanism is deliberately plain — your MCP client drives the other agent's terminal turn by turn: no hidden protocol, no separate aiterm-owned shared-memory layer, no autonomous negotiation. Launched agents still read the normal project and vendor memory/configuration that a direct CLI launch would use.
 >
@@ -94,7 +94,9 @@ toolchain behind kitepon.dev's products.
 
 **Measured, not claimed:** in the recorded 203-test benchmark, a `pty_read` puts **~7.1× fewer tokens** in your context than the raw log — and the pass/fail verdict survives the fold. → [When to reach for it vs. the built-in shell](#when-to-reach-for-it-vs-the-built-in-shell)
 
-Fourteen tools: six **PTY tools** — `pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list` — to open, drive, and read one persistent terminal, four **agent launchers** — `claude_agent` / `codex_agent` / `grok_agent` / `composer_agent` — that each start another coding agent's TUI inside a fresh one, `agent_configure` to change a running Claude/Codex/Grok/Composer session's model and effort without restarting it, `claude_turn` for durable structured issue/recovery, `claude_approval` for correlated Claude approval prompts, and `diagnostics` for safe factory readiness. The backend is **tmux**, so sessions survive even if the MCP server or the AI client restarts.
+Fifteen tools: six **PTY tools** — `pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list` — to open, drive, and read one persistent terminal; one canonical **agent launcher**, `agent_launch`, which selects `claude-code`, `codex-cli`, `grok-cli`, or `cursor-cli` as the execution harness; four deprecated launcher aliases kept for migration; `agent_configure`; `claude_turn`; `claude_approval`; and `diagnostics`. The backend is **tmux**, so sessions survive even if the MCP server or the AI client restarts.
+
+**v0.28.0 separates the execution harness from the model.** The harness owns the agent loop, authentication, hooks, session, and transcript; `model` is what that harness runs. Cursor Agent CLI can therefore select GPT, Claude, or Grok without changing the completion contract from Cursor hooks to another vendor's. Grok Composer is a Grok CLI model preset, not another harness: use `harness: "grok-cli", model: "grok-composer-2.5-fast"`. The old four launcher tools are thin compatibility aliases over the same implementation.
 
 **v0.25.2 stabilizes repeated in-place configuration changes, including Grok 4.6.** If Grok Build
 1.0.3 redraws before its `/model` success notice can be observed, aiterm confirms the requested model/effort
@@ -165,7 +167,7 @@ collection is off by default and performs no network I/O. It ships via
 tag-triggered CI with npm provenance (OIDC Trusted Publishing); the GitHub
 Release re-registers the Official MCP Registry entry.
 
-**Status:** actively maintained · the newcomer here, betting on a different shape (see [vs. the alternatives](#vs-the-alternatives)) · runs on Linux · WSL2 · macOS · native Windows (tmux on POSIX, the tmux-CLI-compatible [psmux](https://github.com/psmux/psmux) on native Windows — all four launchers and correlated completion included, no WSL required) · MIT · see the [CHANGELOG](CHANGELOG.md).
+**Status:** actively maintained · the newcomer here, betting on a different shape (see [vs. the alternatives](#vs-the-alternatives)) · runs on Linux · WSL2 · macOS · native Windows (tmux on POSIX, the tmux-CLI-compatible [psmux](https://github.com/psmux/psmux) on native Windows — no WSL required) · MIT · see the [CHANGELOG](CHANGELOG.md).
 
 ## Why now
 
@@ -194,16 +196,16 @@ pty_read(id, { wait: true })       → read the token-reduced output, completion
 
 ### 2. Launch other coding agents into that terminal — the orchestration flagship
 
-The same primitive hosts another agent's TUI. Four launchers each start one vendor's interactive coding-agent TUI inside a fresh persistent terminal and return a `session_id`. The launched process sees the same project and user environment as a direct CLI invocation: normal configuration, MCPs, plugins, skills, permissions, trust decisions, memory, and history are not copied, filtered, or replaced. Aiterm adds only completion correlation and a non-user sub-agent context containing `role=subagent`, the parent session, delegation depth, lineage, and `delegation_allowed=true`. Nested delegation is supported: a grandchild receives depth 2 and the extended lineage rather than being forbidden from launching another agent.
+The same primitive hosts another agent's TUI. `agent_launch` starts a selected execution harness inside a fresh persistent terminal and returns a `session_id`. `harness` names the component that owns the agent loop, authentication, hooks, session, and transcript; `model` remains an independent choice. The launched process sees the same project and user environment as a direct CLI invocation: normal configuration, MCPs, plugins, skills, permissions, trust decisions, memory, and history are not copied, filtered, or replaced. Aiterm adds only completion correlation and a non-user sub-agent context containing `role=subagent`, the parent session, delegation depth, lineage, and `delegation_allowed=true`.
 
-The human-readable launch text is accompanied by an `aiterm.agent-launch-result.v1` structured receipt, so durable callers never parse display text for the session handle; when the launch carries an initial `prompt`, the receipt also includes the `event_cursor`, a ready-made `wait_command` for the completion waiter, and a `submit_residue` observation (`true` = the prompt is likely still sitting unsubmitted in the composer — the hint explains recovery; `false` = no residue observed, not a proof of submission; `null` = not applicable). From there you drive it with the same `pty_read` / `pty_send` you'd use on any shell. Codex completion comes from its normal durable rollout transcript's `task_complete`; Grok/Composer use their normal session events; Claude receives a launch-specific Stop hook settings addition while still loading normal user/project/local settings. Sending to an agent session is a non-blocking **dispatch** — the call returns immediately with an `event_cursor`, and completion arrives via [`aiterm-wait`](#completion-push-for-parent-agents-aiterm-wait). Durable machine callers use `claude_turn({ action: "issue" | "recover", session_id, operation_id, ... })`: it returns fixed `accepted` / `pending` / `completed` / `unknown` states without parsing human-facing errors, never resends during recovery, and includes exact `raw_output` only for a verified completion. An initial `prompt` on `claude_agent`/`codex_agent` is submitted through the same ready gate and the launcher returns without waiting; on Grok/Composer it is passed on the CLI's argv. This needs the vendor's own CLI installed and authenticated — see [Requirements](#requirements).
+The human-readable launch text is accompanied by an `aiterm.agent-launch-result.v1` structured receipt containing the canonical `harness`; the old `provider` field remains for compatibility. The same `harness` is carried by agent dispatch, `aiterm-wait`, `agent_configure`, and agent rows in `pty_list`, while their old vendor/provider/agent fields remain compatibility fields. Codex completion comes from its normal durable rollout transcript, Grok CLI from its normal session events, Claude Code from a launch-specific Stop hook settings addition, and Cursor from its normal agent transcript's terminal `turn_ended` record. Sending to any agent session is a non-blocking **dispatch** — the call returns immediately with an opaque, harness-specific integer `event_cursor`, and completion arrives via [`aiterm-wait`](#completion-push-for-parent-agents-aiterm-wait).
 
-`codex_agent`, `grok_agent`, and `composer_agent` also accept an optional `write_scope`: either `"read-only"` or a human-readable description of writable paths. A supplied value is retained in the launch receipt, session metadata, and `pty_list`. For all three launchers, `write_scope: "read-only"` is an effective boundary: aiterm adds the CLI's `--sandbox read-only` flag. A path description remains declaration-only because none of these CLI launch surfaces provides an equivalent path allowlist flag; that case returns `write_scope_enforcement: "declaration_only_unsupported"`. Omitting `write_scope` preserves prior behavior.
+`agent_launch` accepts an optional `write_scope`: either `"read-only"` or a human-readable description of writable paths. Codex/Grok use `--sandbox read-only`; Cursor uses its official read-only `--mode ask`. A path description remains declaration-only because these CLI launch surfaces provide no equivalent path allowlist flag.
 
 For a correlated Claude turn stopped at `Do you want to proceed?`, use `claude_approval(action: "inspect", ...)` to capture the active operation and SHA-256 screen digest, review the displayed command, then call `respond` with that exact digest and either `approve_once` or `deny`. The relay rechecks the operation and screen under the send lock, never exposes arbitrary input or permanent approval, keeps the active marker intact, and records a prompt-free owner-only receipt. `pty_send(force: true)` does not bypass this boundary.
 
 ```text
-codex_agent({ session_name: "codex1", cwd: "/repo",
+agent_launch({ harness: "codex-cli", session_name: "codex1", cwd: "/repo",
               prompt: "port test/legacy.py to vitest",
               model: "gpt-5.6-sol", reasoning_effort: "high",
               write_scope: "test/ only; no commit" })
@@ -215,14 +217,14 @@ $ aiterm-wait --session codex1 --cursor <event_cursor>   # never in the parent's
 pty_read("codex1", { agent_transcript: true })           → collect the full answer
 ```
 
-One call per model, so the tool name itself tells you which model you get:
+The canonical harness choices are:
 
-| Tool | Launches | Key args |
+| `harness` | Launches | Notes |
 | --- | --- | --- |
-| `claude_agent` | Claude Code CLI (Anthropic) | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?` (`low`/`medium`/`high`/`xhigh`/`max`), `env_vars?`, `cwd?`, `session_name?`, `launch_operation_id?` |
-| `codex_agent` | Codex CLI (OpenAI; terminal config/CLI default unless overridden) | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?` (`low`/`medium`/`high`/`xhigh`/`max`/`ultra`; ultra enables proactive automatic delegation), `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
-| `grok_agent` | Grok Build, model `grok-4.6` by default (`model?` overrides) (xAI) | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?` (vendor-supported value), `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
-| `composer_agent` | Grok Build, model `grok-composer-2.5-fast` by default (`model?` overrides); every model is live-catalog checked (xAI) | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?` (vendor-supported value), `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
+| `claude-code` | Claude Code CLI | Claude model and effort controls; correlated Stop hook |
+| `codex-cli` | Codex CLI | OpenAI model and effort controls; durable rollout completion |
+| `grok-cli` | Grok Build CLI | Grok or Composer model selected with `model`; live catalog check |
+| `cursor-cli` | Cursor Agent CLI | GPT, Claude, Grok, or another Cursor catalog model; normal transcript completion |
 
 `env_vars` is an allowlist of environment-variable **names**, not a name/value map. At launch,
 aiterm reads each valid name from its current MCP process, shell-quotes present values, and places
@@ -233,7 +235,7 @@ PTY launch command and retained in aiterm's per-session `.lastcmd`; the launched
 processes with access to the same OS user may read them. Use this for non-secret seat identity and
 workflow variables, not as a secret transport.
 
-The vendor CLI must be installed and authenticated (`claude` for `claude_agent`; `codex` for `codex_agent`; `grok` for both Grok tools). aiterm resolves the binary via `CLAUDE_BIN` / `CODEX_BIN` / `GROK_BIN`, then each documented default location, then `PATH`. Prerequisites are checked **before** a session exists: empty `model` values and unsupported effort values are rejected up front; a missing CLI binary or a nonexistent `cwd` fails for all four. Before creating a Claude session, aiterm also requires a successful structured `claude auth status --json` result with `loggedIn: true`; unavailable, malformed, or failed authentication leaves **zero leftover session**. All launchers use the normal vendor-owned credential and configuration stores in place. No launcher creates a fake `HOME`, a private `CODEX_HOME`/`GROK_HOME`, or a snapshot of project/user configuration.
+The selected harness CLI must be installed and authenticated. Aiterm resolves `CLAUDE_BIN` / `CODEX_BIN` / `GROK_BIN` / `CURSOR_AGENT_BIN`, then the documented default binary, then `PATH`. Cursor resolution deliberately uses `cursor-agent`, never the ambiguous `agent` name. Claude and Cursor authentication are checked before a PTY exists, so a failed preflight leaves no session. All harnesses use their normal vendor-owned credential and configuration stores in place.
 
 Portable fork is optional. When `throughline_source_session` is present, `prompt` is the required
 new mission and `launch_operation_id` cannot be combined with it. aiterm resolves Throughline via
@@ -242,9 +244,9 @@ places its returned context before a fixed separator and the mission. This route
 `throughline >= 0.9.0`; it reads the source memory without changing that database's session
 ownership. No Throughline dependency is needed when the field is omitted.
 
-All four launchers forward `model` and `reasoning_effort` through public CLI flags. Explicit Grok/Composer models and Composer's default model are checked against the current `grok models` catalog before a PTY exists; missing models are errors, with no cache, retry, or fallback to another model. Pass an absolute path for `cwd` — `~` is not expanded. Durable callers can make a promptless Claude launch exactly replayable by passing an explicit `session_name` and `launch_operation_id`. Claude adds a launch-local settings file only for the correlated Stop hook and loads it together with normal `user,project,local` setting sources; it does not replace normal hooks, MCPs, plugins, permissions, or trust state. The hook event contains no answer body, and the bounded owner-only result is returned by `pty_read({ agent_transcript:true })` without reading Claude's private transcript. While a correlated Claude turn is active, raw sends and non-interrupt keys are rejected. Exact `/login` and `/logout` dispatches are rejected so shared authentication is repaired once in a normal terminal. Codex reads its normal rollout store; Grok/Composer read their normal session event/history files. Before dispatch, Codex waits for an idle TUI, while Grok/Composer additionally require the vendor's structured `mcp_init_completed` event so a visible input box cannot accept a prompt too early. Correlated completion works for all four vendors on Linux, WSL2, macOS, and native Windows. On native Windows the Grok/Composer launchers start only the Windows-native `grok.exe` (a WSL-side grok is rejected before a session is created, so vendor auth and session records never split across an OS boundary), and Claude/Codex completion reads the same Windows-side hook/rollout records the vendors write.
+Harness adapters translate `model` and `reasoning_effort` into each CLI's public controls. Explicit Grok models are checked against `grok models`; Cursor combines a base model such as `gpt-5.6-luna` with a separate effort such as `high`, checks the resulting current catalog ID, and uses Cursor's standard model picker for in-session changes. Missing models are errors, with no cache, retry, or fallback. Claude adds only launch-local Stop-hook settings, Codex reads its normal rollout store, Grok reads its normal session event/history, and Cursor binds its normal agent transcript with the launch ID. Pass an absolute `cwd`; `~` is not expanded.
 
-There is no hidden protocol between agents: a launched Claude, Codex, Grok, or Composer is another user-visible persistent terminal session. The MCP client drives that TUI with ordinary PTY operations, and a human can attach to watch or take over.
+There is no hidden protocol between agents: every launched harness is another user-visible persistent terminal session. The MCP client drives that TUI with ordinary PTY operations, and a human can attach to watch or take over.
 
 ## Demo
 
@@ -299,7 +301,7 @@ The only edits to the captures above are the two `⋮` lines (a long head/tail r
 Restart Claude Code, then verify the connection:
 
 ```bash
-/mcp        # aiterm should show as connected, exposing 14 tools
+/mcp        # aiterm should show as connected, exposing 15 tools
 ```
 
 Your first session — four calls, one persistent terminal:
@@ -314,7 +316,7 @@ pty_close("t1")                     → terminal released
 `pty_close` is idempotent and returns a structured `closed` / `already_closed`
 receipt, so durable callers can retry the same `session_id` after losing the MCP response.
 
-That's it. The terminal in `t1` is real and persistent — `ssh`, `docker exec`, a REPL, or a launched agent's TUI are just things that live inside it. To launch a worker agent instead, one call does it: `codex_agent()` returns a `session_id` you drive with the same `pty_read` / `pty_send`.
+That's it. The terminal in `t1` is real and persistent — `ssh`, `docker exec`, a REPL, or a launched agent's TUI are just things that live inside it. To launch a worker agent instead, one call does it: `agent_launch({ harness: "codex-cli" })` returns a `session_id` you drive with the same `pty_read` / `pty_send`.
 
 **Prefer a global install, or a different client?**
 
@@ -340,11 +342,11 @@ The terminal is real and shared, so a human *can* jump in ([A human can watch](#
 
 ```mermaid
 flowchart LR
-    AI["AI / MCP client<br/>(the orchestrator)"] -->|"pty_send · agent_configure · claude_agent · claude_turn · claude_approval · codex_agent<br/>grok_agent · composer_agent · diagnostics"| S["aiterm-mcp<br/>stdio MCP · 14 tools"]
+    AI["AI / MCP client<br/>(the orchestrator)"] -->|"pty_send · agent_launch · agent_configure · claude_turn · claude_approval<br/>legacy launcher aliases · diagnostics"| S["aiterm-mcp<br/>stdio MCP · 15 tools"]
     S -->|"pty_read<br/>token-reduced"| AI
     S -->|"tmux send-keys<br/>capture-pane"| P["persistent PTYs<br/>tmux · survive restarts"]
     P -->|"ssh · docker · repl"| R["nested<br/>remote · container · REPL"]
-    P -->|"launches a fresh PTY per agent"| A["another coding-agent TUI<br/>Claude · Codex · Grok · Composer"]
+    P -->|"launches a fresh PTY per agent"| A["another coding-agent harness<br/>Claude Code · Codex CLI · Grok CLI · Cursor CLI"]
 ```
 
 One PTY is the only primitive. Everything else — SSH, containers, REPLs, and the launched agent TUIs — is just something interactive running inside a persistent terminal, driven with the same `pty_send` / `pty_read`. Each launcher opens its own fresh PTY. Because the PTYs live in tmux, sessions outlive the MCP server and the AI client.
@@ -393,7 +395,7 @@ aiterm sits at the intersection of two families: terminal-driving MCP servers, a
 | --- | --- | --- | --- | --- |
 | Persistent session | ✅ tmux, survives restarts | ❌ new shell every call | ⚠️ varies | ✅ tmux |
 | SSH / containers / REPLs | nest with one `pty_send` | reconnect every command | ⚠️ often separate tools | ✅ tmux (human drives) |
-| Launch another agent in one call | ✅ `claude_agent` / `codex_agent` / `grok_agent` / `composer_agent` | ❌ | ❌ | ⚠️ agents join a human-run tmux via a CLI + skills |
+| Launch another agent in one call | ✅ `agent_launch(harness=…)` | ❌ | ❌ | ⚠️ agents join a human-run tmux via a CLI + skills |
 | Headless (no human at a tmux) | ✅ MCP-driven, programmatic | ✅ | ⚠️ varies | ❌ built around a human in the tmux |
 | MCP-native (any MCP client) | ✅ one `claude mcp add` | ✅ | ✅ (they are MCPs) | ❌ tmux config + CLI + Agent Skills |
 | Token-reduced reads | ✅ per-command reducers | ❌ raw output | ⚠️ rarely | ❌ raw tmux |
@@ -409,7 +411,7 @@ aiterm takes the same core insight — the terminal as the meeting point — and
 
 1. **Headless by construction.** Because aiterm is driven programmatically over MCP, an AI can launch and drive another agent with *no human sitting in the tmux* — from an orchestration loop, a CI step, or a cron job. The shared-tmux tools lead with a human at the keyboard (their docs center on interactive pane navigation), so unattended operation isn't their native mode; aiterm's is.
 2. **MCP-native, not a workflow you adopt.** aiterm is a stdio MCP server: one `claude mcp add` line and it works as structured tools in any MCP client that speaks stdio (tested in Claude Code; Cursor, Cline, and Claude Desktop speak the same protocol and should work the same way). It doesn't ask you to adopt a tmux config, learn pane navigation, or install skills into your setup — the client already knows how to call tools.
-3. **Launching an agent is one tool call — an orchestration primitive.** `codex_agent()` spawns Codex in a persistent terminal and returns a session you drive immediately. You don't arrange panes or paste between them by hand; the launch, the steering, and the reads are all tool calls the orchestrating model can make on its own.
+3. **Launching an agent is one tool call — an orchestration primitive.** `agent_launch({ harness: "codex-cli" })` spawns Codex in a persistent terminal and returns a session you drive immediately. You don't arrange panes or paste between them by hand; the launch, the steering, and the reads are all tool calls the orchestrating model can make on its own.
 
 On top of that sits a productized layer a raw tmux bridge doesn't have: **token-reduced reads**, **5-layer completion detection**, and a **destructive-command tripwire**. None of this makes the human-in-the-tmux model wrong — it's a different, complementary bet on where the human is standing.
 
@@ -422,8 +424,10 @@ On top of that sits a productized layer a raw tmux bridge doesn't have: **token-
 | `pty_read` | Read output, token-reduced (incremental by default) | `session_id`, `wait`, `until`, `until_regex`, `timeout`, `screen`, `full`, `lines`, `line_range`, `raw`, `rtk`, `agent_transcript`, `operation_id` |
 | `pty_key` | Send a control key | `session_id`, `key` (`C-c`/`Enter`/`Up`…) |
 | `pty_close` | Close idempotently; return `closed` / `already_closed` | `session_id` |
-| `pty_list` | List sessions (agent rows carry `agent=<kind>` metadata) | (none) |
-| `agent_configure` | Change model/effort in a running Claude, Codex, Grok, or Composer session without restarting it | `session_id`, `model?`, `reasoning_effort?` |
+| `pty_list` | List sessions (agent rows carry canonical `harness=<id>` plus compatibility `agent=<kind>`) | (none) |
+| `agent_launch` | Canonical agent launch; harness and model are independent | `harness`, `prompt?`, `model?`, `reasoning_effort?`, `cwd?`, `write_scope?` |
+| `claude_agent` / `codex_agent` / `grok_agent` / `composer_agent` | Deprecated compatibility aliases | legacy launcher arguments |
+| `agent_configure` | Change model/effort in a running Claude, Codex, Grok, Composer, or Cursor session without restarting it | `session_id`, `model?`, `reasoning_effort?` |
 | `claude_turn` | Issue (dispatch-only) or recover one correlated Claude operation | `action`, `session_id`, `operation_id`, `text?` |
 | `claude_approval` | Inspect or answer the current correlated Claude approval prompt | `action`, `session_id`, `operation_id?`, `approval_choice?`, `observed_prompt_digest?` |
 | `diagnostics` | Read-only factory readiness as machine-readable JSON | (none) |
@@ -436,20 +440,20 @@ On top of that sits a productized layer a raw tmux bridge doesn't have: **token-
 
 Consumer flow is `aiterm-runtime-errors snapshot`, then `aiterm-runtime-errors ack --cursor N` after durable ingestion. Operators can use `resolve|reopen --fingerprint SHA256`. MCP collection and diagnostic reads run in timeout-bounded child processes, so a FIFO or stalled filesystem cannot block terminal work; child failure emits only the fixed store diagnostic. Store mutation uses a bounded bakery ticket queue: every waiter owns a never-reused ticket containing PID, process-start identity, and an owner token, so dead owners are removed by unique filename without fixed-path reclaim ABA. The queue deadline measures lack of progress by the same head owner, not total wait behind healthy predecessors; normal polling uses the native process-liveness check and validates process-start identity only when a blocker stalls. Worker deadlines use forced termination so a SIGTERM-ignoring child cannot mutate state after timeout. POSIX state is atomically replaced under `$XDG_STATE_HOME/aiterm-mcp/` (default `~/.local/state/aiterm-mcp/`) with owner/mode rechecked on every read. Windows native uses `%LOCALAPPDATA%\aiterm-mcp\`; each DACL is rebuilt and read back as one non-inherited FullControl ACE for the current SID. Windows path/DACL/timeout behavior is covered by pure tests in this change; no new Windows integration success is claimed.
 
-### Interactive agent launchers
+### Interactive agent harnesses
 
-Each launcher starts a specific vendor's interactive coding-agent TUI inside a fresh persistent PTY and returns its `session_id` — from there you drive it with plain `pty_read` / `pty_send`, exactly like any other session. One tool per model, so the tool name itself tells you which model you get. The TUI is a full-screen app, so read it with `pty_read({ screen: true })` for the rendered view.
+`agent_launch` starts a selected harness's interactive coding-agent TUI inside a fresh persistent PTY and returns its `session_id`. The harness owns the agent loop, authentication, hooks, session, and transcript; `model` is independent. The TUI is a full-screen app, so read it with `pty_read({ screen: true })` for the rendered view.
 
-`agent_configure({ session_id, model?, reasoning_effort? })` changes a running Claude, Codex, Grok, or Composer TUI through the vendor's standard controls, preserving the PTY and conversation context. Grok/Composer use `/model <model> [effort]` or `/effort <effort>` after the same live model-catalog check. Claude Code's native `/model` and `/effort` commands also save those choices as defaults for new Claude sessions.
+`agent_configure({ session_id, model?, reasoning_effort? })` changes a running Claude, Codex, Grok, Composer, or Cursor TUI through the harness's standard controls, preserving the PTY and conversation context.
 
-| Tool | Launches | Key args |
+| `harness` | Launches | Model behavior |
 | --- | --- | --- |
-| `claude_agent` | Claude Code CLI (Anthropic) | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?` (`low`/`medium`/`high`/`xhigh`/`max`), `env_vars?`, `cwd?`, `session_name?`, `launch_operation_id?` |
-| `codex_agent` | Codex CLI (OpenAI; terminal config/CLI default unless overridden) | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?` (`low`/`medium`/`high`/`xhigh`/`max`/`ultra`; ultra enables proactive automatic delegation), `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
-| `grok_agent` | Grok Build, model `grok-4.6` by default (`model?` overrides) (xAI) | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?` (vendor-supported value), `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
-| `composer_agent` | Grok Build, model `grok-composer-2.5-fast` by default (`model?` overrides); every model is live-catalog checked (xAI) | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?` (vendor-supported value), `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
+| `claude-code` | Claude Code CLI | Claude catalog model; native effort controls |
+| `codex-cli` | Codex CLI | OpenAI catalog model; native effort controls |
+| `grok-cli` | Grok Build CLI | Grok/Composer catalog model; Composer is `model: "grok-composer-2.5-fast"` |
+| `cursor-cli` | Cursor Agent CLI | Cursor catalog model, including GPT/Claude/Grok; effort uses model parameter override |
 
-The vendor CLI must be installed and authenticated (`claude` for `claude_agent`; `codex` for `codex_agent`; `grok` for both Grok tools). Binary resolution uses `CLAUDE_BIN` / `CODEX_BIN` / `GROK_BIN`, then each documented default location, then `PATH`. Missing binaries, invalid model/effort values, unavailable Grok/Composer catalog models, and nonexistent `cwd` fail before a session is created. Claude additionally requires a structured healthy authentication status before any PTY exists, and correlated Claude sessions reject `/login` and `/logout`; repair authentication once in a normal terminal. All four launchers share the normal project/user environment and the same non-blocking dispatch contract. Claude, Codex, Grok, and Composer depth-1 live smokes and a Claude depth-2 nested-delegation smoke are green; fixture coverage remains a separate claim. Native Windows supports all four launchers with correlated completion (Claude verified with a live end-to-end launch on psmux ≥ 3.3.8; Grok launches only the Windows-native `grok.exe`).
+The selected harness CLI must be installed and authenticated. Use each product owner's official installer and updater; Aiterm does not distribute alternate CLI tarballs. For Cursor Agent CLI, use `curl https://cursor.com/install -fsS | bash` on macOS/Linux/WSL or `irm 'https://cursor.com/install?win32=true' | iex` on native Windows, authenticate once with `agent login`, and update with `agent update`; Aiterm invokes the unambiguous `cursor-agent` binary. Missing binaries, invalid model/effort values, unavailable Grok catalog models, and nonexistent `cwd` fail before a session exists.
 
 Set `throughline_source_session` together with a non-empty mission in `prompt` to prepend
 Throughline's read-only handoff context. This optional route requires `throughline >= 0.9.0`,
@@ -467,7 +471,7 @@ When an agent's answer is longer than the on-screen tail (pane height ≈ 24 lin
 
 As of v0.16 a parent agent **never blocks** on aiterm — there is no wait parameter anywhere (v0.17 makes the waiter's exit codes mirror its outcome). The whole flow is dispatch + one universal waiter:
 
-1. Launch the child (`claude_agent` / `codex_agent` / ...; every launch shares the normal project/user environment and adds only completion correlation plus lineage). Send a turn with plain `pty_send` (or `claude_turn issue` for durable Claude operations). The call passes the TUI ready gate, submits, and returns immediately with an `event_cursor` in its structured receipt.
+1. Launch the child with `agent_launch({ harness: ... })`; every launch shares the normal project/user environment and adds only completion correlation plus lineage. Send a turn with plain `pty_send` (or `claude_turn issue` for durable Claude operations). The call returns immediately with an `event_cursor` in its structured receipt.
 2. Run `aiterm-wait --session <id> --cursor <event_cursor> [--operation sha256:<64hex>] [--timeout <sec>]`. It observes the vendor-native completion source, plus Claude's additive launch hook, as a **pure reader** and exits with a one-line `aiterm.agent-wait-result.v1` receipt. **Exit ≠ done**: the receipt's `outcome` is authoritative (`0` = `done`, `3` = `timeout`, `4` = `closed`, `1` = error).
 3. **The parent never runs the waiter in its own foreground.** Waiting is correct — but the waiter is a separate process, not the parent's turn. A harness that re-invokes its agent when a background task exits (Claude Code) runs the waiter **in the background** and gets woken with zero polling. So that this is not left to interpretation, aiterm reads `clientInfo.name` from the MCP `initialize` handshake and its receipts name the concrete invocation for the detected host — for Claude Code, literally `Bash(command: "aiterm-wait …", run_in_background: true)`. Unknown or undeclared hosts get the generic "start it as a process that does not block the parent's turn" wording; nothing else about the contract changes. Every receipt leads with the same rule: dispatch and let go, then go do something else or end the turn.
 4. Collect the result exactly as before: `pty_read(agent_transcript: true)`, or `claude_turn recover` for durable Claude operations. The waiter carries the signal, never the payload.
@@ -490,7 +494,7 @@ Each `pty_send` accepts at most 64 KiB of UTF-8 text. Sends to the same session 
 
 ## A human can watch
 
-Sessions live on a shared tmux socket. The `tmux -S … attach -t <id>` line printed by `pty_open` (and by each agent launcher) lets a human attach to the same terminal and intervene (`Ctrl-b d` to detach) — including watching a launched Claude/Codex/Grok/Composer session run and taking the keyboard from your AI mid-task. On native Windows the printed line is the psmux form — `psmux -L <namespace> attach -t <id>` — pointing at the same Windows-native session.
+Sessions live on a shared tmux socket. The `tmux -S … attach -t <id>` line printed by `pty_open` and `agent_launch` lets a human attach to the same terminal and intervene (`Ctrl-b d` to detach), including a Claude/Codex/Grok/Cursor harness session. On native Windows the printed line is the psmux form — `psmux -L <namespace> attach -t <id>` — pointing at the same Windows-native session.
 
 ## Requirements
 
@@ -498,7 +502,7 @@ Sessions live on a shared tmux socket. The `tmux -S … attach -t <id>` line pri
 - **tmux** (runtime prerequisite; check with `tmux -V`. Install with `apt install tmux` / `brew install tmux`)
   - **macOS / Linux / WSL2** run tmux directly. On macOS install it with `brew install tmux` (stock macOS ships none). If your MCP client is launched from the **GUI** rather than a terminal, Homebrew's bin (`/opt/homebrew/bin` on Apple Silicon, `/usr/local/bin` on Intel) may be off its `PATH`; aiterm auto-searches those locations, or set **`AITERM_TMUX=/path/to/tmux`** to point at it explicitly.
   - **Native Windows** has no tmux, so aiterm drives [psmux](https://github.com/psmux/psmux) — a tmux-CLI-compatible native multiplexer — with a per-install `-L` namespace. **No WSL is required.** Install psmux **3.3.8 or newer** (`winget install marlocarlo.psmux`; 3.3.8 is the first release whose `pipe-pane` file sink, byte-exact `paste-buffer` wire, and foreground `#{pane_current_command}` behave the way aiterm's capture/dispatch paths rely on), plus [Git for Windows](https://gitforwindows.org/) whose `bash.exe` becomes the pane shell (System32's `bash.exe` is the WSL launcher and is deliberately not used). Override resolution with **`AITERM_PSMUX`** / **`AITERM_BASH`** when the binaries live elsewhere. You reach Windows tools the same way you reach SSH: `pty_send "powershell.exe …"` nests into PowerShell. `grok_agent`/`composer_agent` launch the **Windows-native** Grok CLI (`%USERPROFILE%\.grok\bin\grok.exe`, or `GROK_BIN` pointing at a `.exe`) as a Windows process, and a WSL-side grok is rejected before a session is created so vendor auth and session records never split across an OS boundary.
-- For the **agent launchers**: the corresponding vendor CLI, installed and authenticated — `claude` for `claude_agent`, `codex` for `codex_agent`, `grok` for `grok_agent` / `composer_agent`. Portable fork additionally needs `throughline >= 0.9.0`; ordinary clean launch does not. (Not needed if you only use the PTY tools.)
+- For **agent harnesses**: the selected CLI, installed and authenticated through its product owner's official path — `claude`, `codex`, `grok`, or Cursor's `cursor-agent`. Portable fork additionally needs `throughline >= 0.9.0`; ordinary clean launch does not. (Not needed if you only use the PTY tools.)
 - Optional: the [`rtk`](https://github.com/rtk-ai/rtk) binary (used by `pty_send`'s `rtk: true` delegation; works fine without it)
 
 ## Known constraints (by design, not bugs)
@@ -506,7 +510,7 @@ Sessions live on a shared tmux socket. The `tmux -S … attach -t <id>` line pri
 - **While nested (ssh / docker / REPL / a launched agent TUI), quiescence cannot fire by design**, because the foreground command is no longer in the shell set (bash/sh/zsh/fish/dash). When nested with no `until` and no `mark`, `pty_read({ wait: true })` returns early as `is_complete=False via nested` (rather than burning the full `timeout`, since no signal can confirm completion there) with a note to pass `until` (a literal substring by default; `until_regex: true` for a regex) or `mark: true` (an exit-code sentinel, auto-detected) for a confirmed completion. For a full-screen agent TUI, read `{ screen: true }` once its output settles.
 - **`is_complete=False` is not a failure.** It means "completion was not observed within `timeout`." For long commands, raise `timeout` or use `until`/`mark`.
 - **The destructive gate is a tripwire, not a sandbox.** It blocks common destructive forms only. It does **not** catch relative-path `rm`, things that become dangerous after `$VAR` expansion, or commands run on the far side of an SSH session — and it does not police what a launched coding agent does inside its own session.
-- **The agent launchers spawn a vendor TUI; they don't wrap or proxy it.** aiterm validates prerequisites and starts the CLI in a persistent PTY — the model, auth, and behavior are the vendor CLI's. There is no hidden inter-agent protocol; "conversation" is your MCP client driving the Claude/Codex/Grok/Composer TUI (send input, read output).
+- **Agent harnesses run their real TUI; aiterm doesn't proxy the model API.** The selected harness owns model choice, authentication, and behavior. There is no hidden inter-agent protocol; the MCP client drives the Claude/Codex/Grok/Cursor TUI with ordinary send/read operations.
 - **`pty_send({ rtk: true })` is single-line only and needs the external `rtk` binary** (passthrough without it). The `pty_read({ rtk: true })` reducer, by contrast, is self-contained and rtk-independent.
 - **The `pytest` reducer matches rtk 0.42.0** on test counts, the rule line, and `FAILURES`-block formatting (locked by regression tests). It **deliberately preserves the full failure reason** on the `FAILED` summary lines (emitted under `-ra`/`-rf`), whereas rtk 0.42.0 truncates the reason at the first `" - "` — a readability choice, so those lines are intentionally not byte-identical to rtk. The `[full output: …]` tee-pointer line rtk appends on large output is not reproduced on the read side.
 - **tmux is started with `-f /dev/null`**, so it does not read `~/.tmux.conf` (to keep behavior reproducible across machines).
@@ -547,13 +551,13 @@ If aiterm let your AI hand a task to another agent — or saved you a round-trip
 
 ## Shared agent environment
 
-All four launchers use the caller's normal project and user environment. Aiterm does not copy,
+All harnesses use the caller's normal project and user environment. Aiterm does not copy,
 symlink, filter, or replace vendor configuration, authentication, MCP, plugin, skill, permission,
 trust, memory, or history stores. Cleanup removes only aiterm-owned launch metadata and completion
 correlation files.
 
 The ordinary environment still comes from the shell/tmux session. When a caller needs a value that
-belongs to the current MCP process rather than the older persistent tmux server, every launcher
+belongs to the current MCP process rather than the older persistent tmux server, every harness
 accepts `env_vars: ["NAME", ...]`. Only those names are refreshed at launch; this is a narrow
 per-launch overlay, not a replacement environment or configuration snapshot.
 

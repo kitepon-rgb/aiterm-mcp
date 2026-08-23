@@ -76,6 +76,7 @@ test("claude_agent: text contentを維持しClaude managed launch receiptをstru
     assert.deepEqual(launch.result.structuredContent, {
       schema: "aiterm.agent-launch-result.v1",
       provider: "claude",
+      harness: "claude-code",
       session_id: sessionId,
       managed_completion: true,
       // promptなしlaunchはturnが走っていない＝完了待ち対象がないため両方null
@@ -125,6 +126,80 @@ test("claude_agent: text contentを維持しClaude managed launch receiptをstru
       session_id: sessionId,
       outcome: "already_closed",
     });
+  } finally {
+    child.kill();
+    await onceExit(child);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("agent_launch: cursor-cli harnessを共通入口からCursor adapterへ振り分ける", { skip }, async () => {
+  const root = fs.mkdtempSync(path.join(shortTmpBase, "aiterm-cursor-launch-"));
+  const fakeCursor = path.join(root, "fake-cursor-agent.sh");
+  fs.writeFileSync(fakeCursor, [
+    "#!/bin/sh",
+    "if [ \"$1\" = status ]; then",
+    "  printf '%s\\n' 'Logged in as cursor-test@example.invalid'",
+    "  exit 0",
+    "fi",
+    "if [ \"$1\" = models ]; then",
+    "  printf '%s\\n' 'Available models' '' 'gpt-test-high - GPT Test High'",
+    "  exit 0",
+    "fi",
+    "printf '%s\\n' 'Cursor Agent' '> '",
+    "while IFS= read -r line; do printf '%s\\n' \"$line\"; done",
+    "",
+  ].join("\n"), { mode: 0o700 });
+  const sessionId = `cursor_common_${Date.now().toString(36)}`;
+  const child = spawn(process.execPath, [ENTRY], {
+    stdio: ["pipe", "pipe", "pipe"],
+    env: {
+      ...process.env,
+      CURSOR_AGENT_BIN: fakeCursor,
+      HOME: root,
+      TMPDIR: root,
+      XDG_RUNTIME_DIR: root,
+    },
+  });
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => { stdout += chunk; });
+  child.stderr.on("data", (chunk) => { stderr += chunk; });
+
+  try {
+    child.stdin.write([
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "cursor-common-launch", version: "0" } } },
+      { jsonrpc: "2.0", method: "notifications/initialized" },
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/call",
+        params: { name: "agent_launch", arguments: { harness: "cursor-cli", session_name: sessionId, model: "gpt-test", reasoning_effort: "high", write_scope: "read-only" } },
+      },
+    ].map((message) => JSON.stringify(message)).join("\n") + "\n");
+    const launched = await waitForResponse(child, () => responseFor(stdout, 2), () => stdout, () => stderr);
+    assert.equal(launched.result.isError, undefined, JSON.stringify(launched.result));
+    assert.deepEqual(launched.result.structuredContent, {
+      schema: "aiterm.agent-launch-result.v1",
+      provider: "cursor",
+      harness: "cursor-cli",
+      session_id: sessionId,
+      managed_completion: true,
+      event_cursor: null,
+      wait_command: null,
+      submit_residue: null,
+      write_scope: "read-only",
+      write_scope_enforcement: "enforced_read_only",
+    });
+    child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "pty_close", arguments: { session_id: sessionId } } })}\n`);
+    const closed = await waitForResponse(child, () => responseFor(stdout, 3), () => stdout, () => stderr);
+    assert.equal(closed.result.structuredContent.outcome, "closed");
+    child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "agent_launch", arguments: { harness: "claude-code", write_scope: "read-only" } } })}\n`);
+    const unsupported = await waitForResponse(child, () => responseFor(stdout, 4), () => stdout, () => stderr);
+    assert.equal(unsupported.result.isError, true);
+    assert.match(unsupported.result.content?.[0]?.text ?? "", /claude-code harnessはwrite_scopeに対応していません/);
   } finally {
     child.kill();
     await onceExit(child);

@@ -1,4 +1,4 @@
-> **任意のMCPクライアントから、Claude・Codex・Grok・Composerをクロスベンダーでも同一ベンダーでも永続対話TUIへ起動する。Codexのスラッシュコマンドや[`$imagegen`](https://learn.chatgpt.com/docs/image-generation#generate-or-edit-an-image)のような固有機能もそのまま使える。**
+> **任意のMCPクライアントから、Claude Code・Codex CLI・Grok CLI・Cursor Agent CLIを単一のharness APIで永続対話TUIへ起動する。**
 
 <p align="center">
   <img src=".github/og.png" alt="Aiterm — 異なる知性が一つの持続する実行現場を共有する森の観測拠点" width="100%">
@@ -16,7 +16,7 @@
 
 > *(English: [README.md](README.md))*
 
-> **あなたの AI に、ほかの AI を操らせる。** 任意の MCP クライアントから 1 回の呼び出しで、コーディングエージェント（Claude・Codex・Grok・Composer）を永続端末の中に起動し、操作用のセッションを手渡す。何をしているかをトークン削減して読み、次の指示を送る。呼び出し元と起動先のベンダーは独立しており、ClaudeからClaude／Codexを、CodexからClaude／Codexを起動できる。
+> **あなたの AI に、ほかの AI を操らせる。** `agent_launch`の1回の呼び出しで、実行基盤harnessとmodelを別々に選び、永続sessionを受け取る。CursorでGPT／Claude／Grokを選んでも、session・hook・transcriptはCursorが所有する。
 >
 > **これは何か:** AI が握る 1 本の永続 MCP 端末——その中に他のコーディングエージェントも起動できる。`ssh`・`docker exec`・REPL・別エージェントの TUI は、すべてその 1 本の端末の中へ「送るだけのテキスト」として入れ子になる。仕組みはあえて素朴——MCP クライアントが相手エージェントの端末を 1 ターンずつ操作するだけ。隠れたプロトコルも・aiterm独自の共有メモリ層も・自律的な交渉も無い。起動したagentは、直接CLIと同じproject／vendorの通常memory・設定を読む。
 >
@@ -94,7 +94,9 @@ host統合は、kitepon.devの製品開発を支える内部基盤
 
 **言葉でなく実測で:** 記録済み203テストのベンチマークでは、`pty_read` はコンテキストに載るトークンを生ログの **約 7.1 分の 1** に減らす。しかも pass/fail の判定は畳んでも残る。→ [組み込みシェルツールとの使い分け](#組み込みシェルツールとの使い分け)
 
-14 ツール: 6 つの **PTY ツール**（`pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list`）で 1 本の永続端末を開き・操作し・読む。加えて 4 つの **エージェント起動ツール**（`claude_agent` / `codex_agent` / `grok_agent` / `composer_agent`）が別のコーディングエージェントの TUI を新しい端末の中に起動し、`agent_configure`が起動中のClaude／Codex／Grok／Composerのmodel・effortを再起動なしで変更し、`claude_turn`がdurable caller向けの構造化issue／recoveryを、`claude_approval`が相関済みClaude承認UI中継を、`diagnostics`が安全なfactory readinessを返す。バックエンドは **tmux** なので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
+15ツール: 6つのPTYツール、正規のagent起動入口`agent_launch`、移行用の旧4alias、`agent_configure`、`claude_turn`、`claude_approval`、`diagnostics`。バックエンドはtmuxなので、MCPサーバやAIクライアントが再起動してもsessionは生き残る。
+
+**v0.28.0では実行基盤harnessとmodelを分離した。** harnessはagent loop・認証・hook・session・transcriptを所有し、modelはその上で選ぶ。Cursor Agent CLIでGPT／Claude／Grokを選んでも完了契約はCursor方式のまま。Composerは別harnessではなく、`harness:"grok-cli", model:"grok-composer-2.5-fast"`で表す。旧4起動ツールは同じ実装へ流れる互換alias。
 
 **v0.25.2ではGrok 4.6を含む同一sessionの連続設定変更を安定化。** Grok Build 1.0.3で
 `/model`の成功通知が再描画により消えても、変更前には無かった要求model／effortが常駐footerへ現れた
@@ -151,7 +153,7 @@ runtime-error store は canonical dotagents config の `collection.enabled: true
 場合だけ収集し、既定OFF、network送信は行いません。tag起点CIのnpm provenance（OIDC Trusted
 Publishing）で公開し、GitHub Release が Official MCP Registry を再登録します。
 
-**状態:** 開発継続中 · この分野では新参で、別の形に賭けている（[既存手段との比較](#既存手段との比較)参照）· 動作対象は Linux · WSL2 · macOS · Windows ネイティブ（4 launcher と相関付き完了を含む）· MIT · [変更履歴](CHANGELOG.md)。
+**状態:** 開発継続中 · この分野では新参で、別の形に賭けている（[既存手段との比較](#既存手段との比較)参照）· 動作対象は Linux · WSL2 · macOS · Windows ネイティブ · MIT · [変更履歴](CHANGELOG.md)。
 
 ## なぜ今
 
@@ -174,14 +176,14 @@ pty_read(id, { wait: true })       → 削減済みの出力を読む（完了�
 
 ### 2. その端末の中に他のコーディングエージェントを起動する — オーケストレーションの旗艦
 
-同じ primitive が別エージェントの TUI を宿す。4 つの起動ツールが、Claude/Codex/Grok/Composer の対話 TUI を新しい永続端末の中に起動し、`session_id` を返す。起動processは直接CLIと同じproject/user環境を使い、通常config、MCP、plugin、skill、permission、trust、memory、historyをcopy・filter・置換しない。aitermが加えるのは完了相関と、`role=subagent`、親session、delegation depth、lineage、`delegation_allowed=true`を持つ非user instructionだけ。孫以降の委譲も許可され、固定depth capはない。
+同じprimitiveが別エージェントのTUIを宿す。`agent_launch`の`harness`はagent loop・認証・hook・session・transcriptを所有する実行基盤、`model`は独立した選択。起動processは直接CLIと同じproject/user環境を使い、通常config、MCP、plugin、skill、permission、trust、memory、historyをcopy・filter・置換しない。
 
-既存の人間向けtextに加えて`aiterm.agent-launch-result.v1` structured receiptも返すため、durable callerは表示文字列を解析せずsession handleを取得できる。Codexは通常rollout transcriptの`task_complete`、Grok/Composerは通常session event、Claudeは通常settingsへ加算したlaunch固有Stop hookを完了正本に使う。agent sessionへの`pty_send`は非ブロックの **dispatch** になり`event_cursor`入りreceiptを即返す。完了通知は`aiterm-wait --session <id> --cursor <event_cursor>`を親のターンを塞がない別processで受ける。durable machine callerは`claude_turn`を使い、recoveryは再送せず、検証済み完了だけがexact `raw_output`を持つ。
+`aiterm.agent-launch-result.v1`は正規`harness`を返し、旧`provider`は互換fieldとして残す。同じ`harness`はagent dispatch、`aiterm-wait`、`agent_configure`、`pty_list`のagent行にも載り、旧vendor／provider／agent fieldは互換用に残る。Codexは通常rollout、Grok CLIは通常session event、Claudeはlaunch固有Stop hook、Cursorは通常agent transcript末尾の`turn_ended`を完了正本に使う。`pty_send`は非ブロックdispatchで、vendor別完了境界を表すopaqueな整数`event_cursor`を返し、完了通知は`aiterm-wait`を親のターンを塞がない別processで受ける。
 
-`codex_agent`・`grok_agent`・`composer_agent`は任意の`write_scope`（`"read-only"`または書込み許可パスの説明）も受ける。指定値はlaunch receipt・session metadata・`pty_list`へ保存する。3 launcherすべてで`write_scope:"read-only"`は実効能力壁となり、aitermがCLIの`--sandbox read-only`を付ける。パス説明をallowlistへ変換する同等CLI引数はないため、そちらだけは`write_scope_enforcement:"declaration_only_unsupported"`を返す。`write_scope`を省略した起動は従来どおりである。
+`agent_launch`は任意の`write_scope`も受ける。Codex／Grokのread-onlyは`--sandbox read-only`、Cursorは公式`--mode ask`で実効化する。path説明は同等CLI引数がないためdeclaration-only。
 
 ```text
-codex_agent({ session_name: "codex1", cwd: "/repo",
+agent_launch({ harness: "codex-cli", session_name: "codex1", cwd: "/repo",
               prompt: "port test/legacy.py to vitest",
               model: "gpt-5.6-sol", reasoning_effort: "high",
               write_scope: "test/ only; no commit" })
@@ -192,14 +194,16 @@ $ aiterm-wait --session codex1 --cursor <event_cursor>   # exit 0=done / 3=timeo
                                     → 操舵し、Codex の次の入力境界で返る
 ```
 
-モデルごとに 1 ツール＝ツール名を見ればどのモデルか分かる:
+正規のharness選択肢:
 
-| ツール | 起動するもの | 主な引数 |
+| `harness` | 起動するもの | modelの扱い |
 | --- | --- | --- |
-| `claude_agent` | Claude Code CLI（Anthropic） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`（`low`/`medium`/`high`/`xhigh`/`max`）, `env_vars?`, `cwd?`, `session_name?` |
-| `codex_agent` | Codex CLI（OpenAI・端末設定／CLI既定、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`（`low`/`medium`/`high`/`xhigh`/`max`/`ultra`）, `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
-| `grok_agent` | Grok Build（xAI、既定`grok-4.5`、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`（vendor対応値）, `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
-| `composer_agent` | Grok Build（xAI、既定`grok-composer-2.5-fast`、`model?`で上書き。全modelをlive catalog照合） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`（vendor対応値）, `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
+| `claude-code` | Claude Code CLI | Claude model／effort |
+| `codex-cli` | Codex CLI | OpenAI model／effort |
+| `grok-cli` | Grok Build CLI | Grok／Composer model、live catalog照合 |
+| `cursor-cli` | Cursor Agent CLI | Cursor catalog上のGPT／Claude／Grok等 |
+
+Cursorの`model`は`gpt-5.6-luna`のようなbase model、`reasoning_effort`は`high`のように別指定する。adapterは現行`model-effort` IDを`cursor-agent models`へ照合し、起動中変更はCursor標準model pickerのparameter editorを使う。不在時は別modelへfallbackしない。
 
 `env_vars`は環境変数の**名前**だけを並べるallowlistであり、name/value mapではない。aitermは
 launcher起動時に現在のMCP processから各名前を読み、存在する値をshell quoteして、その1回のvendor
@@ -208,7 +212,7 @@ launcher起動時に現在のMCP processから各名前を読み、存在する�
 PTYの起動コマンドとして送られ、sessionの`.lastcmd`にも保持されるため、起動先vendorと同じOS userへ
 到達する。秘密転送路ではなく、席identityやworkflow用の非secret変数だけに使う。
 
-各ベンダーのCLIが導入・認証済みであること。CLI不在・不正なmodel/effort・実在しない`cwd`はsession作成前に失敗し、残骸を残さない。ClaudeはさらにPTY作成前に同じCLIの`auth status --json`が`loggedIn:true`を返すことを要求する。4 launcherは通常のvendor credential/config storeをその場で使い、fake `HOME`、private `CODEX_HOME`/`GROK_HOME`、project/user config snapshotを作らない。Claudeだけは完了相関用Stop hook settingsを通常の`user,project,local` settingsへ加算する。Grok/Composerは画面入力欄だけでなく通常sessionの`mcp_init_completed` eventも確認してから送信し、共有MCP初期化中の早送信を防ぐ。相関付きClaudeのactive turn中はC-c以外の`pty_key`と素送信を拒否し、承認UIは`claude_approval`で単発Yes/Noだけを相関付きで中継する。
+選んだharnessのCLIを公式経路で導入・認証しておく。Cursorは`curl https://cursor.com/install -fsS | bash`、`agent login`、更新は`agent update`が公式経路で、Aitermは曖昧な`agent`でなく`cursor-agent`を起動する。CLI不在・未認証・不正引数はsession作成前に明示失敗し、別経路へfallbackしない。
 
 portable forkは任意である。`throughline_source_session`を使う場合、`prompt`は必須の新ミッションとなり、
 `launch_operation_id`とは併用できない。aitermは`THROUGHLINE_BIN`、次に`PATH`からThroughlineを解決し、
@@ -216,7 +220,7 @@ portable forkは任意である。`throughline_source_session`を使う場合、
 この経路だけ`throughline >= 0.9.0`が必要で、元sessionのDB所属は変わらない。引数省略時には
 Throughline自体が不要である。
 
-エージェント間の隠れたプロトコルは無い。起動したClaude/Codex/Grok/Composerは利用者がattachできるもう1本の永続sessionであり、MCPクライアントが通常のPTY操作で駆動する。
+エージェント間の隠れたプロトコルは無い。起動したharnessは利用者がattachできるもう1本の永続sessionであり、MCPクライアントが通常のPTY操作で駆動する。
 
 ## デモ
 
@@ -271,7 +275,7 @@ Throughline自体が不要である。
 Claude Code を再起動して、接続を確認:
 
 ```bash
-/mcp        # aiterm が connected・14 ツール公開、と出る
+/mcp        # aiterm が connected・15 ツール公開、と出る
 ```
 
 最初のセッション——4 回の呼び出しで、1 個の永続端末:
@@ -286,7 +290,7 @@ pty_close("t1")                     → 端末を解放
 `pty_close` は冪等で、`closed` / `already_closed` のstructured receiptを返す。
 MCP応答を失ったdurable callerも同じ`session_id`への再試行だけでclose結果を確定できる。
 
-これだけ。`t1` の端末は本物で永続——`ssh`・`docker exec`・REPL・起動したエージェントの TUI は、そこに住む「もの」に過ぎない。代わりにワーカーのエージェントを起動するのも 1 コール: `codex_agent()` が返す `session_id` を、同じ `pty_read` / `pty_send` で操作する。
+これだけ。`t1` の端末は本物で永続——`ssh`・`docker exec`・REPL・起動したエージェントのTUIは、そこに住む「もの」に過ぎない。ワーカー起動も1コールで、`agent_launch({ harness: "codex-cli" })`が返す`session_id`を同じ`pty_read`／`pty_send`で操作する。
 
 **グローバル導入や別クライアントが良い場合は:**
 
@@ -312,11 +316,11 @@ MCP クライアントが aiterm を stdio 越しにプログラムから駆動�
 
 ```mermaid
 flowchart LR
-    AI["AI / MCP client<br/>(the orchestrator)"] -->|"pty_send · agent_configure · claude_agent · claude_turn · claude_approval · codex_agent<br/>grok_agent · composer_agent · diagnostics"| S["aiterm-mcp<br/>stdio MCP · 14 tools"]
+    AI["AI / MCP client<br/>(the orchestrator)"] -->|"pty_send · agent_launch · agent_configure · claude_turn · claude_approval<br/>旧launcher alias · diagnostics"| S["aiterm-mcp<br/>stdio MCP · 15 tools"]
     S -->|"pty_read<br/>token-reduced"| AI
     S -->|"tmux send-keys<br/>capture-pane"| P["persistent PTYs<br/>tmux · survive restarts"]
     P -->|"ssh · docker · repl"| R["nested<br/>remote · container · REPL"]
-    P -->|"launches a fresh PTY per agent"| A["another coding-agent TUI<br/>Claude · Codex · Grok · Composer"]
+    P -->|"launches a fresh PTY per agent"| A["another coding-agent TUI<br/>Claude · Codex · Grok · Cursor"]
 ```
 
 primitive は「PTY を 1 個握る」ことだけ。それ以外——SSH・コンテナ・REPL・起動したエージェント TUI——は、永続端末の中で動く「対話的な何か」に過ぎず、同じ `pty_send` / `pty_read` で操作する。各起動ツールは自分専用の新しい PTY を開く。PTY は tmux 上にあるので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
@@ -363,7 +367,7 @@ aiterm は 2 つの系譜の交点にいる——端末を操作する MCP サ�
 | --- | --- | --- | --- | --- |
 | 永続セッション | ✅ tmux・再起動を跨ぐ | ❌ 毎回新シェル | ⚠️ まちまち | ✅ tmux |
 | SSH / コンテナ / REPL | `pty_send` 1 回でネスト | 毎コマンド接続し直し | ⚠️ ツールが分かれがち | ✅ tmux（人が操作） |
-| 1 コールで別エージェント起動 | ✅ `codex_agent` / `grok_agent` / `composer_agent` | ❌ | ❌ | ⚠️ 人が動かす tmux に CLI + skills で参加 |
+| 1 コールで別エージェント起動 | ✅ `agent_launch(harness=…)` | ❌ | ❌ | ⚠️ 人が動かす tmux に CLI + skills で参加 |
 | ヘッドレス（人が tmux に居ない） | ✅ MCP 駆動・プログラム的 | ✅ | ⚠️ まちまち | ❌ 人が tmux に居る前提 |
 | MCP ネイティブ（任意の MCP クライアント） | ✅ `claude mcp add` 1 行 | ✅ | ✅（MCP なので） | ❌ tmux 設定 + CLI + Agent Skills |
 | トークン削減読取 | ✅ コマンド別 reducer | ❌ 生出力 | ⚠️ ほぼ無し | ❌ 生 tmux |
@@ -392,8 +396,10 @@ aiterm は同じ核心の洞察——端末を出会いの場にする——を�
 | `pty_read` | 出力を削減して読む（既定は増分） | `session_id`, `wait`, `until`, `until_regex`, `timeout`, `screen`, `full`, `lines`, `line_range`, `raw`, `rtk`, `agent_transcript`, `operation_id` |
 | `pty_key` | 制御キーを送る | `session_id`, `key`（`C-c`/`Enter`/`Up`…） |
 | `pty_close` | 冪等に閉じ、`closed` / `already_closed`を返す | `session_id` |
-| `pty_list` | セッション一覧 | （なし） |
-| `agent_configure` | 起動中のClaude／Codex／Grok／Composerを再起動せずmodel／effort変更 | `session_id`, `model?`, `reasoning_effort?` |
+| `pty_list` | セッション一覧（agent行は正規`harness=<id>`と互換`agent=<kind>`を含む） | （なし） |
+| `agent_launch` | harnessとmodelを別軸で選ぶ正規agent起動入口 | `harness`, `prompt?`, `model?`, `reasoning_effort?`, `cwd?`, `write_scope?` |
+| `claude_agent` / `codex_agent` / `grok_agent` / `composer_agent` | deprecated互換alias | 旧launcher引数 |
+| `agent_configure` | 起動中のClaude／Codex／Grok／Composer／Cursorを再起動せずmodel／effort変更 | `session_id`, `model?`, `reasoning_effort?` |
 | `claude_turn` | 相関済みClaude operationをdispatch（issue）または回収（recover） | `action`, `session_id`, `operation_id`, `text?` |
 | `claude_approval` | 現在表示中の相関済みClaude承認UIを検査または応答 | `action`, `session_id`, `operation_id?`, `approval_choice?`, `observed_prompt_digest?` |
 | `diagnostics` | 機械可読 JSON による read-only factory readiness | （なし） |
@@ -406,31 +412,31 @@ aiterm は同じ核心の洞察——端末を出会いの場にする——を�
 
 consumer は `aiterm-runtime-errors snapshot` を読み、durable ingestion 後に `aiterm-runtime-errors ack --cursor N` を呼ぶ。運用上の明示操作は `resolve|reopen --fingerprint SHA256`。MCP からの収集・diagnostic read は timeout 付き child process に隔離し、FIFOや停止 filesystem が端末本体を止めない。store mutation は期限付き bakery ticket queue で直列化する。各waiterは PID＋process start identity＋owner token を持つ再利用されない固有ticketを所有するため、死んだownerだけを固有名で除去でき、固定path回収のABAを作らない。queueの期限は正常な前任者を含む総待ち時間ではなく、同じ先頭ownerが進まない時間を測る。通常pollはprocessの生存確認だけを行い、process start identityはblockerがstallした時に照合する。POSIX state は `$XDG_STATE_HOME/aiterm-mcp/`（既定 `~/.local/state/aiterm-mcp/`）へ atomic replacement で置き、every read で owner/mode を再検証する。Windows native は `%LOCALAPPDATA%\aiterm-mcp\` で current SID の非継承 FullControl ACE 1件だけへ DACL を再構築し readback する。今回 Windows は path/DACL/timeout の純粋テストだけであり、新しい実機統合成功は主張しない。
 
-### 対話エージェント起動ツール
+### 対話エージェントharness
 
-各ツールは特定ベンダーの対話型コーディングエージェント TUI を新しい永続 PTY の中に起動し、`session_id` を返す。以後は他のセッションと同様に `pty_read` / `pty_send` で操作する。モデルごとに 1 ツール＝ツール名を見ればどのモデルか分かる。TUI は全画面アプリなので、`pty_read({ screen: true })` で描画済みの画面を読む。
+`agent_launch`は選んだharnessの対話TUIを新しい永続PTYに起動し、`session_id`を返す。harnessはagent loop・認証・hook・session・transcriptを所有し、modelは独立。以後は他sessionと同じ`pty_read`／`pty_send`で操作する。
 
-`agent_configure({ session_id, model?, reasoning_effort? })`はvendor標準操作で起動中のClaude／Codex／Grok／Composerを変更し、PTYと会話contextを維持する。Grok／Composerは同じlive model catalog照合後に`/model <model> [effort]`または`/effort <effort>`を使う。Claude Code標準の`/model`・`/effort`は、新しいClaude sessionの既定値も同時に保存する。
+`agent_configure({ session_id, model?, reasoning_effort? })`はharness標準操作で起動中のClaude／Codex／Grok／Composer／Cursorを変更し、PTYと会話contextを維持する。
 
-| ツール | 起動するもの | 主な引数 |
+| `harness` | 起動するもの | modelの扱い |
 | --- | --- | --- |
-| `claude_agent` | Claude Code CLI（Anthropic） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`（`low`/`medium`/`high`/`xhigh`/`max`）, `env_vars?`, `cwd?`, `session_name?` |
-| `codex_agent` | Codex CLI（OpenAI・端末設定／CLI既定、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`（`low`/`medium`/`high`/`xhigh`/`max`/`ultra`）, `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
-| `grok_agent` | Grok Build（xAI、既定`grok-4.5`、`model?`で上書き） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`（vendor対応値）, `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
-| `composer_agent` | Grok Build（xAI、既定`grok-composer-2.5-fast`、`model?`で上書き。全modelをlive catalog照合） | `prompt?`, `throughline_source_session?`, `model?`, `reasoning_effort?`（vendor対応値）, `env_vars?`, `cwd?`, `session_name?`, `write_scope?` |
+| `claude-code` | Claude Code CLI | Claude model／effort |
+| `codex-cli` | Codex CLI | OpenAI model／effort |
+| `grok-cli` | Grok Build CLI | Grok／Composer model、live catalog照合 |
+| `cursor-cli` | Cursor Agent CLI | Cursor catalog上のGPT／Claude／Grok等 |
 
-対応するCLI（`claude` / `codex` / `grok`）の導入・認証が必要。前提違反はsession作成前に明示失敗する。4 launcherすべてが通常project/user環境と同じ非ブロックdispatch契約を使う。Claude／Codex／Grok／Composerのdepth 1 live smokeと、Claude親→Claude孫のdepth 2 nested delegation smokeはgreenであり、fixtureによる検証とは区別して記録する。
+対応するCLI（`claude`／`codex`／`grok`／`cursor-agent`）の公式導入・認証が必要。前提違反はsession作成前に明示失敗する。全harnessが通常project/user環境と同じ非ブロックdispatch契約を使う。
 
 `throughline_source_session`と空でない新ミッション`prompt`を指定すると、Throughlineの読み取り専用
 handoff contextを前置きできる。この任意経路は`throughline >= 0.9.0`を必要とし、
 `launch_operation_id`とは併用不可で、元sessionのDB所属を変更しない。Throughlineは
 `THROUGHLINE_BIN`、次に`PATH`から解決し、不在・不正・空のexportはPTY作成前に明示失敗する。
 
-エージェントの回答が画面 tailより長ければ、対話callerは`pty_read({ agent_transcript:true })`で再promptなしに全文回収する。Claudeはlaunch相関付きStop hookのowner-only resultを検証し、private transcriptを読まない。Codexは通常rollout transcript、Grok/Composerは通常session historyから同じturnを回収する。不在・非agent・抽出不能は明示エラー。
+エージェントの回答が画面tailより長ければ、`pty_read({ agent_transcript:true })`で再promptなしに全文回収する。Claudeはlaunch相関Stop hook、Codexは通常rollout、Grokは通常session history、Cursorはlaunch IDでbindした通常agent transcriptから同じturnを回収する。
 
 ### 完了検出（5 層）
 
-`pty_read({ wait: true })`は通常PTYを、process終了／`mark:true` sentinel／`until`一致／shell復帰を伴う出力静止／timeoutの5層で判定する。`mark`はPOSIX shellでは終了コード、PowerShellでは成功`0`／失敗`1`を出力する。fish/csh/tcshはどちらの状態取得構文にも従わないため送信前に拒否する。agent sessionは第6の正確な層を使う。Codexは通常rolloutの`task_complete`、Grok/Composerは通常sessionの`turn_ended`、Claudeは通常settingsへ加算したlaunch相関Stop eventを`aiterm-wait --cursor`が観測する。親はブロックもポーリングもしない。Grok/Composerは`mcp_init_completed`確認前に入力欄が見えても送信しない。
+`pty_read({ wait: true })`は通常PTYを、process終了／`mark:true` sentinel／`until`一致／shell復帰を伴う出力静止／timeoutの5層で判定する。agent sessionは第6の正確な層を使い、Codexは通常rollout、Grokは通常session event、Claudeはlaunch相関Stop event、Cursorは通常agent transcriptの`turn_ended`を`aiterm-wait --cursor`が観測する。親はブロックもポーリングもしない。
 
 ### トークン削減
 
@@ -446,7 +452,7 @@ handoff contextを前置きできる。この任意経路は`throughline >= 0.9.
 
 ## 人が覗く
 
-セッションは共有 tmux socket（Windows nativeはpsmux namespace）上にある。`pty_open`（および各エージェント起動ツール）の戻り値に表示される `tmux -S … attach -t <id>`、Windowsでは`psmux -L … attach -t <id>`で人間が同じ端末に入って介入できる（抜けるのは `Ctrl-b d`）——起動した Claude/Codex/Grok/Composer のセッションを見たり、途中でキーボードを引き取ったりもできる。
+セッションは共有tmux socket（Windows nativeはpsmux namespace）上にある。`pty_open`／`agent_launch`の戻り値に表示されるattachコマンドで、人間がClaude／Codex／Grok／Cursor harnessの同じ端末へ入り、途中でキーボードを引き取れる。
 
 ## 要件
 
@@ -454,7 +460,7 @@ handoff contextを前置きできる。この任意経路は`throughline >= 0.9.
 - **tmux または psmux**（実行時の前提）
   - **macOS / Linux / WSL2** は tmux を直接使う。macOS は同梱されないので `brew install tmux` で導入する。MCP クライアントがターミナルでなく **GUI から起動**された場合、Homebrew の bin（Apple Silicon: `/opt/homebrew/bin`、Intel: `/usr/local/bin`）が `PATH` に入らないことがある。その場合 aiterm が自動で探索するか、**`AITERM_TMUX=/path/to/tmux`** で明示指定する。
   - **Windows ネイティブ**は WSL を使わず、tmux CLI互換の [psmux](https://github.com/psmux/psmux) **3.3.8以上**を直接使う（`winget install marlocarlo.psmux`）。pane shell用に Git for Windows も必要。解決先は **`AITERM_PSMUX`**／**`AITERM_BASH`** で上書きできる。Windows toolはSSHと同じく入れ子で握れ、`pty_send "powershell.exe"`でPowerShellへ入れる。
-- **エージェント起動ツール**を使う場合: 対応するベンダー CLI が導入・認証済みであること——`claude_agent` は `claude`、`codex_agent` は `codex`、`grok_agent` / `composer_agent` は `grok`。portable forkだけは追加で`throughline >= 0.9.0`が必要だが、通常のclean launchには不要。（PTY ツールだけ使うなら不要。）
+- **agent harness**を使う場合: 対応CLIを製品所有者の公式経路で導入・認証する。CursorはmacOS／Linux／WSLで`curl https://cursor.com/install -fsS | bash`、Windows nativeで`irm 'https://cursor.com/install?win32=true' | iex`を使い、`agent login`で認証、`agent update`で更新する。Aitermは`cursor-agent`を起動する。portable forkだけは追加で`throughline >= 0.9.0`が必要。
 - 任意: [`rtk`](https://github.com/rtk-ai/rtk) バイナリ（`pty_send` の `rtk: true` 委譲で使う。無くても動く）
 
 ## 既知の制約（バグではなく仕様）
@@ -462,7 +468,7 @@ handoff contextを前置きできる。この任意経路は`throughline >= 0.9.
 - **ネスト中（ssh / docker / REPL / 起動したエージェント TUI）は quiescence が原理的に効かない。** 前面コマンドがシェル集合（bash/sh/zsh/fish/dash）の外になるため。ネスト中で `until` も `mark` も無いときは、待っても完了を確定できる信号が無いので、`pty_read({ wait: true })` はフル `timeout` を空費せず出力静止時点で `is_complete=False via nested` と早期に返し、`until`（既定リテラル部分一致・`until_regex: true` で正規表現）か `mark: true`（終了コード付き sentinel・自動検出）の指定を促す。全画面のエージェント TUI なら、出力が落ち着いた時点で `{ screen: true }` を読む。
 - **`is_complete=False` は失敗ではない。** 「timeout 内に完了を観測できなかった」という意味。長時間コマンドでは `timeout` を伸ばすか `until`/`mark` を使う。
 - **破壊ゲートはサンドボックスではなく tripwire。** よくある破壊形だけを弾く。相対パスの `rm`、`$VAR` 展開後に危険化するもの、ssh 先で実行されるコマンドは捕捉しない——起動したコーディングエージェントが自分のセッション内で何をするかも取り締まらない。
-- **エージェント起動ツールはベンダー TUI を起動するだけで、包んだり代理したりしない。** aiterm は前提を検証して CLI を永続 PTY で起動する——モデル・認証・挙動はベンダー CLI のもの。エージェント間の隠れたプロトコルはなく、「会話」とはMCPクライアントがClaude/Codex/Grok/Composer TUIへ入力を送り出力を読むことだ。
+- **agent harnessは実物TUIを起動し、model APIを代理しない。** model・認証・挙動は選んだharnessのもの。隠れたagent間protocolはなく、MCPクライアントがClaude／Codex／Grok／Cursor TUIへ入力を送り出力を読む。
 - **`pty_send({ rtk: true })` は単行コマンドのみ＋外部 `rtk` バイナリが必要**（無ければ素通し）。一方 `pty_read({ rtk: true })` の reducer は自前実装で rtk 非依存。
 - **`pytest` reducer は件数・罫線・`FAILURES` ブロック整形が rtk 0.42.0 と byte 一致**（回帰テストで固定）。ただし `-ra`/`-rf` 時の `FAILED` 要約行の理由は**全文を保持する**（rtk 0.42.0 は最初の `" - "` 区切りで切るが、本実装は可読性優先で情報を残すため、この行は意図的に rtk と完全一致させない）。rtk が大出力時に付ける `[full output: …]`（tee ポインタ）行は read 側では再現しない。
 - **tmux は `-f /dev/null` 起動**なので `~/.tmux.conf` を読まない（環境差を排除するため）。
