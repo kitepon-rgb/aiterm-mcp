@@ -42,28 +42,8 @@ export interface AgentMetadata {
 
 export const sleep = (ms: number) => new Promise<void>((res) => setTimeout(res, ms));
 
-export function currentUid(): number {
-  // Windows(native)は process.getuid を持たない。以前はここで throw していたが、
-  // agent metadata の存在確認経由で素の pty_send まで巻き込んで全 send を殺していた。
-  // Windows の fs.Stats.uid は常に 0 なので、ここも 0 を返せば owner 比較
-  // (st.uid !== currentUid()) は自然に通過する。Windows は POSIX owner 検証を
-  // 持たない（NTFS ACL は別体系）という既知の制約の明示的受容であり、POSIX 側は
-  // getuid をそのまま返すため挙動不変。
-  if (typeof process.getuid !== "function") return 0;
-  return process.getuid();
-}
-
-export function runtimeStateBase(): string {
-  const xdg = process.env.XDG_RUNTIME_DIR;
-  if (xdg) {
-    try {
-      if (fs.statSync(xdg).isDirectory()) return xdg;
-    } catch {
-      /* XDG_RUNTIME_DIR が壊れている CI/非 login 環境では os.tmpdir() に戻す */
-    }
-  }
-  return os.tmpdir();
-}
+import { currentUid, runtimeStateBase } from "./state-root.js";
+export { currentUid, runtimeStateBase };
 
 export function safeStatSize(p: string): number {
   try {

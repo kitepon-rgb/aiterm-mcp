@@ -2,6 +2,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { currentUid as uid, runtimeStateBase } from "./state-root.js";
 
 const LAUNCH_ID_RE = /^[0-9a-f]{32}$/;
 const SESSION_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -25,27 +26,6 @@ function hasAitermEnv(): boolean {
   );
 }
 
-function uid(): number {
-  // Windows(native) は process.getuid を持たない。core の currentUid()・claude-stop-hook と
-  // 同じ受容として 0 を返す（Windows の fs.Stats.uid は常に 0 のため owner 比較は自然に
-  // 通過する。NTFS ACL は別体系）。POSIX は getuid のまま＝挙動不変。
-  // 以前はここで fail していたため、Windows では Grok/Composer の完了 event が
-  // 一度も書かれず aiterm-wait が timeout まで返らなかった。
-  if (typeof process.getuid !== "function") return 0;
-  return process.getuid();
-}
-
-function runtimeStateBase(): string {
-  const xdg = process.env.XDG_RUNTIME_DIR;
-  if (xdg) {
-    try {
-      if (fs.statSync(xdg).isDirectory()) return xdg;
-    } catch {
-      /* XDG_RUNTIME_DIR が壊れている CI/非 login 環境では os.tmpdir() に戻す */
-    }
-  }
-  return os.tmpdir();
-}
 
 function agentsDir(): string {
   const root = path.join(runtimeStateBase(), `aiterm-mcp-${uid()}`);

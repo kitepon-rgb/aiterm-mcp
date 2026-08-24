@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.3] - 2026-08-24
+
+### Changed
+
+- campaign 32のmaintenance queueに積んだ重複を解消: stop hook 2本とagent-sharedに
+  三重実装されていた`uid()`／`runtimeStateBase()`を、node builtinだけに依存する新設の
+  最下層`src/state-root.ts`へ一本化した。stop hookの「内部moduleへ依存しない」設計は
+  state-rootがbuiltin依存だけであることで維持される。挙動・15-tool API・schemaは不変。
+
 ## [0.28.2] - 2026-08-24
 
 ### Changed

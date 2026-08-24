@@ -2,6 +2,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { currentUid as uid, runtimeStateBase } from "./state-root.js";
 import { createHash, randomBytes } from "node:crypto";
 
 const LAUNCH_ID_RE = /^[0-9a-f]{32}$/;
@@ -28,24 +29,6 @@ function hasAitermEnv(): boolean {
   );
 }
 
-function uid(): number {
-  // state root のパス構成要素 `aiterm-mcp-<uid>` にだけ使う。Windows(native) は
-  // process.getuid を持たないため core の currentUid() と同じ受容で 0 を返す。
-  if (typeof process.getuid !== "function") return 0;
-  return process.getuid();
-}
-
-function runtimeStateBase(): string {
-  const xdg = process.env.XDG_RUNTIME_DIR;
-  if (xdg) {
-    try {
-      if (fs.statSync(xdg).isDirectory()) return xdg;
-    } catch {
-      /* 壊れたXDG_RUNTIME_DIRはTMPDIRへ戻す */
-    }
-  }
-  return os.tmpdir();
-}
 
 function agentsDir(): string {
   // state root は OS が与える per-user runtime dir（XDG_RUNTIME_DIR / os.tmpdir()）の下にある。
