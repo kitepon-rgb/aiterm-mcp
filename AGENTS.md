@@ -2,6 +2,12 @@
 
 このファイルが aiterm-mcp の運用・設計・履歴の正本です（全 host 共通。Claude Code は CLAUDE.md の `@AGENTS.md` 経由で同じ内容を読む）。設計の詳細は `docs/00_overview.md` から辿り、特に `docs/01_design-plan.md` と関連 ADR を読む。
 
+> **v0.28.3（2026-08-24・公開完了）**: campaign 32 queueの重複解消。stop hook 2本とagent-sharedの
+> `uid()`/`runtimeStateBase()`三重実装を、builtin依存だけの最下層`src/state-root.ts`へ一本化
+>（agent-sharedはre-export・stop hookのbuiltin-only設計は維持）。挙動不変。full 355 pass、
+> main CI `32675470468`、tag CI/npm publish、Registry `32675999886` success、MCPB添付Release、
+> global install後initialize smoke 0.28.3。公開受入はADR 0042を正とする。
+>
 > **v0.28.2（2026-08-24・公開完了）**: 内部用語をvendorからharnessへ統一する挙動不変patch
 >（オーナー裁定のharness用語統一campaign）。`src/vendors/`→`src/harnesses/`、内部識別子・
 > コメント・現役文書を置換し、wire互換field（`vendor`／`vendor_session_id`／`vendor_dependencies`／
