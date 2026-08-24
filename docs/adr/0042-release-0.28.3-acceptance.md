@@ -21,7 +21,7 @@ state root配置（`aiterm-mcp-<uid>`）は不変。
 ## 受入証跡
 
 - macOS full test 355 pass / 0 fail。
-- release commit `24b8115`（0.28.3 bump一式）、main CI（4環境）`32675470468` success、
+- release commit `6652a37`（0.28.3 bump一式）、main CI（4環境）`32675470468` success、
   tag CI／npm publish success（`gh run watch`でTAG_CI_GREEN確認）、
   Registry workflow `32675999886` success。
 - GitHub Release v0.28.3＋MCPB添付、global install後のMCP initialize smokeでserverInfo 0.28.3。
