@@ -422,6 +422,12 @@ test("send mark + read wait: PowerShell で sentinel を実行時生成する", 
     assert.match(out, /<<<AITERM_DONE rc=0>>>/, `PowerShell の成功状態を出力すること: ${out}`);
     assert.match(out, /is_complete=True via mark/, `mark 完了であること: ${out}`);
 
+    core.send(ps, "Write-Output '日本語PTY確認'; rg --version | Select-Object -First 1", { mark: true });
+    const tools = await core.readOutput(ps, { wait: true, timeout: 6 });
+    assert.match(tools, /日本語PTY確認/u, `PowerShell 7 paneが日本語を保持すること: ${tools}`);
+    assert.match(tools, /ripgrep \d+/u, `PowerShell 7 paneからrgを実行できること: ${tools}`);
+    assert.match(tools, /<<<AITERM_DONE rc=0>>>/, `日本語／rg smokeもmark成功すること: ${tools}`);
+
     core.send(ps, "Write-Error POWERSHELL_EXPECTED_FAILURE -ErrorAction Continue", { mark: true });
     const failed = await core.readOutput(ps, { wait: true, timeout: 6 });
     assert.match(failed, /<<<AITERM_DONE rc=1>>>/, `PowerShell の失敗状態を 1 で出力すること: ${failed}`);

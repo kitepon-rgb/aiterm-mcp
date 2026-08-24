@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.4] - 2026-08-25
+
+### Fixed
+
+- Native Windowsの`pty_open`既定shellをPowerShell 7（`pwsh.exe`）へ統一し、明示
+  `powershell`／`powershell.exe`も検証済みPowerShell 7実体へ正規化した。検出実体自身の
+  `PSEdition=Core`／major 7以上を確認し、Windows PowerShell 5.1・PowerShell 6・`cmd.exe`へ
+  fallbackしない。未導入時はMicrosoft公式WinGet入口を案内する。
+- runtime error DACL、process identity、Throughline shimも同じ絶対PowerShell 7を使う。
+  DACLはPowerShell 7対応の`FileSystemAclExtensions` static APIへ移し、current SID only・
+  FullControl・継承遮断・owner readbackを維持した。
+
 ## [0.28.3] - 2026-08-24
 
 ### Changed

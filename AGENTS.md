@@ -2,6 +2,13 @@
 
 このファイルが aiterm-mcp の運用・設計・履歴の正本です（全 host 共通。Claude Code は CLAUDE.md の `@AGENTS.md` 経由で同じ内容を読む）。設計の詳細は `docs/00_overview.md` から辿り、特に `docs/01_design-plan.md` と関連 ADR を読む。
 
+> **v0.28.4（2026-08-25・source）**: Windowsの対話shellをPowerShell 7へ統一。`pty_open`の
+> Windows既定を`pwsh`にし、明示`powershell`も検証済みPowerShell 7絶対pathへ正規化する。
+> runtime error DACL／process identity／Throughline shimも同じOS adapterを使い、5.1／PowerShell 6／
+> `cmd.exe` fallbackを持たない。psmuxはshellでなくAiterm所有のmultiplexer backend、Git Bashは
+> harness launcherの明示内部shellである。focused Windows実測は日本語・`rg`・mark成功/失敗、
+> runtime store、PS6負例。公開受入はADR 0043を正とする。
+
 > **v0.28.3（2026-08-24・公開完了）**: campaign 32 queueの重複解消。stop hook 2本とagent-sharedの
 > `uid()`/`runtimeStateBase()`三重実装を、builtin依存だけの最下層`src/state-root.ts`へ一本化
 >（agent-sharedはre-export・stop hookのbuiltin-only設計は維持）。挙動不変。full 355 pass、

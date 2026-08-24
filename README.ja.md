@@ -459,7 +459,7 @@ handoff contextを前置きできる。この任意経路は`throughline >= 0.9.
 - **Node.js >= 18**
 - **tmux または psmux**（実行時の前提）
   - **macOS / Linux / WSL2** は tmux を直接使う。macOS は同梱されないので `brew install tmux` で導入する。MCP クライアントがターミナルでなく **GUI から起動**された場合、Homebrew の bin（Apple Silicon: `/opt/homebrew/bin`、Intel: `/usr/local/bin`）が `PATH` に入らないことがある。その場合 aiterm が自動で探索するか、**`AITERM_TMUX=/path/to/tmux`** で明示指定する。
-  - **Windows ネイティブ**は WSL を使わず、tmux CLI互換の [psmux](https://github.com/psmux/psmux) **3.3.8以上**を直接使う（`winget install marlocarlo.psmux`）。pane shell用に Git for Windows も必要。解決先は **`AITERM_PSMUX`**／**`AITERM_BASH`** で上書きできる。Windows toolはSSHと同じく入れ子で握れ、`pty_send "powershell.exe"`でPowerShellへ入れる。
+  - **Windows ネイティブ**は WSL を使わず、tmux CLI互換の [psmux](https://github.com/psmux/psmux) **3.3.8以上**をAitermのterminal/session multiplexer backendとして使う（`winget install marlocarlo.psmux`）。**psmuxはshellではない。** `pty_open`の既定shellはPowerShell 7（`pwsh.exe`）で、Windows PowerShell 5.1・PowerShell 6・`cmd.exe`へfallbackしない。5.1しかなければMicrosoft公式installer／package managerで7を導入してから使う。Git for Windowsはharness launcherが内部で明示するBash shell用に引き続き必要。解決先は **`AITERM_PSMUX`**／**`AITERM_BASH`** で上書きできる。他製品はpsmuxへ直接依存せず、永続端末をAiterm公開APIから利用する。
 - **agent harness**を使う場合: 対応CLIを製品所有者の公式経路で導入・認証する。CursorはmacOS／Linux／WSLで`curl https://cursor.com/install -fsS | bash`、Windows nativeで`irm 'https://cursor.com/install?win32=true' | iex`を使い、`agent login`で認証、`agent update`で更新する。Aitermは`cursor-agent`を起動する。portable forkだけは追加で`throughline >= 0.9.0`が必要。
 - 任意: [`rtk`](https://github.com/rtk-ai/rtk) バイナリ（`pty_send` の `rtk: true` 委譲で使う。無くても動く）
 

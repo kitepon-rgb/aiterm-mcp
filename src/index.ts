@@ -99,6 +99,8 @@ server.registerTool(
   async () => ok(await factoryDiagnostics()),
 );
 
+const DEFAULT_PTY_SHELL = process.platform === "win32" ? "pwsh" : "bash";
+
 server.registerTool(
   "pty_open",
   {
@@ -108,7 +110,7 @@ server.registerTool(
       'pty_send(session_id, "ssh host") と打って入る。',
     inputSchema: {
       name: z.string().nullish().describe("セッション名（省略時は t1, t2... を自動採番）"),
-      shell: z.string().default("bash").describe("起動シェル（既定 bash）"),
+      shell: z.string().default(DEFAULT_PTY_SHELL).describe(`起動シェル（既定 ${DEFAULT_PTY_SHELL}）`),
     },
   },
   async ({ name, shell }) => {

@@ -5,6 +5,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { AitermError } from "./errors.js";
+import { resolveWindowsPowerShell7 } from "./windows-powershell.js";
 import { isWin } from "./tmux-runtime.js";
 import type { AgentKind } from "./core.js";
 
@@ -92,7 +93,11 @@ export function spawnAgentControlCommand(
 }
 
 export function resolveWinPaneShell(shell: string): string {
-  if (!isWin || shell !== "bash") return shell;
+  if (!isWin) return shell;
+  if (["powershell", "powershell.exe", "pwsh", "pwsh.exe"].includes(path.basename(shell).toLowerCase())) {
+    return resolveWindowsPowerShell7();
+  }
+  if (shell !== "bash") return shell;
   const fromEnv = process.env.AITERM_BASH;
   if (fromEnv) {
     if (isUsableExecutableFile(fromEnv)) return fromEnv;
@@ -176,7 +181,7 @@ export function runThroughlineHandoffContext(bin: string, sessionId: string) {
   if (isWin && /\.(?:cmd|bat)$/i.test(bin)) {
     const ps1 = path.join(path.dirname(bin), `${path.basename(bin, path.extname(bin))}.ps1`);
     if (fs.existsSync(ps1)) {
-      return spawnSync("powershell.exe", [
+      return spawnSync(resolveWindowsPowerShell7(), [
         "-NoLogo",
         "-NoProfile",
         "-NonInteractive",

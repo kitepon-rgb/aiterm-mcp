@@ -18,7 +18,7 @@ const PACKAGE = JSON.parse(fs.readFileSync(path.join(HERE, "..", "package.json")
 test("smoke: 公開versionはpackage・lock・server manifestで一致する", () => {
   const lock = JSON.parse(fs.readFileSync(path.join(HERE, "..", "package-lock.json"), "utf8"));
   const server = JSON.parse(fs.readFileSync(path.join(HERE, "..", "server.json"), "utf8"));
-  assert.equal(PACKAGE.version, "0.28.3", "v0.28 state-root一本化版");
+  assert.equal(PACKAGE.version, "0.28.4", "Windows PowerShell 7統一版");
   assert.equal(lock.version, PACKAGE.version);
   assert.equal(lock.packages?.[""]?.version, PACKAGE.version);
   assert.equal(server.version, PACKAGE.version);
@@ -94,6 +94,9 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 15 ツール公�
     "pty_send",
   ]);
   const ptySend = toolsResp.result.tools.find((t) => t.name === "pty_send");
+  const ptyOpen = toolsResp.result.tools.find((t) => t.name === "pty_open");
+  assert.equal(ptyOpen.inputSchema.properties.shell.default,
+    process.platform === "win32" ? "pwsh" : "bash", "pty_open platform default shell");
   assert.equal(ptySend.inputSchema.properties.wait, undefined, "v0.16: wait は廃止");
   assert.equal(ptySend.inputSchema.properties.operation_id, undefined, "v0.16: durable相関はclaude_turn専用");
   assert.equal(ptySend.inputSchema.properties.timeout, undefined, "v0.16: pty_send はブロックしない");

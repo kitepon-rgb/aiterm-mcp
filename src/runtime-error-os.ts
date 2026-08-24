@@ -5,6 +5,7 @@ import { spawn, spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { resolveWindowsPowerShell7, windowsPowerShell7Command } from "./windows-powershell.js";
 
 export function defaultRuntimeErrorPaths(options: {
   platform?: NodeJS.Platform; home?: string; localAppData?: string; xdgConfigHome?: string; xdgStateHome?: string;
@@ -30,7 +31,9 @@ const WINDOWS_DACL_VERIFY_SCRIPT = String.raw`
 $ErrorActionPreference='Stop'
 $target=$env:AITERMMCP_ACL_PATH; $kind=$env:AITERMMCP_ACL_KIND
 $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User
-$check=if($kind -eq 'directory'){[IO.Directory]::GetAccessControl($target)}else{[IO.File]::GetAccessControl($target)}
+$item=Get-Item -LiteralPath $target
+$sections=[Security.AccessControl.AccessControlSections]::Access -bor [Security.AccessControl.AccessControlSections]::Owner
+$check=[IO.FileSystemAclExtensions]::GetAccessControl($item,$sections)
 $ownerSid=$check.GetOwner([Security.Principal.SecurityIdentifier]).Value
 $rules=@($check.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier]))
 if($ownerSid -ne $sid.Value -or $rules.Count -ne 1 -or $rules[0].IdentityReference.Value -ne $sid.Value -or $rules[0].AccessControlType -ne 'Allow' -or $rules[0].IsInherited -or (($rules[0].FileSystemRights -band [Security.AccessControl.FileSystemRights]::FullControl) -ne [Security.AccessControl.FileSystemRights]::FullControl)){exit 9}
@@ -42,13 +45,13 @@ $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User
 if($kind -eq 'directory'){$acl=New-Object Security.AccessControl.DirectorySecurity;$inherit=[Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'}else{$acl=New-Object Security.AccessControl.FileSecurity;$inherit=[Security.AccessControl.InheritanceFlags]::None}
 $acl.SetOwner($sid); $acl.SetAccessRuleProtection($true,$false)
 $rule=New-Object Security.AccessControl.FileSystemAccessRule($sid,[Security.AccessControl.FileSystemRights]::FullControl,$inherit,[Security.AccessControl.PropagationFlags]::None,[Security.AccessControl.AccessControlType]::Allow)
-$acl.AddAccessRule($rule); if($kind -eq 'directory'){[IO.Directory]::SetAccessControl($target,$acl)}else{[IO.File]::SetAccessControl($target,$acl)}
+$acl.AddAccessRule($rule); $item=Get-Item -LiteralPath $target; [IO.FileSystemAclExtensions]::SetAccessControl($item,$acl)
 ` + WINDOWS_DACL_VERIFY_SCRIPT;
 
 export function windowsPrivateDaclCommand(target: string, kind: "directory" | "file" = "directory"):
   { command: string; args: string[]; env: NodeJS.ProcessEnv } {
   return {
-    command: "powershell.exe",
+    command: windowsPowerShell7Command(),
     args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", WINDOWS_DACL_SCRIPT],
     env: { ...process.env, AITERMMCP_ACL_PATH: target, AITERMMCP_ACL_KIND: kind },
   };
@@ -56,7 +59,7 @@ export function windowsPrivateDaclCommand(target: string, kind: "directory" | "f
 export function windowsPrivateDaclVerifyCommand(target: string, kind: "directory" | "file" = "file"):
   { command: string; args: string[]; env: NodeJS.ProcessEnv } {
   return {
-    command: "powershell.exe",
+    command: windowsPowerShell7Command(),
     args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", WINDOWS_DACL_VERIFY_SCRIPT],
     env: { ...process.env, AITERMMCP_ACL_PATH: target, AITERMMCP_ACL_KIND: kind },
   };
@@ -107,7 +110,7 @@ export function processStartIdentity(pid: number, platform: NodeJS.Platform, tim
   }
   if (platform === "win32") {
     const script = "$p=Get-Process -Id $env:AITERMMCP_PROCESS_ID -ErrorAction Stop; $p.StartTime.ToUniversalTime().Ticks";
-    const result = spawnSync("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script], {
+    const result = spawnSync(resolveWindowsPowerShell7(), ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script], {
       encoding: "utf8", timeout: timeoutMs, maxBuffer: 4096, windowsHide: true,
       env: { ...process.env, AITERMMCP_PROCESS_ID: String(pid) },
     });
@@ -139,4 +142,3 @@ export function forceKill(child: ReturnType<typeof spawn>): void {
   killer.once("error", () => { /* parent は上で停止済み。子孫回収失敗は記録側の固定診断へ集約する */ });
   killer.unref();
 }
-

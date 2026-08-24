@@ -533,7 +533,7 @@ test("Windows native の canonical config/state path と current SID only DACL c
     storePath: "D:\\Local\\aiterm-mcp\\runtime-errors.json",
   });
   const command = windowsPrivateDaclCommand("D:\\Local\\aiterm-mcp", "directory");
-  assert.equal(command.command, "powershell.exe");
+  assert.match(command.command, /PowerShell[\\/]7[\\/]pwsh\.exe$/iu);
   assert.equal(command.env.AITERMMCP_ACL_PATH, "D:\\Local\\aiterm-mcp");
   assert.equal(command.env.AITERMMCP_ACL_KIND, "directory");
   assert.match(command.args.at(-1), /WindowsIdentity.*GetCurrent/);
@@ -543,7 +543,7 @@ test("Windows native の canonical config/state path と current SID only DACL c
   assert.match(command.args.at(-1), /GetOwner\(\[Security\.Principal\.SecurityIdentifier\]\)/);
   assert.match(command.args.at(-1), /FileSystemRights.*FullControl/);
   const verify = windowsPrivateDaclVerifyCommand("D:\\Local\\dotagents\\factory-reporter\\config.json", "file");
-  assert.equal(verify.command, "powershell.exe"); assert.match(verify.args.at(-1), /GetAccessControl/); assert.doesNotMatch(verify.args.at(-1), /SetAccessControl/);
+  assert.equal(verify.command, command.command); assert.match(verify.args.at(-1), /FileSystemAclExtensions.*GetAccessControl/); assert.doesNotMatch(verify.args.at(-1), /SetAccessControl/);
 });
 
 test("aiterm-runtime-errors CLI は snapshot/ack を JSON で公開し network を使わない", () => {
