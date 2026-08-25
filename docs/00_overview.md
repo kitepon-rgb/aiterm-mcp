@@ -69,6 +69,7 @@ Cursor Agent CLI契約は[ADR 0038](adr/0038-harness-launch-api-and-cursor-agent
 - [adr/0040-release-0.28.1-acceptance.md](adr/0040-release-0.28.1-acceptance.md) - 現行正典の全同期、4環境CI、npm provenance、Release／Official Registry、標準global installの文書patch公開受入。
 - [adr/0042-release-0.28.3-acceptance.md](adr/0042-release-0.28.3-acceptance.md) - state-root一本化（stop hook重複解消）の挙動不変patch公開受入。
 - [adr/0043-windows-powershell7-contract.md](adr/0043-windows-powershell7-contract.md) - Windows公開PTY・OS helperをPowerShell 7へ統一し、psmux／shell／harness責務を分離する契約。
+- [adr/0044-release-0.29.0-acceptance.md](adr/0044-release-0.29.0-acceptance.md) - ready gate失敗の明示エラー化とCodex起動前ダイアログ検知の公開受入。
 - [adr/0041-release-0.28.2-acceptance.md](adr/0041-release-0.28.2-acceptance.md) - harness用語統一（src/harnesses/改名・wire互換field据え置き）の挙動不変patch公開受入。
 
 ## 運用メモ

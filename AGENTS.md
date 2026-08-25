@@ -2,6 +2,14 @@
 
 このファイルが aiterm-mcp の運用・設計・履歴の正本です（全 host 共通。Claude Code は CLAUDE.md の `@AGENTS.md` 経由で同じ内容を読む）。設計の詳細は `docs/00_overview.md` から辿り、特に `docs/01_design-plan.md` と関連 ADR を読む。
 
+> **v0.29.0（2026-08-25・公開完了）**: 起動時promptのready gate失敗を成功形receiptから
+> 明示エラーへ変更（実被弾: Codexのupdate確認ダイアログでprompt未送信のまま40分停滞）。
+> `codexLaunchBlockingDialog`が起動前modal（update確認／directory trust確認／種別未特定）を
+> 実機capture逐語で検知し、エラーにsession_id・復旧手順（pty_read→pty_key→pty_send）を含める。
+> ダイアログの自動応答はしない。full 358 pass、release commit `d7ec7de`、main CI `32795532630`、
+> tag CI／npm publish `32795769494`、Registry `32796078246` success、Release＋MCPB、
+> global install後initialize smoke 0.29.0。公開受入はADR 0044を正とする。
+>
 > **v0.28.4（2026-08-25・公開完了）**: Windowsの対話shellをPowerShell 7へ統一。`pty_open`の
 > Windows既定を`pwsh`にし、明示`powershell`も検証済みPowerShell 7絶対pathへ正規化する。
 > runtime error DACL／process identity／Throughline shimも同じOS adapterを使い、5.1／PowerShell 6／
