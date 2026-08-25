@@ -69,6 +69,7 @@ process.env.CODEX_BIN = argvPrinterBin;
 process.env.GROK_BIN = fakeGrokBin;
 process.env.CLAUDE_BIN = fakeClaudeBin;
 const core = await import("../dist/core.js");
+const codexHarness = await import("../dist/harnesses/codex.js");
 core.__testSetAgentTuiReadyStableSamples(1);
 const skip = hasTmux ? undefined : "tmux 未インストール";
 // 製品側 currentUid()（src/core.ts）と同じ規則。Windows(native) は getuid を持たないので 0。
@@ -2430,22 +2431,59 @@ test("dispatch/observe: 起動時 prompt が未完了なら follow-up を送信�
 // （旧 "openAgentWithInitialPrompt: wait agent_done は prompt と agent_done:true を必須にする" は
 // 概念ごと消滅したため削除）。
 
-test("openAgentWithInitialPrompt: TUI ready 失敗では prompt を送らず session を残す", { skip: skipAgentDone }, async () => {
+test("openAgentWithInitialPrompt: TUI ready 失敗は明示エラーにし prompt を送らず session を残す", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
-    const [sid, hint] = await core.openAgentWithInitialPrompt("codex", {
-      prompt: "Reply READY.",
-      agent_done: true,
-      ready_timeout: 0,
-    });
+    let sid = null;
     try {
-      assert.match(hint, /initial_prompt=not_sent/, `ready failure hint: ${hint}`);
+      await assert.rejects(
+        core.openAgentWithInitialPrompt("codex", {
+          prompt: "Reply READY.",
+          agent_done: true,
+          ready_timeout: 0,
+        }),
+        (e) => {
+          assert.match(e.message, /initial_prompt=not_sent/, `ready failure error: ${e.message}`);
+          assert.match(e.message, /session は調査\/復旧用に残しています/, `session保全の明示: ${e.message}`);
+          sid = e.message.match(/session_id: (\S+)/)?.[1] ?? null;
+          return true;
+        },
+      );
+      assert.ok(sid, "エラーメッセージに session_id を含める");
       assert.match(core.listSessions(), new RegExp(`(^|\\n)${sid}\\t`), "session は調査用に残す");
       const meta = readAgentMeta(sid);
       assert.equal(meta.initial_prompt, "not_sent");
     } finally {
-      core.closeSession(sid);
+      if (sid) core.closeSession(sid);
     }
   });
+});
+
+// 実被弾 2026-08-25 の実機capture逐語（Codex v0.149.0）。ダイアログ表示中はheader/footerが
+// 描かれないため、codexTuiReady では拾えず codexLaunchBlockingDialog が種別を特定する。
+test("codexLaunchBlockingDialog: 起動前modalの実機画面を種別付きで検知する", () => {
+  const updateScreen = [
+    "  ✨ Update available! 0.149.0 -> 0.149.1",
+    "",
+    "  Release notes: https://github.com/openai/codex/releases/latest",
+    "",
+    "› 1. Update now (runs `npm install -g @openai/codex`)",
+    "  2. Skip",
+    "  3. Skip until next version",
+    "",
+    "  Press enter to continue",
+  ].join("\n");
+  assert.match(codexHarness.codexLaunchBlockingDialog(updateScreen), /update確認/);
+  const trustScreen = [
+    "You are in /Users/kite/Developer/poly",
+    "Do you trust the contents of this directory?",
+    "Working with untrusted contents comes with higher risk of prompt injection.",
+    "› 1. Yes, continue",
+    "  2. No, quit",
+    "Press enter to continue",
+  ].join("\n");
+  assert.match(codexHarness.codexLaunchBlockingDialog(trustScreen), /trust確認/);
+  assert.match(codexHarness.codexLaunchBlockingDialog("something\nPress enter to continue"), /種別未特定/);
+  assert.equal(codexHarness.codexLaunchBlockingDialog("› Ask Codex to do anything\n  gpt-5.6-luna low · ~/x"), null);
 });
 
 test("openAgentWithInitialPrompt: prompt を shell argv に載せず pending event_cursor を返す", { skip: skipAgentDone }, async () => {
