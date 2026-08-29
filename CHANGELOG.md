@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.28.5
+
+- Return `initial_prompt=not_sent` immediately when a known Codex/Claude startup approval UI blocks the TUI, leaving the session alive for the caller to respond instead of waiting for the ready timeout.
+
 All notable changes to **aiterm-mcp** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),

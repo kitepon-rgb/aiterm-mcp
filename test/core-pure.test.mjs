@@ -192,6 +192,23 @@ test("agent_done ready gate: ready が連続安定するまで polling し、tim
   assert.deepEqual(bad.sleeps, []);
 });
 
+test("agent_done ready gate: 既知の承認UIはtimeoutを待たずcallerへ返す", async () => {
+  for (const [kind, screen] of [
+    ["codex", "✨ Update available! 0.149.0 -> 0.150.1\n› 1. Update now"],
+    ["codex", "Do you trust the contents of this directory?\n› 1. Yes, continue"],
+    ["codex", "Hooks need review\n› 1. Review hooks"],
+    ["claude", "2 new MCP servers found in this project\n[✔] room\nEnable selected"],
+  ]) {
+    const result = await core.__testWaitAgentTuiReady(kind, [screen], {
+      timeoutMs: 60_000,
+      pollMs: 1_000,
+    });
+    assert.equal(result.ready, false);
+    assert.equal(result.samples, 1);
+    assert.deepEqual(result.sleeps, []);
+  }
+});
+
 test("agent_done ready gate: 一瞬のready後に再初期化したらstreakをリセットする", async () => {
   const result = await core.__testWaitAgentTuiReady(
     "claude",

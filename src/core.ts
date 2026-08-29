@@ -2651,6 +2651,24 @@ function isAgentTuiIdleReady(kind: AgentKind, screen: string): boolean {
   return !isAgentTuiBusy(kind, screen);
 }
 
+// 起動側が明示応答すべき既知UI。ここで自動承認せず、ready timeoutを待たずに
+// `initial_prompt=not_sent`を返してsessionを生かしたままcallerへ制御を戻す。
+function isAgentTuiActionRequired(kind: AgentKind, screen: string): boolean {
+  if (kind === "codex") {
+    return screen.includes("Update available!")
+      || screen.includes("Do you trust the contents of this directory?")
+      || screen.includes("Hooks need review")
+      || screen.includes("Allow the room MCP server to run tool")
+      || screen.includes("Would you like to run the following command?");
+  }
+  if (kind === "claude") {
+    return /new MCP servers? found in this project/iu.test(screen)
+      || screen.includes("Is this a project you created or one you trust")
+      || screen.includes("trust this folder");
+  }
+  return false;
+}
+
 async function waitAgentTuiReadyImpl(
   kind: AgentKind,
   sample: () => string,
@@ -2671,6 +2689,7 @@ async function waitAgentTuiReadyImpl(
   for (;;) {
     lastScreen = sample();
     samples++;
+    if (isAgentTuiActionRequired(kind, lastScreen)) return { ready: false, samples, lastScreen };
     if (isAgentTuiIdleReady(kind, lastScreen)) {
       readyStreak++;
       if (readyStreak >= stableSamples) return { ready: true, samples, lastScreen };
