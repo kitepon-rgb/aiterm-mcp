@@ -4,6 +4,14 @@
 
 > **v0.29.1（2026-08-29・公開工程）**: agent初回prompt ready gateがCodexのupdate／directory trust／hooks、ClaudeのMCP consentを入力欄readyになるまで待ち続け、WindowsのCodex trust UIが先に終了してsessionを失う欠陥を修理。既知のblocking UIを1回目のsampleで検出したら、自動承認せず0.29.0の`initial_prompt=not_sent`明示エラーへ即座に流し、sessionを生かしたままcallerへ制御を戻す。Mac等の通常ready経路は11回安定確認を維持する。LiveTR Peertable実席で再現。DecisionはADR 0045。
 
+> **v0.29.0（2026-08-25・公開完了）**: 起動時promptのready gate失敗を成功形receiptから
+> 明示エラーへ変更（実被弾: Codexのupdate確認ダイアログでprompt未送信のまま40分停滞）。
+> `codexLaunchBlockingDialog`が起動前modal（update確認／directory trust確認／種別未特定）を
+> 実機capture逐語で検知し、エラーにsession_id・復旧手順（pty_read→pty_key→pty_send）を含める。
+> ダイアログの自動応答はしない。full 358 pass、release commit `d7ec7de`、main CI `32795532630`、
+> tag CI／npm publish `32795769494`、Registry `32796078246` success、Release＋MCPB、
+> global install後initialize smoke 0.29.0。公開受入はADR 0044を正とする。
+>
 > **v0.28.4（2026-08-25・公開完了）**: Windowsの対話shellをPowerShell 7へ統一。`pty_open`の
 > Windows既定を`pwsh`にし、明示`powershell`も検証済みPowerShell 7絶対pathへ正規化する。
 > runtime error DACL／process identity／Throughline shimも同じOS adapterを使い、5.1／PowerShell 6／

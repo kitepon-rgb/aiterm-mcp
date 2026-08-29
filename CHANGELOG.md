@@ -1,15 +1,34 @@
 # Changelog
 
-## 0.28.5
-
-- Return `initial_prompt=not_sent` immediately when a known Codex/Claude startup approval UI blocks the TUI, leaving the session alive for the caller to respond instead of waiting for the ready timeout.
-
 All notable changes to **aiterm-mcp** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.29.1] - 2026-08-29
+
+### Fixed
+
+- Return the existing `initial_prompt=not_sent` error immediately when a known Codex/Claude startup approval UI blocks the TUI, leaving the session alive for the caller instead of waiting for the ready timeout.
+
+## [0.29.0] - 2026-08-25
+
+### Changed
+
+- **起動時promptのready gate失敗を成功形receiptから明示エラーへ変更**（実被弾 2026-08-25:
+  Codexのupdate確認ダイアログでTUIが入力受付にならず、promptが未送信のまま
+  `wait_command: null`の成功形receiptが返り、呼び出し側が40分気づけなかった）。
+  `sendInitialAgentPrompt`はready失敗時にAitermError（code 2）を投げ、sessionは
+  調査/復旧用に残す。エラーメッセージにsession_id・復旧手順（pty_read→pty_key→pty_send）を含む。
+
+### Added
+
+- `codexLaunchBlockingDialog(screen)`: Codexの起動前modal（update確認・directory trust確認・
+  その他「Press enter to continue」型）を実機capture逐語で検知し、ready gate失敗エラーに
+  塞いでいるダイアログ種別を明示する。ダイアログ表示中のCodexはheader/footerを描かないため
+  `codexTuiReady`では識別できない（実測フィクスチャをtestに収録）。
 
 ## [0.28.4] - 2026-08-25
 

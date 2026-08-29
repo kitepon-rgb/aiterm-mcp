@@ -105,6 +105,7 @@ import {
   buildCodexAgentCmd,
   codexLaunchNote,
   codexTuiReady,
+  codexLaunchBlockingDialog,
   CODEX_COMPOSER_MARKER_RE,
   codexModelChoice,
   codexEffortChoice,
@@ -2973,13 +2974,17 @@ export async function sendInitialAgentPrompt(
   setInitialPromptState(meta, "not_sent");
   const ready = await waitAgentTuiReady(name, meta, o.ready_timeout ?? AGENT_TUI_READY_TIMEOUT_MS);
   if (!ready.ready) {
-    return {
-      text:
-        `initial_prompt=not_sent vendor=${meta.kind} ready=false samples=${ready.samples} harness=${agentHarness(meta.kind)}\n` +
-        `agent session '${name}' の ${agentLabel(meta.kind)} TUI が入力受付状態になりません。prompt は送信していません。`,
-      event_cursor: null,
-      submit_residue: null,
-    };
+    // ready失敗は成功形で返さず明示エラーにする（実被弾 2026-08-25: Codexのupdate確認ダイアログで
+    // 未送信のまま成功形receiptが返り、呼び出し側が40分気づけなかった）。sessionは調査/復旧用に残る。
+    const dialog = meta.kind === "codex" ? codexLaunchBlockingDialog(ready.lastScreen) : null;
+    const causeNote = dialog
+      ? `${dialog}が入力を塞いでいます。pty_read(screen:true)で画面を確認し、pty_keyでダイアログに応答してから、pty_sendでpromptを送ってください。`
+      : `pty_read(screen:true)で画面を確認し、入力受付になってからpty_sendでpromptを送ってください。`;
+    throw new AitermError(
+      `initial_prompt=not_sent vendor=${meta.kind} ready=false samples=${ready.samples} harness=${agentHarness(meta.kind)}\n` +
+        `agent session '${name}' の ${agentLabel(meta.kind)} TUI が入力受付状態にならず、prompt は送信していません。${causeNote}`,
+      2,
+    );
   }
   const startOffset = agentCompletionCursor(meta);
   try {

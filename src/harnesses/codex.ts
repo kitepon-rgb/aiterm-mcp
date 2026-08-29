@@ -417,6 +417,18 @@ export function codexTuiReady(screen: string): boolean {
 // submit座礁観測のcomposer領域マーカー（ready判定と同じ記号を行頭基準で探す）。
 export const CODEX_COMPOSER_MARKER_RE = /^\s*[›>]/;
 
+// Codexの起動前modalダイアログ検知。表示中はheader/footerが描かれず codexTuiReady が
+// 恒久falseになるため、ready gate失敗の原因究明用に画面から種別を特定する
+// （実被弾 2026-08-25: update確認で初手prompt未送信のまま30秒timeout→40分停滞）。
+// 文字列は実機captureの逐語。既知2種に一致しない「Press enter to continue」も
+// 同型のmodalとして拾う（種別不明のまま握りつぶさない）。
+export function codexLaunchBlockingDialog(screen: string): string | null {
+  if (screen.includes("Update available!")) return "update確認ダイアログ";
+  if (screen.includes("Do you trust the contents of this directory")) return "directory trust確認ダイアログ";
+  if (screen.includes("Press enter to continue")) return "起動時ダイアログ（種別未特定）";
+  return null;
+}
+
 export function codexModelChoice(screen: string, model: string): string | null {
   for (const line of screen.slice(screen.lastIndexOf("Select Model and Effort")).split("\n")) {
     const match = line.match(/^\s*(?:›\s*)?(\d+)\.\s+(\S+)/);
