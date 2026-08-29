@@ -976,10 +976,13 @@ test("openAgent codex: 複数行日本語 prompt は argv に残るが shell con
   const [sid] = core.openAgent("codex", { prompt }); // CODEX_BIN=/bin/echo
   try {
     const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
-    assert.match(out, /> 重点:/, `shell continuation 表示が出ることを固定する: ${out}`);
-    assert.match(out, /NoveLore リポジトリで、docs\/23_graph_upsert_tool_contract_plan\.md/, `prompt 先頭: ${out}`);
-    assert.match(out, /重点:\r?\n- 現行 graph_upsert inputSchema と必須\/任意の差分/, `prompt 本文: ${out}`);
-    assert.match(out, /docs\/07_mcp_interface\.md と server\.ts \/ handlers\.ts \/ validate\.ts のズレ/, `prompt 末尾: ${out}`);
+    // psmuxは複数行入力中のshell bracketed-paste mode切替をCSIとして描画へ挟む。
+    // argv本文ではない表示制御だけを除いて、実引数とcontinuationを照合する。
+    const visible = out.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, "");
+    assert.match(visible, /> 重点:/, `shell continuation 表示が出ることを固定する: ${out}`);
+    assert.match(visible, /NoveLore リポジトリで、docs\/23_graph_upsert_tool_contract_plan\.md/, `prompt 先頭: ${out}`);
+    assert.match(visible, /重点:\r?\n- 現行 graph_upsert inputSchema と必須\/任意の差分/, `prompt 本文: ${out}`);
+    assert.match(visible, /docs\/07_mcp_interface\.md と server\.ts \/ handlers\.ts \/ validate\.ts のズレ/, `prompt 末尾: ${out}`);
   } finally {
     core.closeSession(sid);
   }

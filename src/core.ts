@@ -791,8 +791,8 @@ export interface SendOpts {
   /** agent operation markerを保つ内部送信境界。MCPの公開引数にはしない。 */
   preserveAgentOperation?: boolean;
   /**
-   * paste-buffer に -p を付け、pane が bracketed paste mode を要求している時だけ
-   * ESC[200~/201~ で包んで貼る（tmux 側で negotiation されるため未対応 pane へは素通し）。
+   * POSIX tmuxはpaste-buffer -pのpane negotiation、Windows psmuxはready gate通過済み
+   * agent TUIへの明示ESC[200~/201~ wrapperで原子化する。
    * agent TUI への prompt 投入専用: TUI が paste を原子的に扱い、チャンク境界での
    * キー解釈（文字化け・Enter 取り落とし）を抑える。通常シェル送信の行単位実行の
    * 挙動を変えないため、公開引数にはせず agent dispatch 経路だけが立てる。
@@ -877,44 +877,108 @@ export function send(name: string, text: string, o: SendOpts = {}): string {
     // `send-keys -l`と単発`paste-buffer`は、長文をPTY入力queueへ一度に流すと、OSを問わず
     // 途中以降が欠落しても tmux 自体は code=0 を返す。UTF-8を壊さない256byte以下に分け、
     // 全chunk＋Enterをsession単位のcross-process lock内で直列化する。
-    const pasteSupportsNoSanitize = pasteBufferSupportsNoSanitizeFlag();
     const chunks = splitPtyText(text);
-    const bufferBase = `aiterm-${process.pid}-${randomBytes(8).toString("hex")}`;
-    for (let i = 0; i < chunks.length; i += 1) {
-      const bufferName = `${bufferBase}-${i}`;
-      const partial =
-        i > 0
-          ? " 先行chunkはPTYに入力済みでEnterは未送信です。再送前に入力を確認・消去してください。"
-          : "";
-      const loaded = loadPtyBufferChunk(true, bufferName, chunks[i]);
-      if (loaded.code !== 0) {
-        tmuxCleanup("delete-buffer", "-b", bufferName);
-        throw new AitermError(
-          `tmux bufferへの送信準備に失敗しました` +
-            `（chunk ${i + 1}/${chunks.length}）: ${loaded.stderr.trim() || `code=${loaded.code}`}.${partial}`,
-          2,
-        );
+    if (isWin) {
+      // psmux 3.3.8 のnamed/anonymous paste bufferは、実在していてもpaste時に
+      // `no buffer` を返すため、Windowsだけtarget paneへのliteral send-keysを使う。
+      // bracketedPasteはagent dispatch内部だけが指定し、ready gate通過済みTUIへ
+      // 明示的なDECSET 2004 wrapperを送る。POSIX tmuxの-p negotiationは下で維持する。
+      if (o.bracketedPaste) {
+        const started = tmux("send-keys", "-l", "-t", name, "--", "\x1b[200~");
+        if (started.code !== 0) {
+          throw new AitermError(
+            `psmuxへbracketed paste開始を送れませんでした: ${started.stderr.trim() || `code=${started.code}`}`,
+            2,
+          );
+        }
       }
-      // -Sは対応新版だけでvis(3)制御文字変換を無効化する。
-      // send 自身の raw/sanitize 契約だけを真実とし、tmux 側で黙って再変換させない。
-      const pasteArgs = pasteBufferBaseArgs();
-      if (o.bracketedPaste) pasteArgs.push("-p");
-      if (pasteSupportsNoSanitize) pasteArgs.push("-S");
-      pasteArgs.push("-b", bufferName, "-t", name);
-      const pasted = tmux(...pasteArgs);
-      if (pasted.code !== 0) {
-        // paste 失敗時は -d で消えないbufferを明示的に掃除する。元エラーを優先する。
-        tmuxCleanup("delete-buffer", "-b", bufferName);
-        throw new AitermError(
-          `tmux bufferのPTY送信に失敗しました` +
-            `（chunk ${i + 1}/${chunks.length}）: ${pasted.stderr.trim() || `code=${pasted.code}`}.${partial}`,
-          2,
-        );
+      for (let i = 0; i < chunks.length; i += 1) {
+        // psmuxのWindows argv parserはliteral引数中のLFを末尾backslashへ変形する。
+        // LFだけC-j keyとして分離し、各literal/key後のserver同期で元のbyte順を保つ。
+        const segments = chunks[i].split("\n");
+        for (let j = 0; j < segments.length; j += 1) {
+          const sent =
+            segments[j].length > 0
+              ? tmux("send-keys", "-l", "-t", name, "--", segments[j])
+              : { code: 0, stdout: "", stderr: "" };
+          if (sent.code !== 0) {
+            const partial =
+              i > 0 || j > 0
+                ? " 先行入力はPTYに送信済みでEnterは未送信です。再送前に入力を確認・消去してください。"
+                : "";
+            throw new AitermError(
+              `psmuxのPTY送信に失敗しました` +
+                `（chunk ${i + 1}/${chunks.length}）: ${sent.stderr.trim() || `code=${sent.code}`}.${partial}`,
+              2,
+            );
+          }
+          if (j + 1 < segments.length) {
+            const lf = tmux("send-keys", "-t", name, "C-j");
+            if (lf.code !== 0) {
+              throw new AitermError(
+                `文字列はPTYへ一部送信済みですがpsmuxへLFを送れませんでした: ` +
+                  `${lf.stderr.trim() || `code=${lf.code}`}`,
+                2,
+              );
+            }
+          }
+          const settled = tmux("display-message", "-p", "-t", name, "#{pane_id}");
+          if (settled.code !== 0) {
+            throw new AitermError(
+              `文字列はPTYへ送信済みですがpsmuxの入力完了を確認できませんでした: ` +
+                `${settled.stderr.trim() || `code=${settled.code}`}`,
+              2,
+            );
+          }
+        }
+        if (i + 1 < chunks.length) {
+          Atomics.wait(PTY_PASTE_PAUSE_BUFFER, 0, 0, PTY_PASTE_CHUNK_PAUSE_MS);
+        }
       }
-      if (i + 1 < chunks.length) {
-        // tmux clientの終了だけでは、serverが前chunkをPTYへdrainしたことを保証しない。
-        // 次chunkまで短く間を空け、外部PTY入力queueの飽和による黙った末尾欠落を防ぐ。
-        Atomics.wait(PTY_PASTE_PAUSE_BUFFER, 0, 0, PTY_PASTE_CHUNK_PAUSE_MS);
+      if (o.bracketedPaste) {
+        const ended = tmux("send-keys", "-l", "-t", name, "--", "\x1b[201~");
+        if (ended.code !== 0) {
+          throw new AitermError(
+            `文字列はPTYに入力済みですがpsmuxへbracketed paste終了を送れませんでした: ` +
+              `${ended.stderr.trim() || `code=${ended.code}`}。再送前に入力を確認・消去してください`,
+            2,
+          );
+        }
+      }
+    } else {
+      const pasteSupportsNoSanitize = pasteBufferSupportsNoSanitizeFlag();
+      const bufferBase = `aiterm-${process.pid}-${randomBytes(8).toString("hex")}`;
+      for (let i = 0; i < chunks.length; i += 1) {
+        const bufferName = `${bufferBase}-${i}`;
+        const partial =
+          i > 0
+            ? " 先行chunkはPTYに入力済みでEnterは未送信です。再送前に入力を確認・消去してください。"
+            : "";
+        const loaded = loadPtyBufferChunk(true, bufferName, chunks[i]);
+        if (loaded.code !== 0) {
+          tmuxCleanup("delete-buffer", "-b", bufferName);
+          throw new AitermError(
+            `tmux bufferへの送信準備に失敗しました` +
+              `（chunk ${i + 1}/${chunks.length}）: ${loaded.stderr.trim() || `code=${loaded.code}`}.${partial}`,
+            2,
+          );
+        }
+        const pasteArgs = pasteBufferBaseArgs();
+        if (o.bracketedPaste) pasteArgs.push("-p");
+        if (pasteSupportsNoSanitize) pasteArgs.push("-S");
+        pasteArgs.push("-b", bufferName, "-t", name);
+        const pasted = tmux(...pasteArgs);
+        if (pasted.code !== 0) {
+          tmuxCleanup("delete-buffer", "-b", bufferName);
+          throw new AitermError(
+            `tmux bufferのPTY送信に失敗しました` +
+              `（chunk ${i + 1}/${chunks.length}）: ${pasted.stderr.trim() || `code=${pasted.code}`}.${partial}`,
+            2,
+          );
+        }
+        if (i + 1 < chunks.length) {
+          Atomics.wait(PTY_PASTE_PAUSE_BUFFER, 0, 0, PTY_PASTE_CHUNK_PAUSE_MS);
+        }
       }
     }
     if (enter) {

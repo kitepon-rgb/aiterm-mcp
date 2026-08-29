@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.4] - 2026-08-29
+
+### Fixed
+
+- Bypass psmux 3.3.8's unreliable paste-buffer lookup on Windows with UTF-8-safe literal chunks and a server synchronization boundary after every chunk.
+- Keep agent prompts atomic on Windows with explicit bracketed-paste wrappers after the TUI ready gate, while preserving tmux `paste-buffer -p` negotiation on POSIX.
+- Cover 6,000-character delivery, same-session cross-process serialization, eight-session concurrent delivery, and platform-specific bracketed paste in native PTY regression tests.
+
 ## [0.29.3] - 2026-08-29
 
 ### Fixed

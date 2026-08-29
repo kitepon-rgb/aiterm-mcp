@@ -2,6 +2,8 @@
 
 このファイルが aiterm-mcp の運用・設計・履歴の正本です（全 host 共通。Claude Code は CLAUDE.md の `@AGENTS.md` 経由で同じ内容を読む）。設計の詳細は `docs/00_overview.md` から辿り、特に `docs/01_design-plan.md` と関連 ADR を読む。
 
+> **v0.29.4（2026-08-29・公開工程）**: Windows psmux 3.3.8で複数席への`pty_send`が`no buffer`になり、親から担当席へ指示不能になる欠陥を修理。Windowsだけ壊れたpaste-bufferを使わず、UTF-8安全な256byte chunkをtarget paneへliteral送信し、各chunk後にserver同期境界を通す。agent dispatchはready gate通過済みTUIへ明示bracketed-paste wrapperを送る。POSIX tmuxの`paste-buffer -p` negotiationは変更しない。6,000文字・同一席別process・8席×8周並行・platform別bracketed pasteを実機回帰で固定。
+
 > **v0.29.3（2026-08-29・公開工程）**: Grok／Composer／Cursorの起動時promptをargvへ載せただけで`event_cursor`を返し、実ターン未開始を実行中と申告する欠陥を修理。全harnessをTUI ready確認後のdispatchへ一本化した。Grokは現在画面の`Waiting for response`等をbusyとして拒否し、安定したidle composerはtranscriptの`mcp_init_completed`を待たずに受け付ける。LiveTR Peertableの実Grok席で`initial_prompt=pending`の偽成功を再現し、修正後は実ランプbusyまで確認。
 
 > **v0.29.2（2026-08-29・公開工程）**: 0.29.1のblocking UI即時返却が、scrollbackに残った古い`Hooks need review`を現在のblocking UIと誤認し、描画済みidle composerへのdispatchを拒否した回帰を修理。現在のidle readyを先に判定し、readyでない時だけblocking UIを検査する。実blocking UIの即時返却は維持。LiveTR Peertable Codex席で再現。ADR 0045を補足。

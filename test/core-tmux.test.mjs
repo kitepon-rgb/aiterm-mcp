@@ -239,6 +239,22 @@ test("send: 別processの同一session送信をchunk単位で混線させない"
   }
 });
 
+test("send: Windows psmuxで別sessionのbuffer送信を並行実行しても消失しない", {
+  skip: process.platform === "win32" ? skip : "Windows psmux 固有",
+}, async () => {
+  const sessions = Array.from({ length: 8 }, (_, i) => `selftest_cross_send_${i}`);
+  for (const session of sessions) core.openSession(session);
+  try {
+    for (let round = 0; round < 8; round += 1) {
+      await Promise.all(sessions.map((session, i) => runConcurrentSender(session, String(i), 200)));
+    }
+  } finally {
+    for (const session of sessions) {
+      try { core.closeSession(session); } catch {}
+    }
+  }
+});
+
 test("send: 64KiB超の入力はchunk生成前にfail-loud", { skip }, () => {
   assert.throws(
     () => core.send(SESS, "x".repeat(64 * 1024 + 1), { force: true, enter: false }),
@@ -301,9 +317,9 @@ test("send raw: 制御文字とtabをtmux側で再変換しない", { skip }, as
   }
 });
 
-// agent dispatch 経路の paste 原子化: pane が bracketed paste mode を要求している時だけ
-// tmux が ESC[200~/201~ で包み（negotiation）、未要求 pane へは素通しになることをバイトレベルで固定する。
-test("send bracketedPaste: pane が要求している時だけ ESC[200~/201~ で包む", { skip }, async () => {
+// agent dispatch 経路の paste 原子化。POSIX tmux はpane要求時だけ-pで包む。
+// Windows psmuxはbuffer参照が壊れるため、ready gate通過済みagent TUIへ明示wrapperを送る。
+test("send bracketedPaste: platform別のagent TUI原子化契約を守る", { skip }, async () => {
   const session = "selftest_brkt";
   core.openSession(session);
   try {
@@ -330,23 +346,32 @@ test("send bracketedPaste: pane が要求している時だけ ESC[200~/201~ で
       /1b\s+5b\s+32\s+30\s+30\s+7e\s+68\s+65\s+6c\s+6c\s+6f\s+21\s+1b\s+5b\s+32\s+30\s+31\s+7e/,
       `paste mode 要求済み pane へは bracket 付きで届く: ${JSON.stringify(bracketed)}`,
     );
-    // 2004l で mode 解除後は、bracketedPaste:true でも素通し（tmux 側 negotiation）
+    // POSIXは2004l後に素通し。Windowsは内部agent dispatch専用契約として明示wrapperを維持する。
+    const plainBytes = process.platform === "win32" ? 18 : 6;
     core.send(
       session,
-      `stty raw -echo; printf '<<<AITERM_PLAIN_%s>>>\\n' READY; dd bs=1 count=6 2>/dev/null | od -An -tx1; stty sane`,
+      `stty raw -echo; printf '<<<AITERM_PLAIN_%s>>>\\n' READY; dd bs=1 count=${plainBytes} 2>/dev/null | od -An -tx1; stty sane`,
       { force: true },
     );
     await core.readOutput(session, { wait: true, until: "<<<AITERM_PLAIN_READY>>>", timeout: 5, raw: true });
     core.send(session, "plain!", { raw: true, force: true, enter: false, bracketedPaste: true });
     const plain = await core.readOutput(session, {
       wait: true,
-      until: "6e\\s+21",
+      until: process.platform === "win32" ? "31\\s+7e" : "6e\\s+21",
       untilRegex: true,
       timeout: 5,
       raw: true,
     });
-    assert.match(plain, /70\s+6c\s+61\s+69\s+6e\s+21/, `未要求 pane へは素のまま届く: ${JSON.stringify(plain)}`);
-    assert.doesNotMatch(plain.split("<<<AITERM_PLAIN_READY>>>").pop() ?? "", /1b\s+5b\s+32\s+30\s+30\s+7e/, "bracket を付けない");
+    if (process.platform === "win32") {
+      assert.match(
+        plain,
+        /1b\s+5b\s+32\s+30\s+30\s+7e\s+70\s+6c\s+61\s+69\s+6e\s+21\s+1b\s+5b\s+32\s+30\s+31\s+7e/,
+        `Windows agent経路は明示wrapperで届く: ${JSON.stringify(plain)}`,
+      );
+    } else {
+      assert.match(plain, /70\s+6c\s+61\s+69\s+6e\s+21/, `未要求 pane へは素のまま届く: ${JSON.stringify(plain)}`);
+      assert.doesNotMatch(plain.split("<<<AITERM_PLAIN_READY>>>").pop() ?? "", /1b\s+5b\s+32\s+30\s+30\s+7e/, "bracket を付けない");
+    }
   } finally {
     core.closeSession(session);
   }
