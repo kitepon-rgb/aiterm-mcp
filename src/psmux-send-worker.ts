@@ -5,7 +5,6 @@ import * as path from "node:path";
 
 const MAX_PAYLOAD_BYTES = 64 * 1024 + 12;
 const PTY_CHUNK_BYTES = 256;
-const CHUNK_DRAIN_MS = 100;
 const MAX_FINAL_DRAIN_MS = 3_000;
 const SESSION_BASE_RE = /^[A-Za-z0-9_-]{1,160}$/;
 const KEY_RE = /^[0-9a-f]{16}$/i;
@@ -79,9 +78,10 @@ async function send(): Promise<void> {
     const hex = Array.from(chunk, (byte) => byte.toString(16).padStart(2, "0")).join(" ");
     subcommands.push(`send -H ${hex}`);
   }
+  const chunkDrainMs = payload.length > 1024 ? 300 : 100;
   for (const command of subcommands) {
     await sendCommand(port, key, command);
-    await delay(CHUNK_DRAIN_MS);
+    await delay(chunkDrainMs);
   }
   const completionMarker = `AITERM_PSMUX_SEND_DONE_${process.pid}`;
   await sendCommand(port, key, `display-message -p ${completionMarker}`, completionMarker);

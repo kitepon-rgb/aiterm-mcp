@@ -212,7 +212,7 @@ const MAX_SEND_BYTES = 64 * 1024;
 const PTY_PASTE_CHUNK_BYTES = 256;
 const PTY_PASTE_CHUNK_PAUSE_MS = 10;
 const PTY_PASTE_PAUSE_BUFFER = new Int32Array(new SharedArrayBuffer(4));
-const SESSION_SEND_LOCK_WAIT_MS = 10_000;
+const SESSION_SEND_LOCK_WAIT_MS = isWin ? 130_000 : 10_000;
 const SESSION_SEND_LOCK_POLL_MS = 25;
 
 // 安全: send 前に弾く破壊的コマンド（外部システム境界の防御）

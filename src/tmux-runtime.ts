@@ -161,7 +161,7 @@ export function sendPsmuxPayload(
     maxBuffer: 1024 * 1024,
     input: Buffer.from(body, "utf8"),
     env: tmuxSpawnEnv(),
-    timeout: 45_000,
+    timeout: 120_000,
   });
   if (result.error) {
     return {
