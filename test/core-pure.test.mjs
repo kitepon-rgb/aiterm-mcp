@@ -209,6 +209,17 @@ test("agent_done ready gate: 既知の承認UIはtimeoutを待たずcallerへ返
   }
 });
 
+test("agent_done ready gate: scrollbackの古い承認文言より現在のidle composerを優先する", async () => {
+  const screen = "Hooks need review\n（過去の表示）\nOpenAI Codex\n› \ngpt-5.6-terra high · ~/repo";
+  const result = await core.__testWaitAgentTuiReady("codex", [screen], {
+    timeoutMs: 100,
+    pollMs: 0,
+    stableSamples: 1,
+  });
+  assert.equal(result.ready, true);
+  assert.equal(result.samples, 1);
+});
+
 test("agent_done ready gate: 一瞬のready後に再初期化したらstreakをリセットする", async () => {
   const result = await core.__testWaitAgentTuiReady(
     "claude",

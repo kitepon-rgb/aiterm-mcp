@@ -2690,12 +2690,12 @@ async function waitAgentTuiReadyImpl(
   for (;;) {
     lastScreen = sample();
     samples++;
-    if (isAgentTuiActionRequired(kind, lastScreen)) return { ready: false, samples, lastScreen };
     if (isAgentTuiIdleReady(kind, lastScreen)) {
       readyStreak++;
       if (readyStreak >= stableSamples) return { ready: true, samples, lastScreen };
     } else {
       readyStreak = 0;
+      if (isAgentTuiActionRequired(kind, lastScreen)) return { ready: false, samples, lastScreen };
     }
     if (performance.now() >= deadline) return { ready: false, samples, lastScreen };
     await sleepFn(pollMs);

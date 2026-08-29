@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.2] - 2026-08-29
+
+### Fixed
+
+- Prefer the current idle composer over stale startup-dialog text left in scrollback, while still returning immediately for an actually active blocking UI.
+
 ## [0.29.1] - 2026-08-29
 
 ### Fixed

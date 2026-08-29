@@ -8,6 +8,7 @@
 agent初回promptのready gateは、Codexのupdate・directory trust・hooks review・MCP/command approval、Claudeのproject trust・MCP consentを観測した場合、timeoutを待たず`ready:false`を返す。承認操作は行わず、sessionを維持し、0.29.0で定めた`initial_prompt=not_sent`の明示エラーへ直ちに流す。
 
 通常の入力欄ready判定と11回連続安定確認は変更しない。Grok／Composer／Cursorへ未観測の文言を追加しない。
+現在のidle composerがreadyなら、scrollbackに残った古いblocking UI文言よりready判定を優先する。
 
 ## Reason
 
