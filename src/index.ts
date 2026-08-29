@@ -34,6 +34,7 @@ type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean
 const NON_BLOCKING_RULE =
   "dispatch した子は投げっぱなしでよい＝親はここで待たない。" +
   "完了通知はreceiptの `wait_process.executable` と `wait_process.args` をそのまま親のターンを塞がない別プロセスAPIへ渡して受け、" +
+  "PowerShell 7のStart-Processだけは `windows_start_process_argument_list` を単一文字列として渡す。" +
   `exit を完了通知として扱う（${core.AITERM_WAIT_OUTCOME_NOTE}。ポーリング不要）。` +
   "`wait_command` は人間向け互換表示でありprocess境界へ使わない。foreground実行で親のターンを塞がない。";
 
@@ -41,6 +42,7 @@ const waitProcessOutputSchema = z
   .object({
     executable: z.string(),
     args: z.array(z.string()),
+    windows_start_process_argument_list: z.string().nullable(),
   })
   .nullable();
 
@@ -535,6 +537,7 @@ const agentCompletionDesc =
   `起動して投げたら投げっぱなしでよい＝親はここで待たない。` +
   `完了通知は起動応答またはpty_send dispatch receiptの wait_processを、親のターンを塞がない` +
   `別プロセスAPIへexecutable／argsの境界を保ったまま渡して受ける` +
+  `（PowerShell 7のStart-Processはwindows_start_process_argument_listを使う）` +
   `（${core.AITERM_WAIT_OUTCOME_NOTE}。ポーリング不要・foreground実行はしない）。` +
   `wait_commandは人間向け互換表示。結果回収は pty_read(agent_transcript:true)。`;
 const agentEnvironmentDesc =

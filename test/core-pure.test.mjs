@@ -435,6 +435,26 @@ test("agentWaitProcess: npm shimを解釈せず現在Nodeと同梱CLIを分離�
   assert.equal(waitProcess.executable, process.execPath);
   assert.match(waitProcess.args[0], /aiterm-wait-cli\.js$/);
   assert.deepEqual(waitProcess.args.slice(1), ["--session", "session-1", "--cursor", "42"]);
+  assert.equal(
+    typeof waitProcess.windows_start_process_argument_list === "string",
+    process.platform === "win32",
+  );
+});
+
+test("agentWaitProcess: Windows Start-Process用文字列は空白・quote・末尾backslashを保持する", () => {
+  const waitProcess = core.agentWaitProcess("session-1", 42, {
+    executable: "C:\\Program Files\\nodejs\\node.exe",
+    cliPath: "C:\\Users\\A B\\aiterm wait\\aiterm-wait-cli.js",
+    platform: "win32",
+  });
+  assert.equal(
+    waitProcess.windows_start_process_argument_list,
+    '"C:\\Users\\A B\\aiterm wait\\aiterm-wait-cli.js" --session session-1 --cursor 42',
+  );
+  assert.equal(
+    core.windowsStartProcessArgumentList(["plain", "with space", 'with"quote', "tail\\"]),
+    'plain "with space" "with\\\"quote" tail\\',
+  );
 });
 
 test("agentWaitLaunchForm: 未知/未申告の親には汎用の非ブロック指示へ落ちる", () => {

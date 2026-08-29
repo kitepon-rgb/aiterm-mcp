@@ -192,6 +192,8 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 15 ツール公�
   assert.match(agentLaunch.description, /wait_process/);
   assert.ok(agentLaunch.outputSchema.properties.wait_process, "agent_launchはplatform-native waiter process境界を公開する");
   assert.ok(ptySend.outputSchema.properties.wait_process, "pty_send dispatchも同じwaiter process境界を公開する");
+  const waitProcessSchema = agentLaunch.outputSchema.properties.wait_process.anyOf.find((entry) => entry.type === "object");
+  assert.ok(waitProcessSchema.properties.windows_start_process_argument_list, "Windows Start-Process用の完成済み引数文字列を公開する");
   assert.equal(codexAgent.inputSchema.properties.agent_done, undefined, "v0.16: launcher は常に managed");
   assert.equal(codexAgent.inputSchema.properties.wait, undefined, "v0.16: 初回prompt waitは廃止");
   assert.equal(codexAgent.inputSchema.properties.timeout, undefined);

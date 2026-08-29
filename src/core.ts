@@ -2493,20 +2493,53 @@ export const AITERM_WAIT_OUTCOME_NOTE =
 export type AgentWaitProcess = {
   executable: string;
   args: string[];
+  windows_start_process_argument_list: string | null;
 };
+
+function quoteWindowsProcessArgument(value: string): string {
+  if (value !== "" && !/[\s"]/u.test(value)) return value;
+  let quoted = '"';
+  let backslashes = 0;
+  for (const char of value) {
+    if (char === "\\") {
+      backslashes += 1;
+    } else if (char === '"') {
+      quoted += "\\".repeat(backslashes * 2 + 1) + '"';
+      backslashes = 0;
+    } else {
+      quoted += "\\".repeat(backslashes) + char;
+      backslashes = 0;
+    }
+  }
+  return quoted + "\\".repeat(backslashes * 2) + '"';
+}
+
+export function windowsStartProcessArgumentList(args: string[]): string {
+  return args.map(quoteWindowsProcessArgument).join(" ");
+}
 
 // npmのplatform別bin shimをcallerに解釈させず、現在稼働中のNodeと同梱CLIを直接起動する。
 // Windowsでもbackendはpsmux、対話shellはPowerShell 7のまま。これはwaiter processの入口だけを所有する。
-export function agentWaitProcess(session: string, cursor: number): AgentWaitProcess {
+export function agentWaitProcess(
+  session: string,
+  cursor: number,
+  runtime: { executable?: string; cliPath?: string; platform?: NodeJS.Platform } = {},
+): AgentWaitProcess {
+  const executable = runtime.executable ?? process.execPath;
+  const args = [
+    runtime.cliPath ?? fileURLToPath(new URL("./aiterm-wait-cli.js", import.meta.url)),
+    "--session",
+    session,
+    "--cursor",
+    String(cursor),
+  ];
   return {
-    executable: process.execPath,
-    args: [
-      fileURLToPath(new URL("./aiterm-wait-cli.js", import.meta.url)),
-      "--session",
-      session,
-      "--cursor",
-      String(cursor),
-    ],
+    executable,
+    args,
+    windows_start_process_argument_list:
+      (runtime.platform ?? process.platform) === "win32"
+        ? windowsStartProcessArgumentList(args)
+        : null,
   };
 }
 

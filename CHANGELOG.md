@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Add a structured `wait_process` executable/argument boundary to agent launch and dispatch receipts so Windows callers do not have to interpret npm's PowerShell bin shim.
+- Add a structured `wait_process` executable/argument boundary plus a PowerShell `Start-Process`-ready argument string to agent launch and dispatch receipts so Windows callers do not have to interpret npm's PowerShell bin shim or re-quote paths containing spaces.
 - Launch the bundled waiter through the current Node executable while preserving the psmux backend, PowerShell 7 interactive shell, compatibility `wait_command`, and waiter outcome contract.
 
 ## [0.29.6] - 2026-08-29
