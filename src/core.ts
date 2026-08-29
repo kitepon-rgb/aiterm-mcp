@@ -931,7 +931,9 @@ export function send(name: string, text: string, o: SendOpts = {}): string {
             );
           }
         }
-        if (i + 1 < chunks.length) {
+        if (isWin || i + 1 < chunks.length) {
+          // Windows psmuxは最後のsend-keysもConPTYへのdrain前に返るため、session lockを
+          // 次senderへ渡す前の最終chunkにも同じdrain境界を置く。
           Atomics.wait(PTY_PASTE_PAUSE_BUFFER, 0, 0, PTY_PASTE_CHUNK_PAUSE_MS);
         }
       }
