@@ -399,6 +399,25 @@ function makeFakeClaudeTuiBin({ authJson = '{"loggedIn":true,"authMethod":"claud
   return bin;
 }
 
+function makeFakeClaudeTrustTuiBin() {
+  const bin = path.join(process.env.TMPDIR, `fake-claude-trust-${Date.now().toString(36)}.sh`);
+  fs.writeFileSync(
+    bin,
+    [
+      "#!/bin/sh",
+      "if [ \"$1\" = auth ] && [ \"$2\" = status ] && [ \"$3\" = --json ]; then",
+      "  printf '%s\\n' '{\"loggedIn\":true,\"authMethod\":\"claude.ai\",\"apiProvider\":\"firstParty\"}'",
+      "  exit 0",
+      "fi",
+      "printf '%s\\n' 'Claude Code v2.1.251' 'Accessing workspace:' 'Is this a project you created or one you trust?' \"Claude Code'll be able to read, edit, and execute files here.\" '❯ No, exit' '  Yes, I trust this folder' 'Enter to confirm · Esc to cancel'",
+      "while IFS= read -r line; do printf 'UNEXPECTED_PROMPT:%s\\n' \"$line\"; done",
+      "",
+    ].join("\n"),
+    { mode: 0o700 },
+  );
+  return bin;
+}
+
 function appendAgentDoneWhenLogContains(sid, needle, events) {
   const timer = setInterval(() => {
     try {
@@ -2480,6 +2499,40 @@ test("openAgentWithInitialPrompt: TUI ready 失敗は明示エラーにし promp
       if (sid) core.closeSession(sid);
     }
   });
+});
+
+test("openAgentWithInitialPrompt: Claude workspace trust UIは成功receiptにせずprompt未送信で残す", { skip: skipAgentDone }, async () => {
+  const savedBin = process.env.CLAUDE_BIN;
+  const fakeBin = makeFakeClaudeTrustTuiBin();
+  const sid = `claude_trust_${Date.now().toString(36)}`;
+  const marker = "SHOULD_NOT_BE_SENT_TO_TRUST_MENU";
+  process.env.CLAUDE_BIN = fakeBin;
+  try {
+    await assert.rejects(
+      core.openAgentWithInitialPrompt("claude", {
+        session_name: sid,
+        prompt: marker,
+        ready_timeout: 5_000,
+      }),
+      (e) => {
+        assert.match(e.message, new RegExp(`session_id: ${sid}\\b`));
+        assert.match(e.message, /initial_prompt=not_sent/);
+        return true;
+      },
+    );
+    const meta = readAgentMeta(sid);
+    assert.equal(meta.initial_prompt, "not_sent");
+    assert.equal(fs.statSync(meta.event_file).size, 0, "completion eventを偽造しない");
+    assert.equal(fs.statSync(meta.result_file).size, 0, "Claude resultを偽造しない");
+    const screen = await core.readOutput(sid, { screen: true, raw: true });
+    assert.match(screen, /Yes, I trust this folder/);
+    assert.doesNotMatch(screen, new RegExp(marker));
+  } finally {
+    try { core.closeSession(sid); } catch {}
+    if (savedBin === undefined) delete process.env.CLAUDE_BIN;
+    else process.env.CLAUDE_BIN = savedBin;
+    fs.rmSync(fakeBin, { force: true });
+  }
 });
 
 // 実被弾 2026-08-25 の実機capture逐語（Codex v0.149.0）。ダイアログ表示中はheader/footerが

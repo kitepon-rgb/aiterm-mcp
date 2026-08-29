@@ -239,7 +239,13 @@ export function claudeLaunchNote(
 }
 
 export function claudeTuiReady(screen: string): boolean {
-  return screen.includes("Claude Code") && /(^|\n)\s*❯/.test(screen);
+  if (!screen.includes("Claude Code")) return false;
+  const lastMarker = screen.split(/\r?\n/u).filter((line) => /^\s*❯/u.test(line)).at(-1)?.trim();
+  if (!lastMarker) return false;
+  // Claude Code 2.1.251 のworkspace trust UIも選択カーソルに❯を使う。
+  // 最後のmarker行だけを見ることで、古いtrust表示がscrollbackに残っていても
+  // その下に描画された現在のcomposerを優先する。
+  return !/^❯\s*(?:\d+\.\s*)?(?:No,\s*exit|Yes,\s*I trust this folder)(?:\s|$)/iu.test(lastMarker);
 }
 
 // submit座礁観測のcomposer領域マーカー（ready判定と同じ記号を行頭基準で探す）。

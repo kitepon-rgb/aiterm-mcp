@@ -209,6 +209,31 @@ test("agent_done ready gate: 既知の承認UIはtimeoutを待たずcallerへ返
   }
 });
 
+test("agent_done ready gate: Claude workspace trustの選択カーソルをcomposerと誤認しない", async () => {
+  const trustScreen = [
+    "Claude Code v2.1.251",
+    "Accessing workspace:",
+    "Is this a project you created or one you trust?",
+    "Claude Code'll be able to read, edit, and execute files here.",
+    "❯ No, exit",
+    "  Yes, I trust this folder",
+    "Enter to confirm · Esc to cancel",
+  ].join("\n");
+  assert.equal(core.__testIsAgentTuiReady("claude", trustScreen), false);
+  assert.equal(core.__testIsAgentTuiIdleReady("claude", trustScreen), false);
+  assert.equal(core.__testIsAgentTuiReady("claude", trustScreen.replace("❯ No, exit", "❯ 1. No, exit")), false);
+  const blocked = await core.__testWaitAgentTuiReady("claude", [trustScreen], {
+    timeoutMs: 60_000,
+    pollMs: 1_000,
+  });
+  assert.equal(blocked.ready, false);
+  assert.equal(blocked.samples, 1);
+  assert.deepEqual(blocked.sleeps, []);
+
+  const currentComposer = `${trustScreen}\nClaude Code v2.1.251\n❯ \n[Fable 5]`;
+  assert.equal(core.__testIsAgentTuiReady("claude", currentComposer), true);
+});
+
 test("agent_done ready gate: scrollbackの古い承認文言より現在のidle composerを優先する", async () => {
   const screen = "Hooks need review\n（過去の表示）\nOpenAI Codex\n› \ngpt-5.6-terra high · ~/repo";
   const result = await core.__testWaitAgentTuiReady("codex", [screen], {
