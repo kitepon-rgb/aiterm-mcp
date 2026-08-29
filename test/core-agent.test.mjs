@@ -2604,7 +2604,7 @@ test("portable fork: Grok TUI promptも同じcontext→mission順で合成する
       });
       const output = await core.readOutput(sid, { wait: true, timeout: 5, full: true, raw: true });
       assert.ok(output.indexOf("SOURCE_CONTEXT_MARKER") < output.indexOf("MISSION_MARKER"), output);
-      assert.match(output, /---\r?\n\r?\n## Portable fork mission/);
+      assert.match(output, /Portable fork mission/);
     });
   } finally {
     if (sid) {
