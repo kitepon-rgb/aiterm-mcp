@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.7] - 2026-08-29
+
+### Fixed
+
+- Add a structured `wait_process` executable/argument boundary to agent launch and dispatch receipts so Windows callers do not have to interpret npm's PowerShell bin shim.
+- Launch the bundled waiter through the current Node executable while preserving the psmux backend, PowerShell 7 interactive shell, compatibility `wait_command`, and waiter outcome contract.
+
 ## [0.29.6] - 2026-08-29
 
 ### Fixed
@@ -1362,7 +1369,8 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.6...HEAD
+[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.7...HEAD
+[0.29.7]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.6...v0.29.7
 [0.29.6]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.5...v0.29.6
 [0.29.5]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.4...v0.29.5
 [0.29.4]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.3...v0.29.4

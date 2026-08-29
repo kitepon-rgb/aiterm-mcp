@@ -33,9 +33,16 @@ type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean
  */
 const NON_BLOCKING_RULE =
   "dispatch した子は投げっぱなしでよい＝親はここで待たない。" +
-  "完了通知は `aiterm-wait --session <id> --cursor <event_cursor>` を親のターンを塞がない別プロセスとして起動して受け、" +
+  "完了通知はreceiptの `wait_process.executable` と `wait_process.args` をそのまま親のターンを塞がない別プロセスAPIへ渡して受け、" +
   `exit を完了通知として扱う（${core.AITERM_WAIT_OUTCOME_NOTE}。ポーリング不要）。` +
-  "この待ちコマンドを foreground で実行して親のターンを塞ぐことはしない（receipt が実際の起動形を示す）。";
+  "`wait_command` は人間向け互換表示でありprocess境界へ使わない。foreground実行で親のターンを塞がない。";
+
+const waitProcessOutputSchema = z
+  .object({
+    executable: z.string(),
+    args: z.array(z.string()),
+  })
+  .nullable();
 
 function ok(s: string): ToolResult {
   return { content: [{ type: "text", text: s }] };
@@ -160,6 +167,7 @@ server.registerTool(
       mode: z.enum(["sent", "agent_dispatch"]),
       session_id: z.string(),
       event_cursor: z.number().int().nullable(),
+      wait_process: waitProcessOutputSchema,
       launch_id: z.string().nullable(),
       vendor: z.enum(["claude", "codex", "grok", "composer", "cursor"]).nullable(),
       harness: z.enum(["claude-code", "codex-cli", "grok-cli", "cursor-cli"]).nullable(),
@@ -175,6 +183,7 @@ server.registerTool(
         if (mark) throw new Error("agent session への dispatch は mark:true と併用できません");
         if (rtk) throw new Error("agent session への dispatch は rtk:true と併用できません");
         const receipt = await core.dispatchAgentTurn(session_id, text, { raw });
+        const waitProcess = core.agentWaitProcess(receipt.session_id, receipt.event_cursor);
         return {
           content: [
             {
@@ -190,6 +199,7 @@ server.registerTool(
             mode: "agent_dispatch" as const,
             session_id: receipt.session_id,
             event_cursor: receipt.event_cursor,
+            wait_process: waitProcess,
             launch_id: receipt.launch_id,
             vendor: receipt.vendor,
             harness: receipt.harness,
@@ -205,6 +215,7 @@ server.registerTool(
           mode: "sent" as const,
           session_id,
           event_cursor: null,
+          wait_process: null,
           launch_id: null,
           vendor: null,
           harness: null,
@@ -518,14 +529,14 @@ const agentEffortDesc = (kind: core.AgentKind) =>
       : kind === "cursor"
         ? "Cursor catalogのeffort。指定時はmodel必須で、adapterが model-effort の正規IDへ変換してlive catalogに照合する。"
         : "Grok Build reasoning effort。利用可能値はCLI／modelのlive catalogに従う。省略時はCLI／model既定。";
-// 全launcher共通の完了受信ガイド。待ちコマンドは起動応答の wait_command（初回prompt時）または
-// pty_send dispatch の event_cursor から組む。文型は NON_BLOCKING_RULE と同じく「待たない」が先。
+// 全launcher共通の完了受信ガイド。machine callerはreceiptのwait_processをそのまま別process APIへ渡す。
+// wait_commandは人間向け互換表示。文型は NON_BLOCKING_RULE と同じく「待たない」が先。
 const agentCompletionDesc =
   `起動して投げたら投げっぱなしでよい＝親はここで待たない。` +
-  `完了通知は起動応答の wait_command（初回prompt時）または pty_send dispatch 後の ` +
-  `aiterm-wait --session <id> --cursor <event_cursor> を親のターンを塞がない別プロセスとして起動して受ける` +
+  `完了通知は起動応答またはpty_send dispatch receiptの wait_processを、親のターンを塞がない` +
+  `別プロセスAPIへexecutable／argsの境界を保ったまま渡して受ける` +
   `（${core.AITERM_WAIT_OUTCOME_NOTE}。ポーリング不要・foreground実行はしない）。` +
-  `結果回収は pty_read(agent_transcript:true)。`;
+  `wait_commandは人間向け互換表示。結果回収は pty_read(agent_transcript:true)。`;
 const agentEnvironmentDesc =
   `通常CLIと同じHOME・cwd・project/user/local設定・MCP・plugin・skill・permission/trustを共有する。` +
   `aitermは完了相関stateだけをlaunch単位で所有する。起動されたagentにはsub-agent自己認識、親session、` +
@@ -556,6 +567,7 @@ async function launchAgent(kind: core.AgentKind, args: any): Promise<any> {
       session_id: sid,
       managed_completion: true,
       event_cursor: eventCursor,
+      wait_process: eventCursor === null ? null : core.agentWaitProcess(sid, eventCursor),
       wait_command: eventCursor === null ? null : `aiterm-wait --session ${sid} --cursor ${eventCursor}`,
       submit_residue: submitResidue,
       ...(supportsWriteScope && write_scope !== undefined
@@ -629,9 +641,10 @@ function registerAgentTool(
         harness: z.literal(core.agentHarness(kind)),
         session_id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
         managed_completion: z.boolean().describe("後方互換field。trueはaiterm完了相関が有効という意味で、project/user環境の隔離を意味しない"),
-        // 起動時 prompt でturnが走っている時だけ非null（additive拡張）。wait_command はそのままホストの
-        // バックグラウンドタスクとして実行できる完了待ちコマンド。
+        // 起動時promptでturnが走っている時だけ非null。wait_processがmachine向けprocess境界、
+        // wait_commandは人間向け互換表示。
         event_cursor: z.number().int().nullable(),
+        wait_process: waitProcessOutputSchema,
         wait_command: z.string().nullable(),
         // 初回prompt dispatch後のsubmit座礁観測（additive）。true=composerに残存を確認（submit未成立の疑い）/
         // false=残存を観測せず（submit成立の保証ではない）/ null=promptなし・判定不能。
@@ -670,6 +683,7 @@ server.registerTool(
       session_id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
       managed_completion: z.boolean(),
       event_cursor: z.number().int().nullable(),
+      wait_process: waitProcessOutputSchema,
       wait_command: z.string().nullable(),
       submit_residue: z.boolean().nullable(),
       write_scope: z.string().optional(),

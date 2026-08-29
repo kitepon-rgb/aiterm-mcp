@@ -81,6 +81,7 @@ test("claude_agent: text contentを維持しClaude managed launch receiptをstru
       managed_completion: true,
       // promptなしlaunchはturnが走っていない＝完了待ち対象がないため両方null
       event_cursor: null,
+      wait_process: null,
       wait_command: null,
       // promptなし＝submit座礁観測の対象なし
       submit_residue: null,
@@ -188,6 +189,7 @@ test("agent_launch: cursor-cli harnessを共通入口からCursor adapterへ振�
       session_id: sessionId,
       managed_completion: true,
       event_cursor: null,
+      wait_process: null,
       wait_command: null,
       submit_residue: null,
       write_scope: "read-only",

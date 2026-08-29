@@ -18,7 +18,7 @@ const PACKAGE = JSON.parse(fs.readFileSync(path.join(HERE, "..", "package.json")
 test("smoke: 公開versionはpackage・lock・server manifestで一致する", () => {
   const lock = JSON.parse(fs.readFileSync(path.join(HERE, "..", "package-lock.json"), "utf8"));
   const server = JSON.parse(fs.readFileSync(path.join(HERE, "..", "server.json"), "utf8"));
-  assert.equal(PACKAGE.version, "0.29.6", "v0.29.6 Windows runtime error worker期限修正版");
+  assert.equal(PACKAGE.version, "0.29.7", "v0.29.7 platform-native waiter process境界版");
   assert.equal(lock.version, PACKAGE.version);
   assert.equal(lock.packages?.[""]?.version, PACKAGE.version);
   assert.equal(server.version, PACKAGE.version);
@@ -189,6 +189,9 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 15 ツール公�
   assert.match(agentLaunch.description, /harnessはagent loop・認証・hook・transcriptを所有/);
   assert.match(agentLaunch.description, /Cursor harnessからGPT／Claude／Grok等を選んでも/);
   assert.match(agentLaunch.description, /Grok Composerは別harnessではなく/);
+  assert.match(agentLaunch.description, /wait_process/);
+  assert.ok(agentLaunch.outputSchema.properties.wait_process, "agent_launchはplatform-native waiter process境界を公開する");
+  assert.ok(ptySend.outputSchema.properties.wait_process, "pty_send dispatchも同じwaiter process境界を公開する");
   assert.equal(codexAgent.inputSchema.properties.agent_done, undefined, "v0.16: launcher は常に managed");
   assert.equal(codexAgent.inputSchema.properties.wait, undefined, "v0.16: 初回prompt waitは廃止");
   assert.equal(codexAgent.inputSchema.properties.timeout, undefined);

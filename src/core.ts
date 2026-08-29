@@ -2490,6 +2490,26 @@ function assertInitialPromptNotPendingForSend(name: string, force: boolean): voi
 export const AITERM_WAIT_OUTCOME_NOTE =
   `exit 0=done / 3=timeout（既定${DEFAULT_AGENT_DONE_TIMEOUT}秒・未完了） / 4=closed。receiptのoutcomeが正で、done以外は未完了`;
 
+export type AgentWaitProcess = {
+  executable: string;
+  args: string[];
+};
+
+// npmのplatform別bin shimをcallerに解釈させず、現在稼働中のNodeと同梱CLIを直接起動する。
+// Windowsでもbackendはpsmux、対話shellはPowerShell 7のまま。これはwaiter processの入口だけを所有する。
+export function agentWaitProcess(session: string, cursor: number): AgentWaitProcess {
+  return {
+    executable: process.execPath,
+    args: [
+      fileURLToPath(new URL("./aiterm-wait-cli.js", import.meta.url)),
+      "--session",
+      session,
+      "--cursor",
+      String(cursor),
+    ],
+  };
+}
+
 // 親ホストの識別（MCP initialize の clientInfo.name）。完了待ちコマンドを「親のターンを塞がない
 // 起動形」で名指しするためだけに使う。分からない時は汎用文へ落ち、機能は一切変えない。
 let parentClientName: string | null = null;

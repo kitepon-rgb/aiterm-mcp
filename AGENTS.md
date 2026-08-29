@@ -1,5 +1,7 @@
 # AGENTS.md
 
+> **v0.29.7（2026-08-29・公開工程）**: `agent_launch`／agent `pty_send`が人間向け`wait_command`だけを返し、Windowsのnpm binがPowerShell script shimになることをcallerへ解釈させていた欠陥を修理。receiptへ現在の`node.exe`と同梱`aiterm-wait-cli.js`を分離した`wait_process={executable,args}`を追加し、別process APIへそのまま渡せる契約にした。psmux backend、PowerShell 7対話shell、既存`wait_command`、wait outcomeは不変。
+
 このファイルが aiterm-mcp の運用・設計・履歴の正本です（全 host 共通。Claude Code は CLAUDE.md の `@AGENTS.md` 経由で同じ内容を読む）。設計の詳細は `docs/00_overview.md` から辿り、特に `docs/01_design-plan.md` と関連 ADR を読む。
 
 > **v0.29.6（2026-08-29・公開工程）**: Windowsのruntime error store診断はprivate DACLの適用・readbackに平常時1.5〜1.9秒、記録workerは4.9〜5.3秒を要するのに、POSIXと同じ2秒で強制終了していた。正常なstoreを`unverified`、正常な記録を`unavailable`と誤申告するため、Windowsだけ診断12秒・記録30秒へ分離する。個々のDACL操作の5秒上限、明示`timeoutMs`、POSIX既定2秒は変更しない。Windows CIで2秒超の正常workerを固定する。

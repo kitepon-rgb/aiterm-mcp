@@ -430,6 +430,13 @@ test("agentWaitLaunchForm: claude-code親には実際の非ブロック呼び出
   }
 });
 
+test("agentWaitProcess: npm shimを解釈せず現在Nodeと同梱CLIを分離して返す", () => {
+  const waitProcess = core.agentWaitProcess("session-1", 42);
+  assert.equal(waitProcess.executable, process.execPath);
+  assert.match(waitProcess.args[0], /aiterm-wait-cli\.js$/);
+  assert.deepEqual(waitProcess.args.slice(1), ["--session", "session-1", "--cursor", "42"]);
+});
+
 test("agentWaitLaunchForm: 未知/未申告の親には汎用の非ブロック指示へ落ちる", () => {
   for (const client of [null, "", "   ", "some-other-host"]) {
     core.setParentClient(client);
