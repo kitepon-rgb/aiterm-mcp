@@ -560,6 +560,27 @@ after(() => {
   else process.env.HOME = savedHome;
 });
 
+test("GrokはMCP初期化表示中でも現在のidle composerが安定していればready", () => {
+  const screen = [
+    "≡ main / MCP (6/11) │ 3.8K / 500K",
+    "╭────────────────────────╮",
+    "│ >                      │",
+    "╰──────── Grok 4.6 (medium) · always-approve ─╯",
+  ].join("\n");
+  assert.equal(core.__testIsAgentTuiReady("grok", screen), true);
+  assert.equal(core.__testIsAgentTuiIdleReady("grok", screen), true);
+});
+
+test("Grokの応答中表示はcomposerが残っていてもidle readyにしない", () => {
+  const screen = [
+    "Waiting for response… 12s [stop]",
+    "│ >                      │",
+    "╰──────── Grok 4.6 (medium) · always-approve ─╯",
+  ].join("\n");
+  assert.equal(core.__testIsAgentTuiReady("grok", screen), true);
+  assert.equal(core.__testIsAgentTuiIdleReady("grok", screen), false);
+});
+
 test("target contract: Grok/Composerは対話TUIへreasoning_effortを渡す", { skip: skipGrokFakeBin }, async () => {
   for (const kind of ["grok", "composer"]) {
     const [sid] = core.openAgent(kind, { reasoning_effort: "high" });
@@ -2567,7 +2588,7 @@ test("portable fork: Codex TUIへThroughline contextをmissionより前に一度
   }
 });
 
-test("portable fork: Grok argv promptも同じcontext→mission順で合成する", { skip: skipGrokFakeBin }, async () => {
+test("portable fork: Grok TUI promptも同じcontext→mission順で合成する", { skip: skipGrokFakeBin }, async () => {
   const savedThroughlineBin = process.env.THROUGHLINE_BIN;
   const fakeThroughline = makeFakeThroughlineBin();
   process.env.THROUGHLINE_BIN = fakeThroughline;
@@ -2656,6 +2677,35 @@ test("portable fork: source省略時はThroughlineを起動せず既存clean lau
     if (savedThroughlineBin === undefined) delete process.env.THROUGHLINE_BIN;
     else process.env.THROUGHLINE_BIN = savedThroughlineBin;
     fs.rmSync(broken, { force: true });
+  }
+});
+
+test("openAgentWithInitialPrompt: Grokもargv queueでなくTUI dispatchのpending cursorを返す", { skip: skipGrokFakeBin }, async () => {
+  const savedBin = process.env.GROK_BIN;
+  const fakeBin = makeFakeGrokTuiBin();
+  process.env.GROK_BIN = fakeBin;
+  let sid = null;
+  let launchCursor = null;
+  let submitResidue = null;
+  try {
+    await withFakeGrokHome(async () => {
+      [sid, , launchCursor, submitResidue] = await core.openAgentWithInitialPrompt("grok", {
+        session_name: `initial_grok_${Date.now().toString(36)}`,
+        model: "grok-4.6",
+        reasoning_effort: "medium",
+        prompt: "GROK_TUI_DISPATCH_MARKER",
+      });
+      assert.equal(typeof launchCursor, "number");
+      assert.ok(submitResidue === null || typeof submitResidue === "boolean");
+      assert.equal(readAgentMeta(sid).initial_prompt, "pending");
+      const output = await core.readOutput(sid, { wait: true, until: "GROK_TUI_DISPATCH_MARKER", timeout: 5, full: true, raw: true });
+      assert.match(output, /GROK_TUI_DISPATCH_MARKER/);
+    });
+  } finally {
+    if (sid) { try { core.closeSession(sid); } catch {} }
+    if (savedBin === undefined) delete process.env.GROK_BIN;
+    else process.env.GROK_BIN = savedBin;
+    fs.rmSync(fakeBin, { force: true });
   }
 });
 
@@ -2887,7 +2937,7 @@ test("dispatchAgentTurn: agent TUI ready 前は送信前に拒否し文字を流
   });
 });
 
-test("dispatchAgentTurn: Grokは入力欄が見えてもMCP初期化完了前には送信しない", { skip: skipGrokFakeBin }, async () => {
+test("dispatchAgentTurn: Grokは現在のidle composerが見えればtranscript初期化eventを要求しない", { skip: skipGrokFakeBin }, async () => {
   const savedBin = process.env.GROK_BIN;
   const fakeBin = makeFakeGrokTuiBin();
   process.env.GROK_BIN = fakeBin;
@@ -2896,11 +2946,10 @@ test("dispatchAgentTurn: Grokは入力欄が見えてもMCP初期化完了前に
       const [sid] = core.openAgent("grok", { agent_done: true });
       try {
         await core.readOutput(sid, { wait: true, until: "ready", timeout: 5, raw: true });
-        await assert.rejects(
-          () => core.dispatchAgentTurn(sid, "MUST_NOT_SEND_BEFORE_MCP_INIT", { ready_timeout: 0 }),
-          (e) => e.code === 2 && /入力受付状態/.test(e.message),
-        );
-        assert.doesNotMatch(fs.readFileSync(sessionLogPath(sid), "utf8"), /MUST_NOT_SEND_BEFORE_MCP_INIT/);
+        const receipt = await core.dispatchAgentTurn(sid, "SEND_WITH_VISIBLE_IDLE_COMPOSER", { ready_timeout: 1000 });
+        assert.equal(typeof receipt.event_cursor, "number");
+        const out = await core.readOutput(sid, { wait: true, until: "SEND_WITH_VISIBLE_IDLE_COMPOSER", timeout: 5, raw: true });
+        assert.match(out, /SEND_WITH_VISIBLE_IDLE_COMPOSER/);
       } finally {
         core.closeSession(sid);
       }

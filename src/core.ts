@@ -80,7 +80,6 @@ import {
   grokEventsTranscript,
   grokCompletionEvent,
   latestGrokCompletion,
-  grokInitializationComplete,
   observeGrokDone,
   buildGrokAgentCmd,
   grokLaunchNote,
@@ -2638,10 +2637,17 @@ function isAgentTuiReady(kind: AgentKind, screen: string): boolean {
 // Codex/Claude は実行中に「(esc to interrupt)」、Cursor は「Working」＋
 // 「ctrl+c to stop」を表示する（いずれも実機採取）。startup 側の処理（MCP initialize 等）が
 // 走ったまま古い composer がscrollbackに残る画面は入力受付とみなさない。
-// Grok/Composer は busy 表示文字列の実機根拠が未採取のため対象外（誤ブロックで起動不能にしない）。
+// Grok/Composer は実機で `Waiting for response` / `Responding…` / `[stop]` を表示する。
 function isAgentTuiBusy(kind: AgentKind, screen: string): boolean {
   if (kind === "cursor") return /ctrl\+c to stop/i.test(screen);
   if (kind === "codex" || kind === "claude") return /esc to interrupt/i.test(screen);
+  if (kind === "grok" || kind === "composer") {
+    return screen.includes("Waiting for response")
+      || screen.includes("Responding…")
+      || screen.includes("Responding...")
+      || screen.includes("[stop]")
+      || /\[hooks:\s*\d+\/\d+\]/u.test(screen);
+  }
   return false;
 }
 
@@ -2709,10 +2715,7 @@ async function waitAgentTuiReady(
 ): Promise<AgentTuiReadyWaitResult> {
   return waitAgentTuiReadyImpl(
     meta.kind,
-    () => {
-      if ((meta.kind === "grok" || meta.kind === "composer") && !grokInitializationComplete(meta)) return "";
-      return captureScreen(name, AGENT_TUI_READY_LINES);
-    },
+    () => captureScreen(name, AGENT_TUI_READY_LINES),
     sleep,
     { timeoutMs },
   );
@@ -3786,22 +3789,22 @@ export async function openAgentWithInitialPrompt(
   }
   // v0.16.0: launcher は常に managed（Stop hook つき）で立つ。手動運転したい場合は
   // pty_open で素の PTY を開き、harness CLI を自分で send する。
-  // 第3要素は「起動時点でturnが走っているか」の event_cursor: Grok/Composer/Cursor の argv prompt は
-  // event file 新規作成直後の起動＝境界0、prompt なしの起動は turn なし＝null。
-  if (!prompt || (kind !== "codex" && kind !== "claude")) {
+  // prompt無しはTUIを起動するだけ。prompt有りはharnessを問わず、TUI ready確認後の
+  // sendInitialAgentPromptへ一本化する。Grokの--verbatim argvはCLIが本文をqueueへ置いただけで
+  // turnを開始しない版があり、event_cursor=0を「実行中」と返すと利用側へ嘘をつく。
+  if (!prompt) {
     const [sid, hint] = openAgent(kind, {
       session_name: opts.session_name ?? null,
       model: opts.model ?? null,
       reasoning_effort: opts.reasoning_effort ?? null,
       cwd: opts.cwd ?? null,
-      prompt,
+      prompt: null,
       agent_done: true,
       launch_operation_id: opts.launch_operation_id ?? null,
       write_scope: opts.write_scope,
       env_vars: opts.env_vars,
     });
-    // argv prompt（grok/composer/cursor）は composer を経由しないため submit 座礁観測の対象外。
-    return [sid, hint, prompt ? 0 : null, null];
+    return [sid, hint, null, null];
   }
   const [sid, hint] = openAgent(kind, {
     session_name: opts.session_name ?? null,

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.3] - 2026-08-29
+
+### Fixed
+
+- Dispatch startup prompts for every harness through the live TUI ready gate instead of treating Grok/Composer/Cursor argv prompts as already running.
+- Recognize Grok's current response markers as busy while allowing a stable visible composer without requiring a transcript initialization event.
+
 ## [0.29.2] - 2026-08-29
 
 ### Fixed

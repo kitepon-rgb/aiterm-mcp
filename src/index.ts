@@ -634,7 +634,7 @@ function registerAgentTool(
         event_cursor: z.number().int().nullable(),
         wait_command: z.string().nullable(),
         // 初回prompt dispatch後のsubmit座礁観測（additive）。true=composerに残存を確認（submit未成立の疑い）/
-        // false=残存を観測せず（submit成立の保証ではない）/ null=promptなし・argv prompt・判定不能。
+        // false=残存を観測せず（submit成立の保証ではない）/ null=promptなし・判定不能。
         submit_residue: z.boolean().nullable(),
         ...writeScopeOutputSchema,
       },

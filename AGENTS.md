@@ -2,6 +2,8 @@
 
 このファイルが aiterm-mcp の運用・設計・履歴の正本です（全 host 共通。Claude Code は CLAUDE.md の `@AGENTS.md` 経由で同じ内容を読む）。設計の詳細は `docs/00_overview.md` から辿り、特に `docs/01_design-plan.md` と関連 ADR を読む。
 
+> **v0.29.3（2026-08-29・公開工程）**: Grok／Composer／Cursorの起動時promptをargvへ載せただけで`event_cursor`を返し、実ターン未開始を実行中と申告する欠陥を修理。全harnessをTUI ready確認後のdispatchへ一本化した。Grokは現在画面の`Waiting for response`等をbusyとして拒否し、安定したidle composerはtranscriptの`mcp_init_completed`を待たずに受け付ける。LiveTR Peertableの実Grok席で`initial_prompt=pending`の偽成功を再現し、修正後は実ランプbusyまで確認。
+
 > **v0.29.2（2026-08-29・公開工程）**: 0.29.1のblocking UI即時返却が、scrollbackに残った古い`Hooks need review`を現在のblocking UIと誤認し、描画済みidle composerへのdispatchを拒否した回帰を修理。現在のidle readyを先に判定し、readyでない時だけblocking UIを検査する。実blocking UIの即時返却は維持。LiveTR Peertable Codex席で再現。ADR 0045を補足。
 
 > **v0.29.1（2026-08-29・公開工程）**: agent初回prompt ready gateがCodexのupdate／directory trust／hooks、ClaudeのMCP consentを入力欄readyになるまで待ち続け、WindowsのCodex trust UIが先に終了してsessionを失う欠陥を修理。既知のblocking UIを1回目のsampleで検出したら、自動承認せず0.29.0の`initial_prompt=not_sent`明示エラーへ即座に流し、sessionを生かしたままcallerへ制御を戻す。Mac等の通常ready経路は11回安定確認を維持する。LiveTR Peertable実席で再現。DecisionはADR 0045。
