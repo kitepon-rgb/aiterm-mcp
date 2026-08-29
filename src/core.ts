@@ -210,6 +210,7 @@ const MAX_SEND_BYTES = 64 * 1024;
 // UTF-8境界を守って小さいtmux client roundtripに分け、各回にserver event loopがPTYへdrainできる境界を作る。
 const PTY_PASTE_CHUNK_BYTES = 256;
 const PTY_PASTE_CHUNK_PAUSE_MS = 10;
+const PSMUX_FINAL_DRAIN_MS = 100;
 const PTY_PASTE_PAUSE_BUFFER = new Int32Array(new SharedArrayBuffer(4));
 const SESSION_SEND_LOCK_WAIT_MS = 10_000;
 const SESSION_SEND_LOCK_POLL_MS = 25;
@@ -937,6 +938,10 @@ export function send(name: string, text: string, o: SendOpts = {}): string {
           Atomics.wait(PTY_PASTE_PAUSE_BUFFER, 0, 0, PTY_PASTE_CHUNK_PAUSE_MS);
         }
       }
+      // Windows factory runnerの高負荷時、最後のsend-keysから10msではConPTY queueが残り、
+      // session lock解放後の別process入力と交差した。psmuxにはPTY drain通知が無いため、
+      // 実測で混線しない100msだけ最終入力の後もlockを保持する。
+      Atomics.wait(PTY_PASTE_PAUSE_BUFFER, 0, 0, PSMUX_FINAL_DRAIN_MS);
       if (o.bracketedPaste) {
         const ended = tmux("send-keys", "-l", "-t", name, "--", "\x1b[201~");
         if (ended.code !== 0) {
