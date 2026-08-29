@@ -20,7 +20,7 @@
 >
 > **これは何か:** AI が握る 1 本の永続 MCP 端末——その中に他のコーディングエージェントも起動できる。`ssh`・`docker exec`・REPL・別エージェントの TUI は、すべてその 1 本の端末の中へ「送るだけのテキスト」として入れ子になる。仕組みはあえて素朴——MCP クライアントが相手エージェントの端末を 1 ターンずつ操作するだけ。隠れたプロトコルも・aiterm独自の共有メモリ層も・自律的な交渉も無い。起動したagentは、直接CLIと同じproject／harnessの通常memory・設定を読む。
 >
-> **人が tmux に張り付く必要はない。** aiterm は MCP 越しにプログラムから駆動されるので、「AI が別のエージェントを起動して操作する」のに端末の前に誰も座らなくていい——オーケストレーションのループ・CI ステップ・cron から動かせる。
+> **人が端末に張り付く必要はない。** aiterm は MCP 越しにプログラムから駆動されるので、「AI が別のエージェントを起動して操作する」のに端末の前に誰も座らなくていい——オーケストレーションのループ・CI ステップ・cron から動かせる。
 >
 > *MCP = Model Context Protocol — Claude Code のようなツールが AI に機能を差し込むためのオープン標準。*
 
@@ -35,7 +35,7 @@ cloneもビルドも不要。どのクライアントでも公開パッケージ
 npx -y aiterm-mcp
 ```
 
-**Node.js ≥ 18** と **tmux** が必要。Codexを操作する場合は、Codex CLIの導入と認証も必要。
+**Node.js ≥ 18** と対応multiplexer backend（POSIXは**tmux**、Windows nativeは**psmux 3.3.8以上**）が必要。Codexを操作する場合は、Codex CLIの導入と認証も必要。
 
 ### Claude Code
 
@@ -94,7 +94,7 @@ host統合は、kitepon.devの製品開発を支える内部基盤
 
 **言葉でなく実測で:** 記録済み203テストのベンチマークでは、`pty_read` はコンテキストに載るトークンを生ログの **約 7.1 分の 1** に減らす。しかも pass/fail の判定は畳んでも残る。→ [組み込みシェルツールとの使い分け](#組み込みシェルツールとの使い分け)
 
-15ツール: 6つのPTYツール、正規のagent起動入口`agent_launch`、移行用の旧4alias、`agent_configure`、`claude_turn`、`claude_approval`、`diagnostics`。バックエンドはtmuxなので、MCPサーバやAIクライアントが再起動してもsessionは生き残る。
+15ツール: 6つのPTYツール、正規のagent起動入口`agent_launch`、移行用の旧4alias、`agent_configure`、`claude_turn`、`claude_approval`、`diagnostics`。backendはPOSIXのtmux／Windows nativeのpsmuxなので、MCPサーバやAIクライアントが再起動してもsessionは生き残る。
 
 **v0.28.0では実行基盤harnessとmodelを分離した。** harnessはagent loop・認証・hook・session・transcriptを所有し、modelはその上で選ぶ。Cursor Agent CLIでGPT／Claude／Grokを選んでも完了契約はCursor方式のまま。Composerは別harnessではなく、`harness:"grok-cli", model:"grok-composer-2.5-fast"`で表す。旧4起動ツールは同じ実装へ流れる互換alias。
 
@@ -109,7 +109,7 @@ model／effort変更に対応した。明示したGrok／Composer modelとCompos
 現在の`grok models` catalogへ照合し、不在時は別modelへ黙ってfallbackせず明示失敗する。
 
 **v0.24.3ではlauncherへ渡す環境変数を現在のMCP processから明示選択できる。** `env_vars`へ
-変数名だけを指定すると、aitermは起動時の現在値を読み、存在する値だけをそのagentへ渡す。永続tmux
+変数名だけを指定すると、aitermは起動時の現在値を読み、存在する値だけをそのagentへ渡す。永続multiplexer
 serverがMCP processより先に起動していても、古いserver環境に席identityやworkflow変数を消されない。
 あわせてCodex v0.147が長寿命footerへ加える任意`fast`を認識し、idleな`medium fast ·` sessionでも
 再描画・再試行・再起動なしに`agent_configure`できる。
@@ -163,7 +163,7 @@ Publishing）で公開し、GitHub Release が Official MCP Registry を再登�
 
 ### 1. SSH・コンテナ・REPL を 1 本の永続端末で操作する — 土台
 
-これが土台で、tmux だけで動く——他の CLI は要らない。`pty_open` がローカル端末を 1 個握り、`ssh host`・`docker exec -it x bash`・REPL は、その中へ `pty_send` で打ち込む「ただのテキスト」——**一度だけ**。以降のコマンドは同じ認証済みセッションを通る。セッション種別をツールで区別しない。
+これが土台で、platform backend（POSIXのtmux／Windows nativeのpsmux）だけで動く——他の CLI は要らない。`pty_open` がローカル端末を 1 個握り、`ssh host`・`docker exec -it x bash`・REPL は、その中へ `pty_send` で打ち込む「ただのテキスト」——**一度だけ**。以降のコマンドは同じ認証済みセッションを通る。セッション種別をツールで区別しない。
 
 ```
 pty_open()                         → ローカル端末を 1 個握る
@@ -208,7 +208,7 @@ Cursorの`model`は`gpt-5.6-luna`のようなbase model、`reasoning_effort`は`
 `env_vars`は環境変数の**名前**だけを並べるallowlistであり、name/value mapではない。aitermは
 launcher起動時に現在のMCP processから各名前を読み、存在する値をshell quoteして、その1回のvendor
 起動コマンドへ入れる。未設定名は省略し、shell変数名として不正な名前はsession作成前に失敗する。
-全環境の暗黙copy、tmux server再起動、retry、fallbackは行わない。値はMCP tool引数には入らないが、
+全環境の暗黙copy、backend server再起動、retry、fallbackは行わない。値はMCP tool引数には入らないが、
 PTYの起動コマンドとして送られ、sessionの`.lastcmd`にも保持されるため、起動先vendorと同じOS userへ
 到達する。秘密転送路ではなく、席identityやworkflow用の非secret変数だけに使う。
 
@@ -268,7 +268,7 @@ Throughline自体が不要である。
 ← 499999500000                                     [is_complete=True via until]
 ```
 
-上の採取で私が触ったのは 2 本の `⋮` 行（長い head/tail を README 用に省略）と長すぎる grep 行 1 本の truncate だけ——`〈…〉` マーカー・トークン数・各 `is_complete` はツールが出した通り。（`until` は末尾スペース無しの `">>>"` を使う——採取されるプロンプトは末尾が削られるので `">>> "` だと外れて `timeout` に落ちる。）ネスト中は `until`（内側プロンプト）か `mark: true` を渡すこと——そこでは quiescence が原理的に効かないため（[完了検出](#完了検出5-層) / [既知の制約](#既知の制約バグではなく仕様)）。同じ tmux ソケットに人が `attach` すれば、これらをライブで覗ける（[人が覗く](#人が覗く)）。
+上の採取で私が触ったのは 2 本の `⋮` 行（長い head/tail を README 用に省略）と長すぎる grep 行 1 本の truncate だけ——`〈…〉` マーカー・トークン数・各 `is_complete` はツールが出した通り。（`until` は末尾スペース無しの `">>>"` を使う——採取されるプロンプトは末尾が削られるので `">>> "` だと外れて `timeout` に落ちる。）ネスト中は `until`（内側プロンプト）か `mark: true` を渡すこと——そこでは quiescence が原理的に効かないため（[完了検出](#完了検出5-層) / [既知の制約](#既知の制約バグではなく仕様)）。同じmultiplexer backendに人が `attach` すれば、これらをライブで覗ける（[人が覗く](#人が覗く)）。
 
 ## 最初の実行（約60秒）
 
@@ -281,7 +281,7 @@ Claude Code を再起動して、接続を確認:
 最初のセッション——4 回の呼び出しで、1 個の永続端末:
 
 ```text
-pty_open()                          → { session_id: "t1", attach: "tmux -S … attach -t t1" }
+pty_open()                          → { session_id: "t1", attach: "<platform attach command>" }
 pty_send("t1", "echo hello")        → PTY にコマンドを送る
 pty_read("t1", { wait: true })      → "hello"   （トークン削減・完了検出つき）
 pty_close("t1")                     → 端末を解放
@@ -323,7 +323,7 @@ flowchart LR
     P -->|"launches a fresh PTY per agent"| A["another coding-agent TUI<br/>Claude · Codex · Grok · Cursor"]
 ```
 
-primitive は「PTY を 1 個握る」ことだけ。それ以外——SSH・コンテナ・REPL・起動したエージェント TUI——は、永続端末の中で動く「対話的な何か」に過ぎず、同じ `pty_send` / `pty_read` で操作する。各起動ツールは自分専用の新しい PTY を開く。PTY は tmux 上にあるので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
+primitive は「PTY を 1 個握る」ことだけ。それ以外——SSH・コンテナ・REPL・起動したエージェント TUI——は、永続端末の中で動く「対話的な何か」に過ぎず、同じ `pty_send` / `pty_read` で操作する。各起動ツールは自分専用の新しい PTY を開く。PTY はPOSIXのtmux／Windows nativeのpsmux上にあるので、MCP サーバや AI クライアントが再起動してもセッションは生き残る。
 
 ## 組み込みシェルツールとの使い分け
 

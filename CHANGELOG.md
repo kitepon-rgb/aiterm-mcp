@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.8] - 2026-08-29
+
+### Fixed
+
+- Correct the `pty_open` MCP description and install-facing documentation to state the real platform contract: tmux on POSIX and psmux 3.3.8+ on native Windows.
+- Add a tools/list regression that prevents the obsolete Windows-requires-tmux wording from returning.
+
 ## [0.29.7] - 2026-08-29
 
 ### Fixed
@@ -1369,7 +1376,8 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.7...HEAD
+[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.8...HEAD
+[0.29.8]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.7...v0.29.8
 [0.29.7]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.6...v0.29.7
 [0.29.6]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.5...v0.29.6
 [0.29.5]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.4...v0.29.5

@@ -1,5 +1,7 @@
 # AGENTS.md
 
+> **v0.29.8（2026-08-29・公開工程）**: Windows nativeの永続PTY backendはpsmux 3.3.8以上なのに、`pty_open`のMCP descriptionとREADME冒頭がtmux必須と誤案内していた欠陥を修理。公開metadataはPOSIX=tmux／Windows native=psmuxを明示し、Windowsにもtmuxを要求する旧説明へ戻らないMCP smokeを固定する。内部backend、PowerShell 7対話shell、PTY挙動は変更しない。
+
 > **v0.29.7（2026-08-29・公開工程）**: `agent_launch`／agent `pty_send`が人間向け`wait_command`だけを返し、Windowsのnpm binがPowerShell script shimになることをcallerへ解釈させていた欠陥を修理。receiptへ現在の`node.exe`と同梱`aiterm-wait-cli.js`を分離した`wait_process={executable,args,windows_start_process_argument_list}`を追加する。true argv APIはargs、配列を空白結合するPowerShell 7 `Start-Process`は製品がquote済みの単一文字列を使う。空白入り配置の実process回帰で固定。psmux backend、PowerShell 7対話shell、既存`wait_command`、wait outcomeは不変。
 
 このファイルが aiterm-mcp の運用・設計・履歴の正本です（全 host 共通。Claude Code は CLAUDE.md の `@AGENTS.md` 経由で同じ内容を読む）。設計の詳細は `docs/00_overview.md` から辿り、特に `docs/01_design-plan.md` と関連 ADR を読む。

@@ -114,7 +114,7 @@ server.registerTool(
   "pty_open",
   {
     description:
-      "ローカル永続端末(tmux セッション)を1個開き、session_id を返す。tmux サーバ常駐ゆえ本サーバや " +
+      "ローカル永続端末（POSIXはtmux、Windows nativeはpsmux 3.3.8以上）を1個開き、session_id を返す。backend server常駐ゆえ本サーバや " +
       "クライアントが再起動してもセッションは生存する。リモート操作は専用ツールにせず、開いた端末の中で " +
       'pty_send(session_id, "ssh host") と打って入る。',
     inputSchema: {

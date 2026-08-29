@@ -14,15 +14,29 @@ const DIAGNOSTICS_FIXTURE = JSON.parse(
   fs.readFileSync(path.join(HERE, "fixtures", "factory-diagnostics-schema.json"), "utf8"),
 );
 const PACKAGE = JSON.parse(fs.readFileSync(path.join(HERE, "..", "package.json"), "utf8"));
+const MCPB = JSON.parse(fs.readFileSync(path.join(HERE, "..", "mcpb", "manifest.json"), "utf8"));
 
 test("smoke: 公開versionはpackage・lock・server manifestで一致する", () => {
   const lock = JSON.parse(fs.readFileSync(path.join(HERE, "..", "package-lock.json"), "utf8"));
   const server = JSON.parse(fs.readFileSync(path.join(HERE, "..", "server.json"), "utf8"));
-  assert.equal(PACKAGE.version, "0.29.7", "v0.29.7 platform-native waiter process境界版");
+  assert.equal(PACKAGE.version, "0.29.8", "v0.29.8 Windows psmux公開契約版");
   assert.equal(lock.version, PACKAGE.version);
   assert.equal(lock.packages?.[""]?.version, PACKAGE.version);
   assert.equal(server.version, PACKAGE.version);
   assert.equal(server.packages?.[0]?.version, PACKAGE.version);
+  assert.equal(MCPB.version, PACKAGE.version);
+});
+
+test("smoke: Windows backend公開面はpsmux 3.3.8以上で一致する", () => {
+  const readme = fs.readFileSync(path.join(HERE, "..", "README.md"), "utf8");
+  const readmeJa = fs.readFileSync(path.join(HERE, "..", "README.ja.md"), "utf8");
+  const mcpbPtyOpen = MCPB.tools.find((tool) => tool.name === "pty_open");
+  assert.match(MCPB.long_description, /psmux 3\.3\.8\+/);
+  assert.match(mcpbPtyOpen.description, /psmux 3\.3\.8\+/);
+  assert.match(readme, /psmux 3\.3\.8\+/);
+  assert.match(readmeJa, /psmux 3\.3\.8以上/);
+  assert.doesNotMatch(readme, /Requires \*\*Node\.js ≥ 18\*\* and \*\*tmux\*\*\./);
+  assert.doesNotMatch(readmeJa, /同じ tmux ソケット/);
 });
 
 test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 15 ツール公開", async () => {
@@ -93,6 +107,10 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 15 ツール公�
     "pty_read",
     "pty_send",
   ]);
+  const ptyOpen = toolsResp.result.tools.find((t) => t.name === "pty_open");
+  assert.match(ptyOpen.description, /POSIXはtmux/, "pty_open: POSIX backendを明示する");
+  assert.match(ptyOpen.description, /Windows nativeはpsmux 3\.3\.8以上/, "pty_open: Windows backendと最低版を明示する");
+  assert.doesNotMatch(ptyOpen.description, /tmux セッション/, "pty_open: Windowsにもtmuxを要求する旧説明へ戻さない");
   const ptySend = toolsResp.result.tools.find((t) => t.name === "pty_send");
   assert.equal(ptySend.inputSchema.properties.wait, undefined, "v0.16: wait は廃止");
   assert.equal(ptySend.inputSchema.properties.operation_id, undefined, "v0.16: durable相関はclaude_turn専用");

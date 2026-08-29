@@ -20,7 +20,7 @@
 >
 > **What it is:** one persistent MCP terminal your AI drives — and can launch other coding agents into. `ssh`, `docker exec`, a REPL, or another agent's TUI all nest inside that one terminal as just text you send in. The mechanism is deliberately plain — your MCP client drives the other agent's terminal turn by turn: no hidden protocol, no separate aiterm-owned shared-memory layer, no autonomous negotiation. Launched agents still read the normal project and harness memory/configuration that a direct CLI launch would use.
 >
-> **No human at a tmux required.** aiterm is driven programmatically over MCP, so an AI can launch and drive another agent with no one sitting in the terminal — from an orchestration loop, a CI step, or a cron job.
+> **No human at a terminal required.** aiterm is driven programmatically over MCP, so an AI can launch and drive another agent with no one sitting in the terminal — from an orchestration loop, a CI step, or a cron job.
 >
 > *MCP = Model Context Protocol — the open standard that lets tools like Claude Code plug capabilities into an AI.*
 
@@ -34,7 +34,7 @@ No clone or build is required. Each client launches the published package with:
 npx -y aiterm-mcp
 ```
 
-Requires **Node.js ≥ 18** and **tmux**. Driving Codex also requires the Codex CLI to be installed and authenticated.
+Requires **Node.js ≥ 18** and a supported multiplexer backend: **tmux** on POSIX or **psmux 3.3.8+** on native Windows. Driving Codex also requires the Codex CLI to be installed and authenticated.
 
 ### Claude Code
 
@@ -94,7 +94,7 @@ toolchain behind kitepon.dev's products.
 
 **Measured, not claimed:** in the recorded 203-test benchmark, a `pty_read` puts **~7.1× fewer tokens** in your context than the raw log — and the pass/fail verdict survives the fold. → [When to reach for it vs. the built-in shell](#when-to-reach-for-it-vs-the-built-in-shell)
 
-Fifteen tools: six **PTY tools** — `pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list` — to open, drive, and read one persistent terminal; one canonical **agent launcher**, `agent_launch`, which selects `claude-code`, `codex-cli`, `grok-cli`, or `cursor-cli` as the execution harness; four deprecated launcher aliases kept for migration; `agent_configure`; `claude_turn`; `claude_approval`; and `diagnostics`. The backend is **tmux**, so sessions survive even if the MCP server or the AI client restarts.
+Fifteen tools: six **PTY tools** — `pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list` — to open, drive, and read one persistent terminal; one canonical **agent launcher**, `agent_launch`, which selects `claude-code`, `codex-cli`, `grok-cli`, or `cursor-cli` as the execution harness; four deprecated launcher aliases kept for migration; `agent_configure`; `claude_turn`; `claude_approval`; and `diagnostics`. The backend is **tmux on POSIX and psmux on native Windows**, so sessions survive even if the MCP server or the AI client restarts.
 
 **v0.28.0 separates the execution harness from the model.** The harness owns the agent loop, authentication, hooks, session, and transcript; `model` is what that harness runs. Cursor Agent CLI can therefore select GPT, Claude, or Grok without changing the completion contract from Cursor hooks to another harness's. Grok Composer is a Grok CLI model preset, not another harness: use `harness: "grok-cli", model: "grok-composer-2.5-fast"`. The old four launcher tools are thin compatibility aliases over the same implementation.
 
@@ -111,8 +111,8 @@ An unavailable model fails visibly instead of letting the harness CLI fall back 
 
 **v0.24.3 forwards explicitly selected launcher environment variables from the current MCP process.**
 Pass variable names in `env_vars`; aiterm reads their current values at launch and injects only the
-present ones into that agent. This works even when the persistent tmux server predates the MCP
-process, so a stale tmux-server environment cannot erase per-seat identity or workflow variables.
+present ones into that agent. This works even when the persistent multiplexer server predates the MCP
+process, so a stale backend-server environment cannot erase per-seat identity or workflow variables.
 It also recognizes Codex v0.147's optional `fast` token in long-lived model/effort footers, keeping
 `agent_configure` available on an idle `medium fast ·` session without redraw, retry, or restart.
 
@@ -183,7 +183,7 @@ I used **Codex with GPT-5.6** as an engineering collaborator: it inspected the i
 
 ### 1. Drive SSH, containers, and REPLs in one persistent terminal — the primitive
 
-This is the base, and it works with just tmux — no other CLI. `pty_open` grabs one local terminal; `ssh host`, `docker exec -it x bash`, or a REPL are just text you `pty_send` into it — **once**. Every command after that rides the same already-authenticated session. Session kind is never a tool-level distinction.
+This is the base, and it works with just the platform backend — tmux on POSIX or psmux on native Windows. `pty_open` grabs one local terminal; `ssh host`, `docker exec -it x bash`, or a REPL are just text you `pty_send` into it — **once**. Every command after that rides the same already-authenticated session. Session kind is never a tool-level distinction.
 
 ```
 pty_open()                         → grab one local terminal
@@ -229,7 +229,7 @@ The canonical harness choices are:
 `env_vars` is an allowlist of environment-variable **names**, not a name/value map. At launch,
 aiterm reads each valid name from its current MCP process, shell-quotes present values, and places
 them on that one harness launch command. Missing names are omitted; invalid shell variable names
-fail before session creation. There is no implicit whole-environment copy, tmux-server restart,
+fail before session creation. There is no implicit whole-environment copy, backend-server restart,
 retry, or fallback. Values do not enter the MCP tool arguments, but they are delivered through the
 PTY launch command and retained in aiterm's per-session `.lastcmd`; the launched harness and other
 processes with access to the same OS user may read them. Use this for non-secret seat identity and
@@ -294,7 +294,7 @@ Nesting is just text you send in — here a Python REPL *inside* the same PTY (a
 ← 499999500000                                      [is_complete=True via until]
 ```
 
-The only edits to the captures above are the two `⋮` lines (a long head/tail run abbreviated for the README) and one over-long grep line truncated to fit — the `⟨…⟩` marker, the token counts, and every `is_complete` verdict are exactly what the tool printed. (Use `until: ">>>"` without a trailing space — the captured prompt is trimmed, so `">>> "` would miss and fall through to `timeout`.) While nested, pass `until` (the inner prompt) or `mark: true`, because quiescence cannot fire there by design — see [Completion detection](#completion-detection-5-layers) and [Known constraints](#known-constraints-by-design-not-bugs). A human can `attach` to the same tmux socket and watch any of this live (see [A human can watch](#a-human-can-watch)).
+The only edits to the captures above are the two `⋮` lines (a long head/tail run abbreviated for the README) and one over-long grep line truncated to fit — the `⟨…⟩` marker, the token counts, and every `is_complete` verdict are exactly what the tool printed. (Use `until: ">>>"` without a trailing space — the captured prompt is trimmed, so `">>> "` would miss and fall through to `timeout`.) While nested, pass `until` (the inner prompt) or `mark: true`, because quiescence cannot fire there by design — see [Completion detection](#completion-detection-5-layers) and [Known constraints](#known-constraints-by-design-not-bugs). A human can `attach` to the same multiplexer backend and watch any of this live (see [A human can watch](#a-human-can-watch)).
 
 ## First run (≈60 seconds)
 
@@ -307,7 +307,7 @@ Restart Claude Code, then verify the connection:
 Your first session — four calls, one persistent terminal:
 
 ```text
-pty_open()                          → { session_id: "t1", attach: "tmux -S … attach -t t1" }
+pty_open()                          → { session_id: "t1", attach: "<platform attach command>" }
 pty_send("t1", "echo hello")        → command sent into the PTY
 pty_read("t1", { wait: true })      → "hello"   (token-reduced, completion detected)
 pty_close("t1")                     → terminal released
@@ -349,7 +349,7 @@ flowchart LR
     P -->|"launches a fresh PTY per agent"| A["another coding-agent harness<br/>Claude Code · Codex CLI · Grok CLI · Cursor CLI"]
 ```
 
-One PTY is the only primitive. Everything else — SSH, containers, REPLs, and the launched agent TUIs — is just something interactive running inside a persistent terminal, driven with the same `pty_send` / `pty_read`. Each launcher opens its own fresh PTY. Because the PTYs live in tmux, sessions outlive the MCP server and the AI client.
+One PTY is the only primitive. Everything else — SSH, containers, REPLs, and the launched agent TUIs — is just something interactive running inside a persistent terminal, driven with the same `pty_send` / `pty_read`. Each launcher opens its own fresh PTY. Because the PTYs live in tmux on POSIX or psmux on native Windows, sessions outlive the MCP server and the AI client.
 
 ## When to reach for it vs. the built-in shell
 
@@ -556,8 +556,8 @@ symlink, filter, or replace harness configuration, authentication, MCP, plugin, 
 trust, memory, or history stores. Cleanup removes only aiterm-owned launch metadata and completion
 correlation files.
 
-The ordinary environment still comes from the shell/tmux session. When a caller needs a value that
-belongs to the current MCP process rather than the older persistent tmux server, every harness
+The ordinary environment still comes from the persistent shell session. When a caller needs a value that
+belongs to the current MCP process rather than the older persistent multiplexer server, every harness
 accepts `env_vars: ["NAME", ...]`. Only those names are refreshed at launch; this is a narrow
 per-launch overlay, not a replacement environment or configuration snapshot.
 
