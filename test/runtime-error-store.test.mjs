@@ -417,7 +417,10 @@ test("hanging telemetry worker/FIFO相当は main をblockせず timeoutで固�
 
     const diagnosticStarted = Date.now();
     const diagnostic = await runtimeErrorStoreDiagnostic({ workerPath: worker, timeoutMs: 50 });
-    assert.ok(Date.now() - diagnosticStarted < 250);
+    // Windowsはtimeout後のchild強制終了とhandle回収にself-hosted高負荷時400ms超を要する。
+    // 50ms deadline自体はworker副作用で検証し、呼出し全体はOS別の有界上限で固定する。
+    const diagnosticBoundMs = process.platform === "win32" ? 1000 : 250;
+    assert.ok(Date.now() - diagnosticStarted < diagnosticBoundMs);
     assert.deepEqual(diagnostic, {
       status: "unverified", collection: "malformed", record_count: null, unacknowledged_count: null,
     });
