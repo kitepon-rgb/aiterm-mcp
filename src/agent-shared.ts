@@ -138,7 +138,7 @@ export function stateRoot(): string {
 }
 
 export function ensureStateRoot(): string {
-  // state root は OS が与える per-user runtime dir（XDG_RUNTIME_DIR / os.tmpdir()）の下に作る。
+  // state root は OS が与えるper-user runtime dir（Windows隔離時TMPDIR／XDG_RUNTIME_DIR／os.tmpdir()）の下に作る。
   // 以前はここで symlink・owner・mode を検査していたが、共有 /tmp に敵対的な同居主体がいる
   // 前提の防御であり、対応 OS の既定配置では成立しない（オーナー裁定 2026-08-19）。
   // 作成時の 0o700 は検査ではなく妥当な既定として残す。経路の異常は以降の

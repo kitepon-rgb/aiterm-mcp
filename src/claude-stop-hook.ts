@@ -31,7 +31,7 @@ function hasAitermEnv(): boolean {
 
 
 function agentsDir(): string {
-  // state root は OS が与える per-user runtime dir（XDG_RUNTIME_DIR / os.tmpdir()）の下にある。
+  // state root は OS が与えるper-user runtime dir（Windows隔離時TMPDIR／XDG_RUNTIME_DIR／os.tmpdir()）の下にある。
   // 以前はここで symlink・owner・mode を検査していたが、共有 /tmp に敵対的な同居主体がいる
   // 前提の防御であり、対応 OS の既定配置では成立しない（オーナー裁定 2026-08-19）。
   // 経路の異常は open/stat の OS エラーとしてそのまま露出させる。

@@ -17,6 +17,12 @@ export function currentUid(): number {
 }
 
 export function runtimeStateBase(): string {
+  // Windows Node の os.tmpdir() は TMPDIR を参照せず TEMP を返す。一方、psmux namespace は
+  // tmux-runtime.ts で TMPDIR を最優先する。test／隔離processがTMPDIRだけを変えた時に
+  // PTYは隔離されてもmanaged metadataが本番TEMPへ残ると、隔離側killAllが本番相関だけを
+  // 消してしまう。Windowsだけ同じTMPDIR境界へ揃える。通常serverはTMPDIR未設定なので
+  // 従来どおりos.tmpdir()（%TEMP%）を使う。
+  if (process.platform === "win32" && process.env.TMPDIR) return process.env.TMPDIR;
   const xdg = process.env.XDG_RUNTIME_DIR;
   if (xdg) {
     try {

@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add a tools/list regression that prevents the obsolete Windows-requires-tmux wording from returning.
 - Do not mistake Claude Code 2.1.251's workspace-trust selection cursor for the composer; leave the initial prompt unsent and return an explicit blocking-UI error instead of selecting `No, exit` and issuing a false success receipt.
 - Preserve the current composer when an old trust screen remains only in scrollback by classifying the last Claude `❯` marker rather than reversing the ready/action-required precedence.
+- Use `TMPDIR` for the Windows managed-state root whenever it isolates the psmux namespace, preventing an isolated test process's `killAll()` from deleting live production agent metadata in the shared `%TEMP%` tree.
+- Keep the existing `%TEMP%\aiterm-mcp-0` location for normal Windows servers where `TMPDIR` is unset.
 
 ## [0.29.7] - 2026-08-29
 
