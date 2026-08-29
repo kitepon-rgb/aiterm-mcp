@@ -2590,8 +2590,11 @@ test("portable fork: Codex TUIへThroughline contextをmissionより前に一度
 
 test("portable fork: Grok TUI promptも同じcontext→mission順で合成する", { skip: skipGrokFakeBin }, async () => {
   const savedThroughlineBin = process.env.THROUGHLINE_BIN;
+  const savedGrokBin = process.env.GROK_BIN;
   const fakeThroughline = makeFakeThroughlineBin();
+  const fakeGrok = makeFakeGrokTuiBin();
   process.env.THROUGHLINE_BIN = fakeThroughline;
+  process.env.GROK_BIN = fakeGrok;
   let sid = null;
   try {
     await withFakeGrokHome(async () => {
@@ -2609,7 +2612,10 @@ test("portable fork: Grok TUI promptも同じcontext→mission順で合成する
     }
     if (savedThroughlineBin === undefined) delete process.env.THROUGHLINE_BIN;
     else process.env.THROUGHLINE_BIN = savedThroughlineBin;
+    if (savedGrokBin === undefined) delete process.env.GROK_BIN;
+    else process.env.GROK_BIN = savedGrokBin;
     fs.rmSync(fakeThroughline, { force: true });
+    fs.rmSync(fakeGrok, { force: true });
   }
 });
 
@@ -2660,8 +2666,11 @@ test("portable fork: Throughline外部境界の失敗はPTY作成前に明示拒
 
 test("portable fork: source省略時はThroughlineを起動せず既存clean launchを維持する", { skip: skipGrokFakeBin }, async () => {
   const savedThroughlineBin = process.env.THROUGHLINE_BIN;
+  const savedGrokBin = process.env.GROK_BIN;
   const broken = makeBrokenThroughlineBin("", 7);
+  const fakeGrok = makeFakeGrokTuiBin();
   process.env.THROUGHLINE_BIN = broken;
+  process.env.GROK_BIN = fakeGrok;
   let sid = null;
   try {
     await withFakeGrokHome(async () => {
@@ -2676,7 +2685,10 @@ test("portable fork: source省略時はThroughlineを起動せず既存clean lau
     }
     if (savedThroughlineBin === undefined) delete process.env.THROUGHLINE_BIN;
     else process.env.THROUGHLINE_BIN = savedThroughlineBin;
+    if (savedGrokBin === undefined) delete process.env.GROK_BIN;
+    else process.env.GROK_BIN = savedGrokBin;
     fs.rmSync(broken, { force: true });
+    fs.rmSync(fakeGrok, { force: true });
   }
 });
 
