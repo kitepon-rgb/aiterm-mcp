@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.5] - 2026-08-29
+
+### Fixed
+
+- Select the PowerShell mark sentinel from the currently rendered PowerShell prompt when psmux briefly reports the launcher shell immediately after `pty_open`.
+- Keep the failed, unpublished `v0.29.4` tag immutable and publish this corrected patch as 0.29.5.
+
 ## [0.29.4] - 2026-08-29
 
 ### Fixed

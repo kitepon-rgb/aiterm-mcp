@@ -272,6 +272,15 @@ function paneCurrentCommand(name: string): string {
   return normalizePaneCommand(r.stdout.trim());
 }
 
+function paneCurrentCommandForMark(name: string): string {
+  const foreground = paneCurrentCommand(name);
+  if (!isWin || foreground === "powershell" || foreground === "pwsh") return foreground;
+  // psmuxはnew-session直後だけpane_current_commandへ起動元shellを返すことがある。
+  // 現在の末尾画面にPowerShell promptが描画済みなら、mark構文はその実効shellへ合わせる。
+  const screen = captureScreen(name, 4).replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, "");
+  return /(?:^|\n)PS [^\r\n]*>\s*$/m.test(screen) ? "pwsh" : foreground;
+}
+
 function pasteBufferSupportsNoSanitizeFlag(): boolean {
   const listed = tmux("list-commands");
   if (listed.code !== 0) {
@@ -831,7 +840,7 @@ export function send(name: string, text: string, o: SendOpts = {}): string {
   if (o.mark) {
     // mark の sentinel は POSIX シェル構文。前面が fish/csh/tcsh 等の非 POSIX 対話シェルだと "$?" が
     // 壊れて sentinel が成立しない。黙って壊れた完了検出を作らず、明示エラーで until を促す（B8）。
-    fg = paneCurrentCommand(name);
+    fg = paneCurrentCommandForMark(name);
     if (NON_POSIX_MARK_SHELLS.has(fg)) {
       throw new AitermError(
         `mark は POSIX シェル(bash/sh/zsh/dash)前提です。前面が ${fg} のため sentinel の "$?" が` +
