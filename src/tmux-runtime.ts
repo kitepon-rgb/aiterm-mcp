@@ -6,6 +6,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { createHash } from "node:crypto";
+import { fileURLToPath } from "node:url";
 import { AitermError, ptyDependencyError } from "./errors.js";
 
 // Windows ネイティブには tmux が無いため、tmux CLI 互換の native psmux を叩く
@@ -143,6 +144,33 @@ export function tmuxCommandWithInput(
 
 export function tmuxCommand(observe: boolean, ...args: string[]): { code: number; stdout: string; stderr: string } {
   return tmuxCommandWithInput(observe, undefined, ...args);
+}
+
+export function sendPsmuxPayload(
+  observe: boolean,
+  sessionName: string,
+  text: string,
+  bracketedPaste: boolean,
+): { code: number; stdout: string; stderr: string } {
+  if (!isWin) return { code: 1, stdout: "", stderr: "psmux direct send is Windows-only" };
+  ensureWinPsmux(observe);
+  const worker = fileURLToPath(new URL("./psmux-send-worker.js", import.meta.url));
+  const body = bracketedPaste ? `\x1b[200~${text}\x1b[201~` : text;
+  const result = spawnSync(process.execPath, [worker, `${WIN_NS}__${sessionName}`], {
+    encoding: "utf8",
+    maxBuffer: 1024 * 1024,
+    input: Buffer.from(body, "utf8"),
+    env: tmuxSpawnEnv(),
+    timeout: 45_000,
+  });
+  if (result.error) {
+    return {
+      code: 1,
+      stdout: result.stdout ?? "",
+      stderr: `${(result.error as NodeJS.ErrnoException).code ?? "worker error"}: ${result.error.message}`,
+    };
+  }
+  return { code: result.status ?? 1, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
 }
 
 // psmux の load-buffer は stdin (`-`) 非対応で path 位置引数だけを取る。

@@ -23,6 +23,7 @@ import {
   WIN_NS,
   tmuxSpawnEnv,
   tmuxCommand,
+  sendPsmuxPayload,
   loadPtyBufferChunk,
   pasteBufferBaseArgs,
   TMUX_EMPTY_CONFIG,
@@ -210,7 +211,6 @@ const MAX_SEND_BYTES = 64 * 1024;
 // UTF-8境界を守って小さいtmux client roundtripに分け、各回にserver event loopがPTYへdrainできる境界を作る。
 const PTY_PASTE_CHUNK_BYTES = 256;
 const PTY_PASTE_CHUNK_PAUSE_MS = 10;
-const PSMUX_FINAL_DRAIN_MS = 100;
 const PTY_PASTE_PAUSE_BUFFER = new Int32Array(new SharedArrayBuffer(4));
 const SESSION_SEND_LOCK_WAIT_MS = 10_000;
 const SESSION_SEND_LOCK_POLL_MS = 25;
@@ -875,84 +875,18 @@ export function send(name: string, text: string, o: SendOpts = {}): string {
         /* noop */
       }
     }
-    // `send-keys -l`と単発`paste-buffer`は、長文をPTY入力queueへ一度に流すと、OSを問わず
-    // 途中以降が欠落しても tmux 自体は code=0 を返す。UTF-8を壊さない256byte以下に分け、
-    // 全chunk＋Enterをsession単位のcross-process lock内で直列化する。
-    const chunks = splitPtyText(text);
+    // POSIX tmuxはUTF-8安全な256byte pasteへ分割する。Windows psmuxは認証済み
+    // server commandでpayload全体を単一SendBytesへ変換し、別processとの交差を構造的に防ぐ。
     if (isWin) {
-      // psmux 3.3.8 のnamed/anonymous paste bufferは、実在していてもpaste時に
-      // `no buffer` を返すため、Windowsだけtarget paneへのliteral send-keysを使う。
-      // bracketedPasteはagent dispatch内部だけが指定し、ready gate通過済みTUIへ
-      // 明示的なDECSET 2004 wrapperを送る。POSIX tmuxの-p negotiationは下で維持する。
-      if (o.bracketedPaste) {
-        const started = tmux("send-keys", "-l", "-t", name, "--", "\x1b[200~");
-        if (started.code !== 0) {
-          throw new AitermError(
-            `psmuxへbracketed paste開始を送れませんでした: ${started.stderr.trim() || `code=${started.code}`}`,
-            2,
-          );
-        }
-      }
-      for (let i = 0; i < chunks.length; i += 1) {
-        // psmuxのWindows argv parserはliteral引数中のLFを末尾backslashへ変形する。
-        // LFだけC-j keyとして分離し、各literal/key後のserver同期で元のbyte順を保つ。
-        const segments = chunks[i].split("\n");
-        for (let j = 0; j < segments.length; j += 1) {
-          const sent =
-            segments[j].length > 0
-              ? tmux("send-keys", "-l", "-t", name, "--", segments[j])
-              : { code: 0, stdout: "", stderr: "" };
-          if (sent.code !== 0) {
-            const partial =
-              i > 0 || j > 0
-                ? " 先行入力はPTYに送信済みでEnterは未送信です。再送前に入力を確認・消去してください。"
-                : "";
-            throw new AitermError(
-              `psmuxのPTY送信に失敗しました` +
-                `（chunk ${i + 1}/${chunks.length}）: ${sent.stderr.trim() || `code=${sent.code}`}.${partial}`,
-              2,
-            );
-          }
-          if (j + 1 < segments.length) {
-            const lf = tmux("send-keys", "-t", name, "C-j");
-            if (lf.code !== 0) {
-              throw new AitermError(
-                `文字列はPTYへ一部送信済みですがpsmuxへLFを送れませんでした: ` +
-                  `${lf.stderr.trim() || `code=${lf.code}`}`,
-                2,
-              );
-            }
-          }
-          const settled = tmux("display-message", "-p", "-t", name, "#{pane_id}");
-          if (settled.code !== 0) {
-            throw new AitermError(
-              `文字列はPTYへ送信済みですがpsmuxの入力完了を確認できませんでした: ` +
-                `${settled.stderr.trim() || `code=${settled.code}`}`,
-              2,
-            );
-          }
-        }
-        if (isWin || i + 1 < chunks.length) {
-          // Windows psmuxは最後のsend-keysもConPTYへのdrain前に返るため、session lockを
-          // 次senderへ渡す前の最終chunkにも同じdrain境界を置く。
-          Atomics.wait(PTY_PASTE_PAUSE_BUFFER, 0, 0, PTY_PASTE_CHUNK_PAUSE_MS);
-        }
-      }
-      // Windows factory runnerの高負荷時、最後のsend-keysから10msではConPTY queueが残り、
-      // session lock解放後の別process入力と交差した。psmuxにはPTY drain通知が無いため、
-      // 実測で混線しない100msだけ最終入力の後もlockを保持する。
-      Atomics.wait(PTY_PASTE_PAUSE_BUFFER, 0, 0, PSMUX_FINAL_DRAIN_MS);
-      if (o.bracketedPaste) {
-        const ended = tmux("send-keys", "-l", "-t", name, "--", "\x1b[201~");
-        if (ended.code !== 0) {
-          throw new AitermError(
-            `文字列はPTYに入力済みですがpsmuxへbracketed paste終了を送れませんでした: ` +
-              `${ended.stderr.trim() || `code=${ended.code}`}。再送前に入力を確認・消去してください`,
-            2,
-          );
-        }
+      const sent = sendPsmuxPayload(true, name, text, !!o.bracketedPaste);
+      if (sent.code !== 0) {
+        throw new AitermError(
+          `psmuxのPTY送信に失敗しました: ${sent.stderr.trim() || `code=${sent.code}`}`,
+          2,
+        );
       }
     } else {
+      const chunks = splitPtyText(text);
       const pasteSupportsNoSanitize = pasteBufferSupportsNoSanitizeFlag();
       const bufferBase = `aiterm-${process.pid}-${randomBytes(8).toString("hex")}`;
       for (let i = 0; i < chunks.length; i += 1) {

@@ -182,7 +182,7 @@ test("send: 6,000文字の入力を途中欠落させずPTYへ送る", { skip },
     const command = `v=${value}; printf '\\n<<<AITERM_LONG_INPUT len=%s>>>\\n' "\${#v}"`;
     core.send(session, command, { force: true });
     const out = await core.readOutput(session, { wait: true, until: marker, timeout: 5 });
-    assert.ok(out.includes(marker), "長いcommandの末尾まで実行される");
+    assert.ok(out.includes(marker), `長いcommandの末尾まで実行される: ${JSON.stringify(out)}`);
     assert.match(out, /is_complete=True via until/, "指定markerが完了証拠になる");
   } finally {
     core.closeSession(session);
@@ -232,7 +232,10 @@ test("send: 別processの同一session送信をchunk単位で混線させない"
     const actual = fs.readFileSync(outputPath, "utf8");
     const ab = `${"A".repeat(6000)}${"B".repeat(6000)}`;
     const ba = `${"B".repeat(6000)}${"A".repeat(6000)}`;
-    assert.ok(actual === ab || actual === ba, "send全体が直列化され、2つの文字列が混線しない");
+    assert.ok(
+      actual === ab || actual === ba,
+      `send全体が直列化され、2つの文字列が混線しない: len=${actual.length} head=${JSON.stringify(actual.slice(0, 80))} tail=${JSON.stringify(actual.slice(-80))}`,
+    );
   } finally {
     try { core.closeSession(session); } catch {}
     fs.rmSync(outputPath, { force: true });

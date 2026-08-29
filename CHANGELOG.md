@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Bypass psmux 3.3.8's unreliable paste-buffer lookup on Windows with UTF-8-safe literal chunks and a server synchronization boundary after every chunk.
+- Bypass psmux 3.3.8's unreliable CLI paste-buffer/send-keys path on Windows by sending paced 256-byte `SendBytes` commands over the authenticated per-session server protocol and retaining the send lock through the final ConPTY drain.
 - Keep agent prompts atomic on Windows with explicit bracketed-paste wrappers after the TUI ready gate, while preserving tmux `paste-buffer -p` negotiation on POSIX.
 - Cover 6,000-character delivery, same-session cross-process serialization, eight-session concurrent delivery, and platform-specific bracketed paste in native PTY regression tests.
 
