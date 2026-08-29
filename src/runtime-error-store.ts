@@ -13,7 +13,12 @@ const STORE_SCHEMA = "aiterm-mcp.runtime-errors.v1" as const;
 const STATE_SCHEMA = "1.0" as const;
 const MAX_CONFIG_BYTES = 16 * 1024;
 const MAX_STORE_BYTES = 1024 * 1024;
-const WORKER_TIMEOUT_MS = 2_000;
+const POSIX_WORKER_TIMEOUT_MS = 2_000;
+// Windows はprivate DACLの適用とreadbackをPowerShell 7境界で行う。診断は最大2回、
+// 記録はlock queueとstate更新で複数回この境界を通るため、process起動だけを想定した
+// POSIXの2秒上限では正常処理まで強制終了する。各境界自身の5秒上限は維持し、worker全体だけ分ける。
+const WINDOWS_DIAGNOSTIC_WORKER_TIMEOUT_MS = 12_000;
+const WINDOWS_RECORD_WORKER_TIMEOUT_MS = 30_000;
 
 export const RUNTIME_ERROR_DEFINITIONS = Object.freeze({
   "AITERM.PTY_DEPENDENCY_UNAVAILABLE": Object.freeze({
@@ -563,6 +568,10 @@ export class RuntimeErrorStore {
 
 const WORKER = fileURLToPath(new URL("./runtime-error-worker.js", import.meta.url));
 function fixedStoreFailure(stderr: (line: string) => void): void { stderr("aiterm: runtime error store unavailable\n"); }
+function defaultWorkerTimeoutMs(action: "record" | "diagnostic"): number {
+  if (process.platform !== "win32") return POSIX_WORKER_TIMEOUT_MS;
+  return action === "record" ? WINDOWS_RECORD_WORKER_TIMEOUT_MS : WINDOWS_DIAGNOSTIC_WORKER_TIMEOUT_MS;
+}
 
 export function recordRuntimeError(code: RuntimeErrorCode, options: {
   workerPath?: string; timeoutMs?: number; stderr?: (line: string) => void;
@@ -575,7 +584,7 @@ export function recordRuntimeError(code: RuntimeErrorCode, options: {
     const child = spawn(process.execPath, [options.workerPath ?? WORKER, "record", code], {
       stdio: "ignore", windowsHide: true, env: process.env,
     });
-    const timer = setTimeout(() => { report(); forceKill(child); }, options.timeoutMs ?? WORKER_TIMEOUT_MS);
+    const timer = setTimeout(() => { report(); forceKill(child); }, options.timeoutMs ?? defaultWorkerTimeoutMs("record"));
     timer.unref();
     child.once("error", report);
     child.once("exit", (exitCode, signal) => { clearTimeout(timer); if (exitCode !== 0 || signal) report(); });
@@ -602,7 +611,7 @@ export async function runtimeErrorStoreDiagnostic(options: { workerPath?: string
         stdio: ["ignore", "pipe", "ignore"], windowsHide: true, env: process.env,
       });
     } catch { finish(fallback); return; }
-    const timer = setTimeout(() => { forceKill(child); finish(fallback); }, options.timeoutMs ?? WORKER_TIMEOUT_MS);
+    const timer = setTimeout(() => { forceKill(child); finish(fallback); }, options.timeoutMs ?? defaultWorkerTimeoutMs("diagnostic"));
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => { if (stdout.length <= 4096) stdout += chunk; });
     child.once("error", () => { clearTimeout(timer); finish(fallback); });

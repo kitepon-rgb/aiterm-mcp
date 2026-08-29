@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.6] - 2026-08-29
+
+### Fixed
+
+- Give Windows runtime-error diagnostics and asynchronous recording enough time for their required PowerShell 7 private-DACL operations instead of killing healthy workers at the POSIX two-second deadline.
+- Keep the explicit per-operation timeout override and the POSIX two-second default unchanged.
+
 ## [0.29.5] - 2026-08-29
 
 ### Fixed
@@ -1355,7 +1362,17 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.28.1...HEAD
+[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.6...HEAD
+[0.29.6]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.5...v0.29.6
+[0.29.5]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.4...v0.29.5
+[0.29.4]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.3...v0.29.4
+[0.29.3]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.2...v0.29.3
+[0.29.2]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.1...v0.29.2
+[0.29.1]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.0...v0.29.1
+[0.29.0]: https://github.com/kitepon/aiterm-mcp/compare/v0.28.4...v0.29.0
+[0.28.4]: https://github.com/kitepon/aiterm-mcp/compare/v0.28.3...v0.28.4
+[0.28.3]: https://github.com/kitepon/aiterm-mcp/compare/v0.28.2...v0.28.3
+[0.28.2]: https://github.com/kitepon/aiterm-mcp/compare/v0.28.1...v0.28.2
 [0.28.1]: https://github.com/kitepon/aiterm-mcp/compare/v0.28.0...v0.28.1
 [0.28.0]: https://github.com/kitepon/aiterm-mcp/compare/v0.27.9...v0.28.0
 [0.27.9]: https://github.com/kitepon/aiterm-mcp/compare/v0.27.8...v0.27.9

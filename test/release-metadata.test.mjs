@@ -45,6 +45,31 @@ test('release metadata points at the canonical kitepon organization repository',
   assert.doesNotMatch(registryWorkflow, /io\.github\.kitepon-rgb/);
 });
 
+test('CHANGELOGの全release見出しはlinkを持ちUnreleasedは現行versionへ接続する', async () => {
+  const [pkg, changelog] = await Promise.all([
+    readJson(new URL('../package.json', import.meta.url)),
+    readFile(new URL('../CHANGELOG.md', import.meta.url), 'utf8'),
+  ]);
+  const headings = [...changelog.matchAll(/^## \[([^\]]+)\]/gm)].map((match) => match[1]);
+  const references = new Map(
+    [...changelog.matchAll(/^\[([^\]]+)\]: (\S+)$/gm)].map((match) => [match[1], match[2]]),
+  );
+  assert.equal(headings[0], 'Unreleased');
+  assert.equal(headings[1], pkg.version);
+  assert.equal(
+    references.get('Unreleased'),
+    `https://github.com/kitepon/aiterm-mcp/compare/v${pkg.version}...HEAD`,
+  );
+  const versions = headings.slice(1);
+  for (const version of versions) {
+    assert.match(
+      references.get(version) ?? '',
+      /^https:\/\/github\.com\/kitepon\/aiterm-mcp\/(?:compare|releases\/tag)\//,
+      `${version} のrelease linkがありません`,
+    );
+  }
+});
+
 test('final CI measures dependency install separately from the four-environment full test', async () => {
   const ci = await readFile(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
 

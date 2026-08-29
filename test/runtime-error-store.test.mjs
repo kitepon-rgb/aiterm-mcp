@@ -427,6 +427,30 @@ test("hanging telemetry worker/FIFO相当は main をblockせず timeoutで固�
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+test("Windows既定worker期限は2秒超の正常なDACL境界を失敗扱いにしない", {
+  skip: process.platform !== "win32" ? "Windows private DACL境界専用" : undefined,
+}, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "aiterm-runtime-windows-deadline-"));
+  try {
+    const worker = path.join(root, "slow-success.mjs");
+    fs.writeFileSync(worker, `
+const [action] = process.argv.slice(2);
+setTimeout(() => {
+  if (action === "diagnostic") process.stdout.write(JSON.stringify({status:"ready",collection:"enabled",record_count:0,unacknowledged_count:0}) + "\\n");
+}, 2250);
+`, { mode: 0o600 });
+    const stderr = [];
+    assert.equal(recordRuntimeError("AITERM.PTY_DEPENDENCY_UNAVAILABLE", {
+      workerPath: worker, stderr: (line) => stderr.push(line),
+    }), true);
+    const diagnostic = await runtimeErrorStoreDiagnostic({ workerPath: worker });
+    assert.deepEqual(diagnostic, {
+      status: "ready", collection: "enabled", record_count: 0, unacknowledged_count: 0,
+    });
+    assert.deepEqual(stderr, []);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test("canonical config が実FIFOでも telemetry child 隔離により main process はblockしない", {
   skip: process.platform === "win32" ? "mkfifo はPOSIX専用（Windows timeout境界はhanging worker testで固定）" : undefined,
 }, async () => {

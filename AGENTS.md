@@ -2,6 +2,8 @@
 
 このファイルが aiterm-mcp の運用・設計・履歴の正本です（全 host 共通。Claude Code は CLAUDE.md の `@AGENTS.md` 経由で同じ内容を読む）。設計の詳細は `docs/00_overview.md` から辿り、特に `docs/01_design-plan.md` と関連 ADR を読む。
 
+> **v0.29.6（2026-08-29・公開工程）**: Windowsのruntime error store診断はprivate DACLの適用・readbackに平常時1.5〜1.9秒、記録workerは4.9〜5.3秒を要するのに、POSIXと同じ2秒で強制終了していた。正常なstoreを`unverified`、正常な記録を`unavailable`と誤申告するため、Windowsだけ診断12秒・記録30秒へ分離する。個々のDACL操作の5秒上限、明示`timeoutMs`、POSIX既定2秒は変更しない。Windows CIで2秒超の正常workerを固定する。
+
 > **v0.29.5（2026-08-29・公開工程）**: 0.29.4 tag CIで、Windowsの`pty_open(shell=PowerShell)`直後だけpsmuxの`pane_current_command`が起動元shellを返し、`mark:true`がPOSIX sentinelを誤選択する競合を修理。現在画面末尾のPowerShell promptを実効shellの証拠に加え、4回反復focusedを通過。0.29.4 tagはWindows fullでpublish前停止したため動かさず、修正版を0.29.5とする。
 
 > **v0.29.4（2026-08-29・公開工程）**: Windows psmux 3.3.8で複数席への`pty_send`が`no buffer`になり、親から担当席へ指示不能になる欠陥を修理。Windowsだけ壊れたCLI paste-buffer/send-keys経路を使わず、session serverの認証済みTCP commandへ256byte単位の`SendBytes`を順次投入し、server処理完了とConPTY drain後にだけsession send lockを解放する。agent dispatchは同じbyte streamへbracketed-paste wrapperを含める。POSIX tmuxの`paste-buffer -p` negotiationは変更しない。6,000文字・同一席別process・8席×8周並行・platform別bracketed pasteを実機回帰で固定。
