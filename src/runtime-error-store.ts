@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { createRequire } from "node:module";
-import { defaultRuntimeErrorPaths, windowsPrivateDaclCommand, windowsPrivateDaclVerifyCommand, expectedHostProfile, readBoundedFile, processStartIdentity, forceKill } from "./runtime-error-os.js";
+import { defaultRuntimeErrorPaths, windowsPrivateDaclCommand, windowsPrivateDaclVerifyCommand, expectedHostProfiles, readBoundedFile, processStartIdentity, forceKill } from "./runtime-error-os.js";
 export { defaultRuntimeErrorPaths, windowsPrivateDaclCommand, windowsPrivateDaclVerifyCommand } from "./runtime-error-os.js";
 import { fileURLToPath } from "node:url";
 
@@ -129,7 +129,7 @@ function validateCanonicalConfig(config: unknown, platform: NodeJS.Platform): bo
   if (config.schema_version !== "1.0" || !isObject(config.host) || !exactKeys(config.host, ["id", "profile"])) return false;
   if (typeof config.host.id !== "string" || config.host.id.length < 1 || config.host.id.length > 64
     || !/^[a-z0-9][a-z0-9._-]*$/.test(config.host.id)) return false;
-  if (config.host.profile !== expectedHostProfile(platform)) return false;
+  if (typeof config.host.profile !== "string" || !expectedHostProfiles(platform).includes(config.host.profile)) return false;
   if (!isObject(config.collection) || !exactKeys(config.collection, ["enabled"])
     || typeof config.collection.enabled !== "boolean") return false;
   if (!isObject(config.reporting)) return false;

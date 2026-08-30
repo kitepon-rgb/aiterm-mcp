@@ -65,10 +65,14 @@ export function windowsPrivateDaclVerifyCommand(target: string, kind: "directory
   };
 }
 
-export function expectedHostProfile(platform: NodeJS.Platform): "server" | "mac" | "wsl" | "windows-native" {
-  if (platform === "darwin") return "mac";
-  if (platform === "win32") return "windows-native";
-  return process.env.WSL_DISTRO_NAME || /microsoft/i.test(os.release()) ? "wsl" : "server";
+export function expectedHostProfiles(
+  platform: NodeJS.Platform,
+  env: NodeJS.ProcessEnv = process.env,
+  release: string = os.release(),
+): readonly string[] {
+  if (platform === "darwin") return ["mac"];
+  if (platform === "win32") return ["windows-native"];
+  return env.WSL_DISTRO_NAME || /microsoft/i.test(release) ? ["wsl"] : ["server", "linux"];
 }
 
 function assertPrivatePosixStat(info: fs.Stats, expectedMode: number, label: string): void {

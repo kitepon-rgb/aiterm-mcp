@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Accept both `server` and `linux` factory profiles on native Linux for opt-in
+  runtime-error collection while keeping WSL restricted to its legacy `wsl` profile.
 - Replace the nonexistent public `pty_kill_all` recovery guidance in the MCP error and both READMEs with the supported `pty_list` → `pty_close` → recreate flow.
 - Keep the Grok credential-path constraint in the authentication section instead of leaving it after the License heading.
 

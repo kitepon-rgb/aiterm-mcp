@@ -15,6 +15,7 @@ import {
   windowsPrivateDaclCommand,
   windowsPrivateDaclVerifyCommand,
 } from "../dist/runtime-error-store.js";
+import { expectedHostProfiles } from "../dist/runtime-error-os.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CORE_URL = pathToFileURL(path.join(HERE, "..", "dist", "core.js")).href;
@@ -22,6 +23,12 @@ const STORE_URL = pathToFileURL(path.join(HERE, "..", "dist", "runtime-error-sto
 const actualProfile = () => process.platform === "darwin" ? "mac"
   : process.platform === "win32" ? "windows-native"
     : (process.env.WSL_DISTRO_NAME || /microsoft/i.test(os.release()) ? "wsl" : "server");
+
+test("native Linux factory config accepts server and workstation profiles without widening WSL", () => {
+  assert.deepEqual(expectedHostProfiles("linux", {}, "6.8.0-generic"), ["server", "linux"]);
+  assert.deepEqual(expectedHostProfiles("linux", { WSL_DISTRO_NAME: "Ubuntu" }, "6.8.0-microsoft"), ["wsl"]);
+});
+
 function applyWindowsPrivateAcl(target, kind = "file") {
   if (process.platform !== "win32") return;
   const command = windowsPrivateDaclCommand(target, kind);
