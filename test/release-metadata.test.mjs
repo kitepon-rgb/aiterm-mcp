@@ -97,7 +97,11 @@ test('final CI is owned locally and measures dependency install separately from 
   assert.match(ci, /needs: \[ownership, full\]/);
   assert.match(ci, /test "\$GITHUB_REF_NAME" = "v\$version"/);
   assert.match(productFullCi, /workflow_call:/);
-  assert.match(productFullCi, /"macos-native","linux-native","windows-native","wsl2"/);
+  assert.match(
+    productFullCi,
+    /"macos-native","linux-server","linux-workstation","windows-native"/,
+  );
+  assert.doesNotMatch(`${ci}\n${productFullCi}`, /linux-native|wsl2/);
   assert.match(productFullCi, /run: \$\{\{ inputs\.full-command \}\}/);
   assert.doesNotMatch(productFullCi, /kitepon\/dotagents/);
 });

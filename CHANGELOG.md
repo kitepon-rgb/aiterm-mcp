@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Replace the retired `wsl2` and ambiguous `linux-native` factory CI labels with
+  separate `linux-server` and `linux-workstation` self-hosted runner contracts.
 - Move completed, rejected, interrupted, expired, and superseded plans, audits, promotion notes, and obsolete design drafts under `docs/archive/`; retain only small compatibility stubs where Lattice, ADRs, or research evidence have immutable path references.
 - Replace the release-by-release AGENTS log with a compact current product contract, and add product-owned DESIGN and RELEASE sources so Aiterm remains operable without dotagents.
 - Ship the README-linked CHANGELOG and current product docs in the npm package, and document standalone npm update and version-pinned rollback for global and `npx` installations.
