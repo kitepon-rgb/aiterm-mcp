@@ -64,6 +64,8 @@ test('製品CIはlocal full、Markdown文書検査、tag/version一致を所有�
   assert.match(ci, /test "\$GITHUB_REF_NAME" = "v\$version"/);
   assert.match(productFull, /documentation-command:/);
   assert.match(productFull, /inputs\.documentation-command != ''/);
+  assert.equal((productFull.match(/shell:\s*pwsh/g) ?? []).length, 3);
+  assert.doesNotMatch(productFull, /Progra~1\\Git\\bin\\bash\.exe/);
   assert.match(registry, /if: github\.event_name == 'release'/);
   assert.match(registry, /test "\$RELEASE_TAG" = "v\$version"/);
 });
