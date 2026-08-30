@@ -89,7 +89,10 @@ test('final CI is owned locally and measures dependency install separately from 
   assert.match(ci, /uses: \.\/\.github\/workflows\/product-full-ci\.yml/);
   assert.doesNotMatch(ci, /uses:\s*kitepon\/dotagents\/\.github\/workflows\//);
   assert.match(ci, /dependency-command: npm ci/);
-  assert.match(ci, /documentation-command: npm run test:docs/);
+  assert.match(
+    ci,
+    /documentation-command: npm ci --ignore-scripts --no-audit --no-fund && npm run test:docs/,
+  );
   assert.match(ci, /node --version && npm --version && npm test/);
   assert.match(ci, /needs: \[ownership, full\]/);
   assert.match(ci, /test "\$GITHUB_REF_NAME" = "v\$version"/);

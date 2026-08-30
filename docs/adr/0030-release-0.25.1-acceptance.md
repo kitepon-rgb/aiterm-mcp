@@ -3,6 +3,11 @@
 - Status: Accepted
 - Date: 2026-08-14
 
+> **2026-08-30置換注記:** このADRはv0.25.1公開受入時点の履歴であり、下記の工場CI方式は
+> 現行規範ではない。製品CIの現行正本はAiterm内の
+> [`.github/workflows/product-full-ci.yml`](../../.github/workflows/product-full-ci.yml)である。
+> dotagentsは工場統合、host wire、runner契約だけを所有し、Aitermの製品CIとrelease判断を所有しない。
+
 ## Release identity
 
 - release commit／tag target: `1346066507f38e8d003208a1a2a3cd0220f263fa`

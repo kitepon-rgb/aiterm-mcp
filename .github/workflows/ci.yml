@@ -49,7 +49,7 @@ jobs:
     with:
       environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'all' }}
       dependency-command: npm ci
-      documentation-command: npm run test:docs
+      documentation-command: npm ci --ignore-scripts --no-audit --no-fund && npm run test:docs
       full-command: >-
         node --version && npm --version && npm test
 
