@@ -4,7 +4,7 @@
 > Codex Stop event joinは実装当時の履歴。現行sendは非ブロックdispatchで、Codexは通常`CODEX_HOME`の
 > root rollout、Grok/Composerは通常`GROK_HOME`のsession historyを読む。Claudeは通常settingsへ加算した
 > launch固有Stop hookのbounded resultを使いprivate transcriptを読まない。通常config／historyはcopy・filter・
-> cleanupせず、環境境界は[ADR 0025](adr/0025-shared-agent-environment-and-lineage.md)を正とする。
+> cleanupせず、環境境界は[ADR 0025](../adr/0025-shared-agent-environment-and-lineage.md)を正とする。
 
 <!-- 前提: Fable 級統括（2026-07-11 時点）。docs/11 の確定指摘 B5 の設計正本＝実装 TODO を兼ねる -->
 

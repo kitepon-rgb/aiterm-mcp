@@ -1,7 +1,7 @@
 > **任意のMCPクライアントから、Claude Code・Codex CLI・Grok CLI・Cursor Agent CLIを単一のharness APIで永続対話TUIへ起動する。**
 
 <p align="center">
-  <img src=".github/og.png" alt="Aiterm — 異なる知性が一つの持続する実行現場を共有する森の観測拠点" width="100%">
+  <img src="https://raw.githubusercontent.com/kitepon/aiterm-mcp/main/.github/og.png" alt="Aiterm — 異なる知性が一つの持続する実行現場を共有する森の観測拠点" width="100%">
   <br>
   <sub><em>この画像は、異なる知性がひとつの持続する実行現場を共有し、それぞれの視点から同じ仕事を前へ進める姿を表しています。</em></sub>
 </p>
@@ -24,8 +24,7 @@
 >
 > *MCP = Model Context Protocol — Claude Code のようなツールが AI に機能を差し込むためのオープン標準。*
 
-[kitepon.dev](https://kitepon.dev/)を運営する[クオ（@QLyun35332）](https://x.com/QLyun35332)が
-開発・メンテナンスしています。
+[kitepon.dev](https://kitepon.dev/)のクオが開発・メンテナンスしています。
 
 ## MCPクライアントへ導入
 
@@ -88,9 +87,10 @@ claude mcp add --scope user --transport stdio aiterm -- npx -y aiterm-mcp
 }
 ```
 
-**所有境界:** 本repositoryは永続PTYと外部agent実行レーンを所有します。製品横断の導入と
-host統合は、kitepon.devの製品開発を支える内部基盤
-[dotagents](https://github.com/kitepon/dotagents)が担当します。
+**所有境界:** 本repositoryはinstall、設定、永続PTY、agent session、state／schema／migration、
+diagnostics、recovery、update、releaseを所有します。このREADMEと[製品文書](docs/00_overview.md)だけで
+単独cloneから運用できます。[dotagents](https://github.com/kitepon/dotagents)は任意の工場統合、host wire、
+製品間compatibilityと統合受入を担当しますが、Aitermを制御せず、runtimeの必須依存でもありません。
 
 **言葉でなく実測で:** 記録済み203テストのベンチマークでは、`pty_read` はコンテキストに載るトークンを生ログの **約 7.1 分の 1** に減らす。しかも pass/fail の判定は畳んでも残る。→ [組み込みシェルツールとの使い分け](#組み込みシェルツールとの使い分け)
 
@@ -153,7 +153,16 @@ runtime-error store は canonical dotagents config の `collection.enabled: true
 場合だけ収集し、既定OFF、network送信は行いません。tag起点CIのnpm provenance（OIDC Trusted
 Publishing）で公開し、GitHub Release が Official MCP Registry を再登録します。
 
-**状態:** 開発継続中 · この分野では新参で、別の形に賭けている（[既存手段との比較](#既存手段との比較)参照）· 動作対象は Linux · WSL2 · macOS · Windows ネイティブ · MIT · [変更履歴](CHANGELOG.md)。
+**状態:** 開発継続中 · 現行公開版 **v0.29.9** · 動作対象は Linux · WSL2 · macOS · Windows ネイティブ · MIT · [変更履歴](CHANGELOG.md)。
+
+### 更新と巻き戻し
+
+npm packageが単独配布の正本であり、dotagentsは介在しません。global installは
+`npm install -g aiterm-mcp@latest`で更新します。巻き戻す時は
+`npm install -g "aiterm-mcp@<known-good-version>"`のように既知の正常versionを明示し、MCP clientを再起動します。
+`npx`設定では`aiterm-mcp@latest`へ変えると更新でき、`aiterm-mcp@<version>`へ変えると固定・巻き戻し
+できます。downgrade前に[変更履歴](CHANGELOG.md)でstate／schema互換を確認してください。maintainer向けの
+公開物とreleaseの巻き戻しは、製品所有の[release手順](docs/RELEASE.md)を正とします。
 
 ## なぜ今
 
@@ -213,6 +222,8 @@ PTYの起動コマンドとして送られ、sessionの`.lastcmd`にも保持さ
 到達する。秘密転送路ではなく、席identityやworkflow用の非secret変数だけに使う。
 
 選んだharnessのCLIを公式経路で導入・認証しておく。Cursorは`curl https://cursor.com/install -fsS | bash`、`agent login`、更新は`agent update`が公式経路で、Aitermは曖昧な`agent`でなく`cursor-agent`を起動する。CLI不在・未認証・不正引数はsession作成前に明示失敗し、別経路へfallbackしない。
+GrokのcredentialをAitermがlockしたり書き戻したりはしない。継承した`GROK_AUTH_PATH`は絶対pathの
+安全なfileへ解決できなければならない。既定auth fileの不在を許すのは`XAI_API_KEY`設定時だけである。
 
 portable forkは任意である。`throughline_source_session`を使う場合、`prompt`は必須の新ミッションとなり、
 `launch_operation_id`とは併用できない。aitermは`THROUGHLINE_BIN`、次に`PATH`からThroughlineを解決し、
@@ -225,7 +236,7 @@ Throughline自体が不要である。
 ## デモ
 
 <p align="center">
-  <img src=".github/demo.gif" alt="aiterm-mcp デモ: pty_open → トークン削減した grep 読取 → Python REPL へネスト、すべて 1 個の永続セッションで" width="100%">
+  <img src="https://raw.githubusercontent.com/kitepon/aiterm-mcp/main/.github/demo.gif" alt="aiterm-mcp デモ: pty_open → トークン削減した grep 読取 → Python REPL へネスト、すべて 1 個の永続セッションで" width="100%">
 </p>
 
 リポジトリ内で今このツールに実際に通した本物の採取——数値も省略マーカーも各 `is_complete` の判定も、すべてツール自身の出力で、モックではない。角括弧のメタ行は `pty_read` が実際に付けるもの（この日本語 README ではメタ行を実出力のまま載せている。英語版は可読性のため訳出している）。
@@ -448,7 +459,7 @@ handoff contextを前置きできる。この任意経路は`throughline >= 0.9.
 
 `pty_send` は送信前に破壊的コマンド（`rm -rf /`, `mkfs`, `dd of=/dev/…`, `DROP TABLE` 等）を遮断し（`force: true` で越える）、ESC・ブラケットペースト終端などをサニタイズする。`pty_read` は既定で制御文字を無害化して返す（`raw: true` はバイトをそのまま返す）。これは**サンドボックスではなく tripwire**（[既知の制約](#既知の制約バグではなく仕様)参照）。
 
-1回の `pty_send` が受理する本文はUTF-8で最大64KiB。同一sessionへの送信はaiterm processをまたいで直列化し、chunk同士の混線を防ぐ。全OSで長いPTY入力の欠落を避けるためplatformのmultiplexerへUTF-8境界を壊さない256-byte単位でpasteし、chunk間に10msのdrain間隔を置く。POSIX shellが前面にいる時のsanitize済み複数行は、改行を含まない単一の`eval`入力へ符号化する。shellがscript全体を所有してから先頭行を実行するため、途中で起動したpager／REPLが後続行を対話キーとして奪わない。単一行、`raw:true`、非shell前面は従来どおり直接PTYへpasteする。agent dispatchはtmux互換のbracketed paste操作（`paste-buffer -p`）を使う: bracketed paste modeを要求しているpaneへは各chunkを`ESC[200~/201~`で包んで届け、chunk投入中のキー解釈による語中文字化け・submit取り落としを抑える。途中chunkが失敗した場合は部分送信済みであることを明示し、自動でEnterを押さない。送信processの異常終了でlockが残った場合は送信前にfail-closedする。そのsessionを `pty_close` して作り直すか、全sessionを破棄できる場合だけ `pty_kill_all` で安全に掃除する。
+1回の `pty_send` が受理する本文はUTF-8で最大64KiB。同一sessionへの送信はaiterm processをまたいで直列化し、chunk同士の混線を防ぐ。全OSで長いPTY入力の欠落を避けるためplatformのmultiplexerへUTF-8境界を壊さない256-byte単位でpasteし、chunk間に10msのdrain間隔を置く。POSIX shellが前面にいる時のsanitize済み複数行は、改行を含まない単一の`eval`入力へ符号化する。shellがscript全体を所有してから先頭行を実行するため、途中で起動したpager／REPLが後続行を対話キーとして奪わない。単一行、`raw:true`、非shell前面は従来どおり直接PTYへpasteする。agent dispatchはtmux互換のbracketed paste操作（`paste-buffer -p`）を使う: bracketed paste modeを要求しているpaneへは各chunkを`ESC[200~/201~`で包んで届け、chunk投入中のキー解釈による語中文字化け・submit取り落としを抑える。途中chunkが失敗した場合は部分送信済みであることを明示し、自動でEnterを押さない。送信processの異常終了でlockが残った場合は送信前にfail-closedする。`pty_list`で対象sessionを確認し、`pty_close`で閉じてから同じsession IDを作り直す。公開の一括停止toolは存在しない。
 
 ## 人が覗く
 
@@ -488,7 +499,7 @@ self-hostedのmacOS native・Linux native・Windows native・WSL2で同じ`npm t
 OS別の縮小suiteで代用しません。tag起点のnpm公開は4環境greenとtagged commitの`origin/main`
 祖先確認を通過した後だけ実行します。
 
-共通進行は`src/core.ts`、harness固有は`src/harnesses/`、OS差は`src/tmux-runtime.ts`／`src/agent-resolver.ts`、reducerは`src/rtk.ts`、公開面は`src/index.ts`が所有する。設計の出発点と reducer の移植元（pytest reducer は本家 rtk 0.42.0 と一致するよう移植・ただし上記の `FAILED` 行の差異は意図的・回帰テストで固定）は `prototype/python/` を参照。
+共通進行は`src/core.ts`、harness固有は`src/harnesses/`、OS差は`src/tmux-runtime.ts`／`src/agent-resolver.ts`、reducerは`src/rtk.ts`、公開面は`src/index.ts`が所有する。現行設計は[`docs/DESIGN.md`](docs/DESIGN.md)、release手順は[`docs/RELEASE.md`](docs/RELEASE.md)を正とする。`prototype/python/`はreducerの歴史的移植元であり、pytest reducerは本家rtk 0.42.0と一致する（上記の`FAILED`行の差異だけは意図的・回帰テストで固定）。
 
 ## 試す
 

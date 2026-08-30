@@ -7,18 +7,26 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 
-test('server.json version stays in lockstep with package.json', async () => {
-  const [pkg, server, mcpbManifest] = await Promise.all([
+test('公開metadataとREADMEの現行versionはpackage.jsonと一致する', async () => {
+  const [pkg, lock, server, mcpbManifest, readme, readmeJa] = await Promise.all([
     readJson(new URL('../package.json', import.meta.url)),
+    readJson(new URL('../package-lock.json', import.meta.url)),
     readJson(new URL('../server.json', import.meta.url)),
     readJson(new URL('../mcpb/manifest.json', import.meta.url)),
+    readFile(new URL('../README.md', import.meta.url), 'utf8'),
+    readFile(new URL('../README.ja.md', import.meta.url), 'utf8'),
   ]);
 
+  assert.equal(lock.version, pkg.version);
+  assert.equal(lock.packages[''].version, pkg.version);
   assert.equal(server.version, pkg.version);
   assert.equal(server.packages.length, 1);
   assert.equal(server.packages[0].identifier, pkg.name);
   assert.equal(server.packages[0].version, pkg.version);
   assert.equal(mcpbManifest.version, pkg.version);
+  const escapedVersion = pkg.version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  assert.match(readme, new RegExp(`current public release \\*\\*v${escapedVersion}\\*\\*`));
+  assert.match(readmeJa, new RegExp(`現行公開版 \\*\\*v${escapedVersion}\\*\\*`));
 });
 
 test('release metadata points at the canonical kitepon organization repository', async () => {
@@ -33,11 +41,13 @@ test('release metadata points at the canonical kitepon organization repository',
   assert.equal(pkg.mcpName, 'io.github.kitepon/aiterm-mcp');
   assert.equal(pkg.repository.url, 'git+https://github.com/kitepon/aiterm-mcp.git');
   assert.equal(pkg.homepage, 'https://github.com/kitepon/aiterm-mcp#readme');
+  assert.equal(pkg.author.url, 'https://kitepon.dev/');
   assert.equal(server.name, pkg.mcpName);
   assert.ok(server.description.length <= 100);
   assert.equal(server.repository.url, 'https://github.com/kitepon/aiterm-mcp');
   assert.equal(mcpbManifest.repository.url, 'https://github.com/kitepon/aiterm-mcp');
   assert.equal(mcpbManifest.homepage, pkg.homepage);
+  assert.equal(mcpbManifest.author.url, pkg.author.url);
   assert.match(issueLinks, /https:\/\/github\.com\/kitepon\/aiterm-mcp\/discussions/);
   assert.match(issueLinks, /https:\/\/github\.com\/kitepon\/aiterm-mcp\/security\/advisories\/new/);
   assert.doesNotMatch(issueLinks, /kitepon-rgb/);
@@ -70,13 +80,23 @@ test('CHANGELOGの全release見出しはlinkを持ちUnreleasedは現行version�
   }
 });
 
-test('final CI measures dependency install separately from the four-environment full test', async () => {
-  const ci = await readFile(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+test('final CI is owned locally and measures dependency install separately from the four-environment full test', async () => {
+  const [ci, productFullCi] = await Promise.all([
+    readFile(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8'),
+    readFile(new URL('../.github/workflows/product-full-ci.yml', import.meta.url), 'utf8'),
+  ]);
 
-  assert.match(ci, /uses: kitepon\/dotagents\/\.github\/workflows\/factory-full-ci\.yml@main/);
+  assert.match(ci, /uses: \.\/\.github\/workflows\/product-full-ci\.yml/);
+  assert.doesNotMatch(ci, /uses:\s*kitepon\/dotagents\/\.github\/workflows\//);
   assert.match(ci, /dependency-command: npm ci/);
+  assert.match(ci, /documentation-command: npm run test:docs/);
   assert.match(ci, /node --version && npm --version && npm test/);
-  assert.match(ci, /needs: \[full\]/);
+  assert.match(ci, /needs: \[ownership, full\]/);
+  assert.match(ci, /test "\$GITHUB_REF_NAME" = "v\$version"/);
+  assert.match(productFullCi, /workflow_call:/);
+  assert.match(productFullCi, /"macos-native","linux-native","windows-native","wsl2"/);
+  assert.match(productFullCi, /run: \$\{\{ inputs\.full-command \}\}/);
+  assert.doesNotMatch(productFullCi, /kitepon\/dotagents/);
 });
 
 test('clean build ships only the active managed stop hooks', async () => {
@@ -87,7 +107,7 @@ test('clean build ships only the active managed stop hooks', async () => {
   }
 });
 
-test('npm pack はbuild済みdistの全ランタイム.jsを同梱する', async () => {
+test('npm pack はbuild済みruntimeとREADMEが参照する現行文書を同梱する', async () => {
   // 実被弾（v0.27.7）: files の "dist/*.js" glob がサブディレクトリを含まず、公開packageに
   // dist/harnesses/ が入らないまま publish され、公開版が ERR_MODULE_NOT_FOUND で起動不能だった。
   // repo内 dist で回る CI では検出できないため、tarball 同梱一覧そのものを固定する。
@@ -108,6 +128,14 @@ test('npm pack はbuild済みdistの全ランタイム.jsを同梱する', async
   assert.ok(distJs.some((f) => f.startsWith('dist/harnesses/')), 'dist/harnesses/*.js がbuildされていません');
   for (const f of distJs) {
     assert.ok(packed.has(f), `${f} が npm pack に同梱されていません（package.json files を確認）`);
+  }
+  for (const f of [
+    'CHANGELOG.md',
+    'docs/00_overview.md',
+    'docs/DESIGN.md',
+    'docs/RELEASE.md',
+  ]) {
+    assert.ok(packed.has(f), `${f} が npm pack に同梱されていません（READMEのlocal linkを確認）`);
   }
 });
 

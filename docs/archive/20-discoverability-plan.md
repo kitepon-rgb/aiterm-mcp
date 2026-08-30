@@ -13,6 +13,10 @@
 - [x] GitHub Topicsに `mcp` / `model-context-protocol` / `tmux` / `claude-code` / `codex-cli` が揃う。
 - [x] Glama・mcp.so・Smitheryの現行登録要件と、実際の掲載／登録状態が記録される。
 - [ ] 実行可能な登録・更新は完了し、ログイン・審査・追加成果物が必要なものは停止位置と必要条件が明示される。
+  **2026-08-30終了裁定:** この未達項目はabandoned／supersededとする。GitHub、npm、製品所有のMCPB、
+  Official MCP Registryが現行の公開経路になった。下記のmcp.so／Glama／Smitheryは第三者の非正規経路で、
+  手動OAuthが必要な停止位置から進めず、Aitermの導入・更新・release成立条件にも含めない。このplanを
+  current backlogへ戻さず、当時の未完了判断を含む履歴として閉じる。
 
 ## 作業区分
 

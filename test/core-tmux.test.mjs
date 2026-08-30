@@ -279,6 +279,11 @@ test("send: stale send lockを並行自動回収せずfail-closedし、close後�
       Array.from({ length: 8 }, (_, i) => runConcurrentSender(session, String.fromCharCode(65 + i), 6000)),
     );
     assert.ok(attempts.every((r) => r.status === "rejected"), "全senderが送信前にfail-closedする");
+    for (const attempt of attempts) {
+      assert.match(attempt.reason.message, /pty_list/);
+      assert.match(attempt.reason.message, /pty_close/);
+      assert.doesNotMatch(attempt.reason.message, /pty_kill_all/);
+    }
     assert.ok(fs.existsSync(lockPath), "stale pathを並行reclaimerがunlinkしない");
   } finally {
     core.closeSession(session);

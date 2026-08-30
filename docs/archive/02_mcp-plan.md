@@ -2,7 +2,8 @@
 
 > **注記（2026-06-01 追補 / 2026-06-02 更新）**: 本計画は Python MVP 時点の計画/TODO スナップショット。MCP 化は完了し、その後
 > **Node/TS の npm パッケージ `aiterm-mcp` へ移行し npm 公開済み**（`aiterm-mcp@0.4.0`＝Windows/WSL2/macOS 全対応版（macOS は 0.3.0 で実機検証・tmux 解決層を追加、0.4.0 でネスト完了判定の早期返却を追加）。初版 0.1.0 は 2026-06-02 公開。リポジトリ `kitepon/aiterm-mcp`。実装は `src/*.ts`、旧 Python は `prototype/python/`）。
-> 本文中の `src/aiterm_*.py` / `.mcp.json` / venv 等の記述は移行前のもの。**現状の正は [CLAUDE.md](../CLAUDE.md) と [README.md](../README.md)**。
+> 本文中の `src/aiterm_*.py` / `.mcp.json` / venv 等の記述は移行前のもの。**現状の正は [CLAUDE.md](../../CLAUDE.md) と [README.md](../../README.md)**。
+> 自前line formatting engineは後続実装で成立済み。本文末尾に残る未完了項目は全RTK parityの当時snapshotであり、engine本体の未実装や現行backlogを意味しない。
 
 ## 0. このドキュメントの位置づけ
 
@@ -11,7 +12,7 @@ WSL2 側の Claude Code から `pty_open`/`pty_send`/`pty_read`/`pty_key`/`pty_c
 として使えるようにするための計画。各項目は末尾 §12 のチェックリストに `[ ]` で対応する。
 
 - 設計の source of truth は [01_design-plan.md](01_design-plan.md)（特に §9 決定 / §10 未決 / §11 実装状況）。
-- 設計判断の根拠は調査資産 [rag/INDEX.md](../rag/INDEX.md) と [rag/briefs/](../rag/briefs/)。
+- 設計判断の根拠は調査資産 [rag/INDEX.md](../../rag/INDEX.md) と [rag/briefs/](../../rag/briefs/)。
 - **この文書は「叩き台」。実装はユーザー確認（GO）後に着手する。** §6（RTK 取り込み方針）は
   ユーザー判断により **reducer の Python 全面移植を主軸 ＋ 委譲(`send --rtk`)を併設**で確定（2026-06-01）。
 
@@ -153,7 +154,7 @@ reducer を **Python へ全面移植**する。要件C 原文の「移植」と�
 - [ ] read 後の制御文字無害化（カーソル移動上書き・タイトル読み戻し等の表示欺瞞対策）。
 - [ ] `rtk=true` 時も、ゲート/サニタイズは**書換前の元コマンド**に対して評価（rewrite はコマンドを `rtk ...` に変えるだけ）。
 
-根拠: [rag/briefs/technical-building-blocks.md](../rag/briefs/technical-building-blocks.md) §4（Terminal DiLLMa 脅威モデル）。
+根拠: [rag/briefs/technical-building-blocks.md](../../rag/briefs/technical-building-blocks.md) §4（Terminal DiLLMa 脅威モデル）。
 
 ---
 
@@ -275,14 +276,14 @@ WSL2 の Claude Code（MCP クライアント）から、登録した `aiterm` �
 ### H. 仕上げ
 
 - [ ] [01_design-plan.md](01_design-plan.md) §11 / §9・§10 を実装結果に同期
-- [ ] [CLAUDE.md](../CLAUDE.md) の現状記述（MVP→MCP）を更新
+- [ ] [CLAUDE.md](../../CLAUDE.md) の現状記述（MVP→MCP）を更新
 
 ---
 
 ## 付録: 主な根拠
 
 - 設計: [01_design-plan.md](01_design-plan.md) §3–§11
-- 先行事例 / 収束点: [rag/briefs/prior-art.md](../rag/briefs/prior-art.md)
-- 完了検出 / 安全 / ANSI: [rag/briefs/technical-building-blocks.md](../rag/briefs/technical-building-blocks.md)
-- RTK 取り込み: `rtk/src/core/toml_filter.rs`（8 段エンジン・RUST_HANDLED_COMMANDS）、`rtk/src/discover/{registry,rules}.rs`（コマンド分類）、`rtk/hooks/claude/rtk-rewrite.sh`（委譲グルー）、[rag/sources/ansi-handling/rtk-token-reducer-cli.md](../rag/sources/ansi-handling/rtk-token-reducer-cli.md)
+- 先行事例 / 収束点: [rag/briefs/prior-art.md](../../rag/briefs/prior-art.md)
+- 完了検出 / 安全 / ANSI: [rag/briefs/technical-building-blocks.md](../../rag/briefs/technical-building-blocks.md)
+- RTK 取り込み: `rtk/src/core/toml_filter.rs`（8 段エンジン・RUST_HANDLED_COMMANDS）、`rtk/src/discover/{registry,rules}.rs`（コマンド分類）、`rtk/hooks/claude/rtk-rewrite.sh`（委譲グルー）、[rag/sources/ansi-handling/rtk-token-reducer-cli.md](../../rag/sources/ansi-handling/rtk-token-reducer-cli.md)
 - MCP: [python-sdk](https://github.com/modelcontextprotocol/python-sdk) / [build-server](https://modelcontextprotocol.io/docs/develop/build-server) / [Claude Code MCP](https://code.claude.com/docs/en/mcp)

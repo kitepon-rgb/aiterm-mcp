@@ -5,7 +5,7 @@
  * トークン削減して受け取る。SSH/docker は専用機能にせず send(id, "ssh host") で中に入る（ネスト）。
  * セッションは tmux サーバ常駐ゆえ、本プロセスが毎回終了しても次回 read で再接続できる。
  *
- * 設計: docs/01_design-plan.md / docs/02_mcp-plan.md。出力削減は rag/ の RTK を移植。
+ * 現行設計: docs/DESIGN.md。旧planは docs/archive/、出力削減は rag/ の RTK を移植。
  */
 import { spawn, spawnSync, type SpawnSyncOptionsWithStringEncoding, type SpawnSyncReturns } from "node:child_process";
 import * as fs from "node:fs";
@@ -1787,8 +1787,8 @@ function acquireSessionSendFileLock(name: string): () => void {
         const detail = lastProbe.pid != null ? `pid ${lastProbe.pid}` : "owner不明";
         throw new AitermError(
           `session '${name}' に前回送信のlock残骸があります（${detail}）。` +
-            `自動回収は並行送信の混線を招くため行いません。pty_closeでsessionを閉じてから再作成するか、` +
-            `不要な全sessionをpty_kill_allで停止して残骸を掃除してください`,
+            `自動回収は並行送信の混線を招くため行いません。` +
+            `pty_listで対象を確認し、pty_closeでsessionを閉じてから同じIDで再作成してください`,
           2,
         );
       }

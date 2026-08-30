@@ -65,7 +65,7 @@
 
 Codexのfrontend根拠を「起動時header、または常駐model／effort footer」とし、入力欄との積でreadyを確定する。
 caller側の再描画、再試行、agent再起動、独自状態は追加しない。Decisionは
-[ADR 0014](adr/0014-agent-tui-ready-stabilization.md)へ追補した。
+[ADR 0014](../adr/0014-agent-tui-ready-stabilization.md)へ追補した。
 
 ### Acceptance
 

@@ -35,7 +35,7 @@ const GROK_MODELS_TIMEOUT_MS = 15_000;
 
 // grok CLI はモデル未指定だと端末側 default に従うため、ツール契約として既定 slug を固定する。
 // codex は既定 slug を持たず端末 config／CLI 既定に委ねる（起動応答で実効値を報告する）。
-// grok 既定は dotagents 規範（docs/02_models.md: xAI 旗艦 = grok-4.6）に従う。
+// 製品既定は検証済みGrok catalog世代へ固定する。callerの明示modelはlive catalogで別途照合する。
 export const GROK_MODEL_DEFAULTS: Record<"grok" | "composer", string> = {
   grok: "grok-4.6",
   composer: "grok-composer-2.5-fast",

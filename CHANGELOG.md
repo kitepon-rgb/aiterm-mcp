@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.9] - 2026-08-30
+
+### Fixed
+
+- Replace the nonexistent public `pty_kill_all` recovery guidance in the MCP error and both READMEs with the supported `pty_list` → `pty_close` → recreate flow.
+- Keep the Grok credential-path constraint in the authentication section instead of leaving it after the License heading.
+
+### Changed
+
+- Move completed, rejected, interrupted, expired, and superseded plans, audits, promotion notes, and obsolete design drafts under `docs/archive/`; retain only small compatibility stubs where Lattice, ADRs, or research evidence have immutable path references.
+- Replace the release-by-release AGENTS log with a compact current product contract, and add product-owned DESIGN and RELEASE sources so Aiterm remains operable without dotagents.
+- Ship the README-linked CHANGELOG and current product docs in the npm package, and document standalone npm update and version-pinned rollback for global and `npx` installations.
+- Move the authoritative four-environment CI runner contract into this repository and have the release caller use the local reusable workflow instead of an external dotagents workflow.
+
 ## [0.29.8] - 2026-08-30
 
 ### Fixed
@@ -188,7 +202,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - vendor固有コードとOS固有コードを専用モジュールへ分離した（外部挙動不変のリファクタ・
-  campaign正本は docs/32）。`src/vendors/{claude,codex,grok}.ts` が各ベンダーの起動引数・
+  campaign正本は `docs/archive/32-vendor-os-adapter-refactor-plan.md`）。`src/vendors/{claude,codex,grok}.ts` が各ベンダーの起動引数・
   ready/画面判定・完了検出・transcript回収・metadata生成・auth/catalog検証を所有し、
   `src/agent-shared.ts` がvendor中立の共有プリミティブ（state path・metadata型・完了event型・
   lineage）を所有する。psmuxのOS差（load-buffer一時ファイル・paste-buffer -r非対応・
@@ -410,7 +424,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tag CI／Trusted Publishing `31664795704`、Official MCP Registry workflow `31664974149`がsuccess。
   npm latest 0.24.3、SLSA provenance、GitHub Release＋MCPB、Registry active/latest、registry由来
   global install、3 bins、14 tools、schema、stderr 0、installed dist一致、2件の根治smokeを確認した。
-- v0.24.3の完全な公開receiptは[docs/28-agent-env-vars-release-plan.md](docs/28-agent-env-vars-release-plan.md)へ記録する。
+- v0.24.3の完全な公開receiptは[archive plan](https://github.com/kitepon/aiterm-mcp/blob/main/docs/archive/28-agent-env-vars-release-plan.md)へ記録する。
 
 ## [0.24.2] - 2026-08-13
 
@@ -574,7 +588,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `30813318513`、Official MCP Registry workflow `30813724499`がsuccess。
 - npm由来の隔離installとglobal installでversion 0.21.3、3 bins、13 tools、stderr 0、
   Codex launcherの5引数完全例、廃止Codex hook非同梱を確認。公開receiptは
-  [ADR 0023](docs/adr/0023-release-0.21.3-acceptance.md)に固定した。
+  [ADR 0023](https://github.com/kitepon/aiterm-mcp/blob/main/docs/adr/0023-release-0.21.3-acceptance.md)に固定した。
 
 ## [0.21.2] - 2026-08-03
 
@@ -965,8 +979,8 @@ Hardening sweep that clears the audit's remaining low-priority notes
 
 Full-repo adversarial audit (multi-agent find → adversarial refutation → live
 smoke) plus the fixes and one feature that survived it. Design record and
-rejection ledger: `docs/11_audit-2026-07-11.md`; transcript-read design:
-`docs/12_agent-transcript-read-plan.md`. Regression suite 183 → 203.
+rejection ledger: `docs/archive/11_audit-2026-07-11.md`; transcript-read design:
+`docs/archive/12_agent-transcript-read-plan.md`. Regression suite 183 → 203.
 
 ### Added
 - `pty_read({ agent_transcript: true })` recovers an agent session's most
@@ -1380,7 +1394,8 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.8...HEAD
+[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.9...HEAD
+[0.29.9]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.8...v0.29.9
 [0.29.8]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.7...v0.29.8
 [0.29.7]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.6...v0.29.7
 [0.29.6]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.5...v0.29.6

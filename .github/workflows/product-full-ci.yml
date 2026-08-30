@@ -1,0 +1,138 @@
+name: Product full CI
+
+on:
+  workflow_call:
+    inputs:
+      full-command:
+        description: 各環境で実行する製品の最終試験
+        required: true
+        type: string
+      dependency-command:
+        description: 各環境で実行する依存導入
+        required: false
+        default: ""
+        type: string
+      documentation-command:
+        description: Markdownだけの変更時に実行する文書確認
+        required: false
+        default: ""
+        type: string
+      environment:
+        description: all または単一の対応環境
+        required: false
+        default: all
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+    outputs:
+      product_change: ${{ steps.changes.outputs.product_change }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+      - name: classify change
+        id: changes
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          product_change=true
+          reason="product change"
+
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            reason="tag"
+          elif [[ "$EVENT_NAME" == workflow_dispatch ]]; then
+            reason="manual run"
+          else
+            base="$BEFORE_SHA"
+            if [[ "$EVENT_NAME" == pull_request ]]; then
+              base="$BASE_SHA"
+            fi
+
+            if [[ -n "$base" && ! "$base" =~ ^0+$ ]] && git cat-file -e "$base^{commit}"; then
+              found=false
+              non_markdown=false
+              while IFS= read -r -d '' file; do
+                found=true
+                if [[ "$file" != *.md ]]; then
+                  non_markdown=true
+                  break
+                fi
+              done < <(git diff --name-only -z "$base" "$GITHUB_SHA")
+
+              if [[ "$found" == true && "$non_markdown" == false ]]; then
+                product_change=false
+                reason="Markdown only"
+              fi
+            else
+              reason="comparison base unavailable"
+            fi
+          fi
+
+          printf 'product_change=%s\n' "$product_change" >> "$GITHUB_OUTPUT"
+          printf 'CI classification: %s\n' "$reason"
+      - name: setup documentation Node
+        if: steps.changes.outputs.product_change == 'false' && inputs.documentation-command != ''
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+      - name: documentation check
+        if: steps.changes.outputs.product_change == 'false' && inputs.documentation-command != ''
+        shell: bash
+        run: ${{ inputs.documentation-command }}
+      - name: skip product full CI
+        if: steps.changes.outputs.product_change == 'false'
+        shell: bash
+        run: |
+          printf 'Markdown-only change: product full CI is not required.\n'
+
+  full:
+    needs: classify
+    if: needs.classify.outputs.product_change == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: ${{ fromJSON(inputs.environment != 'all' && format('["{0}"]', inputs.environment) || '["macos-native","linux-native","windows-native","wsl2"]') }}
+    timeout-minutes: 30
+    runs-on: [self-hosted, factory, "${{ matrix.environment }}"]
+    steps:
+      - name: checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+      - name: logical CPU parallelism
+        if: matrix.environment != 'windows-native'
+        shell: bash
+        run: |
+          jobs=$(node -p "require('node:os').availableParallelism()")
+          printf 'FACTORY_CI_JOBS=%s\n' "$jobs" >> "$GITHUB_ENV"
+      - name: logical CPU parallelism
+        if: matrix.environment == 'windows-native'
+        shell: C:\Progra~1\Git\bin\bash.exe --noprofile --norc -e -o pipefail {0}
+        run: |
+          jobs=$(node -p "require('node:os').availableParallelism()")
+          printf 'FACTORY_CI_JOBS=%s\n' "$jobs" >> "$GITHUB_ENV"
+      - name: dependency install
+        if: inputs.dependency-command != '' && matrix.environment != 'windows-native'
+        shell: bash
+        run: ${{ inputs.dependency-command }}
+      - name: dependency install
+        if: inputs.dependency-command != '' && matrix.environment == 'windows-native'
+        shell: C:\Progra~1\Git\bin\bash.exe --noprofile --norc -e -o pipefail {0}
+        run: ${{ inputs.dependency-command }}
+      - name: product full test
+        if: matrix.environment != 'windows-native'
+        shell: bash
+        run: ${{ inputs.full-command }}
+      - name: product full test
+        if: matrix.environment == 'windows-native'
+        shell: C:\Progra~1\Git\bin\bash.exe --noprofile --norc -e -o pipefail {0}
+        run: ${{ inputs.full-command }}

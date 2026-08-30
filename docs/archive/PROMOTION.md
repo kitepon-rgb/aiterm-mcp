@@ -21,7 +21,7 @@ output) is already committed — these steps activate it.
   registry `active`／`isLatest:true`。
 - ✅ npm由来global install、3 bins、initialize 0.28.1、15 tools、4 harness、stderr 0、runtime JS 18/18一致。
 - ✅ npm同梱READMEでpsmux 3.3.8以上、15 tools、Cursor transcript完了を確認。公開受入は
-  [ADR 0040](adr/0040-release-0.28.1-acceptance.md)。
+  [ADR 0040](../adr/0040-release-0.28.1-acceptance.md)。
 
 > **v0.28.0公開完了（2026-08-24）**: agent起動を単一の
 > `agent_launch({harness, model?, ...})`へ標準化し、Cursor Agent CLIを公式installer／標準transcript／
@@ -32,7 +32,7 @@ output) is already committed — these steps activate it.
   registry `active`／`isLatest:true`。
 - ✅ npm由来global install、3 bins、15 tools、4 harness schema、stderr 0、runtime JS 18/18一致。
 - ✅ 公開版Cursor実席で起動→`cursor:1`回収→同一session model/effort変更→follow-up `cursor:2`回収→
-  transcript逐語一致→close→残骸ゼロ。公開受入は[ADR 0039](adr/0039-release-0.28.0-acceptance.md)。
+  transcript逐語一致→close→残骸ゼロ。公開受入は[ADR 0039](../adr/0039-release-0.28.0-acceptance.md)。
 
 現行の完全公開済みchainはv0.28.1。以下の「現行」「直前」は各版公開時点の履歴として読む。
 
@@ -51,7 +51,7 @@ output) is already committed — these steps activate it.
   `31747557265`後の再dispatch `31748407046`で公開した。fallbackや別registry経路は追加していない。
 - ✅ npm由来global／隔離install、3 bins、14 tools、4 launcher schema、stderr 0、配布`dist`一致、
   Grok実席done、Composer catalog不在のsession前fail-loud／残骸ゼロを確認。公開受入は
-  [ADR 0030](adr/0030-release-0.25.1-acceptance.md)。
+  [ADR 0030](../adr/0030-release-0.25.1-acceptance.md)。
 
 > **v0.24.3公開完了（2026-08-13）**: 4 launcherの`env_vars`で、現在のMCP processにある
 > 指定名の値だけを起動agentへ渡す。永続tmux serverが先に起動していても席identity／workflow変数を失わない。
@@ -98,7 +98,7 @@ output) is already committed — these steps activate it.
 
 現行の完全公開済みchainはv0.25.1。Grok／Composer parityの設計は
 [agent parity plan](29-grok-composer-agent-parity-plan.md)、公開receiptは
-[ADR 0030](adr/0030-release-0.25.1-acceptance.md)を正とする。
+[ADR 0030](../adr/0030-release-0.25.1-acceptance.md)を正とする。
 
 > **v0.23.0公開完了（2026-08-04）**: 4つのagent launcherへ任意の
 > `throughline_source_session`を追加。Throughlineの読み取り専用handoff contextを元DBのsession所属を
@@ -112,10 +112,10 @@ output) is already committed — these steps activate it.
   source marker、mission marker、DB ownership不変、clean launch、session残骸0を確認。
 
 現行の完全公開済みchainはv0.23.0。設計は[portable fork plan](26-throughline-portable-fork-plan.md)、
-公開receiptは[ADR 0027](adr/0027-release-0.23.0-acceptance.md)を正とする。
+公開receiptは[ADR 0027](../adr/0027-release-0.23.0-acceptance.md)を正とする。
 
 > **v0.22.0公開完了（2026-08-04）**: 4つのagent launcherを通常project／user環境の完全共有へ移行し、
-> aiterm所有範囲を完了相関stateへ限定した。受入は[ADR 0026](adr/0026-release-0.22.0-acceptance.md)。
+> aiterm所有範囲を完了相関stateへ限定した。受入は[ADR 0026](../adr/0026-release-0.22.0-acceptance.md)。
 
 > **v0.21.3公開完了（2026-08-03）**: Codex完了正本をStop hookからroot rollout
 > transcriptの`task_complete.turn_id`へ移し、hook `exit 127`で`aiterm-wait`とtranscript回収が
@@ -146,7 +146,7 @@ Release gates:
 
 v0.21.3は直前の完全公開chain。v0.21.0はnpm-only、v0.21.1／v0.21.2はpublish前に
 tag CIが停止した履歴として保持し、tag移動や後付け成功を捏造しない。公開receiptは
-[ADR 0023](adr/0023-release-0.21.3-acceptance.md)へ固定した。
+[ADR 0023](../adr/0023-release-0.21.3-acceptance.md)へ固定した。
 
 Previously verified public surfaces:
 
@@ -193,9 +193,9 @@ The lettered steps below are kept as a re-run reference and for the announcement
 npm only re-indexes keywords on a new published version. Bump a patch, keep
 `server.json` `version` in lockstep, then let CI publish on the tag.
 
-v0.21.3の設計は[`ADR 0022`](adr/0022-codex-rollout-completion.md)、公開receiptは
-[`ADR 0023`](adr/0023-release-0.21.3-acceptance.md)、完了工程は
-[`archived release plan 22`](archive/22_release-0.21.3-plan.md)を正とする。
+v0.21.3の設計は[`ADR 0022`](../adr/0022-codex-rollout-completion.md)、公開receiptは
+[`ADR 0023`](../adr/0023-release-0.21.3-acceptance.md)、完了工程は
+[`archived release plan 22`](22_release-0.21.3-plan.md)を正とする。
 
 ```bash
 # 1. bump package.json + package-lock.json + server.json to the same new version (e.g. next patch)

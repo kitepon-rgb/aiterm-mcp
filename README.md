@@ -1,7 +1,7 @@
 > **From any MCP client, launch Claude Code, Codex CLI, Grok CLI, or Cursor Agent CLI through one harness API inside a persistent interactive TUI.**
 
 <p align="center">
-  <img src=".github/og.png" alt="Aiterm — a shared forest observatory where different intelligences work in one persistent execution space" width="100%">
+  <img src="https://raw.githubusercontent.com/kitepon/aiterm-mcp/main/.github/og.png" alt="Aiterm — a shared forest observatory where different intelligences work in one persistent execution space" width="100%">
   <br>
   <sub><em>This image represents different intelligences sharing one persistent workspace and advancing the same work from their own perspectives.</em></sub>
 </p>
@@ -24,7 +24,7 @@
 >
 > *MCP = Model Context Protocol — the open standard that lets tools like Claude Code plug capabilities into an AI.*
 
-Built and maintained by [Quo](https://x.com/QLyun35332) at [kitepon.dev](https://kitepon.dev/en).
+Built and maintained by [Quo at kitepon.dev](https://kitepon.dev/en).
 
 ## Install in your MCP client
 
@@ -87,10 +87,12 @@ Save this as `.cursor/mcp.json` for the project, or `~/.cursor/mcp.json` globall
 }
 ```
 
-**Ownership boundary:** this repository owns the persistent PTY and external-agent
-execution lane. Cross-product installation and host integration are handled by
-[dotagents](https://github.com/kitepon/dotagents), the internal development
-toolchain behind kitepon.dev's products.
+**Ownership boundary:** this repository owns installation, configuration, persistent PTYs,
+agent sessions, state/schema/migrations, diagnostics, recovery, updates, and releases. It can
+be cloned and operated on its own using this README and the [product docs](docs/00_overview.md).
+[dotagents](https://github.com/kitepon/dotagents) optionally integrates Aiterm into the wider
+factory—host wiring, cross-product compatibility, and aggregate acceptance—but does not control
+Aiterm and is not a runtime dependency.
 
 **Measured, not claimed:** in the recorded 203-test benchmark, a `pty_read` puts **~7.1× fewer tokens** in your context than the raw log — and the pass/fail verdict survives the fold. → [When to reach for it vs. the built-in shell](#when-to-reach-for-it-vs-the-built-in-shell)
 
@@ -167,7 +169,16 @@ collection is off by default and performs no network I/O. It ships via
 tag-triggered CI with npm provenance (OIDC Trusted Publishing); the GitHub
 Release re-registers the Official MCP Registry entry.
 
-**Status:** actively maintained · the newcomer here, betting on a different shape (see [vs. the alternatives](#vs-the-alternatives)) · runs on Linux · WSL2 · macOS · native Windows (tmux on POSIX, the tmux-CLI-compatible [psmux](https://github.com/psmux/psmux) on native Windows — no WSL required) · MIT · see the [CHANGELOG](CHANGELOG.md).
+**Status:** actively maintained · current public release **v0.29.9** · runs on Linux · WSL2 · macOS · native Windows (tmux on POSIX, the tmux-CLI-compatible [psmux](https://github.com/psmux/psmux) on native Windows — no WSL required) · MIT · see the [CHANGELOG](CHANGELOG.md).
+
+### Update and rollback
+
+The npm package is the standalone distribution; dotagents is not involved. For a global install,
+update with `npm install -g aiterm-mcp@latest`. To roll back, install a known-good immutable version,
+for example `npm install -g "aiterm-mcp@<known-good-version>"`, then restart the MCP client. For an `npx` configuration,
+use `aiterm-mcp@latest` to update or replace it with `aiterm-mcp@<version>` to pin or roll back.
+Check the [CHANGELOG](CHANGELOG.md) for state/schema compatibility before downgrading. Maintainer
+release and artifact rollback are specified in the product-owned [release procedure](docs/RELEASE.md).
 
 ## Why now
 
@@ -236,6 +247,9 @@ processes with access to the same OS user may read them. Use this for non-secret
 workflow variables, not as a secret transport.
 
 The selected harness CLI must be installed and authenticated. Aiterm resolves `CLAUDE_BIN` / `CODEX_BIN` / `GROK_BIN` / `CURSOR_AGENT_BIN`, then the documented default binary, then `PATH`. Cursor resolution deliberately uses `cursor-agent`, never the ambiguous `agent` name. Claude and Cursor authentication are checked before a PTY exists, so a failed preflight leaves no session. All harnesses use their normal harness-owned credential and configuration stores in place.
+For Grok, Aiterm neither locks the credential nor copies it back. An inherited `GROK_AUTH_PATH`
+must resolve to an absolute safe file; absence of the default auth file is accepted only when
+`XAI_API_KEY` is set.
 
 Portable fork is optional. When `throughline_source_session` is present, `prompt` is the required
 new mission and `launch_operation_id` cannot be combined with it. aiterm resolves Throughline via
@@ -251,7 +265,7 @@ There is no hidden protocol between agents: every launched harness is another us
 ## Demo
 
 <p align="center">
-  <img src=".github/demo.gif" alt="aiterm-mcp demo: pty_open, a token-reduced grep read, then a nested Python REPL — all in one persistent session" width="100%">
+  <img src="https://raw.githubusercontent.com/kitepon/aiterm-mcp/main/.github/demo.gif" alt="aiterm-mcp demo: pty_open, a token-reduced grep read, then a nested Python REPL — all in one persistent session" width="100%">
 </p>
 
 Real captured output — each block below was just run through aiterm in this repo; the numbers, the elision marker, and every `is_complete` verdict are the tool's own, not mocked. The bracketed meta line is what `pty_read` appends; its labels are Japanese in the actual output, translated here for readability (the [Japanese README](README.ja.md) shows them verbatim).
@@ -490,7 +504,7 @@ As of v0.16 a parent agent **never blocks** on aiterm — there is no wait param
 
 Before sending, `pty_send` blocks destructive commands (`rm -rf /`, `mkfs`, `dd of=/dev/…`, `DROP TABLE`, …) — pass `force: true` to override — and sanitizes ESC / bracketed-paste terminators. `pty_read` neutralizes control characters in what it returns by default (`raw: true` returns the bytes verbatim). This is a **tripwire, not a sandbox** (see [Known constraints](#known-constraints-by-design-not-bugs)).
 
-Each `pty_send` accepts at most 64 KiB of UTF-8 text. Sends to the same session are serialized across aiterm processes so chunks cannot interleave. Every OS pastes through its multiplexer in UTF-8-safe 256-byte chunks with a 10 ms drain interval; macOS, Linux, and WSL2 have all demonstrated silent middle/trailing loss when a long input is pushed without that boundary. Sanitized multiline text sent while a POSIX shell is in the foreground is encoded as one newline-free `eval` input: the shell receives the complete script before it runs the first line, so a pager or REPL started mid-script cannot consume later lines as interactive keystrokes. Single-line input, `raw:true`, and non-shell frontends remain direct PTY pastes. Agent dispatches additionally use the tmux-compatible bracketed-paste operation (`paste-buffer -p`): panes that requested bracketed-paste mode receive each chunk wrapped in `ESC[200~/201~`, hardening prompt injection against mid-word key-interpretation corruption and dropped submits. If a later chunk fails, aiterm reports the partial-send state and does not press Enter automatically. A lock left by a terminated sender fails closed before sending; close and recreate that session (or use `pty_kill_all` when every session is disposable) to clean it up safely.
+Each `pty_send` accepts at most 64 KiB of UTF-8 text. Sends to the same session are serialized across aiterm processes so chunks cannot interleave. Every OS pastes through its multiplexer in UTF-8-safe 256-byte chunks with a 10 ms drain interval; macOS, Linux, and WSL2 have all demonstrated silent middle/trailing loss when a long input is pushed without that boundary. Sanitized multiline text sent while a POSIX shell is in the foreground is encoded as one newline-free `eval` input: the shell receives the complete script before it runs the first line, so a pager or REPL started mid-script cannot consume later lines as interactive keystrokes. Single-line input, `raw:true`, and non-shell frontends remain direct PTY pastes. Agent dispatches additionally use the tmux-compatible bracketed-paste operation (`paste-buffer -p`): panes that requested bracketed-paste mode receive each chunk wrapped in `ESC[200~/201~`, hardening prompt injection against mid-word key-interpretation corruption and dropped submits. If a later chunk fails, aiterm reports the partial-send state and does not press Enter automatically. A lock left by a terminated sender fails closed before sending; use `pty_list` to confirm the affected session, close it with `pty_close`, then recreate the same session ID. There is no public kill-all tool.
 
 ## A human can watch
 
@@ -534,7 +548,7 @@ interactive Windows user; `NETWORK SERVICE` lacks the per-user environment the p
 harness CLIs rely on and is not a valid runner identity (the separate WSL2 runner still owns the
 initialized WSL distro).
 
-Logic lives in `src/core.ts` (tmux control, reduction, completion detection, safety, agent launch) and `src/rtk.ts` (per-command reducers); `src/index.ts` is the MCP surface. The design origin and the reducer's porting source (the pytest reducer is ported to match upstream rtk 0.42.0, except the deliberate `FAILED`-line difference noted above, and is locked by regression tests) are in `prototype/python/`.
+Logic lives in `src/core.ts` (tmux control, reduction, completion detection, safety, agent launch) and `src/rtk.ts` (per-command reducers); `src/index.ts` is the MCP surface. The current architecture is in [`docs/DESIGN.md`](docs/DESIGN.md), the release procedure is in [`docs/RELEASE.md`](docs/RELEASE.md), and `prototype/python/` remains the reducer's historical porting source (the pytest reducer is ported to match upstream rtk 0.42.0, except the deliberate `FAILED`-line difference noted above, and is locked by regression tests).
 
 ## Try it
 
@@ -564,6 +578,3 @@ per-launch overlay, not a replacement environment or configuration snapshot.
 ## License
 
 MIT
-aiterm does not create locks or copy credentials back. An inherited
-`GROK_AUTH_PATH` must be absolute and safe; only an absent default auth file is
-allowed when `XAI_API_KEY` is set.

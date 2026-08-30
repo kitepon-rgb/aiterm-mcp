@@ -43,7 +43,7 @@ claude mcp add --scope user --transport stdio aiterm -- aiterm-mcp
 
 **The pytest reducer is held byte-exact against upstream rtk 0.42.0.** `src/rtk.ts`'s pytest path is pinned to rtk 0.42.0's output by golden-fixture regression tests (`test/fixtures/pytest/*`, asserted in `test/rtk.test.mjs`). One deliberate divergence is locked in: the `FAILED` summary lines (emitted under `-ra`/`-rf`) **preserve the full failure reason**, whereas rtk 0.42.0 truncates at the first `" - "` — a readability choice, covered by the `proj_ra` fixture. If you touch the pytest reducer, expect to update those goldens, and don't "fix" the intentional `FAILED`-line divergence without discussion.
 
-The design source of truth is `docs/01_design-plan.md` — read it before changing reduction, completion detection, or safety behavior.
+The current design source of truth is `docs/DESIGN.md` — read it before changing reduction, completion detection, or safety behavior. The old draft lives under `docs/archive/` and is history only.
 
 ## Tests
 
@@ -74,7 +74,7 @@ Tests skip gracefully when the platform multiplexer is absent (`tmux -V` on POSI
 1. Branch from `main`.
 2. Make sure `npm test` passes locally **with tmux installed**.
 3. Open a PR against `main`. CI (`.github/workflows/ci.yml`) must pass the same full `npm test` on all four self-hosted factory environments: **macOS native, Linux native, Windows native, and WSL2**.
-4. Keep the change scoped. If you're changing design behavior (completion detection, reduction, safety), update `docs/01_design-plan.md` to match.
+4. Keep the change scoped. If you're changing design behavior (completion detection, reduction, safety), update `docs/DESIGN.md` to match.
 
 For Codex readiness changes, test both startup screens (with the `OpenAI Codex` header) and
 long-lived screens where only the model/effort footer remains, including Codex v0.147's optional
