@@ -1577,7 +1577,7 @@ test("openAgent grok agent_done: GROK_AUTH_PATH の構造だけを session 前�
   }
 });
 
-test("openAgent grok/composer agent_done: auth のリンクと権限はGrokへ委ねる", { skip: skipAgentDone }, () => {
+test("openAgent grok/composer agent_done: auth のリンクと権限はGrokへ委ねる", { skip: skipGrokFakeBin }, () => {
   const savedBin = process.env.GROK_BIN;
   const savedPath = process.env.GROK_AUTH_PATH;
   const root = fs.mkdtempSync(path.join(fs.realpathSync(process.env.TMPDIR), "grok-auth-ancestor-"));

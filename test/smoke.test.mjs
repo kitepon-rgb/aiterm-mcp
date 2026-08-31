@@ -303,7 +303,9 @@ test("smoke: tmux を解決できない端末を diagnostics が ready にしな
       HOME: tmpdir,
       TMPDIR: tmpdir,
       XDG_RUNTIME_DIR: tmpdir,
-      AITERM_TMUX: "/definitely-missing/tmux",
+      ...(process.platform === "win32"
+        ? { AITERM_PSMUX: "C:\\definitely-missing\\psmux.exe" }
+        : { AITERM_TMUX: "/definitely-missing/tmux" }),
     },
   });
   let out = "";
