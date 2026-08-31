@@ -3354,6 +3354,42 @@ export async function dispatchAgentTurn(
   };
 }
 
+export interface AgentSteerReceipt extends Record<string, unknown> {
+  schema: "aiterm.agent-steer.v1";
+  session_id: string;
+  launch_id: string;
+  vendor: AgentKind;
+  harness: AgentHarness;
+  delivery: "steered" | "idle";
+}
+
+export async function steerAgentTurn(name: string, text: string): Promise<AgentSteerReceipt> {
+  assertSessionName(name);
+  const meta = loadAgentMetadata(name);
+  if (!["codex", "grok", "composer"].includes(meta.kind)) {
+    throw new AitermError("agent_steer はCodex/Grok agent sessionだけで使用できます", 2);
+  }
+  const receipt = {
+    schema: "aiterm.agent-steer.v1" as const,
+    session_id: meta.aiterm_session,
+    launch_id: meta.launch_id,
+    vendor: meta.kind,
+    harness: agentHarness(meta.kind),
+  };
+  if (!isAgentTuiBusy(meta.kind, captureScreen(name, AGENT_TUI_READY_LINES))) return { ...receipt, delivery: "idle" };
+  send(name, text, {
+    enter: false,
+    force: true,
+    raw: false,
+    mark: false,
+    rtk: false,
+    bracketedPaste: true,
+  });
+  await sleep(AGENT_SUBMIT_DELAY_MS);
+  sendKey(name, "Enter");
+  return { ...receipt, delivery: "steered" };
+}
+
 export async function runClaudeOperation({
   session_id: name,
   action,

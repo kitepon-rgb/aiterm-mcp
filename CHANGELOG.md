@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.11] - 2026-09-01
+
+### Added
+
+- Add `agent_steer` to inject an additional message into a running Codex or Grok turn. Idle sessions return `delivery=idle` without sending text so callers can queue a new turn explicitly.
+
 ## [0.29.10] - 2026-08-31
 
 ### Fixed
@@ -1408,7 +1414,8 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.10...HEAD
+[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.11...HEAD
+[0.29.11]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.10...v0.29.11
 [0.29.10]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.9...v0.29.10
 [0.29.9]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.8...v0.29.9
 [0.29.8]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.7...v0.29.8

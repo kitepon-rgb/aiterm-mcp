@@ -25,6 +25,7 @@ project／user環境を置換せず、launch相関と完了回収に必要なsta
 agent turnは常に非ブロックdispatchである。receiptの`event_cursor`がturn境界、`wait_process`が
 platform nativeな別process起動情報を返す。waiterは純readerで、親のforeground turnを塞がない。
 回答はharness所有transcriptから同じturnへ相関して回収し、欠落・曖昧・timeout時にpromptを再送しない。
+`agent_steer`は実行中のCodex／Grok turnへ追加textを差し込み、idleなら送信せず状態を返す。
 
 ## Layer ownership
 

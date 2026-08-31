@@ -96,7 +96,7 @@ Aiterm and is not a runtime dependency.
 
 **Measured, not claimed:** in the recorded 203-test benchmark, a `pty_read` puts **~7.1× fewer tokens** in your context than the raw log — and the pass/fail verdict survives the fold. → [When to reach for it vs. the built-in shell](#when-to-reach-for-it-vs-the-built-in-shell)
 
-Fifteen tools: six **PTY tools** — `pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list` — to open, drive, and read one persistent terminal; one canonical **agent launcher**, `agent_launch`, which selects `claude-code`, `codex-cli`, `grok-cli`, or `cursor-cli` as the execution harness; four deprecated launcher aliases kept for migration; `agent_configure`; `claude_turn`; `claude_approval`; and `diagnostics`. The backend is **tmux on POSIX and psmux on native Windows**, so sessions survive even if the MCP server or the AI client restarts.
+Sixteen tools: six **PTY tools** — `pty_open` / `pty_send` / `pty_read` / `pty_key` / `pty_close` / `pty_list` — to open, drive, and read one persistent terminal; one canonical **agent launcher**, `agent_launch`, which selects `claude-code`, `codex-cli`, `grok-cli`, or `cursor-cli` as the execution harness; `agent_steer` for an active Codex or Grok turn; four deprecated launcher aliases kept for migration; `agent_configure`; `claude_turn`; `claude_approval`; and `diagnostics`. The backend is **tmux on POSIX and psmux on native Windows**, so sessions survive even if the MCP server or the AI client restarts.
 
 **v0.28.0 separates the execution harness from the model.** The harness owns the agent loop, authentication, hooks, session, and transcript; `model` is what that harness runs. Cursor Agent CLI can therefore select GPT, Claude, or Grok without changing the completion contract from Cursor hooks to another harness's. Grok Composer is a Grok CLI model preset, not another harness: use `harness: "grok-cli", model: "grok-composer-2.5-fast"`. The old four launcher tools are thin compatibility aliases over the same implementation.
 
@@ -169,7 +169,7 @@ collection is off by default and performs no network I/O. It ships via
 tag-triggered CI with npm provenance (OIDC Trusted Publishing); the GitHub
 Release re-registers the Official MCP Registry entry.
 
-**Status:** actively maintained · current public release **v0.29.10** · runs on Linux · WSL2 · macOS · native Windows (tmux on POSIX, the tmux-CLI-compatible [psmux](https://github.com/psmux/psmux) on native Windows — no WSL required) · MIT · see the [CHANGELOG](CHANGELOG.md).
+**Status:** actively maintained · current public release **v0.29.11** · runs on Linux · WSL2 · macOS · native Windows (tmux on POSIX, the tmux-CLI-compatible [psmux](https://github.com/psmux/psmux) on native Windows — no WSL required) · MIT · see the [CHANGELOG](CHANGELOG.md).
 
 ### Update and rollback
 
@@ -316,7 +316,7 @@ The only edits to the captures above are the two `⋮` lines (a long head/tail r
 Restart Claude Code, then verify the connection:
 
 ```bash
-/mcp        # aiterm should show as connected, exposing 15 tools
+/mcp        # aiterm should show as connected, exposing 16 tools
 ```
 
 Your first session — four calls, one persistent terminal:
@@ -357,7 +357,7 @@ The terminal is real and shared, so a human *can* jump in ([A human can watch](#
 
 ```mermaid
 flowchart LR
-    AI["AI / MCP client<br/>(the orchestrator)"] -->|"pty_send · agent_launch · agent_configure · claude_turn · claude_approval<br/>legacy launcher aliases · diagnostics"| S["aiterm-mcp<br/>stdio MCP · 15 tools"]
+    AI["AI / MCP client<br/>(the orchestrator)"] -->|"pty_send · agent_launch · agent_steer · agent_configure · claude_turn · claude_approval<br/>legacy launcher aliases · diagnostics"| S["aiterm-mcp<br/>stdio MCP · 16 tools"]
     S -->|"pty_read<br/>token-reduced"| AI
     S -->|"tmux / psmux<br/>send · capture"| P["persistent PTYs<br/>survive restarts"]
     P -->|"ssh · docker · repl"| R["nested<br/>remote · container · REPL"]
@@ -440,6 +440,7 @@ On top of that sits a productized layer a raw tmux bridge doesn't have: **token-
 | `pty_close` | Close idempotently; return `closed` / `already_closed` | `session_id` |
 | `pty_list` | List sessions (agent rows carry canonical `harness=<id>` plus compatibility `agent=<kind>`) | (none) |
 | `agent_launch` | Canonical agent launch; harness and model are independent | `harness`, `prompt?`, `model?`, `reasoning_effort?`, `cwd?`, `write_scope?` |
+| `agent_steer` | Inject text into the active Codex or Grok turn; return `idle` without sending when no turn is active | `session_id`, `text` |
 | `claude_agent` / `codex_agent` / `grok_agent` / `composer_agent` | Deprecated compatibility aliases | legacy launcher arguments |
 | `agent_configure` | Change model/effort in a running Claude, Codex, Grok, Composer, or Cursor session without restarting it | `session_id`, `model?`, `reasoning_effort?` |
 | `claude_turn` | Issue (dispatch-only) or recover one correlated Claude operation | `action`, `session_id`, `operation_id`, `text?` |

@@ -1,5 +1,5 @@
 // smoke: 実際に `node dist/index.js` を起動し、initialize + tools/list を stdin にパイプ。
-// 検証: stdout は改行区切り JSON-RPC のみ（診断混入なし）／15 ツールが公開されている。
+// 検証: stdout は改行区切り JSON-RPC のみ（診断混入なし）／16 ツールが公開されている。
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -38,7 +38,7 @@ test("smoke: Windows backend公開面はpsmux 3.3.8以上で一致する", () =>
   assert.doesNotMatch(readmeJa, /同じ tmux ソケット/);
 });
 
-test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 15 ツール公開", async () => {
+test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 16 ツール公開", async () => {
   const tmpdir = fs.mkdtempSync(path.join(os.tmpdir(), "aiterm-diagnostics-"));
   const child = spawn(process.execPath, [ENTRY], {
     stdio: ["pipe", "pipe", "pipe"],
@@ -92,6 +92,7 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 15 ツール公�
   assert.deepEqual(names, [
     "agent_configure",
     "agent_launch",
+    "agent_steer",
     "claude_agent",
     "claude_approval",
     "claude_turn",
@@ -123,6 +124,9 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 15 ツール公�
     ptySend.outputSchema.properties.event_cursor.anyOf?.some((v) => v.type === "integer"),
     "pty_send event_cursor schema",
   );
+  const agentSteer = toolsResp.result.tools.find((t) => t.name === "agent_steer");
+  assert.equal(agentSteer.outputSchema.properties.schema.const, "aiterm.agent-steer.v1");
+  assert.deepEqual(agentSteer.outputSchema.properties.delivery.enum, ["steered", "idle"]);
   // 非ブロック規範: dispatch 系の説明は「待たない」を明示し、foreground 実行へ誘導する
   // 抽象文（旧「ホストのバックグラウンドタスクとして実行」）へ戻らない。
   const dispatchDescs = [ptySend, ...["agent_launch", "claude_agent", "codex_agent", "grok_agent", "composer_agent"].map((n) => toolsResp.result.tools.find((t) => t.name === n))];

@@ -2943,6 +2943,44 @@ test("dispatchAgentTurn: agent TUI ready 前は送信前に拒否し文字を流
   });
 });
 
+test("steerAgentTurn: 実行中のCodexへ現在ターンの追加メッセージを送る", { skip: skipAgentDone }, async () => {
+  await withFakeCodexHome(async () => {
+    const [sid] = core.openAgent("codex", { agent_done: true });
+    try {
+      core.send(sid, "printf 'OpenAI Codex\\n• Working (1s • esc to interrupt)\\n'", {
+        force: true,
+        raw: true,
+        preserveAgentOperation: true,
+      });
+      await core.readOutput(sid, { wait: true, until: "esc to interrupt", timeout: 5, raw: true });
+      const receipt = await core.steerAgentTurn(sid, "echo STEER_BODY");
+      assert.equal(receipt.schema, "aiterm.agent-steer.v1");
+      assert.equal(receipt.vendor, "codex");
+      assert.equal(receipt.harness, "codex-cli");
+      assert.equal(receipt.delivery, "steered");
+      const out = await core.readOutput(sid, { wait: true, until: "STEER_BODY", timeout: 5, raw: true });
+      assert.match(out, /STEER_BODY/);
+    } finally {
+      core.closeSession(sid);
+    }
+  });
+});
+
+test("steerAgentTurn: idle中は次ターンとして送信しない", { skip: skipAgentDone }, async () => {
+  await withFakeCodexHome(async () => {
+    const [sid] = core.openAgent("codex", { agent_done: true });
+    try {
+      await markFakeAgentReady(sid, "codex");
+      const receipt = await core.steerAgentTurn(sid, "echo MUST_NOT_STEER");
+      assert.equal(receipt.delivery, "idle");
+      const out = await core.readOutput(sid, { screen: true, raw: true });
+      assert.doesNotMatch(out, /MUST_NOT_STEER/);
+    } finally {
+      core.closeSession(sid);
+    }
+  });
+});
+
 test("dispatchAgentTurn: Grokは現在のidle composerが見えればtranscript初期化eventを要求しない", { skip: skipGrokFakeBin }, async () => {
   const savedBin = process.env.GROK_BIN;
   const fakeBin = makeFakeGrokTuiBin();

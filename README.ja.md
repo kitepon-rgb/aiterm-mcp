@@ -94,7 +94,7 @@ diagnostics、recovery、update、releaseを所有します。このREADMEと[�
 
 **言葉でなく実測で:** 記録済み203テストのベンチマークでは、`pty_read` はコンテキストに載るトークンを生ログの **約 7.1 分の 1** に減らす。しかも pass/fail の判定は畳んでも残る。→ [組み込みシェルツールとの使い分け](#組み込みシェルツールとの使い分け)
 
-15ツール: 6つのPTYツール、正規のagent起動入口`agent_launch`、移行用の旧4alias、`agent_configure`、`claude_turn`、`claude_approval`、`diagnostics`。backendはPOSIXのtmux／Windows nativeのpsmuxなので、MCPサーバやAIクライアントが再起動してもsessionは生き残る。
+16ツール: 6つのPTYツール、正規のagent起動入口`agent_launch`、実行中のCodex／Grokを誘導する`agent_steer`、移行用の旧4alias、`agent_configure`、`claude_turn`、`claude_approval`、`diagnostics`。backendはPOSIXのtmux／Windows nativeのpsmuxなので、MCPサーバやAIクライアントが再起動してもsessionは生き残る。
 
 **v0.28.0では実行基盤harnessとmodelを分離した。** harnessはagent loop・認証・hook・session・transcriptを所有し、modelはその上で選ぶ。Cursor Agent CLIでGPT／Claude／Grokを選んでも完了契約はCursor方式のまま。Composerは別harnessではなく、`harness:"grok-cli", model:"grok-composer-2.5-fast"`で表す。旧4起動ツールは同じ実装へ流れる互換alias。
 
@@ -153,7 +153,7 @@ runtime-error store は canonical dotagents config の `collection.enabled: true
 場合だけ収集し、既定OFF、network送信は行いません。tag起点CIのnpm provenance（OIDC Trusted
 Publishing）で公開し、GitHub Release が Official MCP Registry を再登録します。
 
-**状態:** 開発継続中 · 現行公開版 **v0.29.10** · 動作対象は Linux · WSL2 · macOS · Windows ネイティブ · MIT · [変更履歴](CHANGELOG.md)。
+**状態:** 開発継続中 · 現行公開版 **v0.29.11** · 動作対象は Linux · WSL2 · macOS · Windows ネイティブ · MIT · [変更履歴](CHANGELOG.md)。
 
 ### 更新と巻き戻し
 
@@ -287,7 +287,7 @@ Throughline自体が不要である。
 Claude Code を再起動して、接続を確認:
 
 ```bash
-/mcp        # aiterm が connected・15 ツール公開、と出る
+/mcp        # aiterm が connected・16 ツール公開、と出る
 ```
 
 最初のセッション——4 回の呼び出しで、1 個の永続端末:
@@ -328,7 +328,7 @@ MCP クライアントが aiterm を stdio 越しにプログラムから駆動�
 
 ```mermaid
 flowchart LR
-    AI["AI / MCP client<br/>(the orchestrator)"] -->|"pty_send · agent_launch · agent_configure · claude_turn · claude_approval<br/>旧launcher alias · diagnostics"| S["aiterm-mcp<br/>stdio MCP · 15 tools"]
+    AI["AI / MCP client<br/>(the orchestrator)"] -->|"pty_send · agent_launch · agent_steer · agent_configure · claude_turn · claude_approval<br/>旧launcher alias · diagnostics"| S["aiterm-mcp<br/>stdio MCP · 16 tools"]
     S -->|"pty_read<br/>token-reduced"| AI
     S -->|"tmux / psmux<br/>send · capture"| P["persistent PTYs<br/>再起動を跨ぐ"]
     P -->|"ssh · docker · repl"| R["nested<br/>remote · container · REPL"]
@@ -409,6 +409,7 @@ aiterm は同じ核心の洞察——端末を出会いの場にする——を�
 | `pty_close` | 冪等に閉じ、`closed` / `already_closed`を返す | `session_id` |
 | `pty_list` | セッション一覧（agent行は正規`harness=<id>`と互換`agent=<kind>`を含む） | （なし） |
 | `agent_launch` | harnessとmodelを別軸で選ぶ正規agent起動入口 | `harness`, `prompt?`, `model?`, `reasoning_effort?`, `cwd?`, `write_scope?` |
+| `agent_steer` | 実行中のCodex／Grok turnへtextを差し込む。idleなら送信せず`idle`を返す | `session_id`, `text` |
 | `claude_agent` / `codex_agent` / `grok_agent` / `composer_agent` | deprecated互換alias | 旧launcher引数 |
 | `agent_configure` | 起動中のClaude／Codex／Grok／Composer／Cursorを再起動せずmodel／effort変更 | `session_id`, `model?`, `reasoning_effort?` |
 | `claude_turn` | 相関済みClaude operationをdispatch（issue）または回収（recover） | `action`, `session_id`, `operation_id`, `text?` |

@@ -26,7 +26,7 @@ npm pack --dry-run
 npm run mcpb:build
 ```
 
-MCPBのstaged serverでversion、15 tools、stderr 0、必要なruntime JavaScriptの同梱を確認する。
+MCPBのstaged serverでversion、16 tools、stderr 0、必要なruntime JavaScriptの同梱を確認する。
 
 ## Mainと公開
 
@@ -44,7 +44,7 @@ CI callerは同じrepositoryの`./.github/workflows/product-full-ci.yml`だけ�
 公式npm packageを隔離またはglobal installし、次を確認する。
 
 - `aiterm-mcp`、`aiterm-wait`、`aiterm-runtime-errors`の3 bins。
-- MCP initializeのversion、15 tools、stderr 0。
+- MCP initializeのversion、16 tools、stderr 0。
 - POSIXはtmux、Windows nativeはpsmux 3.3.8以上とPowerShell 7。
 - 変更に触れたharnessの起動、non-blocking dispatch、wait outcome、transcript回収、`pty_close`後の残骸ゼロ。
 - Official Registryが`io.github.kitepon/aiterm-mcp`の同じversionをactive／latestとして返す。

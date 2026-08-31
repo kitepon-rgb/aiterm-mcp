@@ -231,6 +231,38 @@ server.registerTool(
 );
 
 server.registerTool(
+  "agent_steer",
+  {
+    description:
+      "実行中のCodex/Grok agentへ追加メッセージを差し込み、現在のターンを誘導する。" +
+      "独立した次ターンを始める用途ではなく、idle時は文字を送らずdelivery=idleを返す。",
+    inputSchema: {
+      session_id: z.string(),
+      text: z.string().describe("現在のターンへ追加する文字列。UTF-8で最大64KiB"),
+    },
+    outputSchema: {
+      schema: z.literal("aiterm.agent-steer.v1"),
+      session_id: z.string(),
+      launch_id: z.string(),
+      vendor: z.enum(["codex", "grok", "composer"]),
+      harness: z.enum(["codex-cli", "grok-cli"]),
+      delivery: z.enum(["steered", "idle"]),
+    },
+  },
+  async ({ session_id, text }) => {
+    try {
+      const receipt = await core.steerAgentTurn(session_id, text);
+      return {
+        content: [{ type: "text" as const, text: `${receipt.delivery} ${receipt.session_id}` }],
+        structuredContent: receipt,
+      };
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
   "pty_read",
   {
     description:
