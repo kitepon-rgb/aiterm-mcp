@@ -169,7 +169,7 @@ collection is off by default and performs no network I/O. It ships via
 tag-triggered CI with npm provenance (OIDC Trusted Publishing); the GitHub
 Release re-registers the Official MCP Registry entry.
 
-**Status:** actively maintained · current public release **v0.29.9** · runs on Linux · WSL2 · macOS · native Windows (tmux on POSIX, the tmux-CLI-compatible [psmux](https://github.com/psmux/psmux) on native Windows — no WSL required) · MIT · see the [CHANGELOG](CHANGELOG.md).
+**Status:** actively maintained · current public release **v0.29.10** · runs on Linux · WSL2 · macOS · native Windows (tmux on POSIX, the tmux-CLI-compatible [psmux](https://github.com/psmux/psmux) on native Windows — no WSL required) · MIT · see the [CHANGELOG](CHANGELOG.md).
 
 ### Update and rollback
 
@@ -475,7 +475,7 @@ cannot be combined with `launch_operation_id`, and leaves the source session's d
 unchanged. Throughline is resolved through `THROUGHLINE_BIN` and then `PATH`; a missing or invalid
 export fails before the PTY exists instead of silently launching clean.
 
-When an agent's answer is longer than the on-screen tail (pane height ≈ 24 lines), callers recover it in full with `pty_read({ agent_transcript: true })`. It returns the most recently completed turn's final assistant message in plain text with no re-prompting. Claude reads the bounded owner-only result captured by the launch-correlated Stop hook and verifies its digest/byte count; it never reads Claude's private transcript. Durable machine callers should use `claude_turn`: `issue` sends once, `recover` never sends, `pending` is distinct from unsafe or malformed state, and only `completed` carries the exact verified `raw_output`. Codex uses the normal rollout transcript's `task_complete.turn_id`; Grok/Composer use their normal session history after the last real user row; Cursor uses the normal agent transcript bound to the launch ID and current turn. Missing or ambiguous attribution remains an explicit error.
+When an agent's answer is longer than the on-screen tail (pane height ≈ 24 lines), callers recover it in full with `pty_read({ agent_transcript: true })`. It returns the most recently completed turn's final assistant message in plain text with no re-prompting. The existing human-readable content keeps its diagnostic suffix; machine callers read the answer alone from `structuredContent.text` in `aiterm.pty-read-result.v1`. Claude reads the bounded owner-only result captured by the launch-correlated Stop hook and verifies its digest/byte count; it never reads Claude's private transcript. Durable machine callers should use `claude_turn`: `issue` sends once, `recover` never sends, `pending` is distinct from unsafe or malformed state, and only `completed` carries the exact verified `raw_output`. Codex uses the normal rollout transcript's `task_complete.turn_id`; Grok/Composer return the last non-empty assistant message after the last real user row, excluding tool-use preambles; Cursor uses the normal agent transcript bound to the launch ID and current turn. Missing or ambiguous attribution remains an explicit error.
 
 ### Completion detection (5 layers)
 

@@ -2327,11 +2327,20 @@ async function settlePublishedClaudeCompletionMarker(
   return active;
 }
 
-/** agent harness の構造化 transcript から直近完了ターンの最終回答を読む。 */
-export async function readAgentTranscript(
+export interface AgentTranscriptResult {
+  text: string;
+  display: string;
+  vendor: AgentKind;
+  turn_id: string | null;
+  harness: string;
+  raw_chars: number;
+}
+
+/** agent harness の構造化 transcript から直近完了ターンの最終回答と相関情報を読む。 */
+export async function readAgentTranscriptResult(
   name: string,
   o: { lines?: number | null; operation_id?: string | null } = {},
-): Promise<string> {
+): Promise<AgentTranscriptResult> {
   const meta = loadAgentMetadata(name);
   const operationId = o.operation_id == null ? null : validateOperationId(o.operation_id);
   if (operationId && meta.kind !== "claude") {
@@ -2385,7 +2394,22 @@ export async function readAgentTranscript(
     done?.operation_id ? `operation_id=${done.operation_id}` : null,
     `raw_chars=${rawChars}`,
   ].filter(Boolean).join(" ");
-  return `${body}\n${outputMeta} [${transcriptMeta}]`;
+  return {
+    text: body,
+    display: `${body}\n${outputMeta} [${transcriptMeta}]`,
+    vendor: meta.kind,
+    turn_id: turnId,
+    harness: agentHarness(meta.kind),
+    raw_chars: rawChars,
+  };
+}
+
+/** 人間向け互換表示を維持する。機械利用は readAgentTranscriptResult の text を使う。 */
+export async function readAgentTranscript(
+  name: string,
+  o: { lines?: number | null; operation_id?: string | null } = {},
+): Promise<string> {
+  return (await readAgentTranscriptResult(name, o)).display;
 }
 
 function inferAgentFrontend(name: string, meta: AgentMetadata, screen?: string): string {

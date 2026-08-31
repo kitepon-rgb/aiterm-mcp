@@ -153,7 +153,7 @@ runtime-error store は canonical dotagents config の `collection.enabled: true
 場合だけ収集し、既定OFF、network送信は行いません。tag起点CIのnpm provenance（OIDC Trusted
 Publishing）で公開し、GitHub Release が Official MCP Registry を再登録します。
 
-**状態:** 開発継続中 · 現行公開版 **v0.29.9** · 動作対象は Linux · WSL2 · macOS · Windows ネイティブ · MIT · [変更履歴](CHANGELOG.md)。
+**状態:** 開発継続中 · 現行公開版 **v0.29.10** · 動作対象は Linux · WSL2 · macOS · Windows ネイティブ · MIT · [変更履歴](CHANGELOG.md)。
 
 ### 更新と巻き戻し
 
@@ -443,7 +443,7 @@ handoff contextを前置きできる。この任意経路は`throughline >= 0.9.
 `launch_operation_id`とは併用不可で、元sessionのDB所属を変更しない。Throughlineは
 `THROUGHLINE_BIN`、次に`PATH`から解決し、不在・不正・空のexportはPTY作成前に明示失敗する。
 
-エージェントの回答が画面tailより長ければ、`pty_read({ agent_transcript:true })`で再promptなしに全文回収する。Claudeはlaunch相関Stop hook、Codexは通常rollout、Grokは通常session history、Cursorはlaunch IDでbindした通常agent transcriptから同じturnを回収する。
+エージェントの回答が画面tailより長ければ、`pty_read({ agent_transcript:true })`で再promptなしに全文回収する。既存の人間向けcontentは診断suffixを維持し、機械呼出し側は`aiterm.pty-read-result.v1`の`structuredContent.text`から回答本文だけを取得する。Claudeはlaunch相関Stop hook、Codexは通常rollout、Grokは最後の実user行以後の最後の空でないassistantメッセージだけ、Cursorはlaunch IDでbindした通常agent transcriptから同じturnを回収する。
 
 ### 完了検出（5 層）
 

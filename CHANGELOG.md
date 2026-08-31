@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.10] - 2026-08-31
+
+### Fixed
+
+- Return `pty_read(agent_transcript:true)` answer text separately as `aiterm.pty-read-result.v1` structured content while preserving the existing human-readable diagnostic suffix.
+- For Grok and Composer, return only the last non-empty assistant message after the last real user row instead of joining tool-use preambles with the final answer.
+
 ## [0.29.9] - 2026-08-31
 
 ### Fixed
@@ -1401,7 +1408,8 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.9...HEAD
+[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.10...HEAD
+[0.29.10]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.9...v0.29.10
 [0.29.9]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.8...v0.29.9
 [0.29.8]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.7...v0.29.8
 [0.29.7]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.6...v0.29.7

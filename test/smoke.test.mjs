@@ -137,6 +137,8 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 15 ツール公�
   const ptyRead = toolsResp.result.tools.find((t) => t.name === "pty_read");
   assert.equal(ptyRead.inputSchema.properties.agent_transcript.type, "boolean", "pty_read agent_transcript schema");
   assert.equal(ptyRead.inputSchema.properties.agent_transcript.default, false, "pty_read agent_transcript default");
+  assert.equal(ptyRead.outputSchema.properties.text.type, "string", "pty_read structured text schema");
+  assert.deepEqual(ptyRead.outputSchema.properties.mode.enum, ["terminal", "agent_transcript"]);
   assert.ok(ptyRead.inputSchema.properties.operation_id.anyOf?.some((v) => v.type === "string"));
   const ptyClose = toolsResp.result.tools.find((t) => t.name === "pty_close");
   assert.equal(ptyClose.outputSchema.properties.schema.const, "aiterm.pty-close-result.v1", "pty_close result schema");

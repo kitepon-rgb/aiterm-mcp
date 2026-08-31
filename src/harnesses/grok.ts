@@ -319,7 +319,7 @@ export function grokFooterHasConfiguration(screen: string, model: string | null,
   });
 }
 
-// 最後のuser発話以降のassistantメッセージをchat_history.jsonlから抽出する。
+// 最後のuser発話以降に確定した最後のassistantメッセージをchat_history.jsonlから抽出する。
 export function grokTranscriptText(
   meta: AgentMetadata,
   readTranscriptLines: (file: string) => string[],
@@ -349,11 +349,12 @@ export function grokTranscriptText(
       // 外部 transcript の壊れた1行は残りの完結行を読む妨げにしない。
     }
   }
-  return records
+  const replies = records
     .slice(lastUser + 1)
     .filter((record) => record?.type === "assistant" && typeof record?.content === "string")
-    .map((record) => record.content)
-    .join("\n");
+    .map((record) => record.content.trim())
+    .filter(Boolean);
+  return replies.at(-1) ?? "";
 }
 
 export function createGrokAgentMetadata(

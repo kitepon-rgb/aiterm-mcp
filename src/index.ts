@@ -269,6 +269,16 @@ server.registerTool(
         .nullish()
         .describe("Claude operationの期待ID。agent_transcript:true時だけ指定し、古い別operationの結果を拒否する"),
     },
+    outputSchema: {
+      schema: z.literal("aiterm.pty-read-result.v1"),
+      mode: z.enum(["terminal", "agent_transcript"]),
+      session_id: z.string(),
+      text: z.string(),
+      vendor: z.enum(["claude", "codex", "grok", "composer", "cursor"]).nullable(),
+      turn_id: z.string().nullable(),
+      harness: z.enum(["claude-code", "codex-cli", "grok-cli", "cursor-cli"]).nullable(),
+      raw_chars: z.number().int().nonnegative().nullable(),
+    },
   },
   async ({ session_id, wait, until, until_regex, timeout, screen, full, lines, line_range, raw, rtk, agent_transcript, operation_id }) => {
     try {
@@ -276,10 +286,23 @@ server.registerTool(
         if (screen || full || rtk || wait || line_range != null) {
           throw new Error("agent_transcript:true は screen / full / rtk / line_range / wait と併用できません。lines のみ指定できます。");
         }
-        return ok(await core.readAgentTranscript(session_id, {
+        const result = await core.readAgentTranscriptResult(session_id, {
           lines: lines ?? null,
           operation_id: operation_id ?? null,
-        }));
+        });
+        return {
+          content: [{ type: "text" as const, text: result.display }],
+          structuredContent: {
+            schema: "aiterm.pty-read-result.v1" as const,
+            mode: "agent_transcript" as const,
+            session_id,
+            text: result.text,
+            vendor: result.vendor,
+            turn_id: result.turn_id,
+            harness: result.harness,
+            raw_chars: result.raw_chars,
+          },
+        };
       }
       if (operation_id != null) throw new Error("operation_idはagent_transcript:true時だけ指定できます");
       let range: [number, number | null] | null = null;
@@ -309,7 +332,19 @@ server.registerTool(
         raw,
         rtk,
       });
-      return ok(out);
+      return {
+        content: [{ type: "text" as const, text: out }],
+        structuredContent: {
+          schema: "aiterm.pty-read-result.v1" as const,
+          mode: "terminal" as const,
+          session_id,
+          text: out,
+          vendor: null,
+          turn_id: null,
+          harness: null,
+          raw_chars: null,
+        },
+      };
     } catch (e) {
       return fail(e);
     }

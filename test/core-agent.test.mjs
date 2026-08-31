@@ -3480,7 +3480,7 @@ test("readAgentTranscript: Codex の複数 assistant block を join し lines �
   });
 });
 
-test("readAgentTranscript: Grok は最後の実 user 入力以降の assistant 群だけを回収する", { skip: skipGrokFakeBin }, async () => {
+test("readAgentTranscript: Grok は最後の実 user 入力以降の確定assistantだけを回収する", { skip: skipGrokFakeBin }, async () => {
   const savedBin = process.env.GROK_BIN;
   process.env.GROK_BIN = "/bin/echo";
   try {
@@ -3500,10 +3500,17 @@ test("readAgentTranscript: Grok は最後の実 user 入力以降の assistant �
           { type: "assistant", content: "latest first" },
           { type: "assistant", content: "latest second" },
         ]);
-        const out = await core.readAgentTranscript(sid);
+        const result = await core.readAgentTranscriptResult(sid);
+        const out = result.display;
         assert.doesNotMatch(out, /old answer|still old answer/);
-        assert.match(out, /latest first\nlatest second/);
+        assert.doesNotMatch(out, /latest first/);
+        assert.match(out, /latest second/);
         assert.match(out, /vendor=grok turn_id=transcript-turn-grok harness=grok-cli/);
+        assert.equal(result.text, "latest second");
+        assert.equal(result.vendor, "grok");
+        assert.equal(result.turn_id, "transcript-turn-grok");
+        assert.equal(result.harness, "grok-cli");
+        assert.equal(result.raw_chars, 13);
       } finally {
         core.closeSession(sid);
       }
