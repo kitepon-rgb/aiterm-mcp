@@ -7,17 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.29.9] - 2026-08-30
+## [0.29.9] - 2026-08-31
 
 ### Fixed
 
 - Accept both `server` and `linux` factory profiles on native Linux for opt-in
   runtime-error collection while keeping WSL restricted to its legacy `wsl` profile.
 - Replace the nonexistent public `pty_kill_all` recovery guidance in the MCP error and both READMEs with the supported `pty_list` → `pty_close` → recreate flow.
-- Keep the Grok credential-path constraint in the authentication section instead of leaving it after the License heading.
+- Keep the Grok credential-path contract in the authentication section instead of leaving it after the License heading.
 
 ### Changed
 
+- Deliver terminal text without classifying or blocking destructive-looking command content; command policy belongs to the shell, remote endpoint, or launched harness.
+- Pass existing absolute Grok credential paths to Grok without inspecting their contents, permissions, ownership, links, ancestors, or file type. Keep only the explicit-path shape/existence preflight and the default-missing `XAI_API_KEY` branch.
+- Let Claude Code interpret `/login` and `/logout` inside its own TUI while retaining the official CLI authentication preflight before session creation.
 - Replace the retired `wsl2` and ambiguous `linux-native` factory CI labels with
   separate `linux-server` and `linux-workstation` self-hosted runner contracts.
 - Move completed, rejected, interrupted, expired, and superseded plans, audits, promotion notes, and obsolete design drafts under `docs/archive/`; retain only small compatibility stubs where Lattice, ADRs, or research evidence have immutable path references.

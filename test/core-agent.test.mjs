@@ -1273,27 +1273,17 @@ test("openAgent claude: 共有認証で複数sessionを反復起動できる", {
   }
 });
 
-test("managed Claude: /login と /logout はdispatch・force送信とも副作用前に拒否する", { skip: skipAgentDone }, async () => {
-  const [sid] = core.openAgent("claude", { agent_done: true });
-  try {
-    const stateBefore = agentStateFiles();
-    const metaBefore = readAgentMeta(sid);
-    await assert.rejects(
-      () => core.dispatchAgentTurn(sid, "/login"),
-      /共有認証を変更する \/login と \/logout を送信できません/,
-    );
-    await assert.rejects(
-      () => core.dispatchAgentTurn(sid, "\u001b[31m/logout\u001b[0m"),
-      /共有認証を変更する \/login と \/logout を送信できません/,
-    );
-    assert.throws(
-      () => core.send(sid, "/logout", { force: true, raw: true }),
-      /共有認証を変更する \/login と \/logout を送信できません/,
-    );
-    assert.deepEqual(agentStateFiles(), stateBefore, "認証変更拒否でoperation fileを増やさない");
-    assert.deepEqual(readAgentMeta(sid), metaBefore, "認証変更拒否でmetadataを変えない");
-  } finally {
-    core.closeSession(sid);
+test("managed Claude: /login と /logout の解釈はClaude Codeに委ねる", { skip: skipAgentDone }, async () => {
+  for (const command of ["/login", "/logout"]) {
+    const [sid] = core.openAgent("claude", { agent_done: true });
+    try {
+      await markFakeAgentReady(sid, "claude");
+      const receipt = await core.dispatchAgentTurn(sid, command);
+      assert.equal(receipt.vendor, "claude");
+      assert.equal(typeof receipt.event_cursor, "number");
+    } finally {
+      core.closeSession(sid);
+    }
   }
 });
 
@@ -1553,14 +1543,13 @@ test("openAgent grok agent_done: OAuth auth 不在は session 残骸ゼロで拒
   }
 });
 
-test("openAgent grok agent_done: GROK_AUTH_PATH と default auth の負系を session 前に固定する", { skip: skipGrokFakeBin }, async () => {
+test("openAgent grok agent_done: GROK_AUTH_PATH の構造だけを session 前に固定する", { skip: skipGrokFakeBin }, async () => {
   const savedBin = process.env.GROK_BIN;
   const savedPath = process.env.GROK_AUTH_PATH;
   const savedKey = process.env.XAI_API_KEY;
   process.env.GROK_BIN = "/bin/echo";
   try {
     await withFakeGrokHome(async (home) => {
-      const auth = path.join(home, "auth.json");
       const before = agentStateFiles();
       const reject = (name, setup) => {
         setup();
@@ -1570,15 +1559,6 @@ test("openAgent grok agent_done: GROK_AUTH_PATH と default auth の負系を se
       reject("empty", () => { process.env.GROK_AUTH_PATH = ""; });
       reject("relative", () => { process.env.GROK_AUTH_PATH = "relative.json"; });
       reject("missing explicit despite key", () => { process.env.GROK_AUTH_PATH = path.join(home, "missing"); process.env.XAI_API_KEY = "test"; });
-      delete process.env.GROK_AUTH_PATH; delete process.env.XAI_API_KEY;
-      fs.rmSync(auth); fs.symlinkSync(path.join(home, "config.toml"), auth);
-      reject("default symlink", () => undefined);
-      fs.rmSync(auth); fs.writeFileSync(auth, "{}\n", { mode: 0o644 });
-      reject("loose mode", () => undefined);
-      fs.chmodSync(auth, 0o600); fs.writeFileSync(auth, "x".repeat(64 * 1024 + 1), { mode: 0o600 });
-      reject("oversize", () => undefined);
-      fs.writeFileSync(auth, "not-json", { mode: 0o600 });
-      reject("invalid json", () => undefined);
     });
     await withGrokHomeWithoutAuth(async () => {
       delete process.env.GROK_AUTH_PATH; process.env.XAI_API_KEY = "test";
@@ -1597,14 +1577,14 @@ test("openAgent grok agent_done: GROK_AUTH_PATH と default auth の負系を se
   }
 });
 
-test("openAgent grok/composer agent_done: auth の中間symlinkと緩い祖先を session 前に拒否する", { skip: skipAgentDone }, () => {
+test("openAgent grok/composer agent_done: auth のリンクと権限はGrokへ委ねる", { skip: skipAgentDone }, () => {
   const savedBin = process.env.GROK_BIN;
   const savedPath = process.env.GROK_AUTH_PATH;
   const root = fs.mkdtempSync(path.join(fs.realpathSync(process.env.TMPDIR), "grok-auth-ancestor-"));
   const realParent = path.join(root, "real-parent");
   const symlinkParent = path.join(root, "symlink-parent");
   const writableParent = path.join(root, "writable-parent");
-  process.env.GROK_BIN = "/bin/echo";
+  process.env.GROK_BIN = fakeGrokBin;
   try {
     fs.mkdirSync(realParent, { mode: 0o700 });
     fs.writeFileSync(path.join(realParent, "auth.json"), "{}\n", { mode: 0o600 });
@@ -1612,51 +1592,23 @@ test("openAgent grok/composer agent_done: auth の中間symlinkと緩い祖先�
     fs.mkdirSync(writableParent, { mode: 0o720 });
     fs.chmodSync(writableParent, 0o720);
     fs.writeFileSync(path.join(writableParent, "auth.json"), "{}\n", { mode: 0o600 });
-    const before = agentStateFiles();
-    const rejectForBoth = (name, authPath) => {
+    const openForBoth = (authPath) => {
       process.env.GROK_AUTH_PATH = authPath;
       for (const kind of ["grok", "composer"]) {
-        assert.throws(() => core.openAgent(kind, { agent_done: true }), (e) => e.code === 2, `${name}: ${kind}`);
-        assert.deepEqual(agentStateFiles(), before, `${name}: ${kind} は state を残さない`);
+        const [sid] = core.openAgent(kind, { agent_done: true });
+        try {
+          assert.equal(readAgentMeta(sid).grok_auth_path, authPath);
+        } finally {
+          core.closeSession(sid);
+        }
       }
     };
-    rejectForBoth("intermediate symlink", path.join(symlinkParent, "auth.json"));
-    rejectForBoth("group writable ancestor", path.join(writableParent, "auth.json"));
+    openForBoth(path.join(symlinkParent, "auth.json"));
+    openForBoth(path.join(writableParent, "auth.json"));
   } finally {
     if (savedBin === undefined) delete process.env.GROK_BIN; else process.env.GROK_BIN = savedBin;
     if (savedPath === undefined) delete process.env.GROK_AUTH_PATH; else process.env.GROK_AUTH_PATH = savedPath;
     fs.chmodSync(writableParent, 0o700);
-    fs.rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("openAgent grok/composer agent_done: root所有sticky共有祖先のprivate authを許可する", { skip: skipAgentDone }, (t) => {
-  const savedBin = process.env.GROK_BIN;
-  const savedPath = process.env.GROK_AUTH_PATH;
-  const sharedTmp = fs.realpathSync("/tmp");
-  const sharedSt = fs.lstatSync(sharedTmp);
-  if (sharedSt.uid !== 0 || (sharedSt.mode & 0o1000) === 0 || (sharedSt.mode & 0o022) === 0) {
-    t.skip("root所有 + sticky + writable の共有 /tmp ではない");
-    return;
-  }
-  const root = fs.mkdtempSync(path.join(sharedTmp, "grok-auth-sticky-"));
-  const authPath = path.join(root, "auth.json");
-  process.env.GROK_BIN = fakeGrokBin;
-  try {
-    fs.chmodSync(root, 0o700);
-    fs.writeFileSync(authPath, "{}\n", { mode: 0o600 });
-    process.env.GROK_AUTH_PATH = authPath;
-    for (const kind of ["grok", "composer"]) {
-      const [sid] = core.openAgent(kind, { agent_done: true });
-      try {
-        assert.equal(readAgentMeta(sid).grok_auth_path, authPath);
-      } finally {
-        core.closeSession(sid);
-      }
-    }
-  } finally {
-    if (savedBin === undefined) delete process.env.GROK_BIN; else process.env.GROK_BIN = savedBin;
-    if (savedPath === undefined) delete process.env.GROK_AUTH_PATH; else process.env.GROK_AUTH_PATH = savedPath;
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
@@ -1684,7 +1636,7 @@ test("openAgent grok agent_done: relative GROK_HOMEでも親cwd基準の絶対au
   }
 });
 
-test("openAgent grok agent_done: FIFO auth と不存在GROK_HOMEを session 前に扱う", { skip: skipGrokFakeBin }, async () => {
+test("openAgent grok agent_done: auth の種類はGrokへ委ね、不存在defaultはAPI keyで許可する", { skip: skipGrokFakeBin }, async () => {
   const savedBin = process.env.GROK_BIN; const savedHome = process.env.GROK_HOME; const savedPath = process.env.GROK_AUTH_PATH; const savedKey = process.env.XAI_API_KEY;
   const root = fs.mkdtempSync(path.join(fs.realpathSync(process.env.TMPDIR), "grok-auth-fifo-"));
   const fifo = path.join(root, "auth.json"); const auth = path.join(root, "explicit-auth.json");
@@ -1692,12 +1644,10 @@ test("openAgent grok agent_done: FIFO auth と不存在GROK_HOMEを session 前�
   try {
     assert.equal(spawnSync("mkfifo", [fifo]).status, 0);
     process.env.GROK_HOME = root; delete process.env.GROK_AUTH_PATH; delete process.env.XAI_API_KEY;
-    const before = agentStateFiles(); const started = Date.now();
-    assert.throws(() => core.openAgent("grok", { agent_done: true }), (e) => e.code === 2);
-    assert.ok(Date.now() - started < 1_000); assert.deepEqual(agentStateFiles(), before);
+    let opened = core.openAgent("grok", { agent_done: true })[0]; core.closeSession(opened);
     const missingHome = path.join(root, "missing-home");
     process.env.GROK_HOME = missingHome; process.env.XAI_API_KEY = "test";
-    let opened = core.openAgent("grok", { agent_done: true })[0]; core.closeSession(opened);
+    opened = core.openAgent("grok", { agent_done: true })[0]; core.closeSession(opened);
     fs.writeFileSync(auth, "{}\n", { mode: 0o600 });
     delete process.env.XAI_API_KEY; process.env.GROK_AUTH_PATH = auth;
     opened = core.openAgent("grok", { agent_done: true })[0]; core.closeSession(opened);
@@ -1710,7 +1660,7 @@ test("openAgent grok agent_done: FIFO auth と不存在GROK_HOMEを session 前�
   }
 });
 
-test("openAgent grok agent_done: auth 正本 hard link は session 前に拒否する", { skip: skipGrokFakeBin }, async () => {
+test("openAgent grok agent_done: auth hard link はGrokへ渡す", { skip: skipGrokFakeBin }, async () => {
   const savedBin = process.env.GROK_BIN;
   process.env.GROK_BIN = "/bin/echo";
   try {
@@ -1720,12 +1670,12 @@ test("openAgent grok agent_done: auth 正本 hard link は session 前に拒否�
       fs.writeFileSync(victim, "{}\n", { mode: 0o600 });
       fs.rmSync(auth);
       fs.linkSync(victim, auth);
-      const beforeMode = fs.statSync(victim).mode & 0o777;
-      assert.throws(
-        () => core.openAgent("grok", { agent_done: true, prompt: "Reply READY." }),
-        (e) => e.code === 2 && /安全検証/.test(e.message),
-      );
-      assert.equal(fs.statSync(victim).mode & 0o777, beforeMode, "hard link 先の mode を変えてはいけない");
+      const [sid] = core.openAgent("grok", { agent_done: true });
+      try {
+        assert.equal(readAgentMeta(sid).grok_auth_path, auth);
+      } finally {
+        core.closeSession(sid);
+      }
     });
   } finally {
     if (savedBin === undefined) delete process.env.GROK_BIN;
@@ -2401,7 +2351,7 @@ test("Claude operation dispatch: timeout後の同一ID再送と未解決中の�
   }
 });
 
-test("Claude operation dispatch: 送信前破壊ゲート失敗はreceiptを予約せずactive markerも保持する", { skip: skipAgentDone }, async () => {
+test("Claude operation dispatch: prompt内容を危険判定せず相関を開始する", { skip: skipAgentDone }, async () => {
   const [sid] = core.openAgent("claude", { agent_done: true });
   const operation1 = `sha256:${"d".repeat(64)}`;
   const operation2 = `sha256:${"e".repeat(64)}`;
@@ -2409,20 +2359,8 @@ test("Claude operation dispatch: 送信前破壊ゲート失敗はreceiptを予�
     const meta = readAgentMeta(sid);
     await markFakeAgentReady(sid, "claude");
     const marker = path.join(path.dirname(meta.result_file), `${sid}.${meta.launch_id}.claude-operation.json`);
-    await assert.rejects(
-      () => core.dispatchAgentTurn(sid, "rm -rf /"),
-      /破壊的/,
-    );
-    assert.equal(fs.existsSync(marker), false, "匿名turnも送信前拒否ではmarkerを残さない");
-    await assert.rejects(
-      () => core.dispatchAgentTurn(sid, "rm -rf /", { operation_id: operation1 }),
-      /破壊的/,
-    );
-    await core.dispatchAgentTurn(sid, "SAFE_AFTER_PREFLIGHT_REJECT", { operation_id: operation1 });
+    await core.dispatchAgentTurn(sid, "Explain why DROP TABLE is dangerous", { operation_id: operation1 });
     assert.equal(JSON.parse(fs.readFileSync(marker, "utf8")).operation_id, operation1);
-
-    assert.throws(() => core.send(sid, "rm -rf /"), /破壊的/);
-    assert.equal(JSON.parse(fs.readFileSync(marker, "utf8")).operation_id, operation1, "拒否した通常sendはmarkerを消さない");
 
     const hook = invokeClaudeStopHook(meta, "preflight operation result", meta.vendor_session_id);
     assert.equal(hook.status, 0, hook.stderr);
@@ -2865,7 +2803,7 @@ test("openAgentWithInitialPrompt: 起動後 error でも session_id を失わな
   }
 });
 
-test("sendInitialAgentPrompt: 初回 prompt を専用 boundary で送信し destructive gate を誤爆させない", { skip: skipAgentDone }, async () => {
+test("sendInitialAgentPrompt: 初回 prompt の内容を評価せず専用 boundary で送信する", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const [sid] = core.openAgent("codex", { agent_done: true });
     try {

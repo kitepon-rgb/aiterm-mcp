@@ -40,6 +40,10 @@ harness固有のready、auth、catalog、transcriptは`src/harnesses/`、OSとmu
 `src/tmux-runtime.ts`／`src/agent-resolver.ts`、共通進行は`src/core.ts`に置く。
 stdio stdoutはJSON-RPC専用とし、diagnostic logを混ぜない。
 
+Aitermはtransport、schema、turn相関だけを検証する。command／prompt本文の意味を分類して拒否せず、
+harness所有credentialの内容・権限・linkも検査しない。command policyとcredential policyは、実行する
+shell、接続先、各harnessの公式CLIが所有する。
+
 ## Failure and recovery
 
 入力が64KiBを超える、送信lockが残る、harnessがblocking UIにいる、model catalogが一致しない等の

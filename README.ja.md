@@ -222,8 +222,9 @@ PTYの起動コマンドとして送られ、sessionの`.lastcmd`にも保持さ
 到達する。秘密転送路ではなく、席identityやworkflow用の非secret変数だけに使う。
 
 選んだharnessのCLIを公式経路で導入・認証しておく。Cursorは`curl https://cursor.com/install -fsS | bash`、`agent login`、更新は`agent update`が公式経路で、Aitermは曖昧な`agent`でなく`cursor-agent`を起動する。CLI不在・未認証・不正引数はsession作成前に明示失敗し、別経路へfallbackしない。
-GrokのcredentialをAitermがlockしたり書き戻したりはしない。継承した`GROK_AUTH_PATH`は絶対pathの
-安全なfileへ解決できなければならない。既定auth fileの不在を許すのは`XAI_API_KEY`設定時だけである。
+GrokのcredentialをAitermがlock、検査、書換えすることはない。継承した`GROK_AUTH_PATH`は空でない
+絶対pathで、対象が存在すればそのままGrokへ渡す。内容・権限・linkの扱いはGrokが所有する。
+既定auth fileの不在を許すのは`XAI_API_KEY`設定時だけである。
 
 portable forkは任意である。`throughline_source_session`を使う場合、`prompt`は必須の新ミッションとなり、
 `launch_operation_id`とは併用できない。aitermは`THROUGHLINE_BIN`、次に`PATH`からThroughlineを解決し、
@@ -383,7 +384,6 @@ aiterm は 2 つの系譜の交点にいる——端末を操作する MCP サ�
 | MCP ネイティブ（任意の MCP クライアント） | ✅ `claude mcp add` 1 行 | ✅ | ✅（MCP なので） | ❌ tmux 設定 + CLI + Agent Skills |
 | トークン削減読取 | ✅ コマンド別 reducer | ❌ 生出力 | ⚠️ ほぼ無し | ❌ 生 tmux |
 | 完了検出 | 5 層: 終了 / `mark` / `until` / 静止 / timeout | 無し（毎回ブロック） | ⚠️ プロンプト一致・脆い | ❌ エージェントがペインを読む |
-| 破壊コマンド遮断 | ✅ tripwire（`force` で越える） | ❌ | ⚠️ まちまち | ❌ |
 | 人が同時操作 | ✅ 共有socket／namespace（`attach`） | ❌ | ⚠️ まちまち | ✅（設計の芯） |
 
 ## aiterm の立ち位置
@@ -396,7 +396,7 @@ aiterm は同じ核心の洞察——端末を出会いの場にする——を�
 2. **MCP ネイティブ＝採用させるワークフローではない。** aiterm は stdio MCP サーバ: `claude mcp add` 1 行で、stdio を話す任意の MCP クライアントに構造化ツールとして刺さる（実機確認は Claude Code。Cursor / Cline / Claude Desktop も同じプロトコルなので同様に動くはず）。tmux 設定の採用も・ペイン操作の習得も・skills の導入も求めない——クライアントは既にツール呼び出しの仕方を知っている。
 3. **エージェント起動が 1 ツールコール＝オーケストレーションの primitive。** `codex_agent()` が Codex を永続端末に起こし、すぐ操作できるセッションを返す。ペインを手で並べたり貼り付けたりしない——起動も・操舵も・読取も、指揮するモデルが自分で打てるツールコールだ。
 
-その上に、生の tmux ブリッジには無い製品化レイヤが乗る: **トークン削減読取**・**5 層の完了検出**・**破壊コマンドの tripwire**。これらは人が tmux に居るモデルを否定しない——人がどこに立つかについての、別の・補完的な賭けだ。
+その上に、生の tmux ブリッジには無い製品化レイヤが乗る: **トークン削減読取**と**5 層の完了検出**。これらは人が tmux に居るモデルを否定しない——人がどこに立つかについての、別の・補完的な賭けだ。
 
 ## ツール
 
@@ -455,9 +455,9 @@ handoff contextを前置きできる。この任意経路は`throughline >= 0.9.
 - `pty_read({ rtk: true })` は直前に送ったコマンド別の reducer（`git status`/`git log`/`grep`/`pytest` ほか）で観測出力をさらに縮約する（rtk バイナリ非依存・自前実装）。
 - `pty_send({ rtk: true })` は既知コマンドを `rtk` 形に書き換えて送り、実行先に `rtk` があればソースで削減を効かせる（無ければ素通し）。
 
-### 安全
+### 入出力
 
-`pty_send` は送信前に破壊的コマンド（`rm -rf /`, `mkfs`, `dd of=/dev/…`, `DROP TABLE` 等）を遮断し（`force: true` で越える）、ESC・ブラケットペースト終端などをサニタイズする。`pty_read` は既定で制御文字を無害化して返す（`raw: true` はバイトをそのまま返す）。これは**サンドボックスではなく tripwire**（[既知の制約](#既知の制約バグではなく仕様)参照）。
+`pty_send` はコマンドやpromptの意味を判定せず、指定された本文を端末へ送る。既定ではESC・ブラケットペースト終端などをサニタイズし、`pty_read`も制御文字を無害化して返す（`raw: true`はそのまま扱う）。コマンドの許可・拒否はshell、接続先、起動したharnessが所有する。
 
 1回の `pty_send` が受理する本文はUTF-8で最大64KiB。同一sessionへの送信はaiterm processをまたいで直列化し、chunk同士の混線を防ぐ。全OSで長いPTY入力の欠落を避けるためplatformのmultiplexerへUTF-8境界を壊さない256-byte単位でpasteし、chunk間に10msのdrain間隔を置く。POSIX shellが前面にいる時のsanitize済み複数行は、改行を含まない単一の`eval`入力へ符号化する。shellがscript全体を所有してから先頭行を実行するため、途中で起動したpager／REPLが後続行を対話キーとして奪わない。単一行、`raw:true`、非shell前面は従来どおり直接PTYへpasteする。agent dispatchはtmux互換のbracketed paste操作（`paste-buffer -p`）を使う: bracketed paste modeを要求しているpaneへは各chunkを`ESC[200~/201~`で包んで届け、chunk投入中のキー解釈による語中文字化け・submit取り落としを抑える。途中chunkが失敗した場合は部分送信済みであることを明示し、自動でEnterを押さない。送信processの異常終了でlockが残った場合は送信前にfail-closedする。`pty_list`で対象sessionを確認し、`pty_close`で閉じてから同じsession IDを作り直す。公開の一括停止toolは存在しない。
 
@@ -478,7 +478,6 @@ handoff contextを前置きできる。この任意経路は`throughline >= 0.9.
 
 - **ネスト中（ssh / docker / REPL / 起動したエージェント TUI）は quiescence が原理的に効かない。** 前面コマンドがシェル集合（bash/sh/zsh/fish/dash）の外になるため。ネスト中で `until` も `mark` も無いときは、待っても完了を確定できる信号が無いので、`pty_read({ wait: true })` はフル `timeout` を空費せず出力静止時点で `is_complete=False via nested` と早期に返し、`until`（既定リテラル部分一致・`until_regex: true` で正規表現）か `mark: true`（終了コード付き sentinel・自動検出）の指定を促す。全画面のエージェント TUI なら、出力が落ち着いた時点で `{ screen: true }` を読む。
 - **`is_complete=False` は失敗ではない。** 「timeout 内に完了を観測できなかった」という意味。長時間コマンドでは `timeout` を伸ばすか `until`/`mark` を使う。
-- **破壊ゲートはサンドボックスではなく tripwire。** よくある破壊形だけを弾く。相対パスの `rm`、`$VAR` 展開後に危険化するもの、ssh 先で実行されるコマンドは捕捉しない——起動したコーディングエージェントが自分のセッション内で何をするかも取り締まらない。
 - **agent harnessは実物TUIを起動し、model APIを代理しない。** model・認証・挙動は選んだharnessのもの。隠れたagent間protocolはなく、MCPクライアントがClaude／Codex／Grok／Cursor TUIへ入力を送り出力を読む。
 - **`pty_send({ rtk: true })` は単行コマンドのみ＋外部 `rtk` バイナリが必要**（無ければ素通し）。一方 `pty_read({ rtk: true })` の reducer は自前実装で rtk 非依存。
 - **`pytest` reducer は件数・罫線・`FAILURES` ブロック整形が rtk 0.42.0 と byte 一致**（回帰テストで固定）。ただし `-ra`/`-rf` 時の `FAILED` 要約行の理由は**全文を保持する**（rtk 0.42.0 は最初の `" - "` 区切りで切るが、本実装は可読性優先で情報を残すため、この行は意図的に rtk と完全一致させない）。rtk が大出力時に付ける `[full output: …]`（tee ポインタ）行は read 側では再現しない。

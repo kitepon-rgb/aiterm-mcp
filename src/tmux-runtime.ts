@@ -231,9 +231,6 @@ export function appendMarkSentinel(text: string, foreground: string): string {
 export function modeBitsWorldAccessible(mode: number): boolean {
   return !isWin && (mode & 0o077) !== 0;
 }
-export function modeBitsWritableByOthers(mode: number): boolean {
-  return !isWin && (mode & 0o022) !== 0;
-}
 
 // pane 内で使う cwd 引数。Windows の起動コマンドは native psmux pane の Git Bash で走るため、
 // Windows パスを forward slash 形へ変換して渡す（POSIX は無加工）。

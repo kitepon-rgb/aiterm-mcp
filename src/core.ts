@@ -31,8 +31,6 @@ import {
   normalizePaneCommand,
   appendMarkSentinel,
   settlePaneLog,
-  modeBitsWorldAccessible,
-  modeBitsWritableByOthers,
   paneCwdArgument,
 } from "./tmux-runtime.js";
 import {
@@ -214,23 +212,6 @@ const PTY_PASTE_CHUNK_PAUSE_MS = 10;
 const PTY_PASTE_PAUSE_BUFFER = new Int32Array(new SharedArrayBuffer(4));
 const SESSION_SEND_LOCK_WAIT_MS = isWin ? 130_000 : 10_000;
 const SESSION_SEND_LOCK_POLL_MS = 25;
-
-// 安全: send 前に弾く破壊的コマンド（外部システム境界の防御）
-const DESTRUCTIVE: RegExp[] = [
-  // rm -rf の危険な対象形（best-effort・force で越えられる）。先頭の任意クオート ['"]? で
-  // `rm -rf "/"` / `'/'` / `"~"` を捕捉。`\.\/\*`=./*（相対 glob）、`\.\.?\/?\s*$`=. / .. / ./ / ../
-  // （カレント/親そのもの）。`./build` 等の相対サブディレクトリは末尾でないので非該当（過剰ブロック回避）。
-  /\brm\s+-[rfRF]*[rf][rfRF]*\s+(?:--\s+)?['"]?(\/|~|\$HOME|\.\/\*|\.\.?\/?\s*$|\*\s*$)/i,
-  /\bmkfs(\.\w+)?\b/i,
-  /\bdd\b[^\n]*\bof=\/dev\//i,
-  />\s*\/dev\/(sd|nvme|hd|mmcblk)/i,
-  /\bDROP\s+(TABLE|DATABASE|SCHEMA)\b/i,
-  /\bTRUNCATE\s+TABLE\b/i,
-  /(curl|wget)\b[^\n]*\|\s*(sudo\s+)?(ba)?sh\b/i,
-  /:\(\)\s*\{\s*:\|:&\s*\};:/i, // fork bomb
-  /\bchmod\s+-R\s+0*0\s+\//i,
-  /\bgit\s+reset\s+--hard\b/i,
-];
 
 // CSI/OSC/ESC エスケープ・制御文字
 // CSI / OSC(BEL or ST 終端) / DCS・PM・APC・SOS(ESC P/^/_/X … BEL or ST 終端。ペイロード本文ごと除去=B10) / 残る2文字エスケープ
@@ -693,18 +674,6 @@ function rtkRewrite(text: string): string {
   return text;
 }
 
-function assertNotDestructive(text: string, code: number, context = ""): void {
-  for (const pat of DESTRUCTIVE) {
-    if (pat.test(text)) {
-      throw new AitermError(
-        `${context}破壊的の可能性があるコマンドを遮断しました: /${pat.source}/\n` +
-          `  本当に実行するなら force を有効にして再実行してください。`,
-        code,
-      );
-    }
-  }
-}
-
 // ---------------------------------------------------------------- 操作（return で返す / 失敗は AitermError）
 
 // Windows native pane の既定 shell 解決。裸の "bash" は PATH 上で System32 の
@@ -810,23 +779,10 @@ export interface SendOpts {
   bracketedPaste?: boolean;
 }
 
-function prepareSendText(text: string, o: Pick<SendOpts, "raw" | "force">): string {
+function prepareSendText(text: string, o: Pick<SendOpts, "raw">): string {
   if (!o.raw) text = text.replace(PASTE_MARKERS_RE, "").replace(ANSI_RE, "").replace(CTRL_RE, "");
-  if (!o.force) assertNotDestructive(text, 3);
   assertSendTextSize(text);
   return text;
-}
-
-function assertManagedClaudeCredentialCommandNotSent(name: string, text: string): void {
-  const meta = tryLoadAgentMetadata(name);
-  if (meta?.kind !== "claude") return;
-  const normalized = text.replace(PASTE_MARKERS_RE, "").replace(ANSI_RE, "").replace(CTRL_RE, "").trim();
-  if (!/^\/(?:login|logout)$/i.test(normalized)) return;
-  throw new AitermError(
-    "aiterm相関付きClaude sessionでは共有認証を変更する /login と /logout を送信できません。" +
-      "認証操作は通常端末で一度だけ行い、必要ならこのsessionをcloseして起動し直してください。",
-    2,
-  );
 }
 
 export function send(name: string, text: string, o: SendOpts = {}): string {
@@ -834,7 +790,6 @@ export function send(name: string, text: string, o: SendOpts = {}): string {
   const enter = o.enter ?? true;
   if (!sessionExists(name)) throw new AitermError(`session '${name}' が無い（open してください）`, 2);
   assertInitialPromptNotPendingForSend(name, !!o.force);
-  assertManagedClaudeCredentialCommandNotSent(name, text);
   text = prepareSendText(text, o);
   let fg = "";
   if (o.mark) {
@@ -863,7 +818,6 @@ export function send(name: string, text: string, o: SendOpts = {}): string {
     }
     writeLastcmd(name, text); // read rtk の reducer 分類用（書換/mark 前の素のコマンド）
     if (o.rtk) text = rtkRewrite(text);
-    if (o.rtk && !o.force) assertNotDestructive(text, 3, "rtk 変換後: ");
     if (o.mark) text = appendMarkSentinel(text, fg);
     assertSendTextSize(text, o.rtk || o.mark ? "変換後の送信文字列" : "送信文字列");
     const reportedText = text;
@@ -3059,7 +3013,7 @@ export async function sendInitialAgentPrompt(
   const startOffset = agentCompletionCursor(meta);
   try {
     if (meta.kind === "claude") {
-      prepareSendText(text, { raw: false, force: true });
+      prepareSendText(text, { raw: false });
       reserveAnonymousClaudeTurn(meta);
     }
     await sendAgentPromptText(name, text);
@@ -3319,7 +3273,6 @@ export async function dispatchAgentTurn(
 ): Promise<AgentDispatchReceipt> {
   assertSessionName(name);
   const meta = loadAgentMetadata(name);
-  assertManagedClaudeCredentialCommandNotSent(name, text);
   const operationId = o.operation_id == null ? null : validateOperationId(o.operation_id);
   if (operationId && meta.kind !== "claude") {
     throw new AitermError("operation_id はClaude agent sessionだけで使用できます", 2);
@@ -3347,7 +3300,7 @@ export async function dispatchAgentTurn(
   if (meta.kind === "claude") {
     // durable／anonymousを分岐する前に同じsend preflightを通す。拒否されるpromptの
     // receipt／active markerだけを残して、来ないStopを待つ状態を作らない。
-    prepareSendText(text, { raw: o.raw, force: o.force });
+    prepareSendText(text, { raw: o.raw });
     if (operationId) {
       reserveClaudeOperation(meta, operationId);
     } else reserveAnonymousClaudeTurn(meta);
@@ -3784,9 +3737,7 @@ export function openAgent(
     const cmd = buildAgentCmd(kind, binForCmd, model, effort, opts.prompt ?? null, meta);
     const envPrefix = agentEnvPrefix(meta, sid, envVars);
     const full = cwdForCmd ? `cd ${shq(cwdForCmd)} && ${envPrefix}${cmd}` : `${envPrefix}${cmd}`;
-    // force:true で送る。起動骨格は `bin '...'` の固定形で、prompt/cwd/effort は shq でクオート済みの
-    // 引数＝シェルは決して破壊コマンドとして実行しない。破壊ゲート（生シェルコマンド想定）を prompt に
-    // 掛けるのは純誤検知で、`codex 'rm -rf / を説明して'` 等の正当な起動を塞いでしまう（A4）。
+    // force:true はagent sessionへの手動介入を表す。起動コマンド自体はAitermが組み立てて素送信する。
     send(sid, full, {
       enter: true,
       mark: false,

@@ -7,13 +7,11 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
 import { AitermError } from "../errors.js";
-import { modeBitsWorldAccessible, modeBitsWritableByOthers } from "../tmux-runtime.js";
 import { spawnAgentControlCommand } from "../agent-resolver.js";
 import {
   shq,
   subagentInstruction,
   writeScopeLaunchNote,
-  currentUid,
   safeStatSize,
   readFileRange,
   sleep,
@@ -29,7 +27,6 @@ import {
 } from "../agent-shared.js";
 import type { AgentKind, AgentMetadata, AgentDoneEvent, AgentWaitObservation, InitialPromptState, AgentLineageContext } from "../agent-shared.js";
 
-const GROK_AUTH_MAX_BYTES = 64 * 1024;
 const GROK_MODELS_MAX_BYTES = 1024 * 1024;
 const GROK_MODELS_TIMEOUT_MS = 15_000;
 
@@ -50,50 +47,9 @@ export function resolveAndValidateGrokAuth(srcHome: string): string | null {
   const inherited = process.env.GROK_AUTH_PATH;
   if (inheritedSet && (!inherited || !path.isAbsolute(inherited))) throw new AitermError("GROK_AUTH_PATH は空でない絶対パスで指定してください", 2);
   const authPath = inherited ?? path.join(srcHome, "auth.json");
-  let fd: number | undefined;
-  try {
-    fd = fs.openSync(authPath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
-    const st = fs.fstatSync(fd);
-    // isFile・nlink・owner・size・O_NOFOLLOW・realpath 検証は全OS共通に維持する
-    // （mode bit 検証のOS差は tmux-runtime の modeBits* が所有）。
-    const worldAccessible = modeBitsWorldAccessible(st.mode);
-    if (!st.isFile() || st.nlink !== 1 || st.uid !== currentUid() || worldAccessible || st.size > GROK_AUTH_MAX_BYTES) {
-      throw new AitermError("Grok 認証正本の安全検証に失敗しました", 2);
-    }
-    const value: unknown = JSON.parse(fs.readFileSync(fd, "utf8"));
-    if (!value || typeof value !== "object" || Array.isArray(value)) throw new AitermError("Grok 認証正本のJSONが不正です", 2);
-    // auth file 自体は O_NOFOLLOW で開いているが、中間 directory の symlink は辿り得る。
-    // harness に渡す正本を path swap の入口にしないため、字句正規化した絶対 path と realpath を
-    // 一致させ、canonical な祖先も root まで検証する。same-UID race の排他は harness lock の責務。
-    const lexicalPath = path.resolve(authPath);
-    const canonicalPath = fs.realpathSync(authPath);
-    if (lexicalPath !== canonicalPath) throw new AitermError("Grok 認証正本の path に symlink を含められません", 2);
-    for (let dir = path.dirname(canonicalPath); ; dir = path.dirname(dir)) {
-      const dirSt = fs.lstatSync(dir);
-      // /tmp のような root 所有 + sticky の共有 directory は、本人所有の private な
-      // 直下 directory を他 UID が rename/unlink できないため許可する。sticky 無しの
-      // group/other writable 祖先は path swap が可能なので従来どおり拒否する。
-      const writableByOthers = modeBitsWritableByOthers(dirSt.mode);
-      const protectedSharedRoot = dirSt.uid === 0 && (dirSt.mode & 0o1000) !== 0;
-      if (
-        !dirSt.isDirectory()
-        || dirSt.isSymbolicLink()
-        || (dirSt.uid !== currentUid() && dirSt.uid !== 0)
-        || (writableByOthers && !protectedSharedRoot)
-      ) {
-        throw new AitermError("Grok 認証正本の祖先 directory が安全ではありません", 2);
-      }
-      const parent = path.dirname(dir);
-      if (parent === dir) break;
-    }
-    return canonicalPath;
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "ENOENT" && !inheritedSet && process.env.XAI_API_KEY) return null;
-    if (e instanceof AitermError) throw e;
-    throw new AitermError((e as NodeJS.ErrnoException).code === "ENOENT" ? "Grok 認証正本が見つかりません。先に grok login が必要です" : "Grok 認証正本を安全に開けません", 2);
-  } finally {
-    if (fd !== undefined) fs.closeSync(fd);
-  }
+  if (fs.existsSync(authPath)) return authPath;
+  if (!inheritedSet && process.env.XAI_API_KEY) return null;
+  throw new AitermError("Grok 認証正本が見つかりません。先に grok login が必要です", 2);
 }
 
 export function grokModelCatalog(bin: string, cwd: string): string[] {

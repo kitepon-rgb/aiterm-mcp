@@ -37,7 +37,7 @@ Aitermの製品判断・実行・releaseを制御せず、通常利用の必須�
 ## コード所有
 
 - `src/index.ts`: MCP toolとschema。
-- `src/core.ts`: PTY、出力削減、完了検出、安全gate、harness共通進行。
+- `src/core.ts`: PTY、入出力整形、出力削減、完了検出、harness共通進行。
 - `src/harnesses/`: Claude／Codex／Grok／Cursor固有の起動、ready、完了、transcript、catalog。
 - `src/agent-shared.ts`／`src/state-root.ts`: harness中立の相関state。
 - `src/tmux-runtime.ts`／`src/psmux-send-worker.ts`／`src/agent-resolver.ts`: OS・multiplexer差。

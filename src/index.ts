@@ -160,7 +160,7 @@ server.registerTool(
       force: z
         .boolean()
         .default(false)
-        .describe("破壊的コマンドゲートを越える。非Claude agent sessionではdispatchせず素送信する。aiterm相関付きClaudeのactive turnには使えない"),
+        .describe("非Claude agent sessionでは自動dispatchせず素送信する。aiterm相関付きClaudeのactive turnには使えない"),
       rtk: z.boolean().default(false).describe("既知コマンドを rtk 形へ委譲して送る（rtk 不在なら素通し）"),
       raw: z.boolean().default(false).describe("送信前サニタイズを無効化"),
     },
@@ -703,7 +703,6 @@ registerAgentTool(
     "同じ利用者可視sessionへpty_sendで継続入力する。" +
     agentEnvironmentDesc +
     "通常settingsへlaunch固有Stop hook settingsを加算する。起動前に共有認証を構造化確認し、未認証ならsessionを作らない。" +
-    "aiterm相関付きsession内の/login・/logoutは拒否する。" +
     agentCompletionDesc +
     "Claude の durable turn は claude_turn でも回収できる。",
 );

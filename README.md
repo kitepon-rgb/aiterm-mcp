@@ -247,8 +247,9 @@ processes with access to the same OS user may read them. Use this for non-secret
 workflow variables, not as a secret transport.
 
 The selected harness CLI must be installed and authenticated. Aiterm resolves `CLAUDE_BIN` / `CODEX_BIN` / `GROK_BIN` / `CURSOR_AGENT_BIN`, then the documented default binary, then `PATH`. Cursor resolution deliberately uses `cursor-agent`, never the ambiguous `agent` name. Claude and Cursor authentication are checked before a PTY exists, so a failed preflight leaves no session. All harnesses use their normal harness-owned credential and configuration stores in place.
-For Grok, Aiterm neither locks the credential nor copies it back. An inherited `GROK_AUTH_PATH`
-must resolve to an absolute safe file; absence of the default auth file is accepted only when
+For Grok, Aiterm does not lock, inspect, or modify the credential. A non-empty inherited
+`GROK_AUTH_PATH` must be absolute and exist; Aiterm passes it unchanged to Grok. Grok owns its
+contents, permissions, and link handling. Absence of the default auth file is accepted only when
 `XAI_API_KEY` is set.
 
 Portable fork is optional. When `throughline_source_session` is present, `prompt` is the required
@@ -414,7 +415,6 @@ aiterm sits at the intersection of two families: terminal-driving MCP servers, a
 | MCP-native (any MCP client) | ✅ one `claude mcp add` | ✅ | ✅ (they are MCPs) | ❌ tmux config + CLI + Agent Skills |
 | Token-reduced reads | ✅ per-command reducers | ❌ raw output | ⚠️ rarely | ❌ raw tmux |
 | Completion detection | 5-layer: exit / `mark` / `until` / quiescence / timeout | n/a (blocks per call) | ⚠️ prompt-match, fragile | ❌ agent reads the pane |
-| Destructive-command gate | ✅ tripwire (override with `force`) | ❌ | ⚠️ varies | ❌ |
 | Human can co-drive | ✅ shared socket / namespace (`attach`) | ❌ | ⚠️ varies | ✅ (its core model) |
 
 ## Where aiterm fits
@@ -427,7 +427,7 @@ aiterm takes the same core insight — the terminal as the meeting point — and
 2. **MCP-native, not a workflow you adopt.** aiterm is a stdio MCP server: one `claude mcp add` line and it works as structured tools in any MCP client that speaks stdio (tested in Claude Code; Cursor, Cline, and Claude Desktop speak the same protocol and should work the same way). It doesn't ask you to adopt a tmux config, learn pane navigation, or install skills into your setup — the client already knows how to call tools.
 3. **Launching an agent is one tool call — an orchestration primitive.** `agent_launch({ harness: "codex-cli" })` spawns Codex in a persistent terminal and returns a session you drive immediately. You don't arrange panes or paste between them by hand; the launch, the steering, and the reads are all tool calls the orchestrating model can make on its own.
 
-On top of that sits a productized layer a raw tmux bridge doesn't have: **token-reduced reads**, **5-layer completion detection**, and a **destructive-command tripwire**. None of this makes the human-in-the-tmux model wrong — it's a different, complementary bet on where the human is standing.
+On top of that sits a productized layer a raw tmux bridge doesn't have: **token-reduced reads** and **5-layer completion detection**. None of this makes the human-in-the-tmux model wrong — it's a different, complementary bet on where the human is standing.
 
 ## Tools
 
@@ -500,9 +500,9 @@ As of v0.16 a parent agent **never blocks** on aiterm — there is no wait param
 - `pty_read({ rtk: true })` further shrinks the observed output with a per-command reducer (`git status`/`git log`/`grep`/`pytest` and more) — a self-contained reimplementation that needs no `rtk` binary.
 - `pty_send({ rtk: true })` rewrites a known command into `rtk` form before sending, so reduction happens at the source if `rtk` exists there (passthrough otherwise).
 
-### Safety
+### Input and output
 
-Before sending, `pty_send` blocks destructive commands (`rm -rf /`, `mkfs`, `dd of=/dev/…`, `DROP TABLE`, …) — pass `force: true` to override — and sanitizes ESC / bracketed-paste terminators. `pty_read` neutralizes control characters in what it returns by default (`raw: true` returns the bytes verbatim). This is a **tripwire, not a sandbox** (see [Known constraints](#known-constraints-by-design-not-bugs)).
+`pty_send` does not interpret command or prompt meaning; it delivers the requested text to the terminal. By default it sanitizes ESC and bracketed-paste terminators, while `pty_read` neutralizes control characters in returned output (`raw: true` keeps them unchanged). The shell, remote endpoint, or launched harness owns command authorization.
 
 Each `pty_send` accepts at most 64 KiB of UTF-8 text. Sends to the same session are serialized across aiterm processes so chunks cannot interleave. Every OS pastes through its multiplexer in UTF-8-safe 256-byte chunks with a 10 ms drain interval; macOS, Linux, and WSL2 have all demonstrated silent middle/trailing loss when a long input is pushed without that boundary. Sanitized multiline text sent while a POSIX shell is in the foreground is encoded as one newline-free `eval` input: the shell receives the complete script before it runs the first line, so a pager or REPL started mid-script cannot consume later lines as interactive keystrokes. Single-line input, `raw:true`, and non-shell frontends remain direct PTY pastes. Agent dispatches additionally use the tmux-compatible bracketed-paste operation (`paste-buffer -p`): panes that requested bracketed-paste mode receive each chunk wrapped in `ESC[200~/201~`, hardening prompt injection against mid-word key-interpretation corruption and dropped submits. If a later chunk fails, aiterm reports the partial-send state and does not press Enter automatically. A lock left by a terminated sender fails closed before sending; use `pty_list` to confirm the affected session, close it with `pty_close`, then recreate the same session ID. There is no public kill-all tool.
 
@@ -523,7 +523,6 @@ Sessions live on a shared tmux socket on POSIX or a shared psmux namespace on na
 
 - **While nested (ssh / docker / REPL / a launched agent TUI), quiescence cannot fire by design**, because the foreground command is no longer in the shell set (bash/sh/zsh/fish/dash). When nested with no `until` and no `mark`, `pty_read({ wait: true })` returns early as `is_complete=False via nested` (rather than burning the full `timeout`, since no signal can confirm completion there) with a note to pass `until` (a literal substring by default; `until_regex: true` for a regex) or `mark: true` (an exit-code sentinel, auto-detected) for a confirmed completion. For a full-screen agent TUI, read `{ screen: true }` once its output settles.
 - **`is_complete=False` is not a failure.** It means "completion was not observed within `timeout`." For long commands, raise `timeout` or use `until`/`mark`.
-- **The destructive gate is a tripwire, not a sandbox.** It blocks common destructive forms only. It does **not** catch relative-path `rm`, things that become dangerous after `$VAR` expansion, or commands run on the far side of an SSH session — and it does not police what a launched coding agent does inside its own session.
 - **Agent harnesses run their real TUI; aiterm doesn't proxy the model API.** The selected harness owns model choice, authentication, and behavior. There is no hidden inter-agent protocol; the MCP client drives the Claude/Codex/Grok/Cursor TUI with ordinary send/read operations.
 - **`pty_send({ rtk: true })` is single-line only and needs the external `rtk` binary** (passthrough without it). The `pty_read({ rtk: true })` reducer, by contrast, is self-contained and rtk-independent.
 - **The `pytest` reducer matches rtk 0.42.0** on test counts, the rule line, and `FAILURES`-block formatting (locked by regression tests). It **deliberately preserves the full failure reason** on the `FAILED` summary lines (emitted under `-ra`/`-rf`), whereas rtk 0.42.0 truncates the reason at the first `" - "` — a readability choice, so those lines are intentionally not byte-identical to rtk. The `[full output: …]` tee-pointer line rtk appends on large output is not reproduced on the read side.
