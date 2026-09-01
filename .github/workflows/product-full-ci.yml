@@ -100,7 +100,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        environment: ${{ fromJSON(inputs.environment != 'all' && format('["{0}"]', inputs.environment) || '["macos-native","linux-server","linux-workstation","windows-native"]') }}
+        environment: ${{ fromJSON(inputs.environment != 'all' && format('["{0}"]', inputs.environment) || '["macos-native","linux-workstation","windows-native"]') }}
     timeout-minutes: 30
     runs-on: [self-hosted, factory, "${{ matrix.environment }}"]
     steps:

@@ -80,7 +80,7 @@ test('CHANGELOGの全release見出しはlinkを持ちUnreleasedは現行version�
   }
 });
 
-test('final CI is owned locally and measures dependency install separately from the four-environment full test', async () => {
+test('final CI is owned locally and measures dependency install separately from the three-environment full test', async () => {
   const [ci, productFullCi] = await Promise.all([
     readFile(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8'),
     readFile(new URL('../.github/workflows/product-full-ci.yml', import.meta.url), 'utf8'),
@@ -99,8 +99,9 @@ test('final CI is owned locally and measures dependency install separately from 
   assert.match(productFullCi, /workflow_call:/);
   assert.match(
     productFullCi,
-    /"macos-native","linux-server","linux-workstation","windows-native"/,
+    /"macos-native","linux-workstation","windows-native"/,
   );
+  assert.doesNotMatch(`${ci}\n${productFullCi}`, /linux-server/);
   assert.doesNotMatch(`${ci}\n${productFullCi}`, /linux-native|wsl2/);
   assert.match(productFullCi, /run: \$\{\{ inputs\.full-command \}\}/);
   assert.doesNotMatch(productFullCi, /kitepon\/dotagents/);

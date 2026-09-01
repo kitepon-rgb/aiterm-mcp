@@ -15,7 +15,6 @@ on:
         options:
           - all
           - macos-native
-          - linux-server
           - linux-workstation
           - windows-native
 

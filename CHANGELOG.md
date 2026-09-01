@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.12] - 2026-09-01
+
+### Changed
+
+- Run the product-owned full CI on the current factory environments: `macos-native`, `linux-workstation`, and `windows-native`. Keep `linux-server` for operational workflows instead of duplicating the full product test there.
+
 ## [0.29.11] - 2026-09-01
 
 ### Added
@@ -1414,7 +1420,8 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.11...HEAD
+[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.12...HEAD
+[0.29.12]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.11...v0.29.12
 [0.29.11]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.10...v0.29.11
 [0.29.10]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.9...v0.29.10
 [0.29.9]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.8...v0.29.9

@@ -153,7 +153,7 @@ runtime-error store は canonical dotagents config の `collection.enabled: true
 場合だけ収集し、既定OFF、network送信は行いません。tag起点CIのnpm provenance（OIDC Trusted
 Publishing）で公開し、GitHub Release が Official MCP Registry を再登録します。
 
-**状態:** 開発継続中 · 現行公開版 **v0.29.11** · 動作対象は Linux · WSL2 · macOS · Windows ネイティブ · MIT · [変更履歴](CHANGELOG.md)。
+**状態:** 開発継続中 · 現行公開版 **v0.29.12** · 動作対象は Linux · WSL2 · macOS · Windows ネイティブ · MIT · [変更履歴](CHANGELOG.md)。
 
 ### 更新と巻き戻し
 
@@ -495,8 +495,8 @@ npm link           # ローカルで `aiterm-mcp` を PATH に
 ```
 
 開発中は変更に直結するfocused testを先にローカルで実行します。GitHub Actionsの最終gateは
-self-hostedのmacOS native・Linux native・Windows native・WSL2で同じ`npm test`を同時実行し、
-OS別の縮小suiteで代用しません。tag起点のnpm公開は4環境greenとtagged commitの`origin/main`
+self-hostedの`macos-native`・`linux-workstation`・`windows-native`で同じ`npm test`を同時実行し、
+OS別の縮小suiteで代用しません。tag起点のnpm公開は3環境greenとtagged commitの`origin/main`
 祖先確認を通過した後だけ実行します。
 
 共通進行は`src/core.ts`、harness固有は`src/harnesses/`、OS差は`src/tmux-runtime.ts`／`src/agent-resolver.ts`、reducerは`src/rtk.ts`、公開面は`src/index.ts`が所有する。現行設計は[`docs/DESIGN.md`](docs/DESIGN.md)、release手順は[`docs/RELEASE.md`](docs/RELEASE.md)を正とする。`prototype/python/`はreducerの歴史的移植元であり、pytest reducerは本家rtk 0.42.0と一致する（上記の`FAILED`行の差異だけは意図的・回帰テストで固定）。
