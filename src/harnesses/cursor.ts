@@ -443,7 +443,7 @@ export function cursorLaunchNote(model: string | null, effort: string | null, me
   return `${modelNote}${writeScopeLaunchNote("cursor", meta?.write_scope)}`;
 }
 
-export const CURSOR_COMPOSER_MARKER_RE = /(?:^|\n)\s*>\s?(?:\n|$)/m;
+export const CURSOR_COMPOSER_MARKER_RE = /(?:^|\n)\s*(?:>|→|->)\s*(?:\n|$)/m;
 const CURSOR_FOLLOWUP_MARKER_RE = /(?:^|\n)\s*(?:→|->)\s*Add a follow-up\b/im;
 const CURSOR_START_PROMPT_MARKER_RE = /(?:^|\n)\s*(?:→|->)\s*Plan,\s*search,\s*build anything\s*(?:\n|$)/im;
 

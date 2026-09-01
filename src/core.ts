@@ -3048,7 +3048,22 @@ export async function sendInitialAgentPrompt(
     setInitialPromptState(meta, "failed");
     throw e;
   }
-  const residue = await detectAgentSubmitResidue(name, meta.kind, promptText);
+  let residue = await detectAgentSubmitResidue(name, meta.kind, promptText);
+  // Cursor現行UIは長いbracketed pasteの直後のEnterを取り落とすことがある。
+  // 初回promptには先行turnが無いため、本文がcomposerへ残り続ける実測がある時だけ
+  // 同じEnterを一度再送できる。通常dispatchへ再送を広げない。
+  if (meta.kind === "cursor" && residue.residue === true) {
+    sendKey(name, "Enter", { preserveAgentOperation: true });
+    residue = await detectAgentSubmitResidue(name, meta.kind, promptText);
+    if (residue.residue === true) {
+      setInitialPromptState(meta, "failed");
+      throw new AitermError(
+        `initial_prompt=failed vendor=cursor harness=${agentHarness(meta.kind)}\n` +
+          `起動時promptがCursorのcomposerへ残り、Enter再送後もturnを開始できませんでした。`,
+        2,
+      );
+    }
+  }
   return {
     text:
       `initial_prompt=pending vendor=${meta.kind} event_cursor=${startOffset} harness=${agentHarness(meta.kind)}\n` +

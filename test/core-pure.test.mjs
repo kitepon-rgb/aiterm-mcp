@@ -419,6 +419,24 @@ test("Cursor submit座礁観測: active turnはscrollbackの旧markerを残留�
   assert.equal(result.samples, 1);
 });
 
+test("Cursor初回prompt座礁: 現行の矢印composerに残った復元文を検出する", async () => {
+  const text = [
+    "---",
+    "## Portable fork mission",
+    "前の会話の記憶を引き継ぎ、ユーザーからの次のメッセージを待ってください。",
+  ].join("\n");
+  const stranded = [
+    "Cursor Agent",
+    "→",
+    "  ---",
+    "  ## Portable fork mission",
+    "  前の会話の記憶を引き継ぎ、ユーザーからの次のメッセージを待ってください。",
+    "Auto",
+  ].join("\n");
+  const result = await core.__testDetectAgentSubmitResidue("cursor", text, [stranded], { maxSamples: 1 });
+  assert.equal(result.residue, true);
+});
+
 // tmuxSpawnEnv: C/POSIX/未設定 locale だけに UTF-8 LC_CTYPE を注入する（実挙動の破壊は
 // caveat tmux-3-7b-list-sessions-f が正。server 側入力破壊・client 側 format タブ "_" 化の対策）。
 function withLocaleEnv(vars, fn) {
