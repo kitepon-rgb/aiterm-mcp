@@ -54,7 +54,7 @@ test("Cursor resolver: 曖昧な agent ではなく公式 cursor-agent だけを
   }
 });
 
-test("Cursor adapter: model/effort・read-onlyを公式CLI引数へ変換しpluginを要求しない", () => {
+test("Cursor adapter: model/effort・無人承認・read-onlyを公式CLI引数へ変換しpluginを要求しない", () => {
   assert.throws(() => validateCursorModelEffort(null, "high"), /reasoning_effort を指定する時は model も指定/);
   assert.throws(() => validateCursorModelEffort("gpt-5[effort=high]", "high"), /二重指定/);
   const meta = {
@@ -71,11 +71,16 @@ test("Cursor adapter: model/effort・read-onlyを公式CLI引数へ変換しplug
   assert.match(cmd, /^'\/opt\/Cursor Agent\/cursor-agent'/);
   assert.equal(cursorModelArgument("gpt-5.6-sol", "high"), "gpt-5.6-sol-high");
   assert.match(cmd, /--model 'gpt-5\.6-sol-high'/);
+  assert.match(cmd, /--force --approve-mcps --trust/);
   assert.doesNotMatch(cmd, /--plugin-dir/);
   assert.match(cmd, /--mode ask/);
   assert.match(cmd, /AITERM_AGENT_LAUNCH_ID=0123456789abcdef0123456789abcdef/);
   assert.match(cmd, /調べて返して/);
   assert.match(cursorPromptWithLineage(meta, "初手"), /AITERM_AGENT_LAUNCH_ID=0123456789abcdef0123456789abcdef[\s\S]*初手/);
+
+  const normal = buildCursorAgentCmd("cursor-agent", null, null, null, { ...meta, write_scope: undefined });
+  assert.match(normal, /--force --approve-mcps --trust/);
+  assert.doesNotMatch(normal, /--mode ask/);
 });
 
 test("Cursor adapter: model parameter画面で標準effortの移動量を決める", () => {

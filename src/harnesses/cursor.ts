@@ -425,6 +425,9 @@ export function buildCursorAgentCmd(
   const parts = [shq(bin)];
   const modelArg = cursorModelArgument(model, effort);
   if (modelArg) parts.push("--model", shq(modelArg));
+  // managed agentは人の対話承認を待てない。Cursor公式の無人運転フラグで
+  // workspace・MCP server・各tool callの確認をadapter内に閉じ込める。
+  parts.push("--force", "--approve-mcps", "--trust");
   if (meta?.kind === "cursor" && meta.write_scope === "read-only") parts.push("--mode", "ask");
   if (prompt) {
     const value = meta ? cursorPromptWithLineage(meta, prompt) : prompt;

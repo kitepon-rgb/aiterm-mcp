@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.18] - 2026-09-01
+
+### Fixed
+
+- Launch managed Cursor agents with Cursor's official unattended flags so workspace, MCP server, and tool-call approval screens do not stop queued work.
+
 ## [0.29.17] - 2026-09-01
 
 ### Fixed
@@ -1450,7 +1456,8 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.17...HEAD
+[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.18...HEAD
+[0.29.18]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.17...v0.29.18
 [0.29.17]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.16...v0.29.17
 [0.29.16]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.15...v0.29.16
 [0.29.15]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.14...v0.29.15
