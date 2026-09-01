@@ -427,10 +427,14 @@ export function buildCursorAgentCmd(
   if (modelArg) parts.push("--model", shq(modelArg));
   if (meta?.kind === "cursor" && meta.write_scope === "read-only") parts.push("--mode", "ask");
   if (prompt) {
-    const value = meta ? `${subagentInstruction(meta)}\n\n${prompt}` : prompt;
+    const value = meta ? cursorPromptWithLineage(meta, prompt) : prompt;
     parts.push(shq(value));
   }
   return parts.join(" ");
+}
+
+export function cursorPromptWithLineage(meta: AgentMetadata, prompt: string): string {
+  return `${subagentInstruction(meta)}\n\n${prompt}`;
 }
 
 export function cursorLaunchNote(model: string | null, effort: string | null, meta: AgentMetadata | null): string {

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.15] - 2026-09-01
+
+### Fixed
+
+- Preserve Aiterm's launch marker when Cursor receives its initial prompt through the post-launch TUI path, allowing the completed Cursor transcript to bind to the managed launch.
+
 ## [0.29.14] - 2026-09-01
 
 ### Fixed
@@ -1432,7 +1438,8 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.14...HEAD
+[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.15...HEAD
+[0.29.15]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.14...v0.29.15
 [0.29.14]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.13...v0.29.14
 [0.29.13]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.12...v0.29.13
 [0.29.12]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.11...v0.29.12

@@ -140,6 +140,7 @@ import {
   assertCursorAuthenticationReady,
   assertCursorModelAvailable,
   buildCursorAgentCmd,
+  cursorPromptWithLineage,
   createCursorAgentMetadata,
   cursorLaunchNote,
   cursorEffortNavigation,
@@ -3034,19 +3035,20 @@ export async function sendInitialAgentPrompt(
       2,
     );
   }
+  const promptText = meta.kind === "cursor" ? cursorPromptWithLineage(meta, text) : text;
   const startOffset = agentCompletionCursor(meta);
   try {
     if (meta.kind === "claude") {
       prepareSendText(text, { raw: false });
       reserveAnonymousClaudeTurn(meta);
     }
-    await sendAgentPromptText(name, text);
+    await sendAgentPromptText(name, promptText);
     setInitialPromptState(meta, "pending");
   } catch (e) {
     setInitialPromptState(meta, "failed");
     throw e;
   }
-  const residue = await detectAgentSubmitResidue(name, meta.kind, text);
+  const residue = await detectAgentSubmitResidue(name, meta.kind, promptText);
   return {
     text:
       `initial_prompt=pending vendor=${meta.kind} event_cursor=${startOffset} harness=${agentHarness(meta.kind)}\n` +

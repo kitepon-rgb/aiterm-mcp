@@ -8,6 +8,7 @@ import { resolveAgentBin } from "../dist/agent-resolver.js";
 import {
   bindCursorTranscriptSession,
   buildCursorAgentCmd,
+  cursorPromptWithLineage,
   createCursorAgentMetadata,
   cursorTranscriptRoot,
   cursorTranscriptText,
@@ -74,6 +75,7 @@ test("Cursor adapter: model/effort・read-onlyを公式CLI引数へ変換しplug
   assert.match(cmd, /--mode ask/);
   assert.match(cmd, /AITERM_AGENT_LAUNCH_ID=0123456789abcdef0123456789abcdef/);
   assert.match(cmd, /調べて返して/);
+  assert.match(cursorPromptWithLineage(meta, "初手"), /AITERM_AGENT_LAUNCH_ID=0123456789abcdef0123456789abcdef[\s\S]*初手/);
 });
 
 test("Cursor adapter: model parameter画面で標準effortの移動量を決める", () => {
