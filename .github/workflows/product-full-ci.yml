@@ -13,14 +13,18 @@ on:
         default: ""
         type: string
       documentation-command:
-        description: Markdownだけの変更時に実行する文書確認
-        required: false
-        default: ""
+        description: Markdownだけの変更時にLinux 1環境で実行する文書確認
+        required: true
         type: string
       environment:
         description: all または単一の対応環境
         required: false
         default: all
+        type: string
+      comparison_base:
+        description: workflow_dispatchで使う明示的な比較元commit/ref
+        required: false
+        default: ""
         type: string
 
 permissions:
@@ -28,9 +32,14 @@ permissions:
 
 jobs:
   classify:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, factory, linux-workstation]
+    timeout-minutes: 5
     outputs:
       product_change: ${{ steps.changes.outputs.product_change }}
+      comparison_base: ${{ steps.changes.outputs.comparison_base }}
+      environments: ${{ steps.changes.outputs.environments }}
+      test_scope: ${{ steps.changes.outputs.test_scope }}
+      test_files: ${{ steps.changes.outputs.test_files }}
     steps:
       - name: checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -43,49 +52,15 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BEFORE_SHA: ${{ github.event.before }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          product_change=true
-          reason="product change"
-
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            reason="tag"
-          elif [[ "$EVENT_NAME" == workflow_dispatch ]]; then
-            reason="manual run"
-          else
-            base="$BEFORE_SHA"
-            if [[ "$EVENT_NAME" == pull_request ]]; then
-              base="$BASE_SHA"
-            fi
-
-            if [[ -n "$base" && ! "$base" =~ ^0+$ ]] && git cat-file -e "$base^{commit}"; then
-              found=false
-              non_markdown=false
-              while IFS= read -r -d '' file; do
-                found=true
-                if [[ "$file" != *.md ]]; then
-                  non_markdown=true
-                  break
-                fi
-              done < <(git diff --name-only -z "$base" "$GITHUB_SHA")
-
-              if [[ "$found" == true && "$non_markdown" == false ]]; then
-                product_change=false
-                reason="Markdown only"
-              fi
-            else
-              reason="comparison base unavailable"
-            fi
-          fi
-
-          printf 'product_change=%s\n' "$product_change" >> "$GITHUB_OUTPUT"
-          printf 'CI classification: %s\n' "$reason"
-      - name: setup documentation Node
-        if: steps.changes.outputs.product_change == 'false' && inputs.documentation-command != ''
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
-        with:
-          node-version: 22
+          DISPATCH_BASE: ${{ inputs.comparison_base }}
+          REQUESTED_ENVIRONMENT: ${{ inputs.environment }}
+        run: node scripts/product-ci-plan.mjs plan
+      - name: documentation dependency install
+        if: steps.changes.outputs.product_change == 'false' && inputs.dependency-command != ''
+        shell: bash
+        run: ${{ inputs.dependency-command }}
       - name: documentation check
-        if: steps.changes.outputs.product_change == 'false' && inputs.documentation-command != ''
+        if: steps.changes.outputs.product_change == 'false'
         shell: bash
         run: ${{ inputs.documentation-command }}
       - name: skip product full CI
@@ -97,10 +72,13 @@ jobs:
   full:
     needs: classify
     if: needs.classify.outputs.product_change == 'true'
+    env:
+      PRODUCT_CI_TEST_SCOPE: ${{ needs.classify.outputs.test_scope }}
+      PRODUCT_CI_TEST_FILES: ${{ needs.classify.outputs.test_files }}
     strategy:
       fail-fast: false
       matrix:
-        environment: ${{ fromJSON(inputs.environment != 'all' && format('["{0}"]', inputs.environment) || '["macos-native","linux-workstation","windows-native"]') }}
+        environment: ${{ fromJSON(needs.classify.outputs.environments) }}
     timeout-minutes: 30
     runs-on: [self-hosted, factory, "${{ matrix.environment }}"]
     steps:
@@ -136,3 +114,19 @@ jobs:
         if: matrix.environment == 'windows-native'
         shell: pwsh
         run: ${{ inputs.full-command }}
+
+  gate:
+    needs: [classify, full]
+    if: always()
+    runs-on: [self-hosted, factory, linux-workstation]
+    timeout-minutes: 5
+    steps:
+      - name: checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - name: verify selected CI results
+        shell: bash
+        env:
+          CLASSIFY_RESULT: ${{ needs.classify.result }}
+          FULL_RESULT: ${{ needs.full.result }}
+          PRODUCT_CHANGE: ${{ needs.classify.outputs.product_change }}
+        run: node scripts/product-ci-plan.mjs verify

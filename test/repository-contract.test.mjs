@@ -91,11 +91,12 @@ test('製品CIはlocal full、Markdown文書検査、tag/version一致を所有�
   assert.match(ci, /uses:\s*\.\/\.github\/workflows\/product-full-ci\.yml\b/);
   assert.match(
     ci,
-    /documentation-command:\s*npm ci --ignore-scripts --no-audit --no-fund && npm run test:docs/,
+    /documentation-command:\s*npm run test:docs/,
   );
+  assert.match(ci, /gh run list --workflow ci\.yml --branch main --commit "\$GITHUB_SHA"/);
   assert.match(ci, /test "\$GITHUB_REF_NAME" = "v\$version"/);
   assert.match(productFull, /documentation-command:/);
-  assert.match(productFull, /inputs\.documentation-command != ''/);
+  assert.match(productFull, /scripts\/product-ci-plan\.mjs verify/);
   assert.equal((productFull.match(/shell:\s*pwsh/g) ?? []).length, 3);
   assert.doesNotMatch(productFull, /Progra~1\\Git\\bin\\bash\.exe/);
   assert.match(registry, /if: github\.event_name == 'release'/);

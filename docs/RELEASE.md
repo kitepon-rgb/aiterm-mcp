@@ -1,6 +1,6 @@
 # Release
 
-Aitermのreleaseはこのrepositoryが所有する。`.github/workflows/product-full-ci.yml`が3環境runnerと
+Aitermのreleaseはこのrepositoryが所有する。`.github/workflows/product-full-ci.yml`が変更影響選択、3環境runnerと
 製品gateの正本であり、dotagentsの工場CIは横断受入のconsumerであってreleaseを制御しない。
 
 ## Version同期
@@ -30,14 +30,14 @@ MCPBのstaged serverでversion、16 tools、stderr 0、必要なruntime JavaScri
 
 ## Mainと公開
 
-1. release commitを`main`へpushし、`macos-native`、`linux-workstation`、`windows-native`の同一fullをgreenにする。
+1. release commitを`main`へpushする。version・manifest・workflowを含むrelease変更は未分類変更として`macos-native`、`linux-workstation`、`windows-native`の全テストへ広がり、3環境をgreenにする。
 2. `npm run verify:release-commit`で対象commitが`origin/main`の祖先かつworktree cleanであることを確認する。
-3. 同じcommitへ`v<version>` tagを付けてpushする。tag CIが3環境green後にnpmへprovenance付きでpublishする。
+3. 同じcommitへ`v<version>` tagを付けてpushする。tag CIは同じcommitのmain CI成功を確認し、3環境試験を再実行せずnpmへprovenance付きでpublishする。
 4. build済みMCPBを添付したGitHub Releaseを公開する。release eventがOfficial MCP Registry登録を起動する。
 5. npm、GitHub Release、Official Registryが同じversionを返すまで確認する。
 
-CI callerは同じrepositoryの`./.github/workflows/product-full-ci.yml`だけを呼ぶ。製品側の`npm test`、
-3環境runner、release gateを外部repositoryへ移さず、dotagentsの変更や停止からAitermの受入を独立させる。
+CI callerは同じrepositoryの`./.github/workflows/product-full-ci.yml`だけを呼ぶ。製品側の変更影響選択、
+全テストへの明示的な拡張、3環境runner、release gateを外部repositoryへ移さず、dotagentsの変更や停止からAitermの受入を独立させる。
 
 ## 公開後smoke
 

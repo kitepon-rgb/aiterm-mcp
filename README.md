@@ -169,7 +169,7 @@ collection is off by default and performs no network I/O. It ships via
 tag-triggered CI with npm provenance (OIDC Trusted Publishing); the GitHub
 Release re-registers the Official MCP Registry entry.
 
-**Status:** actively maintained · current public release **v0.29.19** · runs on Linux · WSL2 · macOS · native Windows (tmux on POSIX, the tmux-CLI-compatible [psmux](https://github.com/psmux/psmux) on native Windows — no WSL required) · MIT · see the [CHANGELOG](CHANGELOG.md).
+**Status:** actively maintained · current public release **v0.29.20** · runs on Linux · WSL2 · macOS · native Windows (tmux on POSIX, the tmux-CLI-compatible [psmux](https://github.com/psmux/psmux) on native Windows — no WSL required) · MIT · see the [CHANGELOG](CHANGELOG.md).
 
 ### Update and rollback
 
@@ -542,10 +542,11 @@ npm test           # build, then the node:test regression suite (requires tmux o
 npm link           # put `aiterm-mcp` on PATH locally
 ```
 
-Development uses focused local tests first. The final GitHub Actions gate starts the same full
-`npm test` concurrently on the self-hosted `macos-native`, `linux-workstation`, and `windows-native`
-runners; it does not replace any OS with a reduced suite. Tag-triggered npm publishing runs only
-after all three environments pass and the tagged commit is confirmed on `origin/main`. The native
+Development uses focused local tests first. GitHub Actions selects tests from the changed implementation's
+dependency graph and expands unknown or release changes to the full suite on the self-hosted
+`macos-native`, `linux-workstation`, and `windows-native` runners. Tag-triggered npm publishing reuses
+the successful main CI for the same commit instead of repeating it, and runs only after the tagged commit
+is confirmed on `origin/main`. The native
 Windows runner needs psmux ≥ 3.3.8 and Git for Windows on its PATH, and must run as an
 interactive Windows user; `NETWORK SERVICE` lacks the per-user environment the pane shell and
 harness CLIs rely on and is not a valid runner identity.

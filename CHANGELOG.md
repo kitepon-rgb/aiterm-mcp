@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.20] - 2026-09-01
+
+### Changed
+
+- 変更した実装の依存関係から必要なテストと工場環境を選び、依存を確定できない変更だけ全件へ広げ、選択jobのskip・cancel・failureを最終gateで拒否する製品所有CIへ更新した。
+- release tagでは同じcommitのmain CI成功を再利用し、同一の3環境フル試験を二重実行しないようにした。
+
 ## [0.29.19] - 2026-09-01
 
 ### Fixed
@@ -1462,7 +1469,8 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.19...HEAD
+[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.20...HEAD
+[0.29.20]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.19...v0.29.20
 [0.29.19]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.18...v0.29.19
 [0.29.18]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.17...v0.29.18
 [0.29.17]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.16...v0.29.17

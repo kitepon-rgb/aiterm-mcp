@@ -613,7 +613,12 @@ test("target contract: Grok/Composerは対話TUIへreasoning_effortを渡す", {
   for (const kind of ["grok", "composer"]) {
     const [sid] = core.openAgent(kind, { reasoning_effort: "high" });
     try {
-      const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
+      const out = await core.readOutput(sid, {
+        wait: true,
+        timeout: 5,
+        until: '<arg>high</arg>',
+        raw: true,
+      });
       assert.match(out, /<arg>--reasoning-effort<\/arg>/, `${kind} effort flag: ${out}`);
       assert.match(out, /<arg>high<\/arg>/, `${kind} effort value: ${out}`);
     } finally {

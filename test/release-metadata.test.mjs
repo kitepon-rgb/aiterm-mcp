@@ -80,7 +80,7 @@ test('CHANGELOGの全release見出しはlinkを持ちUnreleasedは現行version�
   }
 });
 
-test('final CI is owned locally and measures dependency install separately from the three-environment full test', async () => {
+test('final CI is owned locally, selects affected environments, and rejects false green results', async () => {
   const [ci, productFullCi] = await Promise.all([
     readFile(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8'),
     readFile(new URL('../.github/workflows/product-full-ci.yml', import.meta.url), 'utf8'),
@@ -91,16 +91,15 @@ test('final CI is owned locally and measures dependency install separately from 
   assert.match(ci, /dependency-command: npm ci/);
   assert.match(
     ci,
-    /documentation-command: npm ci --ignore-scripts --no-audit --no-fund && npm run test:docs/,
+    /documentation-command: npm run test:docs/,
   );
-  assert.match(ci, /node --version && npm --version && npm test/);
+  assert.match(ci, /node --version && npm --version && node scripts\/run-product-ci-tests\.mjs/);
   assert.match(ci, /needs: \[ownership, full\]/);
   assert.match(ci, /test "\$GITHUB_REF_NAME" = "v\$version"/);
   assert.match(productFullCi, /workflow_call:/);
-  assert.match(
-    productFullCi,
-    /"macos-native","linux-workstation","windows-native"/,
-  );
+  assert.match(productFullCi, /fromJSON\(needs\.classify\.outputs\.environments\)/);
+  assert.match(productFullCi, /scripts\/product-ci-plan\.mjs verify/);
+  assert.match(ci, /gh run list --workflow ci\.yml --branch main --commit "\$GITHUB_SHA"/);
   assert.doesNotMatch(`${ci}\n${productFullCi}`, /linux-server/);
   assert.doesNotMatch(`${ci}\n${productFullCi}`, /linux-native|wsl2/);
   assert.match(productFullCi, /run: \$\{\{ inputs\.full-command \}\}/);

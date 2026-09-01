@@ -78,7 +78,7 @@ npm run build
 npm test
 ```
 
-GitHub ActionsはmacOS native、Linux workstation、Windows nativeで同じ`npm test`を実行する。
+GitHub Actionsは変更した実装の依存関係から必要なテストだけをmacOS native、Linux workstation、Windows nativeへ配り、依存を確定できない変更とrelease変更だけ同じ`npm test`へ広げる。
 製品の受入コマンドと3環境runner契約は、このrepositoryの`.github/workflows/product-full-ci.yml`が所有する。
 dotagentsの工場CIは製品gateの結果を横断受入へ使えるが、製品workflowの正本ではない。
 releaseは[docs/RELEASE.md](docs/RELEASE.md)のmain祖先gate、3環境CI、npm provenance、GitHub Release＋
