@@ -345,6 +345,22 @@ test("Cursor ready gate: v2026.08.31の起動直後placeholderを入力待ちと
   assert.equal(core.__testIsAgentTuiIdleReady("cursor", screen), true);
 });
 
+test("Cursor ready gate: 長い回答でheaderが画面外へ流れてもfollow-up入力欄を受ける", () => {
+  const screen = [
+    "引き継ぎ完了。Cursor確認担当（bot-11711167）— Cursorの会話・記憶復元確認。",
+    "",
+    "個人記憶: BT-MEM-CURSOR-0901A",
+    "共通記憶: BT-MEM-SHARED-0901A",
+    "",
+    "→ Add a follow-up",
+    "",
+    "Auto · 7.8%",
+    "/srv/bellteam/bots/bot-11711167 · master",
+  ].join("\n");
+  assert.equal(core.__testIsAgentTuiReady("cursor", screen), true);
+  assert.equal(core.__testIsAgentTuiIdleReady("cursor", screen), true);
+});
+
 // ---------------------------------------------------------------- submit座礁観測（実被弾: 未submit promptがcomposerに2時間滞留）
 test("submit座礁観測: composer に送信 text の末尾が残存していれば residue=true", async () => {
   const text = "1. 既存 runtime event-store を読む\n2. byte-level fail closed を実装する";

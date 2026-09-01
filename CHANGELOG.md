@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.16] - 2026-09-01
+
+### Fixed
+
+- Recognize Cursor's current `Add a follow-up` composer after a long answer scrolls the `Cursor Agent` header out of the viewport.
+
 ## [0.29.15] - 2026-09-01
 
 ### Fixed
@@ -1438,7 +1444,8 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.15...HEAD
+[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.16...HEAD
+[0.29.16]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.15...v0.29.16
 [0.29.15]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.14...v0.29.15
 [0.29.14]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.13...v0.29.14
 [0.29.13]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.12...v0.29.13
