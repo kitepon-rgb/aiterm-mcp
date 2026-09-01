@@ -2510,6 +2510,17 @@ test("codexLaunchBlockingDialog: 起動前modalの実機画面を種別付きで
   assert.equal(codexHarness.codexLaunchBlockingDialog("› Ask Codex to do anything\n  gpt-5.6-luna low · ~/x"), null);
 });
 
+test("codexTuiReady: 現行Codexのdefault effort footerを入力待ちとして認識する", () => {
+  const screen = [
+    "• 承知しました。次のメッセージをお待ちしています。",
+    "",
+    "› Ask Codex to do anything",
+    "",
+    "  gpt-5.6-sol default · /srv/bellteam/bots/bot-93433892",
+  ].join("\n");
+  assert.equal(codexHarness.codexTuiReady(screen), true);
+});
+
 test("openAgentWithInitialPrompt: prompt を shell argv に載せず pending event_cursor を返す", { skip: skipAgentDone }, async () => {
   const savedBin = process.env.CODEX_BIN;
   const fakeBin = makeFakeCodexTuiBin();
