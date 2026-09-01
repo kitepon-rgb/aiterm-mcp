@@ -18,8 +18,8 @@ Aitermの製品判断・実行・releaseを制御せず、通常利用の必須�
 - Node.js 18以上。POSIXはtmux、Windows nativeはpsmux 3.3.8以上＋Git for Windowsを使う。
   Windowsの対話shellはPowerShell 7だけとし、Windows PowerShell 5.1、PowerShell 6、`cmd.exe`、
   WSL bridgeへfallbackしない。
-- 公開面は15 tools。PTY 6、標準`agent_launch` 1、deprecated互換launcher 4、
-  `agent_configure`、`claude_turn`、`claude_approval`、`diagnostics`である。
+- 公開面は16 tools。PTY 6、標準`agent_launch` 1、deprecated互換launcher 4、
+  `agent_configure`、`agent_steer`、`claude_turn`、`claude_approval`、`diagnostics`である。
 - `agent_launch`はharnessとmodelを別軸にする。harnessはagent loop、認証、hook、session、
   transcriptを所有し、modelはそのharness上で選ぶ。ComposerはGrok CLIのmodel presetである。
 - launcherは直接CLIと同じ通常`HOME`、project／user設定、MCP、plugin、skill、permission、trust、
@@ -78,8 +78,8 @@ npm run build
 npm test
 ```
 
-GitHub ActionsはmacOS native、Linux native、Windows native、WSL2で同じ`npm test`を実行する。
-製品の受入コマンドと4環境runner契約は、このrepositoryの`.github/workflows/product-full-ci.yml`が所有する。
+GitHub ActionsはmacOS native、Linux workstation、Windows nativeで同じ`npm test`を実行する。
+製品の受入コマンドと3環境runner契約は、このrepositoryの`.github/workflows/product-full-ci.yml`が所有する。
 dotagentsの工場CIは製品gateの結果を横断受入へ使えるが、製品workflowの正本ではない。
-releaseは[docs/RELEASE.md](docs/RELEASE.md)のmain祖先gate、4環境CI、npm provenance、GitHub Release＋
+releaseは[docs/RELEASE.md](docs/RELEASE.md)のmain祖先gate、3環境CI、npm provenance、GitHub Release＋
 MCPB、Official MCP Registry、公開package smokeまでを満たす。

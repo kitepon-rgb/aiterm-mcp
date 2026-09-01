@@ -331,6 +331,20 @@ test("Cursor ready gate: active turnのctrl+c停止UIとscrollback上の旧compo
   assert.equal(core.__testIsAgentTuiIdleReady("cursor", busy), false);
 });
 
+test("Cursor ready gate: v2026.08.31の起動直後placeholderを入力待ちとして受ける", () => {
+  const screen = [
+    "Cursor Agent",
+    "v2026.08.31-4057e58",
+    "",
+    "→ Plan, search, build anything",
+    "",
+    "Auto",
+    "/srv/bellteam/bots/bot-11711167 · master",
+  ].join("\n");
+  assert.equal(core.__testIsAgentTuiReady("cursor", screen), true);
+  assert.equal(core.__testIsAgentTuiIdleReady("cursor", screen), true);
+});
+
 // ---------------------------------------------------------------- submit座礁観測（実被弾: 未submit promptがcomposerに2時間滞留）
 test("submit座礁観測: composer に送信 text の末尾が残存していれば residue=true", async () => {
   const text = "1. 既存 runtime event-store を読む\n2. byte-level fail closed を実装する";

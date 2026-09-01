@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.14] - 2026-09-01
+
+### Fixed
+
+- Recognize Cursor Agent v2026.08.31's initial `Plan, search, build anything` composer as an idle input-ready screen, so BellTeam and other callers can dispatch the first turn after launch.
+
 ## [0.29.13] - 2026-09-01
 
 ### Added
@@ -1426,7 +1432,8 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.13...HEAD
+[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.14...HEAD
+[0.29.14]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.13...v0.29.14
 [0.29.13]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.12...v0.29.13
 [0.29.12]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.11...v0.29.12
 [0.29.11]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.10...v0.29.11
