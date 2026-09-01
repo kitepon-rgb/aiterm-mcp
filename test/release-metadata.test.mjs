@@ -81,9 +81,10 @@ test('CHANGELOGの全release見出しはlinkを持ちUnreleasedは現行version�
 });
 
 test('final CI is owned locally, selects affected environments, and rejects false green results', async () => {
-  const [ci, productFullCi] = await Promise.all([
+  const [ci, productFullCi, runner] = await Promise.all([
     readFile(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8'),
     readFile(new URL('../.github/workflows/product-full-ci.yml', import.meta.url), 'utf8'),
+    readFile(new URL('../scripts/run-product-ci-tests.mjs', import.meta.url), 'utf8'),
   ]);
 
   assert.match(ci, /uses: \.\/\.github\/workflows\/product-full-ci\.yml/);
@@ -103,6 +104,7 @@ test('final CI is owned locally, selects affected environments, and rejects fals
   assert.doesNotMatch(`${ci}\n${productFullCi}`, /linux-server/);
   assert.doesNotMatch(`${ci}\n${productFullCi}`, /linux-native|wsl2/);
   assert.match(productFullCi, /run: \$\{\{ inputs\.full-command \}\}/);
+  assert.doesNotMatch(runner, /npm\.cmd|cmd\.exe/);
   assert.doesNotMatch(productFullCi, /kitepon\/dotagents/);
 });
 
