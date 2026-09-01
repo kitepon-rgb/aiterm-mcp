@@ -21,6 +21,7 @@ Windows nativeではpsmux 3.3.8以上に保存され、MCP serverやclientの再
 標準入口`agent_launch`は`claude-code`、`codex-cli`、`grok-cli`、`cursor-cli`のharnessとmodelを別軸で選ぶ。
 harnessがagent loop、認証、hook、session、transcript、model catalogを所有する。Aitermは通常の
 project／user環境を置換せず、launch相関と完了回収に必要なstateだけを加える。
+Throughlineの補足記憶はpathを透過搬送するだけで、内容、project束縛、context予算はThroughlineが所有する。
 
 agent turnは常に非ブロックdispatchである。receiptの`event_cursor`がturn境界、`wait_process`が
 platform nativeな別process起動情報を返す。waiterは純readerで、親のforeground turnを塞がない。

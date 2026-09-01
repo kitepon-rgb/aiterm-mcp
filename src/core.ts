@@ -3478,12 +3478,16 @@ export function composePortableForkPrompt(context: string, mission: string): str
   return context + PORTABLE_FORK_MISSION_SEPARATOR + mission;
 }
 
-function portableForkPrompt(sourceSessionId: string, mission: string): string {
+function portableForkPrompt(
+  sourceSessionId: string,
+  mission: string,
+  supplementFile: string | null,
+): string {
   const bin = resolveThroughlineBin();
   if (!bin) {
     throw new AitermError("Throughline CLIが見つかりません。portable forkのsessionは作成していません", 2);
   }
-  const result = runThroughlineHandoffContext(bin, sourceSessionId);
+  const result = runThroughlineHandoffContext(bin, sourceSessionId, supplementFile);
   if (result.error || result.status !== 0) {
     throw new AitermError("Throughline handoff-contextの取得に失敗しました。portable forkのsessionは作成していません", 2);
   }
@@ -3845,13 +3849,21 @@ export async function openAgentWithInitialPrompt(
     launch_operation_id?: string | null;
     write_scope?: string;
     throughline_source_session?: string | null;
+    throughline_supplement_file?: string | null;
     env_vars?: string[];
   } = {},
 ): Promise<[string, string, number | null, boolean | null]> {
   const mission = opts.prompt ?? null;
   const sourceSessionId = opts.throughline_source_session ?? null;
+  const supplementFile = opts.throughline_supplement_file ?? null;
   if (sourceSessionId !== null && !sourceSessionId.length) {
     throw new AitermError("throughline_source_sessionが空文字です", 2);
+  }
+  if (supplementFile !== null && !supplementFile.length) {
+    throw new AitermError("throughline_supplement_fileが空文字です", 2);
+  }
+  if (supplementFile !== null && sourceSessionId === null) {
+    throw new AitermError("throughline_supplement_file指定時はthroughline_source_sessionが必要です", 2);
   }
   if (sourceSessionId !== null && (mission === null || !mission.trim())) {
     throw new AitermError("throughline_source_session指定時はpromptにmissionが必要です", 2);
@@ -3861,7 +3873,7 @@ export async function openAgentWithInitialPrompt(
   }
   const prompt = sourceSessionId === null
     ? mission
-    : portableForkPrompt(sourceSessionId, mission as string);
+    : portableForkPrompt(sourceSessionId, mission as string, supplementFile);
   if (opts.launch_operation_id != null && prompt !== null) {
     throw new AitermError("launch_operation_idはpromptなしのClaude相関launchだけで指定できます", 2);
   }

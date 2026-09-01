@@ -169,7 +169,7 @@ collection is off by default and performs no network I/O. It ships via
 tag-triggered CI with npm provenance (OIDC Trusted Publishing); the GitHub
 Release re-registers the Official MCP Registry entry.
 
-**Status:** actively maintained · current public release **v0.29.12** · runs on Linux · WSL2 · macOS · native Windows (tmux on POSIX, the tmux-CLI-compatible [psmux](https://github.com/psmux/psmux) on native Windows — no WSL required) · MIT · see the [CHANGELOG](CHANGELOG.md).
+**Status:** actively maintained · current public release **v0.29.13** · runs on Linux · WSL2 · macOS · native Windows (tmux on POSIX, the tmux-CLI-compatible [psmux](https://github.com/psmux/psmux) on native Windows — no WSL required) · MIT · see the [CHANGELOG](CHANGELOG.md).
 
 ### Update and rollback
 
@@ -256,7 +256,9 @@ Portable fork is optional. When `throughline_source_session` is present, `prompt
 new mission and `launch_operation_id` cannot be combined with it. aiterm resolves Throughline via
 `THROUGHLINE_BIN` and then `PATH`, runs `throughline handoff-context --session <id> --json`, and
 places its returned context before a fixed separator and the mission. This route requires
-`throughline >= 0.9.0`; it reads the source memory without changing that database's session
+`throughline >= 0.9.0`; `throughline_supplement_file` requires Throughline 0.10.8 or later. Aiterm appends
+`--supplement-file <path>` without reading or interpreting the file. Throughline owns its project
+binding, validation, and shared context budget. The route reads source memory without changing database session
 ownership. No Throughline dependency is needed when the field is omitted.
 
 Harness adapters translate `model` and `reasoning_effort` into each CLI's public controls. Explicit Grok models are checked against `grok models`; Cursor combines a base model such as `gpt-5.6-luna` with a separate effort such as `high`, checks the resulting current catalog ID, and uses Cursor's standard model picker for in-session changes. Missing models are errors, with no cache, retry, or fallback. Claude adds only launch-local Stop-hook settings, Codex reads its normal rollout store, Grok reads its normal session event/history, and Cursor binds its normal agent transcript with the launch ID. Pass an absolute `cwd`; `~` is not expanded.
@@ -439,7 +441,7 @@ On top of that sits a productized layer a raw tmux bridge doesn't have: **token-
 | `pty_key` | Send a control key | `session_id`, `key` (`C-c`/`Enter`/`Up`…) |
 | `pty_close` | Close idempotently; return `closed` / `already_closed` | `session_id` |
 | `pty_list` | List sessions (agent rows carry canonical `harness=<id>` plus compatibility `agent=<kind>`) | (none) |
-| `agent_launch` | Canonical agent launch; harness and model are independent | `harness`, `prompt?`, `model?`, `reasoning_effort?`, `cwd?`, `write_scope?` |
+| `agent_launch` | Canonical agent launch; harness and model are independent | `harness`, `prompt?`, `model?`, `reasoning_effort?`, `cwd?`, `write_scope?`, `throughline_source_session?`, `throughline_supplement_file?` |
 | `agent_steer` | Inject text into the active Codex or Grok turn; return `idle` without sending when no turn is active | `session_id`, `text` |
 | `claude_agent` / `codex_agent` / `grok_agent` / `composer_agent` | Deprecated compatibility aliases | legacy launcher arguments |
 | `agent_configure` | Change model/effort in a running Claude, Codex, Grok, Composer, or Cursor session without restarting it | `session_id`, `model?`, `reasoning_effort?` |
@@ -473,7 +475,8 @@ The selected harness CLI must be installed and authenticated. Use each product o
 Set `throughline_source_session` together with a non-empty mission in `prompt` to prepend
 Throughline's read-only handoff context. This optional route requires `throughline >= 0.9.0`,
 cannot be combined with `launch_operation_id`, and leaves the source session's database ownership
-unchanged. Throughline is resolved through `THROUGHLINE_BIN` and then `PATH`; a missing or invalid
+unchanged. Optional `throughline_supplement_file` is passed unchanged to Throughline and requires
+`throughline_source_session` and Throughline 0.10.8 or later; Aiterm does not read or classify the supplement. Throughline is resolved through `THROUGHLINE_BIN` and then `PATH`; a missing or invalid
 export fails before the PTY exists instead of silently launching clean.
 
 When an agent's answer is longer than the on-screen tail (pane height ≈ 24 lines), callers recover it in full with `pty_read({ agent_transcript: true })`. It returns the most recently completed turn's final assistant message in plain text with no re-prompting. The existing human-readable content keeps its diagnostic suffix; machine callers read the answer alone from `structuredContent.text` in `aiterm.pty-read-result.v1`. Claude reads the bounded owner-only result captured by the launch-correlated Stop hook and verifies its digest/byte count; it never reads Claude's private transcript. Durable machine callers should use `claude_turn`: `issue` sends once, `recover` never sends, `pending` is distinct from unsafe or malformed state, and only `completed` carries the exact verified `raw_output`. Codex uses the normal rollout transcript's `task_complete.turn_id`; Grok/Composer return the last non-empty assistant message after the last real user row, excluding tool-use preambles; Cursor uses the normal agent transcript bound to the launch ID and current turn. Missing or ambiguous attribution remains an explicit error.

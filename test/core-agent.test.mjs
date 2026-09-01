@@ -265,7 +265,10 @@ function makeFakeCodexTuiBin() {
   return bin;
 }
 
-function makeFakeThroughlineBin(context = "## Throughline Context\nSOURCE_CONTEXT_MARKER") {
+function makeFakeThroughlineBin(
+  context = "## Throughline Context\nSOURCE_CONTEXT_MARKER",
+  expectedSupplementFile = null,
+) {
   const payload = JSON.stringify({
     schema: "throughline.handoff_context.v1",
     status: "ready",
@@ -281,6 +284,9 @@ function makeFakeThroughlineBin(context = "## Throughline Context\nSOURCE_CONTEX
     fs.writeFileSync(cmd, "@echo off\r\nexit /b 9\r\n");
     fs.writeFileSync(ps1, [
       "if ($args[0] -ne 'handoff-context' -or $args[1] -ne '--session' -or $args[3] -ne '--json') { exit 9 }",
+      ...(expectedSupplementFile === null
+        ? []
+        : [`if ($args[4] -ne '--supplement-file' -or $args[5] -ne '${expectedSupplementFile}') { exit 10 }`]),
       `Write-Output '${payload.replace(/'/g, "''")}'`,
       "",
     ].join("\r\n"));
@@ -292,6 +298,9 @@ function makeFakeThroughlineBin(context = "## Throughline Context\nSOURCE_CONTEX
     [
       "#!/bin/sh",
       "if [ \"$1\" != handoff-context ] || [ \"$2\" != --session ] || [ \"$4\" != --json ]; then exit 9; fi",
+      ...(expectedSupplementFile === null
+        ? []
+        : [`if [ \"$5\" != --supplement-file ] || [ \"$6\" != '${expectedSupplementFile}' ]; then exit 10; fi`]),
       `printf '%s\\n' '${payload}'`,
       "",
     ].join("\n"),
@@ -2582,6 +2591,42 @@ test("portable fork: Codex TUIへThroughline contextをmissionより前に一度
   }
 });
 
+test("portable fork: 補足JSON pathを解釈せずThroughlineへ渡す", { skip: skipAgentDone }, async () => {
+  const savedCodexBin = process.env.CODEX_BIN;
+  const savedThroughlineBin = process.env.THROUGHLINE_BIN;
+  const fakeCodex = makeFakeCodexTuiBin();
+  const fakeThroughline = makeFakeThroughlineBin(undefined, "SUPPLEMENT_MARKER_PATH");
+  process.env.CODEX_BIN = fakeCodex;
+  process.env.THROUGHLINE_BIN = fakeThroughline;
+  const sid = `portable_supplement_${Date.now().toString(36)}`;
+  try {
+    await withFakeCodexHome(async () => {
+      await core.openAgentWithInitialPrompt("codex", {
+        session_name: sid,
+        prompt: "MISSION_MARKER",
+        throughline_source_session: "source-session",
+        throughline_supplement_file: "SUPPLEMENT_MARKER_PATH",
+      });
+      const output = await core.readOutput(sid, {
+        wait: true,
+        until: "MISSION_MARKER",
+        timeout: 5,
+        full: true,
+        raw: true,
+      });
+      assert.match(output, /SOURCE_CONTEXT_MARKER/);
+    });
+  } finally {
+    try { core.closeSession(sid); } catch {}
+    if (savedCodexBin === undefined) delete process.env.CODEX_BIN;
+    else process.env.CODEX_BIN = savedCodexBin;
+    if (savedThroughlineBin === undefined) delete process.env.THROUGHLINE_BIN;
+    else process.env.THROUGHLINE_BIN = savedThroughlineBin;
+    fs.rmSync(fakeCodex, { force: true });
+    fs.rmSync(fakeThroughline, { force: true });
+  }
+});
+
 test("portable fork: Grok TUI promptも同じcontext→mission順で合成する", { skip: skipGrokFakeBin }, async () => {
   const savedThroughlineBin = process.env.THROUGHLINE_BIN;
   const savedGrokBin = process.env.GROK_BIN;
@@ -2720,6 +2765,13 @@ test("portable fork: mission必須かつlaunch_operation_idとは排他", async 
   await assert.rejects(
     core.openAgentWithInitialPrompt("claude", { throughline_source_session: "source-session" }),
     /promptにmissionが必要/,
+  );
+  await assert.rejects(
+    core.openAgentWithInitialPrompt("claude", {
+      prompt: "MISSION_MARKER",
+      throughline_supplement_file: "SUPPLEMENT_MARKER_PATH",
+    }),
+    /throughline_source_sessionが必要/,
   );
   await assert.rejects(
     core.openAgentWithInitialPrompt("claude", {

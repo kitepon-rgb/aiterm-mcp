@@ -614,7 +614,7 @@ const agentEnvironmentDesc =
 
 async function launchAgent(kind: core.AgentKind, args: any): Promise<any> {
   const supportsWriteScope = kind !== "claude";
-  const { prompt, throughline_source_session, model, reasoning_effort, env_vars, cwd, session_name, launch_operation_id, write_scope } = args;
+  const { prompt, throughline_source_session, throughline_supplement_file, model, reasoning_effort, env_vars, cwd, session_name, launch_operation_id, write_scope } = args;
   try {
     if (!supportsWriteScope && write_scope !== undefined) {
       throw new core.AitermError("claude-code harnessはwrite_scopeに対応していません。指定を外してください", 2);
@@ -622,6 +622,7 @@ async function launchAgent(kind: core.AgentKind, args: any): Promise<any> {
     const [sid, hint, eventCursor, submitResidue] = await core.openAgentWithInitialPrompt(kind, {
       prompt: prompt ?? undefined,
       throughline_source_session,
+      throughline_supplement_file,
       model: model ?? undefined,
       reasoning_effort: reasoning_effort ?? undefined,
       env_vars,
@@ -696,6 +697,11 @@ function registerAgentTool(
           .min(1)
           .optional()
           .describe("同一端末のThroughline sessionから所有権を変えずに記憶を読み、promptのmissionより前へ注入する"),
+        throughline_supplement_file: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("Throughline 0.10.8以降へそのまま渡すproject束縛済み長期記憶・知識の補足JSON path"),
         model: z.string().nullish().describe(agentModelDesc(kind)),
         // CLI／model側の値集合が版で変わるため公開enumでは縛らない（core側も同方針）。
         reasoning_effort: z.string().nullish().describe(agentEffortDesc(kind)),
@@ -738,6 +744,7 @@ server.registerTool(
       harness: z.enum(["claude-code", "codex-cli", "grok-cli", "cursor-cli"]).describe("agent loop・session・hook・transcript・認証を所有する実行基盤"),
       prompt: z.string().nullish().describe("起動時に渡す初手プロンプト（任意）。送信後は待たずに即返る"),
       throughline_source_session: z.string().min(1).optional().describe("同一端末のThroughline sessionから読み取り専用contextを初手へ注入する"),
+      throughline_supplement_file: z.string().min(1).optional().describe("Throughline 0.10.8以降へそのまま渡すproject束縛済み長期記憶・知識の補足JSON path"),
       model: z.string().nullish().describe("harnessが選ぶモデル。provider名ではなくlive catalog上のmodel ID"),
       reasoning_effort: z.string().nullish().describe("harness adapterが標準CLI表現へ変換する思考レベル。Cursorではmodel同時指定が必要"),
       env_vars: z.array(z.string()).optional().describe("現在のMCP processから継承する環境変数名"),

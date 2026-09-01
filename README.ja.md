@@ -153,7 +153,7 @@ runtime-error store は canonical dotagents config の `collection.enabled: true
 場合だけ収集し、既定OFF、network送信は行いません。tag起点CIのnpm provenance（OIDC Trusted
 Publishing）で公開し、GitHub Release が Official MCP Registry を再登録します。
 
-**状態:** 開発継続中 · 現行公開版 **v0.29.12** · 動作対象は Linux · WSL2 · macOS · Windows ネイティブ · MIT · [変更履歴](CHANGELOG.md)。
+**状態:** 開発継続中 · 現行公開版 **v0.29.13** · 動作対象は Linux · WSL2 · macOS · Windows ネイティブ · MIT · [変更履歴](CHANGELOG.md)。
 
 ### 更新と巻き戻し
 
@@ -229,7 +229,8 @@ GrokのcredentialをAitermがlock、検査、書換えすることはない。�
 portable forkは任意である。`throughline_source_session`を使う場合、`prompt`は必須の新ミッションとなり、
 `launch_operation_id`とは併用できない。aitermは`THROUGHLINE_BIN`、次に`PATH`からThroughlineを解決し、
 `throughline handoff-context --session <id> --json`のcontextを固定区切りとミッションの前へそのまま置く。
-この経路だけ`throughline >= 0.9.0`が必要で、元sessionのDB所属は変わらない。引数省略時には
+任意の`throughline_supplement_file`はThroughline 0.10.8以降を必要とし、`--supplement-file <path>`として内容を読まずにそのまま渡し、
+project束縛・検証・予算配分はThroughlineだけが所有する。この経路だけ`throughline >= 0.9.0`が必要で、元sessionのDB所属は変わらない。引数省略時には
 Throughline自体が不要である。
 
 エージェント間の隠れたプロトコルは無い。起動したharnessは利用者がattachできるもう1本の永続sessionであり、MCPクライアントが通常のPTY操作で駆動する。
@@ -408,7 +409,7 @@ aiterm は同じ核心の洞察——端末を出会いの場にする——を�
 | `pty_key` | 制御キーを送る | `session_id`, `key`（`C-c`/`Enter`/`Up`…） |
 | `pty_close` | 冪等に閉じ、`closed` / `already_closed`を返す | `session_id` |
 | `pty_list` | セッション一覧（agent行は正規`harness=<id>`と互換`agent=<kind>`を含む） | （なし） |
-| `agent_launch` | harnessとmodelを別軸で選ぶ正規agent起動入口 | `harness`, `prompt?`, `model?`, `reasoning_effort?`, `cwd?`, `write_scope?` |
+| `agent_launch` | harnessとmodelを別軸で選ぶ正規agent起動入口 | `harness`, `prompt?`, `model?`, `reasoning_effort?`, `cwd?`, `write_scope?`, `throughline_source_session?`, `throughline_supplement_file?` |
 | `agent_steer` | 実行中のCodex／Grok turnへtextを差し込む。idleなら送信せず`idle`を返す | `session_id`, `text` |
 | `claude_agent` / `codex_agent` / `grok_agent` / `composer_agent` | deprecated互換alias | 旧launcher引数 |
 | `agent_configure` | 起動中のClaude／Codex／Grok／Composer／Cursorを再起動せずmodel／effort変更 | `session_id`, `model?`, `reasoning_effort?` |
@@ -443,6 +444,7 @@ consumer は `aiterm-runtime-errors snapshot` を読み、durable ingestion 後�
 handoff contextを前置きできる。この任意経路は`throughline >= 0.9.0`を必要とし、
 `launch_operation_id`とは併用不可で、元sessionのDB所属を変更しない。Throughlineは
 `THROUGHLINE_BIN`、次に`PATH`から解決し、不在・不正・空のexportはPTY作成前に明示失敗する。
+任意の`throughline_supplement_file`はThroughline 0.10.8以降と`throughline_source_session`を必要とし、Aitermは内容を解釈せずThroughlineへ渡す。
 
 エージェントの回答が画面tailより長ければ、`pty_read({ agent_transcript:true })`で再promptなしに全文回収する。既存の人間向けcontentは診断suffixを維持し、機械呼出し側は`aiterm.pty-read-result.v1`の`structuredContent.text`から回答本文だけを取得する。Claudeはlaunch相関Stop hook、Codexは通常rollout、Grokは最後の実user行以後の最後の空でないassistantメッセージだけ、Cursorはlaunch IDでbindした通常agent transcriptから同じturnを回収する。
 

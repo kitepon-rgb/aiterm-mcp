@@ -214,6 +214,7 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 16 ツール公�
   assert.match(agentLaunch.description, /Grok Composerは別harnessではなく/);
   assert.match(agentLaunch.description, /wait_process/);
   assert.ok(agentLaunch.outputSchema.properties.wait_process, "agent_launchはplatform-native waiter process境界を公開する");
+  assert.equal(agentLaunch.inputSchema.properties.throughline_supplement_file.type, "string", "agent_launchはThroughline補足pathを公開する");
   assert.ok(ptySend.outputSchema.properties.wait_process, "pty_send dispatchも同じwaiter process境界を公開する");
   const waitProcessSchema = agentLaunch.outputSchema.properties.wait_process.anyOf.find((entry) => entry.type === "object");
   assert.ok(waitProcessSchema.properties.windows_start_process_argument_list, "Windows Start-Process用の完成済み引数文字列を公開する");
@@ -231,6 +232,7 @@ test("smoke: stdout は JSON-RPC のみ / diagnostics を含む 16 ツール公�
     const tool = toolsResp.result.tools.find((entry) => entry.name === name);
     assert.equal(tool.inputSchema.properties.throughline_source_session.type, "string", `${name} portable fork source schema`);
     assert.equal(tool.inputSchema.properties.throughline_source_session.minLength, 1, `${name} portable fork source is non-empty`);
+    assert.equal(tool.inputSchema.properties.throughline_supplement_file.type, "string", `${name} portable fork supplement schema`);
     assert.equal(tool.outputSchema.properties.schema.const, "aiterm.agent-launch-result.v1", `${name} launch result schema`);
     assert.equal(tool.outputSchema.properties.provider.const, provider, `${name} provider固定`);
     assert.equal(

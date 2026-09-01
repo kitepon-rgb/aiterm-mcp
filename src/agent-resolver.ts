@@ -177,7 +177,13 @@ export function resolveThroughlineBin(): string | null {
   return resolved && isUsableExecutableFile(resolved) ? resolved : null;
 }
 
-export function runThroughlineHandoffContext(bin: string, sessionId: string) {
+export function runThroughlineHandoffContext(
+  bin: string,
+  sessionId: string,
+  supplementFile: string | null = null,
+) {
+  const args = ["handoff-context", "--session", sessionId, "--json"];
+  if (supplementFile !== null) args.push("--supplement-file", supplementFile);
   if (isWin && /\.(?:cmd|bat)$/i.test(bin)) {
     const ps1 = path.join(path.dirname(bin), `${path.basename(bin, path.extname(bin))}.ps1`);
     if (fs.existsSync(ps1)) {
@@ -189,14 +195,11 @@ export function runThroughlineHandoffContext(bin: string, sessionId: string) {
         "Bypass",
         "-File",
         ps1,
-        "handoff-context",
-        "--session",
-        sessionId,
-        "--json",
+        ...args,
       ], { encoding: "utf8" });
     }
   }
-  return spawnSync(bin, ["handoff-context", "--session", sessionId, "--json"], {
+  return spawnSync(bin, args, {
     encoding: "utf8",
   });
 }
