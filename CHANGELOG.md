@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.26] - 2026-09-02
+
+### Fixed
+
+- Cursorの冷間起動時は、貼り付けたpromptがcomposerへ反映されたことを確認してからEnterを送り、入力準備前の早送信による未配達を防ぐ。
+
 ## [0.29.25] - 2026-09-02
 
 ### Fixed
@@ -1500,7 +1506,8 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.25...HEAD
+[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.26...HEAD
+[0.29.26]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.25...v0.29.26
 [0.29.25]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.24...v0.29.25
 [0.29.24]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.23...v0.29.24
 [0.29.23]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.22...v0.29.23

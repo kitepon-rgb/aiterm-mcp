@@ -195,6 +195,8 @@ const AGENT_SUBMIT_RESIDUE_POLL_MS = 300;
 const AGENT_SUBMIT_RESIDUE_MAX_SAMPLES = 5;
 const AGENT_SUBMIT_RESIDUE_TAIL_CHARS = 32;
 const AGENT_SUBMIT_RESIDUE_MIN_TAIL_CHARS = 8;
+const CURSOR_PROMPT_VISIBLE_POLL_MS = 100;
+const CURSOR_PROMPT_VISIBLE_MAX_SAMPLES = 50;
 
 // 出力削減（RTK の CAP 思想を移植）
 const MAX_LINES_BEFORE_ELIDE = 60;
@@ -2890,6 +2892,37 @@ async function detectAgentSubmitResidue(name: string, kind: AgentKind, text: str
   return detectAgentSubmitResidueImpl(kind, text, () => captureScreen(name, AGENT_TUI_READY_LINES), sleep);
 }
 
+export interface CursorPromptVisibleResult {
+  visible: boolean;
+  samples: number;
+}
+
+async function waitCursorPromptVisibleImpl(
+  text: string,
+  sample: () => string,
+  sleepFn: (ms: number) => Promise<void>,
+  opts: { pollMs?: number; maxSamples?: number } = {},
+): Promise<CursorPromptVisibleResult> {
+  const tail = agentSubmitResidueTail(text) ?? normalizeResidueText(text);
+  const pollMs = opts.pollMs ?? CURSOR_PROMPT_VISIBLE_POLL_MS;
+  const maxSamples = opts.maxSamples ?? CURSOR_PROMPT_VISIBLE_MAX_SAMPLES;
+  for (let i = 0; i < maxSamples; i++) {
+    if (agentSubmitResidueOnScreen("cursor", sample(), tail) === true) {
+      return { visible: true, samples: i + 1 };
+    }
+    if (i < maxSamples - 1) await sleepFn(pollMs);
+  }
+  return { visible: false, samples: maxSamples };
+}
+
+async function waitCursorPromptVisible(name: string, text: string): Promise<CursorPromptVisibleResult> {
+  return waitCursorPromptVisibleImpl(
+    text,
+    () => captureScreen(name, AGENT_TUI_READY_LINES),
+    sleep,
+  );
+}
+
 export function agentSubmitResidueWarning(name: string, residue: boolean | null): string {
   if (residue !== true) return "";
   return (
@@ -3015,6 +3048,25 @@ export async function __testDetectAgentSubmitResidue(
   return { ...result, sleeps };
 }
 
+export async function __testWaitCursorPromptVisible(
+  text: string,
+  samples: string[],
+  opts: { pollMs?: number; maxSamples?: number } = {},
+): Promise<CursorPromptVisibleResult & { sleeps: number[] }> {
+  if (samples.length === 0) throw new AitermError("Cursor prompt反映待ちのtest samplesが空です", 2);
+  let i = 0;
+  const sleeps: number[] = [];
+  const result = await waitCursorPromptVisibleImpl(
+    text,
+    () => samples[Math.min(i++, samples.length - 1)],
+    async (ms) => {
+      sleeps.push(ms);
+    },
+    opts,
+  );
+  return { ...result, sleeps };
+}
+
 export function __testSetAgentTuiReadyStableSamples(value: number | null): void {
   if (value !== null && (!Number.isInteger(value) || value < 1 || value > 1000)) {
     throw new AitermError("test ready stable samplesが不正です", 2);
@@ -3027,7 +3079,7 @@ export interface InitialAgentPromptOpts {
   ready_timeout?: number;
 }
 
-async function sendAgentPromptText(name: string, text: string): Promise<void> {
+async function sendAgentPromptText(name: string, text: string, kind?: AgentKind): Promise<void> {
   send(name, text, {
     enter: false,
     force: true,
@@ -3037,7 +3089,18 @@ async function sendAgentPromptText(name: string, text: string): Promise<void> {
     preserveAgentOperation: true,
     bracketedPaste: true,
   });
-  await sleep(AGENT_SUBMIT_DELAY_MS);
+  if (kind === "cursor") {
+    const visible = await waitCursorPromptVisible(name, text);
+    if (!visible.visible) {
+      throw new AitermError(
+        `vendor=cursor session=${name}\n` +
+          "送信promptがCursorのcomposerへ反映されたことを確認できないため、Enterは送信していません。",
+        2,
+      );
+    }
+  } else {
+    await sleep(AGENT_SUBMIT_DELAY_MS);
+  }
   sendKey(name, "Enter", { preserveAgentOperation: true });
 }
 
@@ -3100,7 +3163,7 @@ export async function sendInitialAgentPrompt(
       prepareSendText(text, { raw: false });
       reserveAnonymousClaudeTurn(meta);
     }
-    await sendAgentPromptText(name, promptText);
+    await sendAgentPromptText(name, promptText, meta.kind);
     setInitialPromptState(meta, "pending");
   } catch (e) {
     setInitialPromptState(meta, "failed");
@@ -3269,11 +3332,11 @@ export async function configureAgent(
     // Cursor TUIの `/model <base model>` はmodelを直接切り替える一方、flatten済みcatalog ID
     // （例: gpt-5.6-luna-high）を渡すとno matchesのfilter画面へ入る。effortは標準model pickerの
     // parameter editorで選び、同じsessionと会話contextを保つ。
-    await sendAgentPromptText(name, `/model ${model}`);
+    await sendAgentPromptText(name, `/model ${model}`, meta.kind);
     const modelReady = await waitAgentTuiReady(name, meta, AGENT_TUI_READY_TIMEOUT_MS);
     if (!modelReady.ready) throw new AitermError("Cursorのmodel変更完了を確認できません", 2);
     if (effort) {
-      await sendAgentPromptText(name, "/model");
+      await sendAgentPromptText(name, "/model", meta.kind);
       await waitForScreenText(name, "Available models");
       sendMenuChoice(name, "Tab");
       const parameterScreen = await waitForScreenText(name, "Edit Parameters");
@@ -3419,8 +3482,21 @@ export async function dispatchAgentTurn(
     preserveAgentOperation: meta.kind === "claude",
     bracketedPaste: true,
   });
-  // Codex TUI は literal text 投入直後の Enter を取り落とすことがある。agent 経路だけ submit を分離する。
-  await sleep(AGENT_SUBMIT_DELAY_MS);
+  // Cursorの冷間起動ではbracketed pasteの反映が250msを超えることがある。本文がcomposerへ
+  // 現れた実測をsubmit条件にし、未反映のままEnterだけを失う競合を作らない。
+  if (meta.kind === "cursor") {
+    const visible = await waitCursorPromptVisible(name, dispatchText);
+    if (!visible.visible) {
+      throw new AitermError(
+        `vendor=cursor session=${name}\n` +
+          "送信promptがCursorのcomposerへ反映されたことを確認できないため、Enterは送信していません。",
+        2,
+      );
+    }
+  } else {
+    // Codex TUI は literal text 投入直後の Enter を取り落とすことがある。agent 経路だけ submit を分離する。
+    await sleep(AGENT_SUBMIT_DELAY_MS);
+  }
   sendKey(name, "Enter", { preserveAgentOperation: meta.kind === "claude" });
   const residue = await detectAgentSubmitResidue(name, meta.kind, dispatchText);
   assertAgentSubmitDelivered(name, meta.kind, residue);

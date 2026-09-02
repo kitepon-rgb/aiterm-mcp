@@ -500,6 +500,32 @@ test("Cursor submit座礁観測: 空のfollow-up placeholderは残留本文に�
   assert.equal(result.residue, false);
 });
 
+test("Cursor prompt反映待ち: 冷間起動で貼付表示が遅れても本文を確認するまでsubmitへ進まない", async () => {
+  const text = [
+    "AITERM_AGENT_LAUNCH_ID=cold-start-test",
+    "BellTeamの復元文とオーナー情報を含む起動promptです。",
+  ].join("\n");
+  const empty = [
+    "Cursor Agent",
+    "→ Plan, search, build anything",
+    "Auto",
+  ].join("\n");
+  const pasted = [
+    "Cursor Agent",
+    "→ AITERM_AGENT_LAUNCH_ID=cold-start-test",
+    "  BellTeamの復元文とオーナー情報を含む起動promptです。",
+    "Auto",
+  ].join("\n");
+
+  const result = await core.__testWaitCursorPromptVisible(text, [empty, empty, pasted], {
+    pollMs: 100,
+    maxSamples: 5,
+  });
+  assert.equal(result.visible, true);
+  assert.equal(result.samples, 3);
+  assert.deepEqual(result.sleeps, [100, 100]);
+});
+
 test("agent dispatch: composer残留を成功receiptにしない", () => {
   assert.throws(
     () => core.__testAssertAgentSubmitDelivered("bot-bd860dba", "cursor", { residue: true, samples: 3 }),
