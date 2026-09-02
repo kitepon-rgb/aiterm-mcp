@@ -27,6 +27,7 @@ agent turnは常に非ブロックdispatchである。receiptの`event_cursor`�
 platform nativeな別process起動情報を返す。waiterは純readerで、親のforeground turnを塞がない。
 回答はharness所有transcriptから同じturnへ相関して回収し、欠落・曖昧・timeout時にpromptを再送しない。
 `agent_steer`は実行中のCodex／Grok turnへ追加textを差し込み、idleなら送信せず状態を返す。
+Cursorのsubmitはadapterがextended keyboard protocolのEnterへ変換し、呼び出し側は通常のdispatchだけを使う。
 
 ## Layer ownership
 

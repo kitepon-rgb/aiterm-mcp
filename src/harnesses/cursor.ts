@@ -34,6 +34,10 @@ import type {
 const CURSOR_TRANSCRIPT_MATCH_MAX_BYTES = 1024 * 1024;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+// Cursor Agentはextended keyboard protocolを有効にするため、通常のtmux Enterではなく
+// CSI-uのEnterを送る。呼び出し側へCursor固有の端末方言を漏らさない。
+export const CURSOR_SUBMIT_SEQUENCE = "\x1b[13u";
+
 export function realCursorHome(): string {
   return path.join(process.env.HOME ?? os.homedir(), ".cursor");
 }

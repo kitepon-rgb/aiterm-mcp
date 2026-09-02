@@ -16,10 +16,15 @@ import {
   cursorWorkspaceId,
   cursorModelArgument,
   cursorEffortNavigation,
+  CURSOR_SUBMIT_SEQUENCE,
   latestCursorCompletion,
   observeCursorDone,
   validateCursorModelEffort,
 } from "../dist/harnesses/cursor.js";
+
+test("Cursor adapter: Enterをextended keyboard protocolのCSI-u列へ変換する", () => {
+  assert.equal(CURSOR_SUBMIT_SEQUENCE, "\x1b[13u");
+});
 
 test("Cursor resolver: 曖昧な agent ではなく公式 cursor-agent だけを解決する", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "aiterm-cursor-resolver-"));

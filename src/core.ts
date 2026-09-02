@@ -145,6 +145,7 @@ import {
   cursorLaunchNote,
   cursorEffortNavigation,
   cursorTuiReady,
+  CURSOR_SUBMIT_SEQUENCE,
   CURSOR_COMPOSER_CONTENT_MARKER_RE,
   validateCursorModelEffort,
 } from "./harnesses/cursor.js";
@@ -915,6 +916,16 @@ export function sendKey(name: string, key: string, o: { preserveAgentOperation?:
         "他の対話操作はpty_send（自動dispatch）、終了はpty_closeを使ってください。",
       2,
     );
+  }
+  const meta = tryLoadAgentMetadata(name);
+  if (meta?.kind === "cursor" && k === "Enter") {
+    send(name, CURSOR_SUBMIT_SEQUENCE, {
+      enter: false,
+      force: true,
+      raw: true,
+      preserveAgentOperation: o.preserveAgentOperation,
+    });
+    return `sent key ${k} to ${name}`;
   }
   tmux("send-keys", "-t", name, k);
   return `sent key ${k} to ${name}`;
