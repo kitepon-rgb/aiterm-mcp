@@ -25,8 +25,8 @@ Aitermのreleaseはこのrepositoryが所有する。`.github/workflows/product-
    npm run release -- <version>
    ```
 
-   scriptはversion同期（`package.json`、`package-lock.json`、`server.json`、`mcpb/manifest.json`、`README.md`、
-   `README.ja.md`）、CHANGELOG見出しと比較link、metadata検査、release commit、main push、`v<version>` tag push、
+   scriptはversion同期（`package.json`、`package-lock.json`、`server.json`、`mcpb/manifest.json`、`README.md`と`README.ja.md`の現行公開版）、
+   CHANGELOG見出しと比較link、metadata検査、release commit、main push、`v<version>` tag push、
    MCPB build、GitHub Release作成までを行う。tag pushがnpm publish、Release作成がOfficial MCP Registry登録を起動する。
    scriptはその完了を待たない。
 
