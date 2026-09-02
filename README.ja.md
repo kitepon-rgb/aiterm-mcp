@@ -496,10 +496,11 @@ npm test           # build してから node:test 回帰スイート（tmux ま�
 npm link           # ローカルで `aiterm-mcp` を PATH に
 ```
 
-開発中は変更に直結するfocused testを先にローカルで実行します。GitHub Actionsは実装の依存関係から
-必要なテストを選び、依存を確定できない変更とrelease変更だけ3環境の全テストへ広げます。
-tag起点のnpm公開は、同じcommitのmain CIが3環境greenであり、tagged commitが`origin/main`の
-祖先であることを確認した後だけ実行します。tag側で同じ3環境試験は繰り返しません。
+開発中は変更に直結するfocused testを先にローカルで実行します。GitHub Actionsはpushごとにself-hostedの
+`linux-workstation` 1環境で試験を回し、Windows固有ファイルを触った変更だけ`windows-native`を加え、
+3環境（`macos-native`、`linux-workstation`、`windows-native`）の全テストは週1回の健康診断だけで回します。
+`npm run release -- <version>`がversion同期・commit・tag・GitHub Releaseを一回で行い、tag起点のnpm公開は
+tagged commitが`origin/main`の祖先であることだけを確認して、他のCI結果を待ちません。
 
 共通進行は`src/core.ts`、harness固有は`src/harnesses/`、OS差は`src/tmux-runtime.ts`／`src/agent-resolver.ts`、reducerは`src/rtk.ts`、公開面は`src/index.ts`が所有する。現行設計は[`docs/DESIGN.md`](docs/DESIGN.md)、release手順は[`docs/RELEASE.md`](docs/RELEASE.md)を正とする。`prototype/python/`はreducerの歴史的移植元であり、pytest reducerは本家rtk 0.42.0と一致する（上記の`FAILED`行の差異だけは意図的・回帰テストで固定）。
 

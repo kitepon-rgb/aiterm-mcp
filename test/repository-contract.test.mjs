@@ -93,7 +93,10 @@ test('製品CIはlocal full、Markdown文書検査、tag/version一致を所有�
     ci,
     /documentation-command:\s*npm run test:docs/,
   );
-  assert.match(ci, /gh run list --workflow ci\.yml --branch main --commit "\$GITHUB_SHA"/);
+  // tag公開は他eventのCI結果を待たない。tagがrelease判断であり、祖先確認だけをgateにする。
+  assert.doesNotMatch(ci, /gh run list/);
+  assert.match(ci, /git merge-base --is-ancestor "\$GITHUB_SHA" origin\/main/);
+  assert.match(ci, /schedule:/);
   assert.match(ci, /test "\$GITHUB_REF_NAME" = "v\$version"/);
   assert.match(productFull, /documentation-command:/);
   assert.match(productFull, /scripts\/product-ci-plan\.mjs verify/);

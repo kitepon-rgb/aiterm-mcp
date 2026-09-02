@@ -11,6 +11,10 @@ export const ALL_ENVIRONMENTS = Object.freeze([
   'windows-native',
 ]);
 
+// push／pull requestの既定はLinux 1環境。実測（2026-09-02）ではWindows runnerが毎回critical pathを
+// 6分占め、macOSとLinuxは2分で終わる。他OSはそのOS固有pathを触った変更、定期健康診断、手動実行だけ。
+export const PUSH_ENVIRONMENTS = Object.freeze(['linux-workstation']);
+
 const HOST_PATH_RULES = Object.freeze([
   Object.freeze({
     environment: 'windows-native',
@@ -36,7 +40,7 @@ const DIRECT_TEST_RULES = new Map([
 
 export function classifyPaths(paths) {
   const normalizedPaths = [...new Set(paths)].toSorted();
-  if (normalizedPaths.length === 0) return fullPlan(normalizedPaths, '差分なしを広い検査へ分類');
+  if (normalizedPaths.length === 0) return fullPlan(normalizedPaths, '差分なしをLinux全テストへ分類');
   if (normalizedPaths.every(isDocumentationPath)) {
     return Object.freeze({
       schema: 'aiterm.ci-plan.v1',
@@ -52,7 +56,7 @@ export function classifyPaths(paths) {
     if (isDocumentationPath(path)) continue;
     const matchedRules = HOST_PATH_RULES.filter((rule) =>
       rule.patterns.some((pattern) => pattern.test(path)));
-    if (matchedRules.length === 0) return fullPlan(normalizedPaths, '共通または未分類の変更');
+    if (matchedRules.length === 0) return fullPlan(normalizedPaths, '共通または未分類の変更をLinux全テストへ');
     for (const rule of matchedRules) selected.add(rule.environment);
   }
 
@@ -168,11 +172,11 @@ function isDocumentationPath(path) {
   return /\.(?:md|mdc)$/u.test(path);
 }
 
-function fullPlan(paths, reason) {
+function fullPlan(paths, reason, environments = PUSH_ENVIRONMENTS) {
   return Object.freeze({
     schema: 'aiterm.ci-plan.v1',
     productChange: true,
-    environments: ALL_ENVIRONMENTS,
+    environments,
     reason,
     changedPaths: Object.freeze(paths),
   });
@@ -209,6 +213,14 @@ function requestedEnvironments(requested) {
 }
 
 function createPlan(environment) {
+  if (environment.EVENT_NAME === 'schedule') {
+    return {
+      ...fullPlan([], '定期健康診断', ALL_ENVIRONMENTS),
+      comparisonBase: resolveCommit(environment.GITHUB_SHA),
+      testScope: 'all',
+      testFiles: [],
+    };
+  }
   const baseInput = comparisonBase(environment);
   if (!baseInput || /^0+$/u.test(baseInput)) {
     throw new Error(
@@ -224,8 +236,7 @@ function createPlan(environment) {
 
   if (environment.EVENT_NAME === 'workflow_dispatch') {
     return {
-      ...fullPlan([], '手動実行'),
-      environments: requestedEnvironments(environment.REQUESTED_ENVIRONMENT),
+      ...fullPlan([], '手動実行', requestedEnvironments(environment.REQUESTED_ENVIRONMENT)),
       comparisonBase: base,
       testScope: 'all',
       testFiles: [],

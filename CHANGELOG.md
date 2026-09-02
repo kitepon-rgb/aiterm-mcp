@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- push時のCIをLinux 1環境へ絞り、WindowsはWindows固有ファイルの変更時だけ、3環境の全テストは週1回の定期実行だけにした。tag起点のnpm公開はmain CIの成功を待たず、既定ブランチの祖先確認だけで進める。
+- `npm run release -- <version>`でversion同期・CHANGELOG見出し・commit・tag・MCPB・GitHub Releaseを一回で行う。
+
 ## [0.29.30] - 2026-09-02
 
 ### Fixed

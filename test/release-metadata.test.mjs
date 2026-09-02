@@ -100,7 +100,6 @@ test('final CI is owned locally, selects affected environments, and rejects fals
   assert.match(productFullCi, /workflow_call:/);
   assert.match(productFullCi, /fromJSON\(needs\.classify\.outputs\.environments\)/);
   assert.match(productFullCi, /scripts\/product-ci-plan\.mjs verify/);
-  assert.match(ci, /gh run list --workflow ci\.yml --branch main --commit "\$GITHUB_SHA"/);
   assert.doesNotMatch(`${ci}\n${productFullCi}`, /linux-server/);
   assert.doesNotMatch(`${ci}\n${productFullCi}`, /linux-native|wsl2/);
   assert.match(productFullCi, /run: \$\{\{ inputs\.full-command \}\}/);

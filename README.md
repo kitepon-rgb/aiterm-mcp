@@ -542,11 +542,12 @@ npm test           # build, then the node:test regression suite (requires tmux o
 npm link           # put `aiterm-mcp` on PATH locally
 ```
 
-Development uses focused local tests first. GitHub Actions selects tests from the changed implementation's
-dependency graph and expands unknown or release changes to the full suite on the self-hosted
-`macos-native`, `linux-workstation`, and `windows-native` runners. Tag-triggered npm publishing reuses
-the successful main CI for the same commit instead of repeating it, and runs only after the tagged commit
-is confirmed on `origin/main`. The native
+Development uses focused local tests first. GitHub Actions runs the suite on the self-hosted
+`linux-workstation` runner for every push, adds `windows-native` only when Windows-specific files change,
+and runs all three runners (`macos-native`, `linux-workstation`, `windows-native`) once a week as a health
+check. `npm run release -- <version>` syncs the version, commits, tags, and publishes the GitHub Release in
+one command; tag-triggered npm publishing checks only that the tagged commit is on `origin/main` and does not
+wait for another CI run. The native
 Windows runner needs psmux ≥ 3.3.8 and Git for Windows on its PATH, and must run as an
 interactive Windows user; `NETWORK SERVICE` lacks the per-user environment the pane shell and
 harness CLIs rely on and is not a valid runner identity.
