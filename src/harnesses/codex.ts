@@ -423,7 +423,9 @@ export const CODEX_COMPOSER_MARKER_RE = /^\s*[›>]/;
 // 文字列は実機captureの逐語。既知2種に一致しない「Press enter to continue」も
 // 同型のmodalとして拾う（種別不明のまま握りつぶさない）。
 export function codexLaunchBlockingDialog(screen: string): string | null {
-  if (screen.includes("Update available!")) return "update確認ダイアログ";
+  if (screen.includes("Update available!")
+    && (/(^|\n)\s*›?\s*1\.\s+Update now\b/m.test(screen) || screen.includes("Press enter to continue")))
+    return "update確認ダイアログ";
   if (screen.includes("Do you trust the contents of this directory")) return "directory trust確認ダイアログ";
   if (screen.includes("Press enter to continue")) return "起動時ダイアログ（種別未特定）";
   return null;

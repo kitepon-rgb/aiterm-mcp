@@ -209,6 +209,21 @@ test("agent_done ready gate: 既知の承認UIはtimeoutを待たずcallerへ返
   }
 });
 
+test("agent_done ready gate: 非対話型のCodex更新通知は入力待ちを妨げない", async () => {
+  const screen = [
+    "✨ Update available! 0.151.0 -> 0.152.1",
+    "Run npm install -g @openai/codex to update.",
+    "OpenAI Codex (v0.151.0)",
+    "› Ask Codex to do anything",
+    "gpt-5.6-sol default · /tmp/project",
+  ].join("\n");
+  const result = await core.__testWaitAgentTuiReady("codex", [screen], {
+    timeoutMs: 0,
+    stableSamples: 1,
+  });
+  assert.equal(result.ready, true);
+});
+
 test("agent_done ready gate: Claude workspace trustの選択カーソルをcomposerと誤認しない", async () => {
   const trustScreen = [
     "Claude Code v2.1.251",

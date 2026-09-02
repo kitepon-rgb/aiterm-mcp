@@ -2502,6 +2502,12 @@ test("codexLaunchBlockingDialog: 起動前modalの実機画面を種別付きで
     "  Press enter to continue",
   ].join("\n");
   assert.match(codexHarness.codexLaunchBlockingDialog(updateScreen), /update確認/);
+  assert.equal(codexHarness.codexLaunchBlockingDialog([
+    "✨ Update available! 0.151.0 -> 0.152.1",
+    "Run npm install -g @openai/codex to update.",
+    "OpenAI Codex (v0.151.0)",
+    "› Ask Codex to do anything",
+  ].join("\n")), null);
   const trustScreen = [
     "You are in /Users/kite/Developer/poly",
     "Do you trust the contents of this directory?",

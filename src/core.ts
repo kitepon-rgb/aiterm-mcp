@@ -2708,8 +2708,7 @@ function isAgentTuiIdleReady(kind: AgentKind, screen: string): boolean {
 // `initial_prompt=not_sent`を返してsessionを生かしたままcallerへ制御を戻す。
 function isAgentTuiActionRequired(kind: AgentKind, screen: string): boolean {
   if (kind === "codex") {
-    return screen.includes("Update available!")
-      || screen.includes("Do you trust the contents of this directory?")
+    return codexLaunchBlockingDialog(screen) !== null
       || screen.includes("Hooks need review")
       || screen.includes("Allow the room MCP server to run tool")
       || screen.includes("Would you like to run the following command?");
