@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.28] - 2026-09-02
+
+### Fixed
+
+- Cursorの長いpromptが矢印の次行へ折り返され、末尾が画面外にある場合もcomposerへの反映を確認してsubmitする。
+
 ## [0.29.27] - 2026-09-02
 
 ### Fixed
@@ -1512,7 +1518,8 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.27...HEAD
+[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.28...HEAD
+[0.29.28]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.27...v0.29.28
 [0.29.27]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.26...v0.29.27
 [0.29.26]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.25...v0.29.26
 [0.29.25]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.24...v0.29.25

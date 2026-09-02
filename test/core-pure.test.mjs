@@ -526,6 +526,30 @@ test("Cursor prompt反映待ち: 冷間起動で貼付表示が遅れても本�
   assert.deepEqual(result.sleeps, [100, 100]);
 });
 
+test("Cursor prompt反映待ち: 長文の先頭が矢印の次行に見えれば末尾が画面外でもsubmitへ進む", async () => {
+  const text = [
+    "[BellTeam owner profile]",
+    "名前: クオ",
+    "末尾は画面外にある長い起動promptです。CURSOR_COLD_START_END",
+  ].join("\n");
+  const pasted = [
+    "Cursor Agent",
+    "→",
+    "  [BellTeam owner profile]",
+    "  名前: クオ",
+    "  プロフィール: 開発に熱心。",
+    "Auto                                                          Run Everything",
+    "/srv/bellteam/bots/bot-1788dc47 · master",
+  ].join("\n");
+
+  const result = await core.__testWaitCursorPromptVisible(text, [pasted], {
+    pollMs: 100,
+    maxSamples: 1,
+  });
+  assert.equal(result.visible, true);
+  assert.equal(result.samples, 1);
+});
+
 test("Cursor submit: Enter後もcomposerへ本文が残る時だけ同じEnterを一度再送する", async () => {
   const first = { residue: true, samples: 3 };
   const second = { residue: false, samples: 1 };

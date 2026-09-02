@@ -2848,15 +2848,20 @@ function agentSubmitResidueOnScreen(kind: AgentKind, screen: string, tail: strin
   }
   if (markerIdx < 0) return null;
   if (kind === "cursor") {
-    // Cursorは長いpasteを入力欄の先頭側だけ表示することがあり、送信文の末尾一致では
-    // 座礁を検出できない。最新composerのmarkerと同じ行にplaceholder以外の本文が
-    // 残っていれば、その本文自体を未submitの陽性証拠とする。
-    const sameRowText = lines[markerIdx]
-      .replace(/^\s*(?:->|>|→)\s*/u, "")
-      .trim();
+    // Cursorは長いpasteを入力欄の先頭側だけ表示し、矢印の次行へ本文を折り返すことがある。
+    // 最新composerから下部statusを除いた領域にplaceholder以外の本文が残っていれば、
+    // 送信文の末尾が画面外でも未submitの陽性証拠とする。
+    const composerLines = lines.slice(markerIdx);
+    composerLines[0] = composerLines[0].replace(/^\s*(?:->|>|→)\s*/u, "");
+    while (composerLines.at(-1)?.trim() === "") composerLines.pop();
+    if (/^\s*\/\S.*\s·\s\S/u.test(composerLines.at(-1) ?? "")) composerLines.pop();
+    while (composerLines.at(-1)?.trim() === "") composerLines.pop();
+    if (/^\s*(?:Auto|Ask)(?:\s|·|$)/iu.test(composerLines.at(-1) ?? "")) composerLines.pop();
+    while (composerLines.at(-1)?.trim() === "") composerLines.pop();
+    const composerText = composerLines.join("\n").trim();
     if (
-      sameRowText.length > 0
-      && !/^(?:Add a follow-up|Plan,\s*search,\s*build anything)\b/iu.test(sameRowText)
+      composerText.length > 0
+      && !/^(?:Add a follow-up|Plan,\s*search,\s*build anything)\b/iu.test(composerText)
     ) return true;
   }
   return normalizeResidueText(lines.slice(markerIdx).join("")).includes(tail);
