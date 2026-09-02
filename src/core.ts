@@ -2892,6 +2892,31 @@ async function detectAgentSubmitResidue(name: string, kind: AgentKind, text: str
   return detectAgentSubmitResidueImpl(kind, text, () => captureScreen(name, AGENT_TUI_READY_LINES), sleep);
 }
 
+async function retryCursorSubmitIfResidueImpl(
+  kind: AgentKind,
+  residue: AgentSubmitResidueResult,
+  submit: () => void,
+  inspect: () => Promise<AgentSubmitResidueResult>,
+): Promise<AgentSubmitResidueResult> {
+  if (kind !== "cursor" || residue.residue !== true) return residue;
+  submit();
+  return inspect();
+}
+
+async function retryCursorSubmitIfResidue(
+  name: string,
+  kind: AgentKind,
+  text: string,
+  residue: AgentSubmitResidueResult,
+): Promise<AgentSubmitResidueResult> {
+  return retryCursorSubmitIfResidueImpl(
+    kind,
+    residue,
+    () => sendKey(name, "Enter", { preserveAgentOperation: true }),
+    () => detectAgentSubmitResidue(name, kind, text),
+  );
+}
+
 export interface CursorPromptVisibleResult {
   visible: boolean;
   samples: number;
@@ -3065,6 +3090,21 @@ export async function __testWaitCursorPromptVisible(
     opts,
   );
   return { ...result, sleeps };
+}
+
+export async function __testRetryCursorSubmitIfResidue(
+  kind: AgentKind,
+  first: AgentSubmitResidueResult,
+  second: AgentSubmitResidueResult,
+): Promise<{ result: AgentSubmitResidueResult; submits: number }> {
+  let submits = 0;
+  const result = await retryCursorSubmitIfResidueImpl(
+    kind,
+    first,
+    () => { submits++; },
+    async () => second,
+  );
+  return { result, submits };
 }
 
 export function __testSetAgentTuiReadyStableSamples(value: number | null): void {
@@ -3498,7 +3538,10 @@ export async function dispatchAgentTurn(
     await sleep(AGENT_SUBMIT_DELAY_MS);
   }
   sendKey(name, "Enter", { preserveAgentOperation: meta.kind === "claude" });
-  const residue = await detectAgentSubmitResidue(name, meta.kind, dispatchText);
+  let residue = await detectAgentSubmitResidue(name, meta.kind, dispatchText);
+  // Cursorはcomposerへの貼付反映後でも最初のEnterを取り落とすことがある。本文残留を
+  // 陽性観測した場合だけ同じEnterを一度再送し、再検査後も残る時は失敗として返す。
+  residue = await retryCursorSubmitIfResidue(name, meta.kind, dispatchText, residue);
   assertAgentSubmitDelivered(name, meta.kind, residue);
   return {
     schema: "aiterm.agent-dispatch.v1",

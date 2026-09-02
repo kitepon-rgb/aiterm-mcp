@@ -526,6 +526,19 @@ test("Cursor prompt反映待ち: 冷間起動で貼付表示が遅れても本�
   assert.deepEqual(result.sleeps, [100, 100]);
 });
 
+test("Cursor submit: Enter後もcomposerへ本文が残る時だけ同じEnterを一度再送する", async () => {
+  const first = { residue: true, samples: 3 };
+  const second = { residue: false, samples: 1 };
+  assert.deepEqual(
+    await core.__testRetryCursorSubmitIfResidue("cursor", first, second),
+    { result: second, submits: 1 },
+  );
+  assert.deepEqual(
+    await core.__testRetryCursorSubmitIfResidue("codex", first, second),
+    { result: first, submits: 0 },
+  );
+});
+
 test("agent dispatch: composer残留を成功receiptにしない", () => {
   assert.throws(
     () => core.__testAssertAgentSubmitDelivered("bot-bd860dba", "cursor", { residue: true, samples: 3 }),
