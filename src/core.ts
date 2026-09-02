@@ -2721,6 +2721,12 @@ function isAgentTuiActionRequired(kind: AgentKind, screen: string): boolean {
   return false;
 }
 
+function isClaudeWorkspaceTrustScreen(screen: string): boolean {
+  return screen.includes("Is this a project you created or one you trust")
+    && screen.includes("No, exit")
+    && screen.includes("Yes, I trust this folder");
+}
+
 async function waitAgentTuiReadyImpl(
   kind: AgentKind,
   sample: () => string,
@@ -2828,6 +2834,18 @@ function agentSubmitResidueOnScreen(kind: AgentKind, screen: string, tail: strin
     }
   }
   if (markerIdx < 0) return null;
+  if (kind === "cursor") {
+    // Cursorは長いpasteを入力欄の先頭側だけ表示することがあり、送信文の末尾一致では
+    // 座礁を検出できない。最新composerのmarkerと同じ行にplaceholder以外の本文が
+    // 残っていれば、その本文自体を未submitの陽性証拠とする。
+    const sameRowText = lines[markerIdx]
+      .replace(/^\s*(?:->|>|→)\s*/u, "")
+      .trim();
+    if (
+      sameRowText.length > 0
+      && !/^(?:Add a follow-up|Plan,\s*search,\s*build anything)\b/iu.test(sameRowText)
+    ) return true;
+  }
   return normalizeResidueText(lines.slice(markerIdx).join("")).includes(tail);
 }
 
@@ -3037,7 +3055,16 @@ export async function sendInitialAgentPrompt(
     );
   }
   setInitialPromptState(meta, "not_sent");
-  const ready = await waitAgentTuiReady(name, meta, o.ready_timeout ?? AGENT_TUI_READY_TIMEOUT_MS);
+  let ready = await waitAgentTuiReady(name, meta, o.ready_timeout ?? AGENT_TUI_READY_TIMEOUT_MS);
+  if (!ready.ready && meta.kind === "claude" && isClaudeWorkspaceTrustScreen(ready.lastScreen)) {
+    // BellTeam等からの無人起動では、Claudeのworkspace trustだけを起動処理の一部として
+    // 明示的に承認する。通常turn中の権限確認やMCP承認には触れない。
+    sendKey(name, "Down", { preserveAgentOperation: true });
+    await sleep(AGENT_SUBMIT_DELAY_MS);
+    sendKey(name, "Enter", { preserveAgentOperation: true });
+    await sleep(AGENT_SUBMIT_DELAY_MS);
+    ready = await waitAgentTuiReady(name, meta, o.ready_timeout ?? AGENT_TUI_READY_TIMEOUT_MS);
+  }
   if (!ready.ready) {
     // ready失敗は成功形で返さず明示エラーにする（実被弾 2026-08-25: Codexのupdate確認ダイアログで
     // 未送信のまま成功形receiptが返り、呼び出し側が40分気づけなかった）。sessionは調査/復旧用に残る。

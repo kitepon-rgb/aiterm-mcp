@@ -469,6 +469,37 @@ test("Cursor初回prompt座礁: 矢印と本文が同じ行に残る実画面を
   assert.equal(result.residue, true);
 });
 
+test("Cursor長文prompt座礁: 送信文の末尾が画面外でも本文入りcomposerを検出する", async () => {
+  const text = [
+    "AITERM_AGENT_LAUNCH_ID=long-prompt-test",
+    "BellTeamの共通規範とオーナー情報を含む長い起動文です。",
+    "最後にこの識別子だけを返してください。CURSOR_LONG_PROMPT_END",
+  ].join("\n");
+  const stranded = [
+    "Cursor Agent",
+    "→ 愛してくれる子が好き。クオの依頼には柔らかく返答する。",
+    "  共通規範の途中だけが画面に表示され、末尾は表示領域外にある。",
+    "Auto · 7.8%",
+    "/srv/bellteam/bots/bot-1788dc47 · master",
+  ].join("\n");
+  const result = await core.__testDetectAgentSubmitResidue("cursor", text, [stranded], { maxSamples: 2 });
+  assert.equal(result.residue, true);
+  assert.equal(result.samples, 2);
+});
+
+test("Cursor submit座礁観測: 空のfollow-up placeholderは残留本文にしない", async () => {
+  const text = "この依頼を実行して結果を返してください。CURSOR_PLACEHOLDER_TEST";
+  const idle = [
+    "Cursor Agent",
+    "処理は完了しました。",
+    "→ Add a follow-up",
+    "Auto · 7.8%",
+    "/srv/bellteam/bots/bot-1788dc47 · master",
+  ].join("\n");
+  const result = await core.__testDetectAgentSubmitResidue("cursor", text, [idle], { maxSamples: 1 });
+  assert.equal(result.residue, false);
+});
+
 test("agent dispatch: composer残留を成功receiptにしない", () => {
   assert.throws(
     () => core.__testAssertAgentSubmitDelivered("bot-bd860dba", "cursor", { residue: true, samples: 3 }),
