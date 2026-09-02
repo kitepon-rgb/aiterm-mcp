@@ -364,6 +364,7 @@ export function buildCodexAgentCmd(
   // `codex --help` で確認した実在フラグ。read-only 宣言だけはCLI sandboxへ落とし、
   // launcher自身が実効能力壁を作る。パス説明はCodex CLIに同等のallowlist引数がないため宣言のまま残す。
   if (meta?.kind === "codex" && meta.write_scope === "read-only") parts.push("--sandbox", "read-only");
+  if (meta?.kind === "codex") parts.push("-c", "check_for_update_on_startup=false");
   // model/effort は共有configを書き換えず、CLI引数で明示して起動単位に優先する。
   if (model) parts.push("-m", shq(model));
   if (effort) parts.push("-c", `model_reasoning_effort=${shq(effort)}`);

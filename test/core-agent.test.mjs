@@ -1038,6 +1038,7 @@ test("target contract: Codexは通常CODEX_HOMEを共有しsub-agent lineageだ�
       assert.equal(fs.readFileSync(configPath, "utf8"), configBefore, "通常configを書き換えない");
       const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
       assert.doesNotMatch(out, /CODEX_HOME=/, "通常CODEX_HOMEを置換しない");
+      assert.match(out, /-c\s+check_for_update_on_startup=false/);
       assert.match(out, /developer_instructions=/);
       assert.match(out, /AITERM_AGENT_R\s*OLE='subagent'/);
       assert.match(out, /AITERM_AGENT_DEPTH='1'/);
@@ -1347,6 +1348,7 @@ test("openAgent claude agent_done: 通常settingsへStop hookとlineageを追加
     assert.equal(settings.hooks.Stop[0].hooks[0].command.includes(process.execPath), false, "版付きnode実体を焼き付けない");
     const out = await core.readOutput(sid, { wait: true, timeout: 5, raw: true });
     assert.match(out, /--setting-sources\s+user,project,local\s+--settings/);
+    assert.match(out, /--dangerously-skip-permissions/);
     assert.match(out, /--settings/);
     assert.doesNotMatch(out, /--mcp-config/, "user MCP未登録ならflagを渡さない");
     assert.match(out, /--model\s+claude-sonnet-4-6/);

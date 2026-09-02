@@ -213,6 +213,7 @@ export function buildClaudeAgentCmd(
   const parts: string[] = [shq(bin)];
   if (meta?.kind === "claude") {
     parts.push(
+      "--dangerously-skip-permissions",
       "--setting-sources",
       shq("user,project,local"),
       "--settings",

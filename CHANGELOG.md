@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.23] - 2026-09-02
+
+### Changed
+
+- Disable Codex startup update checks for centrally managed agents and launch managed Claude agents without interactive permission or workspace-trust prompts.
+
 ## [0.29.22] - 2026-09-02
 
 ### Fixed
@@ -1481,7 +1487,8 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.22...HEAD
+[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.23...HEAD
+[0.29.23]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.22...v0.29.23
 [0.29.22]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.21...v0.29.22
 [0.29.21]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.20...v0.29.21
 [0.29.20]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.19...v0.29.20
