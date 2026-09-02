@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.25] - 2026-09-02
+
+### Fixed
+
+- 無人Claude起動時に最初だけ表示されるBypass Permissions確認を進め、続くworkspace trust確認と初回promptまで一度の起動で完了する。
+
 ## [0.29.24] - 2026-09-02
 
 ### Fixed
@@ -1494,7 +1500,8 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.24...HEAD
+[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.25...HEAD
+[0.29.25]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.24...v0.29.25
 [0.29.24]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.23...v0.29.24
 [0.29.23]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.22...v0.29.23
 [0.29.22]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.21...v0.29.22

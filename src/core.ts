@@ -2716,7 +2716,8 @@ function isAgentTuiActionRequired(kind: AgentKind, screen: string): boolean {
   if (kind === "claude") {
     return /new MCP servers? found in this project/iu.test(screen)
       || screen.includes("Is this a project you created or one you trust")
-      || screen.includes("trust this folder");
+      || screen.includes("trust this folder")
+      || (screen.includes("Claude Code running in Bypass Permissions mode") && screen.includes("Yes, I accept"));
   }
   return false;
 }
@@ -2725,6 +2726,16 @@ function isClaudeWorkspaceTrustScreen(screen: string): boolean {
   return screen.includes("Is this a project you created or one you trust")
     && screen.includes("No, exit")
     && screen.includes("Yes, I trust this folder");
+}
+
+function isClaudeBypassPermissionsScreen(screen: string): boolean {
+  return screen.includes("Claude Code running in Bypass Permissions mode")
+    && screen.includes("No, exit")
+    && screen.includes("Yes, I accept");
+}
+
+function isClaudeManagedLaunchConfirmation(screen: string): boolean {
+  return isClaudeWorkspaceTrustScreen(screen) || isClaudeBypassPermissionsScreen(screen);
 }
 
 async function waitAgentTuiReadyImpl(
@@ -3056,9 +3067,13 @@ export async function sendInitialAgentPrompt(
   }
   setInitialPromptState(meta, "not_sent");
   let ready = await waitAgentTuiReady(name, meta, o.ready_timeout ?? AGENT_TUI_READY_TIMEOUT_MS);
-  if (!ready.ready && meta.kind === "claude" && isClaudeWorkspaceTrustScreen(ready.lastScreen)) {
-    // BellTeam等からの無人起動では、Claudeのworkspace trustだけを起動処理の一部として
-    // 明示的に承認する。通常turn中の権限確認やMCP承認には触れない。
+  // 無人Claude起動でCLI自身が順に出す、bypass mode確認とworkspace trustだけを
+  // 起動処理の一部として進める。通常turn中の権限確認やMCP承認には触れない。
+  for (
+    let confirmations = 0;
+    !ready.ready && meta.kind === "claude" && confirmations < 3 && isClaudeManagedLaunchConfirmation(ready.lastScreen);
+    confirmations++
+  ) {
     sendKey(name, "Down", { preserveAgentOperation: true });
     await sleep(AGENT_SUBMIT_DELAY_MS);
     sendKey(name, "Enter", { preserveAgentOperation: true });

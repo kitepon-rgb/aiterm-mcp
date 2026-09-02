@@ -418,6 +418,9 @@ function makeFakeClaudeTrustTuiBin() {
       "  printf '%s\\n' '{\"loggedIn\":true,\"authMethod\":\"claude.ai\",\"apiProvider\":\"firstParty\"}'",
       "  exit 0",
       "fi",
+      "printf '%s\\n' 'WARNING: Claude Code running in Bypass Permissions mode' '❯ No, exit' '  Yes, I accept' 'Enter to confirm · Esc to cancel'",
+      "IFS= read -r bypass_response",
+      "printf 'BYPASS_ACCEPTED:%s\\n' \"$bypass_response\"",
       "printf '%s\\n' 'Claude Code v2.1.251' 'Accessing workspace:' 'Is this a project you created or one you trust?' \"Claude Code'll be able to read, edit, and execute files here.\" '❯ No, exit' '  Yes, I trust this folder' 'Enter to confirm · Esc to cancel'",
       "IFS= read -r trust_response",
       "printf 'TRUST_ACCEPTED:%s\\n' \"$trust_response\"",
@@ -2458,7 +2461,7 @@ test("openAgentWithInitialPrompt: TUI ready 失敗は明示エラーにし promp
   });
 });
 
-test("openAgentWithInitialPrompt: Claude workspace trust UIを承認して初回promptを送る", { skip: skipAgentDone }, async () => {
+test("openAgentWithInitialPrompt: Claudeの無人起動確認とworkspace trustを順に承認して初回promptを送る", { skip: skipAgentDone }, async () => {
   const savedBin = process.env.CLAUDE_BIN;
   const fakeBin = makeFakeClaudeTrustTuiBin();
   const sid = `claude_trust_${Date.now().toString(36)}`;
@@ -2476,6 +2479,7 @@ test("openAgentWithInitialPrompt: Claude workspace trust UIを承認して初回
     assert.equal(fs.statSync(meta.event_file).size, 0, "completion eventを偽造しない");
     assert.equal(fs.statSync(meta.result_file).size, 0, "Claude resultを偽造しない");
     const screen = await core.readOutput(sid, { screen: true, raw: true });
+    assert.match(screen, /BYPASS_ACCEPTED:/);
     assert.match(screen, /TRUST_ACCEPTED:/);
     assert.match(screen, new RegExp(marker));
   } finally {
