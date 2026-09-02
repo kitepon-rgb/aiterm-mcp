@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.21] - 2026-09-02
+
+### Fixed
+
+- Detect Cursor prompts left in the composer when the arrow and first prompt line share one row, and fail dispatch instead of returning a successful receipt for text that was not submitted.
+
 ## [0.29.20] - 2026-09-01
 
 ### Changed
@@ -1469,7 +1475,8 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.20...HEAD
+[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.21...HEAD
+[0.29.21]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.20...v0.29.21
 [0.29.20]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.19...v0.29.20
 [0.29.19]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.18...v0.29.19
 [0.29.18]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.17...v0.29.18

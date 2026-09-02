@@ -437,6 +437,33 @@ test("Cursor初回prompt座礁: 現行の矢印composerに残った復元文を�
   assert.equal(result.residue, true);
 });
 
+test("Cursor初回prompt座礁: 矢印と本文が同じ行に残る実画面を検出する", async () => {
+  const text = [
+    "GitHub: https://github.com/quolu",
+    "[BellTeam owner profile]",
+    "これはBellTeamが現在の正本から添付したオーナー情報です。古い記憶よりこの内容を優先してください。",
+  ].join("\n");
+  const stranded = [
+    "Cursor Agent",
+    "→ GitHub: https://github.com/quolu",
+    "  [BellTeam owner profile]",
+    "  これはBellTeamが現在の正本から添付したオーナー情報です。古い記憶よりこの内容を優先してください。",
+    "Auto",
+  ].join("\n");
+  const result = await core.__testDetectAgentSubmitResidue("cursor", text, [stranded], { maxSamples: 1 });
+  assert.equal(result.residue, true);
+});
+
+test("agent dispatch: composer残留を成功receiptにしない", () => {
+  assert.throws(
+    () => core.__testAssertAgentSubmitDelivered("bot-bd860dba", "cursor", { residue: true, samples: 3 }),
+    /submit_residue=true/,
+  );
+  assert.doesNotThrow(() =>
+    core.__testAssertAgentSubmitDelivered("bot-bd860dba", "cursor", { residue: false, samples: 1 }),
+  );
+});
+
 // tmuxSpawnEnv: C/POSIX/未設定 locale だけに UTF-8 LC_CTYPE を注入する（実挙動の破壊は
 // caveat tmux-3-7b-list-sessions-f が正。server 側入力破壊・client 側 format タブ "_" 化の対策）。
 function withLocaleEnv(vars, fn) {

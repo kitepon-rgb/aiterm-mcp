@@ -145,7 +145,7 @@ import {
   cursorLaunchNote,
   cursorEffortNavigation,
   cursorTuiReady,
-  CURSOR_COMPOSER_MARKER_RE,
+  CURSOR_COMPOSER_CONTENT_MARKER_RE,
   validateCursorModelEffort,
 } from "./harnesses/cursor.js";
 import { resolveAgentBin, spawnAgentControlCommand, resolveThroughlineBin, runThroughlineHandoffContext, isUsableExecutableFile, isWindowsNativeExecutable, isUsableAgentExecutableFile, agentBinForPaneShell, resolveWinPaneShell } from "./agent-resolver.js";
@@ -2819,7 +2819,7 @@ function agentSubmitResidueOnScreen(kind: AgentKind, screen: string, tail: strin
     : kind === "claude"
       ? CLAUDE_COMPOSER_MARKER_RE
       : kind === "cursor"
-        ? CURSOR_COMPOSER_MARKER_RE
+        ? CURSOR_COMPOSER_CONTENT_MARKER_RE
         : GROK_COMPOSER_MARKER_RE;
   let markerIdx = -1;
   for (let i = lines.length - 1; i >= 0; i--) {
@@ -2870,6 +2870,23 @@ export function agentSubmitResidueWarning(name: string, residue: boolean | null)
     `pty_read(${name}, screen:true) で状態を確認してから、座礁していれば pty_key(${name}, "Enter") で再 submit、` +
     `破棄するなら pty_key(${name}, "Escape") を使う。盲目的に Enter を送らない（queued だった場合の二重 submit 防止）。`
   );
+}
+
+function assertAgentSubmitDelivered(name: string, kind: AgentKind, residue: AgentSubmitResidueResult): void {
+  if (kind !== "cursor" || residue.residue !== true) return;
+  throw new AitermError(
+    `submit_residue=true vendor=${kind} session=${name}\n` +
+      "送信 text がcomposerへ残っており、turnを開始できませんでした。",
+    2,
+  );
+}
+
+export function __testAssertAgentSubmitDelivered(
+  name: string,
+  kind: AgentKind,
+  residue: AgentSubmitResidueResult,
+): void {
+  assertAgentSubmitDelivered(name, kind, residue);
 }
 
 async function settleAgentDoneScreenImpl(
@@ -3063,6 +3080,12 @@ export async function sendInitialAgentPrompt(
         2,
       );
     }
+  }
+  try {
+    assertAgentSubmitDelivered(name, meta.kind, residue);
+  } catch (e) {
+    setInitialPromptState(meta, "failed");
+    throw e;
   }
   return {
     text:
@@ -3359,6 +3382,7 @@ export async function dispatchAgentTurn(
   await sleep(AGENT_SUBMIT_DELAY_MS);
   sendKey(name, "Enter", { preserveAgentOperation: meta.kind === "claude" });
   const residue = await detectAgentSubmitResidue(name, meta.kind, dispatchText);
+  assertAgentSubmitDelivered(name, meta.kind, residue);
   return {
     schema: "aiterm.agent-dispatch.v1",
     session_id: meta.aiterm_session,

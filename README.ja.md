@@ -153,7 +153,7 @@ runtime-error store は canonical dotagents config の `collection.enabled: true
 場合だけ収集し、既定OFF、network送信は行いません。tag起点CIのnpm provenance（OIDC Trusted
 Publishing）で公開し、GitHub Release が Official MCP Registry を再登録します。
 
-**状態:** 開発継続中 · 現行公開版 **v0.29.20** · 動作対象は Linux · WSL2 · macOS · Windows ネイティブ · MIT · [変更履歴](CHANGELOG.md)。
+**状態:** 開発継続中 · 現行公開版 **v0.29.21** · 動作対象は Linux · WSL2 · macOS · Windows ネイティブ · MIT · [変更履歴](CHANGELOG.md)。
 
 ### 更新と巻き戻し
 
@@ -187,7 +187,7 @@ pty_read(id, { wait: true })       → 削減済みの出力を読む（完了�
 
 同じprimitiveが別エージェントのTUIを宿す。`agent_launch`の`harness`はagent loop・認証・hook・session・transcriptを所有する実行基盤、`model`は独立した選択。起動processは直接CLIと同じproject/user環境を使い、通常config、MCP、plugin、skill、permission、trust、memory、historyをcopy・filter・置換しない。
 
-`aiterm.agent-launch-result.v1`は正規`harness`を返し、旧`provider`は互換fieldとして残す。同じ`harness`はagent dispatch、`aiterm-wait`、`agent_configure`、`pty_list`のagent行にも載り、旧vendor／provider／agent fieldは互換用に残る。Codexは通常rollout、Grok CLIは通常session event、Claudeはlaunch固有Stop hook、Cursorは通常agent transcript末尾の`turn_ended`を完了正本に使う。`pty_send`は非ブロックdispatchで、vendor別完了境界を表すopaqueな整数`event_cursor`を返し、完了通知は`aiterm-wait`を親のターンを塞がない別processで受ける。
+`aiterm.agent-launch-result.v1`は正規`harness`を返し、旧`provider`は互換fieldとして残す。同じ`harness`はagent dispatch、`aiterm-wait`、`agent_configure`、`pty_list`のagent行にも載り、旧vendor／provider／agent fieldは互換用に残る。Codexは通常rollout、Grok CLIは通常session event、Claudeはlaunch固有Stop hook、Cursorは通常agent transcript末尾の`turn_ended`を完了正本に使う。`pty_send`は非ブロックdispatchで、vendor別完了境界を表すopaqueな整数`event_cursor`を返し、完了通知は`aiterm-wait`を親のターンを塞がない別processで受ける。送信textがCursorのcomposerへ残った場合は成功receiptを返さず失敗する。
 
 `agent_launch`は任意の`write_scope`も受ける。Codex／Grokのread-onlyは`--sandbox read-only`、Cursorは公式`--mode ask`で実効化する。path説明は同等CLI引数がないためdeclaration-only。
 

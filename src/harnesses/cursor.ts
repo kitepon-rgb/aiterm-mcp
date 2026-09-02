@@ -447,6 +447,9 @@ export function cursorLaunchNote(model: string | null, effort: string | null, me
 }
 
 export const CURSOR_COMPOSER_MARKER_RE = /(?:^|\n)\s*(?:>|→|->)\s*(?:\n|$)/m;
+// 送信後の残留検出では、本文が矢印と同じ行に残る現行UIもcomposerとして扱う。
+// ready判定には使わない。本文入りcomposerを入力待ちと誤認させないため。
+export const CURSOR_COMPOSER_CONTENT_MARKER_RE = /^\s*(?:->|>|→)(?:\s|$)/;
 const CURSOR_FOLLOWUP_MARKER_RE = /(?:^|\n)\s*(?:→|->)\s*Add a follow-up\b/im;
 const CURSOR_START_PROMPT_MARKER_RE = /(?:^|\n)\s*(?:→|->)\s*Plan,\s*search,\s*build anything\s*(?:\n|$)/im;
 
