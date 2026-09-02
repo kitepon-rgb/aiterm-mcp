@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.29.29] - 2026-09-02
+## [0.29.30] - 2026-09-02
+
+### Fixed
+
+- 起動直後のClaude Codeへの初回dispatchが入力受付gateを素通りし、composer描画前に届いた貼付本文だけが残ってEnterが失われる競合を直した。完了eventも進行中turnもないClaude sessionは他harnessと同じready gateを通してから送信する。
+
 
 ### Fixed
 
@@ -1524,7 +1529,8 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.29...HEAD
+[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.30...HEAD
+[0.29.30]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.29...v0.29.30
 [0.29.29]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.28...v0.29.29
 [0.29.28]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.27...v0.29.28
 [0.29.27]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.26...v0.29.27

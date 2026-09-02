@@ -3505,7 +3505,14 @@ export async function dispatchAgentTurn(
   // Codex/Grok/Composerはbind済みのfollow-upでも毎回idleを確認してからtranscript境界を切る。
   // Grok/Composerはsession IDが起動前から既知でも、共有MCPの初期化完了前には送信しない。
   // 同じcursorへ複数turnを帰属させる余地や、初期化中TUIへの早送信を作らない。
-  if (meta.kind !== "claude" || !meta.vendor_session_id) {
+  // Claudeはsession IDを起動時に採番するため「bind済み」では初回を区別できず、起動直後の
+  // dispatchがready gateを素通りしていた。composer描画前に貼付とEnterが届くと起動時の一塊の
+  // 入力として読まれ、本文だけがcomposerへ残る（実被弾 2026-09-02: 停止中Botへの初回配送）。
+  // 完了eventも進行中turnもないClaude sessionだけを起動直後とみなし、他harnessと同じgateを通す。
+  const claudeColdStart = meta.kind === "claude"
+    && agentCompletionCursor(meta) === 0
+    && readClaudeOperationMarker(meta) === null;
+  if (meta.kind !== "claude" || claudeColdStart) {
     const ready = await waitAgentTuiReady(name, meta, o.ready_timeout ?? AGENT_TUI_READY_TIMEOUT_MS);
     if (!ready.ready) {
       throw new AitermError(

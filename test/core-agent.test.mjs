@@ -3020,6 +3020,24 @@ test("dispatchAgentTurn: agent TUI ready 前は送信前に拒否し文字を流
   });
 });
 
+test("dispatchAgentTurn: 起動直後のClaudeはcomposer描画前に送信せず、初回dispatchもready gateを通す", { skip: skipAgentDone }, async () => {
+  const [sid] = core.openAgent("claude", { agent_done: true });
+  try {
+    await assert.rejects(
+      () => core.dispatchAgentTurn(sid, "CLAUDE_COLD_START_PROMPT", { ready_timeout: 0 }),
+      (e) => e.code === 2 && /入力受付状態/.test(e.message),
+    );
+    const out = await core.readOutput(sid, { screen: true, raw: true });
+    assert.doesNotMatch(out, /CLAUDE_COLD_START_PROMPT/);
+    await markFakeAgentReady(sid, "claude");
+    const receipt = await core.dispatchAgentTurn(sid, "CLAUDE_COLD_START_PROMPT", { ready_timeout: 1000 });
+    assert.equal(receipt.harness, "claude-code");
+    assert.match(fs.readFileSync(sessionLogPath(sid), "utf8"), /CLAUDE_COLD_START_PROMPT/);
+  } finally {
+    core.closeSession(sid);
+  }
+});
+
 test("steerAgentTurn: 実行中のCodexへ現在ターンの追加メッセージを送る", { skip: skipAgentDone }, async () => {
   await withFakeCodexHome(async () => {
     const [sid] = core.openAgent("codex", { agent_done: true });
