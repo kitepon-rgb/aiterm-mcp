@@ -1,0 +1,28 @@
+{
+  "decision_evidence": {
+    "anchor_digest": null,
+    "content_digest": "77a8a4d9bf757a9f171805e01e4d994a5a42aa7e36582a6a7534f83fd6c061ac",
+    "evidence_id": "aiterm-0.29.25-release-acceptance",
+    "git_blob_oid": "9e2aceaa9143d67327ab66e5b4a737f5e76d2cae",
+    "media_type": "text/markdown",
+    "path": "docs/adr/0050-release-0.29.25-acceptance.md",
+    "repo_id": "self"
+  },
+  "evidence_slots": [
+    {
+      "evidence": {
+        "anchor_digest": null,
+        "content_digest": "77a8a4d9bf757a9f171805e01e4d994a5a42aa7e36582a6a7534f83fd6c061ac",
+        "evidence_id": "aiterm-0.29.25-release-acceptance",
+        "git_blob_oid": "9e2aceaa9143d67327ab66e5b4a737f5e76d2cae",
+        "media_type": "text/markdown",
+        "path": "docs/adr/0050-release-0.29.25-acceptance.md",
+        "repo_id": "self"
+      },
+      "slot_id": "terminal-audit"
+    }
+  ],
+  "input_digest": "0f84b7fb52c07f28cf105daedf804dbeb41368d5917e78539acc15b72fcbecc1",
+  "review_event_digest": "332438f446659a9a7a46d65930c57996c65d13ee3dd8673de7d859687f639373",
+  "schema": "lattice.phase_accept_input.v1"
+}
