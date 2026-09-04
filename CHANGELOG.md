@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.31] - 2026-09-04
+
 ### Fixed
 
 - agent session への打鍵前に、pane tty 上の agent が前面プロセスグループでなければ `fg` で前面へ戻し、tty が cooked（icanon/echo）なら `raw -echo` へ戻してから送る（`pty_send` dispatch・起動時 prompt・`agent_steer`）。Codex 0.153 はツール実行後に前面を bash へ返したまま動き続ける／termios を cooked のまま残すことがあり、貼付本文が bash に落ちて `^[[200~` が生で残っていた（実測 2026-09-04）。dispatch receipt に `pane_input_recovery` を追加。判定は `ps -t` の STAT と `stty -a` だけを使う。
@@ -1538,7 +1540,8 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.30...HEAD
+[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.31...HEAD
+[0.29.31]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.30...v0.29.31
 [0.29.30]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.29...v0.29.30
 [0.29.29]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.28...v0.29.29
 [0.29.28]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.27...v0.29.28
