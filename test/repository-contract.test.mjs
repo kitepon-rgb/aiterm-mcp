@@ -8,6 +8,8 @@ import {
   documentTargets,
 } from '../scripts/markdown-pack-contract.mjs';
 
+// npm 12 は `npm pack --json` を package 名を key にした object で返す（npm 11 までは配列）。両方を受ける。
+const packedEntry = (packed) => (Array.isArray(packed) ? packed[0] : Object.values(packed)[0]);
 const execFileAsync = promisify(execFile);
 const root = new URL('..', import.meta.url);
 
@@ -17,7 +19,7 @@ test('npm pack内の全Markdownは相対linkと画像をpack内だけで解決�
     ['pack', '--dry-run', '--ignore-scripts', '--json'],
     { cwd: root, maxBuffer: 16 * 1024 * 1024, shell: process.platform === 'win32' },
   );
-  const files = new Set(JSON.parse(stdout)[0].files.map((file) => file.path));
+  const files = new Set(packedEntry(JSON.parse(stdout)).files.map((file) => file.path));
   const markdownFiles = [...files].filter((path) => path.endsWith('.md'));
   assert.ok(markdownFiles.length > 0, 'npm packにMarkdownが含まれていません');
 

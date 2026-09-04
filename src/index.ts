@@ -176,6 +176,8 @@ server.registerTool(
       // dispatch後のsubmit座礁観測（additive）。true=composerに送信textの残存を確認（submit未成立の疑い）/
       // false=残存を観測せず（成立の保証ではない）/ null=通常送信・判定不能。
       submit_residue: z.boolean().nullable(),
+      // dispatch前に行った pane 入力の回復（"fg" / "fg_stopped" / "stty_raw"）。通常送信では省略（additive）。
+      pane_input_recovery: z.array(z.string()).optional(),
     },
   },
   async ({ session_id, text, enter, mark, force, rtk, raw }) => {
@@ -206,6 +208,7 @@ server.registerTool(
             vendor: receipt.vendor,
             harness: receipt.harness,
             submit_residue: receipt.submit_residue,
+            pane_input_recovery: receipt.pane_input_recovery,
           },
         };
       }

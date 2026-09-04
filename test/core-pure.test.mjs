@@ -693,3 +693,37 @@ test("agentWaitGuide: 復旧案内は取りこぼしゼロの --cursor 0 を維�
   assert.match(guide, /親はここで待たない/, "復旧経路でも親を待たせない");
   assert.match(guide, /outcome=done/, "exit≠完了の判定基準を示す");
 });
+
+// ---------------------------------------------------------------- pane 入力の到達性（Codex 0.153 実測 2026-09-04）
+test("classifyPaneTtyProcesses: bash が前面(+)で codex が背面(S)なら agent 在席・非前面", () => {
+  const ps = [
+    "Ss+  bash",
+    "S    node /Users/kite/.local/bin/codex -c check_for_update_on_startup=false -m gpt-5.6-terra",
+    "S    /opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex -c x",
+    "S    node /Users/kite/Developer/peertable/room/client.mjs",
+  ].join("\n");
+  assert.deepEqual(core.classifyPaneTtyProcesses(ps), {
+    agentPresent: true, agentForeground: false, agentStopped: false, foregroundShell: "bash",
+  });
+});
+test("classifyPaneTtyProcesses: codex が前面(S+)なら回復不要", () => {
+  const ps = "Ss   bash\nS+   node /Users/kite/.local/bin/codex -c a\nS+   /x/bin/codex -c b\nS    node ./mcp/server.mjs";
+  assert.deepEqual(core.classifyPaneTtyProcesses(ps), {
+    agentPresent: true, agentForeground: true, agentStopped: false, foregroundShell: null,
+  });
+});
+test("classifyPaneTtyProcesses: 停止(T)した agent は stopped、agent 不在は present=false", () => {
+  assert.equal(core.classifyPaneTtyProcesses("Ss+  bash\nT    node /x/codex").agentStopped, true);
+  assert.deepEqual(core.classifyPaneTtyProcesses("Ss+  bash\n"), {
+    agentPresent: false, agentForeground: false, agentStopped: false, foregroundShell: "bash",
+  });
+  assert.equal(core.classifyPaneTtyProcesses("").agentPresent, false);
+});
+test("termiosIsCooked: icanon/echo が有効なら cooked、-icanon -echo なら raw", () => {
+  const cooked = "speed 9600 baud; 24 rows; 80 columns;\nlflags: icanon isig iexten echo echoe -echok echoke -echonl echoctl\n\t-echoprt -altwerase -noflsh -tostop -flusho -pendin -nokerninfo";
+  const raw = "speed 9600 baud; 24 rows; 80 columns;\nlflags: -icanon -isig -iexten -echo -echoe -echok -echoke -echonl -echoctl\n\t-echoprt -altwerase -noflsh -tostop -flusho -pendin -nokerninfo";
+  assert.equal(core.termiosIsCooked(cooked), true);
+  assert.equal(core.termiosIsCooked(raw), false);
+  // echoe / echoke は echo ではない
+  assert.equal(core.termiosIsCooked("lflags: -icanon -echo echoe echoke"), false);
+});
