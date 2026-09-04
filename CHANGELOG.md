@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-09-04
+
 ### Fixed
 
 - Claude Codeのturnが529 Overloaded等のAPIエラーで打ち切られるとStop hookが走らず、`aiterm-wait`が永久に未完了を返し続けていた（実被弾 2026-09-03: BellTeamのClaude席で70分の待機）。会話記録（`<config dir>/projects/<cwd slug>/<session-id>.jsonl`）に観測開始後に増えた`isApiErrorMessage:true`の行を読み、新しいoutcome `error`（exit 7、`error`にエラー本文）で返す。
@@ -1551,7 +1553,8 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.30.0...HEAD
+[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.31.0...HEAD
+[0.31.0]: https://github.com/kitepon/aiterm-mcp/compare/v0.30.0...v0.31.0
 [0.30.0]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.31...v0.30.0
 [0.29.31]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.30...v0.29.31
 [0.29.30]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.29...v0.29.30
