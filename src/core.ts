@@ -273,19 +273,45 @@ export interface PaneTtyProcessState {
   agentPresent: boolean;
   agentForeground: boolean;
   agentStopped: boolean;
+  /** agent 以外の非 shell プロセス（agent が起動したツール等）が前面（+）に居る。触らない合図。 */
+  toolForeground: boolean;
   foregroundShell: string | null;
 }
 
-/** `ps -t <tty> -o stat=,command=` の出力を分類する（純粋関数）。 */
-export function classifyPaneTtyProcesses(psOutput: string): PaneTtyProcessState {
-  const state: PaneTtyProcessState = { agentPresent: false, agentForeground: false, agentStopped: false, foregroundShell: null };
+// harness の実プロセスを command 行から見分ける。agent が起動した子（bash -lc、ssh、git 等）は agent ではない。
+const AGENT_COMMAND_PATTERNS: Record<AgentKind, RegExp> = {
+  codex: /(^|[\s/])codex([\s]|$)/,
+  claude: /(^|[\s/])claude([\s]|$)/,
+  grok: /(^|[\s/])grok(-[^\s/]+)?([\s]|$)/,
+  composer: /(^|[\s/])(composer|grok(-[^\s/]+)?)([\s]|$)/,
+  cursor: /(^|[\s/])(cursor-agent|agent)([\s]|$)/,
+};
+
+/**
+ * `ps -t <tty> -o stat=,command=` の出力を分類する（純粋関数）。
+ * ログイン shell は command が `-zsh` のように先頭 `-` 付きで出るので剥がして判定する。
+ */
+export function classifyPaneTtyProcesses(psOutput: string, agentPattern: RegExp = /./): PaneTtyProcessState {
+  const state: PaneTtyProcessState = {
+    agentPresent: false, agentForeground: false, agentStopped: false, toolForeground: false, foregroundShell: null,
+  };
   for (const raw of psOutput.split("\n")) {
     const m = raw.trim().match(/^(\S+)\s+(.*)$/);
     if (!m) continue;
     const stat = m[1];
-    const base = (m[2].split(/\s+/, 1)[0] ?? "").split("/").pop() ?? "";
+    const command = m[2];
+    const base = ((command.split(/\s+/, 1)[0] ?? "").split("/").pop() ?? "").replace(/^-/, "");
     if (PANE_TTY_SHELLS.has(base)) {
-      if (stat.includes("+")) state.foregroundShell = base;
+      // session leader（STAT の `s`）が pane の login shell。agent が起動した子 shell（`bash -lc …`）は
+      // `s` を持たない。前面の子 shell は「ツール実行中」であり、fg も stty も触らない。
+      if (stat.includes("+")) {
+        if (stat.includes("s")) state.foregroundShell = base;
+        else state.toolForeground = true;
+      }
+      continue;
+    }
+    if (!agentPattern.test(command)) {
+      if (stat.includes("+")) state.toolForeground = true;
       continue;
     }
     state.agentPresent = true;
@@ -313,7 +339,7 @@ function paneTtyOf(name: string): string | null {
  * 戻り値は行った回復（"fg" / "fg_stopped" / "stty_raw"）。何もしなければ空。
  * agent が tty 上に実在しない時は触らない（ready gate が入力受付不能として止める）。
  */
-export async function ensureAgentOwnsPaneInput(name: string): Promise<string[]> {
+export async function ensureAgentOwnsPaneInput(name: string, kind: AgentKind): Promise<string[]> {
   if (isWin) return [];
   const tty = paneTtyOf(name);
   if (!tty) return [];
@@ -322,9 +348,12 @@ export async function ensureAgentOwnsPaneInput(name: string): Promise<string[]> 
   const observe = (): PaneTtyProcessState =>
     classifyPaneTtyProcesses(
       spawnSync("/bin/ps", ["-t", ttyId, "-o", "stat=,command="], { encoding: "utf8", timeout: 5000, env: psEnv }).stdout ?? "",
+      AGENT_COMMAND_PATTERNS[kind],
     );
   const recovery: string[] = [];
   let state = observe();
+  // agent が起動したツール／子 shell が前面なら、その tty 状態はツールの物。fg も stty も触らず ready gate に任せる。
+  if (state.toolForeground) return [];
   if (state.agentPresent && !state.agentForeground) {
     const wasStopped = state.agentStopped;
     tmux("send-keys", "-t", name, "C-u");
@@ -346,10 +375,12 @@ export async function ensureAgentOwnsPaneInput(name: string): Promise<string[]> 
     }
     recovery.push(wasStopped ? "fg_stopped" : "fg");
   }
-  if (state.agentPresent) {
-    const stty = spawnSync("/bin/stty", ["-f", tty, "-a"], { encoding: "utf8", timeout: 5000, env: psEnv });
+  if (state.agentPresent && !state.toolForeground) {
+    // 別 tty を指す flag は macOS/BSD が `-f`、Linux（coreutils）が `-F`。OS 差はここ一箇所で吸収する。
+    const ttyFlag = process.platform === "linux" ? "-F" : "-f";
+    const stty = spawnSync("/bin/stty", [ttyFlag, tty, "-a"], { encoding: "utf8", timeout: 5000, env: psEnv });
     if (stty.status === 0 && termiosIsCooked(stty.stdout ?? "")) {
-      const set = spawnSync("/bin/stty", ["-f", tty, "raw", "-echo"], { encoding: "utf8", timeout: 5000, env: psEnv });
+      const set = spawnSync("/bin/stty", [ttyFlag, tty, "raw", "-echo"], { encoding: "utf8", timeout: 5000, env: psEnv });
       if (set.status !== 0) {
         throw new AitermError(
           `AGENT_TTY_COOKED session=${name}\n` +
@@ -3293,7 +3324,7 @@ export async function sendInitialAgentPrompt(
   setInitialPromptState(meta, "not_sent");
   // 起動直後の hooks 実行で bash が前面に残ると ready gate が恒久 false になり、brief 未送信で
   // 席が巻き戻る（実測 2026-09-04: Codex 0.153 の初回起動が3回中2回）。打鍵の前に前面と raw を整える。
-  await ensureAgentOwnsPaneInput(name);
+  await ensureAgentOwnsPaneInput(name, meta.kind);
   let ready = await waitAgentTuiReady(name, meta, o.ready_timeout ?? AGENT_TUI_READY_TIMEOUT_MS);
   // 無人Claude起動でCLI自身が順に出す、bypass mode確認とworkspace trustだけを
   // 起動処理の一部として進める。通常turn中の権限確認やMCP承認には触れない。
@@ -3623,7 +3654,7 @@ export async function dispatchAgentTurn(
   const claudeColdStart = meta.kind === "claude"
     && agentCompletionCursor(meta) === 0
     && readClaudeOperationMarker(meta) === null;
-  const paneInputRecovery = await ensureAgentOwnsPaneInput(name);
+  const paneInputRecovery = await ensureAgentOwnsPaneInput(name, meta.kind);
   if (meta.kind !== "claude" || claudeColdStart) {
     const ready = await waitAgentTuiReady(name, meta, o.ready_timeout ?? AGENT_TUI_READY_TIMEOUT_MS);
     if (!ready.ready) {
@@ -3698,6 +3729,8 @@ export interface AgentSteerReceipt extends Record<string, unknown> {
   vendor: AgentKind;
   harness: AgentHarness;
   delivery: "steered" | "idle";
+  // 打鍵前に行った pane 入力の回復（"fg" / "fg_stopped" / "stty_raw"）。何もしなければ空配列。
+  pane_input_recovery: string[];
 }
 
 export async function steerAgentTurn(name: string, text: string): Promise<AgentSteerReceipt> {
@@ -3713,8 +3746,11 @@ export async function steerAgentTurn(name: string, text: string): Promise<AgentS
     vendor: meta.kind,
     harness: agentHarness(meta.kind),
   };
-  if (!isAgentTuiBusy(meta.kind, captureScreen(name, AGENT_TUI_READY_LINES))) return { ...receipt, delivery: "idle" };
-  await ensureAgentOwnsPaneInput(name);
+  // 前面回復は busy 判定より先（bash 前面のままだと画面の実行中マーカーを読んでも打鍵が届かない）。
+  const paneInputRecovery = await ensureAgentOwnsPaneInput(name, meta.kind);
+  if (!isAgentTuiBusy(meta.kind, captureScreen(name, AGENT_TUI_READY_LINES))) {
+    return { ...receipt, delivery: "idle", pane_input_recovery: paneInputRecovery };
+  }
   send(name, text, {
     enter: false,
     force: true,
@@ -3725,7 +3761,7 @@ export async function steerAgentTurn(name: string, text: string): Promise<AgentS
   });
   await sleep(AGENT_SUBMIT_DELAY_MS);
   sendKey(name, "Enter");
-  return { ...receipt, delivery: "steered" };
+  return { ...receipt, delivery: "steered", pane_input_recovery: paneInputRecovery };
 }
 
 export async function runClaudeOperation({

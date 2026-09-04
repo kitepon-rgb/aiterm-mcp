@@ -703,19 +703,19 @@ test("classifyPaneTtyProcesses: bash が前面(+)で codex が背面(S)なら ag
     "S    node /Users/kite/Developer/peertable/room/client.mjs",
   ].join("\n");
   assert.deepEqual(core.classifyPaneTtyProcesses(ps), {
-    agentPresent: true, agentForeground: false, agentStopped: false, foregroundShell: "bash",
+    agentPresent: true, agentForeground: false, agentStopped: false, toolForeground: false, foregroundShell: "bash",
   });
 });
 test("classifyPaneTtyProcesses: codex が前面(S+)なら回復不要", () => {
   const ps = "Ss   bash\nS+   node /Users/kite/.local/bin/codex -c a\nS+   /x/bin/codex -c b\nS    node ./mcp/server.mjs";
   assert.deepEqual(core.classifyPaneTtyProcesses(ps), {
-    agentPresent: true, agentForeground: true, agentStopped: false, foregroundShell: null,
+    agentPresent: true, agentForeground: true, agentStopped: false, toolForeground: false, foregroundShell: null,
   });
 });
 test("classifyPaneTtyProcesses: 停止(T)した agent は stopped、agent 不在は present=false", () => {
   assert.equal(core.classifyPaneTtyProcesses("Ss+  bash\nT    node /x/codex").agentStopped, true);
   assert.deepEqual(core.classifyPaneTtyProcesses("Ss+  bash\n"), {
-    agentPresent: false, agentForeground: false, agentStopped: false, foregroundShell: "bash",
+    agentPresent: false, agentForeground: false, agentStopped: false, toolForeground: false, foregroundShell: "bash",
   });
   assert.equal(core.classifyPaneTtyProcesses("").agentPresent, false);
 });
@@ -726,4 +726,20 @@ test("termiosIsCooked: icanon/echo が有効なら cooked、-icanon -echo なら
   assert.equal(core.termiosIsCooked(raw), false);
   // echoe / echoke は echo ではない
   assert.equal(core.termiosIsCooked("lflags: -icanon -echo echoe echoke"), false);
+});
+test("classifyPaneTtyProcesses: ログイン shell の `-zsh` は shell、codex が起動した子 bash やツールの前面は toolForeground", () => {
+  const codex = /(^|[\s/])codex([\s]|$)/;
+  // login zsh が前面、codex が背面 → fg 対象
+  assert.deepEqual(core.classifyPaneTtyProcesses("Ss+  -zsh\nS    node /Users/kite/.local/bin/codex -c a", codex), {
+    agentPresent: true, agentForeground: false, agentStopped: false, toolForeground: false, foregroundShell: "zsh",
+  });
+  // codex が前面、その子 bash -lc（session leader でない）も前面 → ツール実行中。触らない
+  const tool = core.classifyPaneTtyProcesses("Ss   bash\nS+   node /x/codex -c a\nS+   /x/bin/codex -c a\nS+   bash -lc ssh fox python train.py", codex);
+  assert.equal(tool.agentForeground, true);
+  assert.equal(tool.toolForeground, true);
+  // codex が前面で非 shell のツール（ssh）が前面 → toolForeground
+  assert.equal(core.classifyPaneTtyProcesses("Ss   bash\nS+   /x/bin/codex -c a\nS+   ssh fox", codex).toolForeground, true);
+  // MCP 子（node room/client.mjs、S）は agent でもツール前面でもない
+  const mcp = core.classifyPaneTtyProcesses("Ss   bash\nS+   /x/bin/codex -c a\nS    node /Users/kite/Developer/peertable/room/client.mjs", codex);
+  assert.deepEqual([mcp.agentForeground, mcp.toolForeground], [true, false]);
 });
