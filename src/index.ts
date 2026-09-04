@@ -163,6 +163,13 @@ server.registerTool(
         .describe("非Claude agent sessionでは自動dispatchせず素送信する。aiterm相関付きClaudeのactive turnには使えない"),
       rtk: z.boolean().default(false).describe("既知コマンドを rtk 形へ委譲して送る（rtk 不在なら素通し）"),
       raw: z.boolean().default(false).describe("送信前サニタイズを無効化"),
+      image: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "添付する画像ファイルの絶対パス（png/jpg/jpeg/gif/webp）。agent session への dispatch だけで使え、" +
+            "harness別の添付手順はaitermが吸収する。通常PTY送信やforce送信では指定できない",
+        ),
     },
     outputSchema: {
       schema: z.literal("aiterm.pty-send-result.v1"),
@@ -180,13 +187,13 @@ server.registerTool(
       pane_input_recovery: z.array(z.string()).optional(),
     },
   },
-  async ({ session_id, text, enter, mark, force, rtk, raw }) => {
+  async ({ session_id, text, enter, mark, force, rtk, raw, image }) => {
     try {
       if (!force && core.isAgentSession(session_id)) {
         if (enter === false) throw new Error("agent session への dispatch は enter:false と併用できません（手動介入は force:true）");
         if (mark) throw new Error("agent session への dispatch は mark:true と併用できません");
         if (rtk) throw new Error("agent session への dispatch は rtk:true と併用できません");
-        const receipt = await core.dispatchAgentTurn(session_id, text, { raw });
+        const receipt = await core.dispatchAgentTurn(session_id, core.attachImages(text, image), { raw });
         const waitProcess = core.agentWaitProcess(receipt.session_id, receipt.event_cursor);
         return {
           content: [
@@ -211,6 +218,9 @@ server.registerTool(
             pane_input_recovery: receipt.pane_input_recovery,
           },
         };
+      }
+      if (image && image.length > 0) {
+        throw new Error("image は agent session への dispatch（forceなし）だけで使えます。通常PTY送信では本文にpathを書いてください");
       }
       const out = core.send(session_id, text, { enter, mark, force, rtk, raw });
       return {
@@ -242,6 +252,7 @@ server.registerTool(
     inputSchema: {
       session_id: z.string(),
       text: z.string().describe("現在のターンへ追加する文字列。UTF-8で最大64KiB"),
+      image: z.array(z.string()).optional().describe("添付する画像ファイルの絶対パス（png/jpg/jpeg/gif/webp）"),
     },
     outputSchema: {
       schema: z.literal("aiterm.agent-steer.v1"),
@@ -252,9 +263,9 @@ server.registerTool(
       delivery: z.enum(["steered", "idle"]),
     },
   },
-  async ({ session_id, text }) => {
+  async ({ session_id, text, image }) => {
     try {
-      const receipt = await core.steerAgentTurn(session_id, text);
+      const receipt = await core.steerAgentTurn(session_id, core.attachImages(text, image));
       return {
         content: [{ type: "text" as const, text: `${receipt.delivery} ${receipt.session_id}` }],
         structuredContent: receipt,
@@ -617,13 +628,14 @@ const agentEnvironmentDesc =
 
 async function launchAgent(kind: core.AgentKind, args: any): Promise<any> {
   const supportsWriteScope = kind !== "claude";
-  const { prompt, throughline_source_session, throughline_supplement_file, model, reasoning_effort, env_vars, cwd, session_name, launch_operation_id, write_scope } = args;
+  const { prompt, image, throughline_source_session, throughline_supplement_file, model, reasoning_effort, env_vars, cwd, session_name, launch_operation_id, write_scope } = args;
   try {
     if (!supportsWriteScope && write_scope !== undefined) {
       throw new core.AitermError("claude-code harnessはwrite_scopeに対応していません。指定を外してください", 2);
     }
+    const initialPrompt = image && image.length > 0 ? core.attachImages(prompt ?? "", image) : prompt ?? undefined;
     const [sid, hint, eventCursor, submitResidue] = await core.openAgentWithInitialPrompt(kind, {
-      prompt: prompt ?? undefined,
+      prompt: initialPrompt,
       throughline_source_session,
       throughline_supplement_file,
       model: model ?? undefined,
@@ -746,6 +758,7 @@ server.registerTool(
     inputSchema: {
       harness: z.enum(["claude-code", "codex-cli", "grok-cli", "cursor-cli"]).describe("agent loop・session・hook・transcript・認証を所有する実行基盤"),
       prompt: z.string().nullish().describe("起動時に渡す初手プロンプト（任意）。送信後は待たずに即返る"),
+      image: z.array(z.string()).optional().describe("初手プロンプトへ添付する画像ファイルの絶対パス（png/jpg/jpeg/gif/webp）"),
       throughline_source_session: z.string().min(1).optional().describe("同一端末のThroughline sessionから読み取り専用contextを初手へ注入する"),
       throughline_supplement_file: z.string().min(1).optional().describe("Throughline 0.10.8以降へそのまま渡すproject束縛済み長期記憶・知識の補足JSON path"),
       model: z.string().nullish().describe("harnessが選ぶモデル。provider名ではなくlive catalog上のmodel ID"),

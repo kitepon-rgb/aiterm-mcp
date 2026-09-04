@@ -2,6 +2,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as core from "../dist/core.js";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 
 test("factory diagnostics: PTY server不在はnot_applicableかつ件数null", () => {
   const diagnostic = core.readOnlyPtyListDiagnostic(() => ({
@@ -742,4 +745,38 @@ test("classifyPaneTtyProcesses: ログイン shell の `-zsh` は shell、codex 
   // MCP 子（node room/client.mjs、S）は agent でもツール前面でもない
   const mcp = core.classifyPaneTtyProcesses("Ss   bash\nS+   /x/bin/codex -c a\nS    node /Users/kite/Developer/peertable/room/client.mjs", codex);
   assert.deepEqual([mcp.agentForeground, mcp.toolForeground], [true, false]);
+});
+
+// ---------------------------------------------------------------- attachImages（画像添付はaitermが所有）
+test("attachImages: 画像なしは本文をそのまま返す", () => {
+  assert.equal(core.attachImages("本文", undefined), "本文");
+  assert.equal(core.attachImages("本文", []), "本文");
+});
+
+test("attachImages: 絶対パスの画像を本文末尾へ添付行として付ける", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aiterm-image-"));
+  const a = path.join(dir, "a.png");
+  const b = path.join(dir, "b.JPG");
+  fs.writeFileSync(a, "x");
+  fs.writeFileSync(b, "x");
+  assert.equal(
+    core.attachImages("これを見て", [a, b]),
+    `これを見て\n\n[aiterm 添付画像 1/2] ${a}\n[aiterm 添付画像 2/2] ${b}\n添付画像は上のファイルを読んで確認する。`,
+  );
+  assert.equal(
+    core.attachImages("", [a]),
+    `添付画像を確認してください。\n\n[aiterm 添付画像 1/1] ${a}\n添付画像は上のファイルを読んで確認する。`,
+  );
+});
+
+test("attachImages: 相対パス・未対応拡張子・不在・directoryはtyped errorで拒否する", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aiterm-image-"));
+  const png = path.join(dir, "a.png");
+  fs.writeFileSync(png, "x");
+  assert.throws(() => core.attachImages("t", ["a.png"]), /image\[0\] は画像ファイルの絶対パス/u);
+  assert.throws(() => core.attachImages("t", [path.join(dir, "a.txt")]), /image\[0\] の拡張子に対応していません/u);
+  assert.throws(() => core.attachImages("t", [png, path.join(dir, "missing.png")]), /image\[1\] が読めません/u);
+  assert.throws(() => core.attachImages("t", [dir + ".png"]), /image\[0\] が読めません/u);
+  fs.mkdirSync(path.join(dir, "d.png"));
+  assert.throws(() => core.attachImages("t", [path.join(dir, "d.png")]), /image\[0\] はfileではありません/u);
 });

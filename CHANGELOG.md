@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `pty_send`（agent dispatch）、`agent_steer`、`agent_launch`に`image`（画像ファイルの絶対パスの配列）を追加した。aitermが本文末尾へ添付行を付け、Claude Code／Codex／Grok／Cursorはいずれも自分のfile読取toolでそのpathを画像として開く（実測 2026-09-04）。呼出し側が入力欄へパスを先打鍵する等のharness別手順を持つ必要を無くす。相対パス・未対応拡張子・不在fileは送信前にtyped errorで拒否し、通常PTY送信とforce送信では指定できない。
+
 ## [0.29.31] - 2026-09-04
 
 ### Fixed

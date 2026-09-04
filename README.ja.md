@@ -189,6 +189,8 @@ pty_read(id, { wait: true })       → 削減済みの出力を読む（完了�
 
 `aiterm.agent-launch-result.v1`は正規`harness`を返し、旧`provider`は互換fieldとして残す。同じ`harness`はagent dispatch、`aiterm-wait`、`agent_configure`、`pty_list`のagent行にも載り、旧vendor／provider／agent fieldは互換用に残る。Codexは通常rollout、Grok CLIは通常session event、Claudeはlaunch固有Stop hook、Cursorは通常agent transcript末尾の`turn_ended`を完了正本に使う。`pty_send`は非ブロックdispatchで、vendor別完了境界を表すopaqueな整数`event_cursor`を返し、完了通知は`aiterm-wait`を親のターンを塞がない別processで受ける。Cursorのsubmitキーはadapterが現行CLIのextended keyboard protocolへ変換する。送信textがCursorのcomposerへ残った場合は成功receiptを返さず失敗する。
 
+`agent_launch`・`pty_send`（agent dispatch）・`agent_steer`は任意の`image`（画像ファイルの絶対パスの配列。png/jpg/jpeg/gif/webp）を受ける。aitermが本文末尾へ添付行を付け、どのharnessも自分のfile読取toolでそのpathを画像として開く。呼出し側はharness別の添付手順を覚えない。不正なpathは送信前に拒否する。
+
 `agent_launch`は任意の`write_scope`も受ける。Codex／Grokのread-onlyは`--sandbox read-only`、Cursorは公式`--mode ask`で実効化する。path説明は同等CLI引数がないためdeclaration-only。
 
 ```text

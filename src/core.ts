@@ -3632,6 +3632,36 @@ export function __testCodexConfigureChoices(screen: string, model: string, effor
 // v0.16.0: 親をブロックする wait 経路は廃止した。send は ready gate と submit 分離を内蔵した
 // dispatch として即返り、event_cursor（送信直前のharness完了正本境界）を receipt で返す。
 // 完了通知は aiterm-wait（--cursor で境界を渡す）、回収は pty_read / claude_turn recover が担う。
+const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
+
+/**
+ * 画像添付。Claude Code／Codex／Grok／Cursorの4 harnessは、本文に書かれた画像ファイルの絶対パスを
+ * 自分のfile読取toolで開いて画像として見る（実測 2026-09-04: 赤青の試験画像を全harnessが正しく答えた）。
+ * 入力欄へパスを先打鍵する等のharness別操作は不要であり、呼出し側にharnessの癖を覚えさせない。
+ * 添付の表現とpath検査はこの1箇所だけが所有する。検査は外部入力（呼出し側が渡すpath）の境界。
+ */
+export function attachImages(text: string, images: readonly string[] | undefined): string {
+  if (!images || images.length === 0) return text;
+  const lines = images.map((image, index) => {
+    if (typeof image !== "string" || !path.isAbsolute(image)) {
+      throw new AitermError(`image[${index}] は画像ファイルの絶対パスで指定してください: ${String(image)}`, 2);
+    }
+    if (!IMAGE_EXTENSIONS.has(path.extname(image).toLowerCase())) {
+      throw new AitermError(`image[${index}] の拡張子に対応していません（png/jpg/jpeg/gif/webp）: ${image}`, 2);
+    }
+    let st: fs.Stats;
+    try {
+      st = fs.statSync(image);
+    } catch {
+      throw new AitermError(`image[${index}] が読めません: ${image}`, 2);
+    }
+    if (!st.isFile()) throw new AitermError(`image[${index}] はfileではありません: ${image}`, 2);
+    return `[aiterm 添付画像 ${index + 1}/${images.length}] ${image}`;
+  });
+  const body = text.trim().length > 0 ? text : "添付画像を確認してください。";
+  return `${body}\n\n${lines.join("\n")}\n添付画像は上のファイルを読んで確認する。`;
+}
+
 export async function dispatchAgentTurn(
   name: string,
   text: string,
