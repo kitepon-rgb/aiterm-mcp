@@ -2,6 +2,7 @@
 // core 所有のサービス（transcript 不在エラー）は引数で注入し、
 // 依存方向を core → harnesses → agent-shared の一方向に保つ。
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -287,4 +288,57 @@ export function createClaudeAgentMetadata(
   };
   writeAgentMetadata(meta);
   return meta;
+}
+
+// ---------------------------------------------------------------- APIエラー終了の検知（会話記録）
+// Claude CodeはAPIエラー（529 Overloaded等）でturnを打ち切る時、Stop hookを走らせない。
+// 代わりに会話記録（<config dir>/projects/<cwd slug>/<session-id>.jsonl）へ
+// `type:"assistant", isApiErrorMessage:true, apiErrorStatus:<code>` の1行を書く（実測 2026-09-03、
+// BellTeamのチャイム席で70分の待機を生んだ529）。完了eventだけを待つと永久に running になるため、
+// dispatch後に増えた記録行からこの印を読み、outcome=error として親へ返す。
+
+export function claudeConfigDir(): string {
+  return process.env.CLAUDE_CONFIG_DIR ?? path.join(process.env.HOME ?? os.homedir(), ".claude");
+}
+
+// Claude Codeのproject slug: cwdの英数字以外を1文字ずつ "-" にする（実測: "/Users/kite/.throughline-x" → "-Users-kite--throughline-x"）。
+export function claudeProjectSlug(cwd: string): string {
+  return cwd.replace(/[^a-zA-Z0-9]/g, "-");
+}
+
+export function claudeSessionTranscriptPath(meta: AgentMetadata): string | null {
+  if (meta.kind !== "claude" || !meta.vendor_session_id) return null;
+  return path.join(
+    claudeConfigDir(),
+    "projects",
+    claudeProjectSlug(meta.cwd ?? process.cwd()),
+    `${meta.vendor_session_id}.jsonl`,
+  );
+}
+
+export interface ClaudeApiError {
+  text: string;
+  at: string | null;
+}
+
+export function claudeApiErrorFromLine(line: string): ClaudeApiError | null {
+  if (!line.trim()) return null;
+  let record: any;
+  try {
+    record = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  if (record?.type !== "assistant" || record?.isApiErrorMessage !== true) return null;
+  const content = record?.message?.content;
+  const text = typeof content === "string"
+    ? content
+    : Array.isArray(content)
+      ? content.map((part: any) => (typeof part?.text === "string" ? part.text : "")).join("")
+      : "";
+  const status = record?.apiErrorStatus;
+  return {
+    text: text.trim() || (status != null ? `API Error: ${String(status)}` : "API Error"),
+    at: typeof record?.timestamp === "string" ? record.timestamp : null,
+  };
 }

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Claude Codeのturnが529 Overloaded等のAPIエラーで打ち切られるとStop hookが走らず、`aiterm-wait`が永久に未完了を返し続けていた（実被弾 2026-09-03: BellTeamのClaude席で70分の待機）。会話記録（`<config dir>/projects/<cwd slug>/<session-id>.jsonl`）に観測開始後に増えた`isApiErrorMessage:true`の行を読み、新しいoutcome `error`（exit 7、`error`にエラー本文）で返す。
+- Grokの`turn_ended outcome=error`を完了境界として扱わず待ち続けていた。同じくoutcome `error`で返す。Cursorは`turn_ended`のstatusを問わず既に終了を返していたため変更なし。Codexはエラー終了の記録形が実測できておらず未対応。
+
 ## [0.30.0] - 2026-09-04
 
 ### Added

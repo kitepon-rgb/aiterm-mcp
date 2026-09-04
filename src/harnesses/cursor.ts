@@ -241,6 +241,7 @@ export async function observeCursorDone(
     malformed_events: malformedEvents,
     at: ev?.at ?? null,
     rate_limit: rateLimit,
+    error: null,
   });
 
   for (;;) {

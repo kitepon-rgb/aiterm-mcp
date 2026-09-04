@@ -180,7 +180,8 @@ export interface AgentDoneEvent {
   turn_id: string | null;
   operation_id: string | null;
   reason: string;
-  done_status: "turn_done";
+  // turn_error: harness自身の記録でturnがエラー終了と分かった（Grok turn_ended outcome=error）。
+  done_status: "turn_done" | "turn_error";
   stop_hook_active?: boolean;
   result_digest?: string;
   result_bytes?: number;
@@ -198,13 +199,18 @@ export interface AgentWaitObservation {
   // rate_limited は harness の利用上限バナーを pane log で観測した「モデルが応答できない」。
   // 完了でも沈黙でもない typed な回答として親へ返す（実被弾 2026-08-22: Grok weekly limit で
   // 完了 event が永遠に出ず、waiter は timeout の沈黙か auth 誤診しか返せなかった）。
-  outcome: "done" | "running" | "timeout" | "closed" | "rate_limited";
+  // error は harness 自身の記録で「turn がエラーで打ち切られた」と分かった typed な終了。
+  // 完了 event（Stop hook 等）は来ないため、待ち続けると永久に running になる
+  // （実被弾 2026-09-03: Claude Code の 529 Overloaded で Stop hook が走らず、待機が 70 分続いた）。
+  outcome: "done" | "running" | "timeout" | "closed" | "rate_limited" | "error";
   operation_id: string | null;
   vendor_session_id: string | null;
   turn_id: string | null;
   malformed_events: number;
   at: string | null;
   rate_limit: string | null;
+  // outcome=error の時だけ harness の記録にあるエラー本文（例: "API Error: 529 Overloaded ..."）。
+  error: string | null;
 }
 
 export function writeAgentMetadata(meta: AgentMetadata): void {

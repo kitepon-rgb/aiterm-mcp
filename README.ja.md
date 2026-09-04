@@ -201,7 +201,7 @@ agent_launch({ harness: "codex-cli", session_name: "codex1", cwd: "/repo",
                                     → { session_id: "codex1", … }   # Codex が永続端末で稼働開始
 pty_read("codex1", { screen: true })   → 何をしているか読む（トークン削減）
 pty_send("codex1", "also fix the imports it broke")   # 非ブロックdispatch＝event_cursor入りreceipt
-$ aiterm-wait --session codex1 --cursor <event_cursor>   # exit 0=done / 3=timeout(未完了) / 4=closed。回収は pty_read(agent_transcript:true)
+$ aiterm-wait --session codex1 --cursor <event_cursor>   # exit 0=done / 3=timeout(未完了) / 4=closed / 7=error(APIエラー等でturn打ち切り)。回収は pty_read(agent_transcript:true)
                                     → 操舵し、Codex の次の入力境界で返る
 ```
 

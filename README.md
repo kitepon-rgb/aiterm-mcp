@@ -226,7 +226,7 @@ agent_launch({ harness: "codex-cli", session_name: "codex1", cwd: "/repo",
 pty_read("codex1", { screen: true })   → read what it's doing (token-reduced)
 pty_send("codex1", "also fix the imports it broke")
                                     → non-blocking dispatch; receipt carries event_cursor
-$ aiterm-wait --session codex1 --cursor <event_cursor>   # never in the parent's foreground; exit 0=done, 3=timeout (not done), 4=closed
+$ aiterm-wait --session codex1 --cursor <event_cursor>   # never in the parent's foreground; exit 0=done, 3=timeout (not done), 4=closed, 7=error (turn aborted by an API error)
 pty_read("codex1", { agent_transcript: true })           → collect the full answer
 ```
 

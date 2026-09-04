@@ -299,6 +299,7 @@ export async function observeCodexDone(
     malformed_events: malformedEvents,
     at: ev?.at ?? null,
     rate_limit: rateLimit,
+    error: null,
   });
 
   for (;;) {

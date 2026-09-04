@@ -2,6 +2,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as core from "../dist/core.js";
+import * as claudeHarness from "../dist/harnesses/claude.js";
+import * as grokHarness from "../dist/harnesses/grok.js";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -779,4 +781,47 @@ test("attachImages: 相対パス・未対応拡張子・不在・directoryはtyp
   assert.throws(() => core.attachImages("t", [dir + ".png"]), /image\[0\] が読めません/u);
   fs.mkdirSync(path.join(dir, "d.png"));
   assert.throws(() => core.attachImages("t", [path.join(dir, "d.png")]), /image\[0\] はfileではありません/u);
+});
+
+// ---------------------------------------------------------------- APIエラー終了の検知
+test("claudeApiErrorFromLine: isApiErrorMessage:true のassistant行だけをエラー終了として読む", () => {
+  const line = JSON.stringify({
+    type: "assistant", isApiErrorMessage: true, apiErrorStatus: 529, timestamp: "2026-09-03T13:44:38.124Z",
+    message: { role: "assistant", content: [{ type: "text", text: "API Error: 529 Overloaded. This is a server-side issue" }] },
+  });
+  assert.deepEqual(claudeHarness.claudeApiErrorFromLine(line), {
+    text: "API Error: 529 Overloaded. This is a server-side issue", at: "2026-09-03T13:44:38.124Z",
+  });
+  assert.equal(claudeHarness.claudeApiErrorFromLine(JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "ok" }] } })), null);
+  assert.equal(claudeHarness.claudeApiErrorFromLine(JSON.stringify({ type: "system", isApiErrorMessage: true })), null);
+  assert.equal(claudeHarness.claudeApiErrorFromLine("{broken"), null);
+  assert.deepEqual(
+    claudeHarness.claudeApiErrorFromLine(JSON.stringify({ type: "assistant", isApiErrorMessage: true, apiErrorStatus: 500 })),
+    { text: "API Error: 500", at: null },
+  );
+});
+
+test("claudeSessionTranscriptPath: cwdの英数字以外を1文字ずつ '-' にしたproject slugの下のsession jsonl", () => {
+  assert.equal(claudeHarness.claudeProjectSlug("/Users/kite/.throughline-x"), "-Users-kite--throughline-x");
+  const saved = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = "/cfg";
+  try {
+    assert.equal(
+      claudeHarness.claudeSessionTranscriptPath({ kind: "claude", cwd: "/srv/bellteam/bots/bot-f4d0f046", vendor_session_id: "20442ef4-595d-4753-8584-71f53aff4002" }),
+      "/cfg/projects/-srv-bellteam-bots-bot-f4d0f046/20442ef4-595d-4753-8584-71f53aff4002.jsonl",
+    );
+    assert.equal(claudeHarness.claudeSessionTranscriptPath({ kind: "grok", cwd: "/x", vendor_session_id: "s" }), null);
+    assert.equal(claudeHarness.claudeSessionTranscriptPath({ kind: "claude", cwd: "/x", vendor_session_id: null }), null);
+  } finally {
+    if (saved === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = saved;
+  }
+});
+
+test("grokCompletionEvent: turn_ended outcome=error は turn_error の終了境界", () => {
+  const meta = { kind: "grok", aiterm_session: "s", launch_id: "l", vendor_session_id: "v" };
+  const error = grokHarness.grokCompletionEvent(meta, { ts: "2026-08-22T12:23:43.996Z", type: "turn_ended", outcome: "error" });
+  assert.equal(error.done_status, "turn_error");
+  assert.equal(error.reason, "Grok transcript turn_ended:error");
+  assert.equal(grokHarness.grokCompletionEvent(meta, { ts: "t", type: "turn_ended", outcome: "completed" }).done_status, "turn_done");
+  assert.equal(grokHarness.grokCompletionEvent(meta, { ts: "t", type: "turn_ended", outcome: "timeout" }), null);
 });

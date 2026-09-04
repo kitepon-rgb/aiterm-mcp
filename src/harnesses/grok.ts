@@ -104,7 +104,7 @@ export function grokCompletionEvent(meta: AgentMetadata, record: any): AgentDone
   if (
     (meta.kind !== "grok" && meta.kind !== "composer") ||
     record?.type !== "turn_ended" ||
-    (record?.outcome !== "completed" && record?.outcome !== "cancelled")
+    (record?.outcome !== "completed" && record?.outcome !== "cancelled" && record?.outcome !== "error")
   ) return null;
   const turnId = typeof record?.ts === "string" || typeof record?.ts === "number" ? String(record.ts) : null;
   return {
@@ -116,7 +116,9 @@ export function grokCompletionEvent(meta: AgentMetadata, record: any): AgentDone
     turn_id: turnId,
     operation_id: null,
     reason: `Grok transcript turn_ended:${record.outcome}`,
-    done_status: "turn_done",
+    // Grok CLIはAPIエラー等でturnを打ち切る時も turn_ended を書き、outcome だけが error になる
+    // （実測: 手元の events.jsonl に outcome=error が17件）。完了と同じ境界だが結果は無い。
+    done_status: record.outcome === "error" ? "turn_error" : "turn_done",
     stop_hook_active: false,
     at: typeof record?.ts === "string" ? record.ts : new Date().toISOString(),
   };
@@ -194,6 +196,7 @@ export async function observeGrokDone(
     malformed_events: malformedEvents,
     at: ev?.at ?? null,
     rate_limit: rateLimit,
+    error: ev?.done_status === "turn_error" ? ev.reason : null,
   });
 
   for (;;) {
@@ -230,7 +233,7 @@ export async function observeGrokDone(
           }
           try {
             const done = grokCompletionEvent(meta, JSON.parse(line));
-            if (done) return observation("done", done);
+            if (done) return observation(done.done_status === "turn_error" ? "error" : "done", done);
           } catch {
             malformedEvents++;
           }

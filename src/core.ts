@@ -130,6 +130,9 @@ import {
   claudeTuiReady,
   CLAUDE_COMPOSER_MARKER_RE,
   createClaudeAgentMetadata,
+  claudeSessionTranscriptPath,
+  claudeApiErrorFromLine,
+  type ClaudeApiError,
 } from "./harnesses/claude.js";
 import {
   bindCursorTranscriptSession,
@@ -2617,7 +2620,7 @@ function assertInitialPromptNotPendingForSend(name: string, force: boolean): voi
 
 // aiterm-wait の exit 契約（CLI と各所の案内文で共有する正）。exit≠完了: outcome が done の時だけ完了。
 export const AITERM_WAIT_OUTCOME_NOTE =
-  `exit 0=done / 3=timeout（既定${DEFAULT_AGENT_DONE_TIMEOUT}秒・未完了） / 4=closed。receiptのoutcomeが正で、done以外は未完了`;
+  `exit 0=done / 3=timeout（既定${DEFAULT_AGENT_DONE_TIMEOUT}秒・未完了） / 4=closed / 7=error（harnessの記録でturnがAPIエラー等で打ち切られた。結果は無い）。receiptのoutcomeが正で、done以外は未完了`;
 
 export type AgentWaitProcess = {
   executable: string;
@@ -2771,10 +2774,16 @@ export async function observeAgentDone(
   let cursor = startOffset;
   let carry = "";
   let malformedEvents = 0;
+  // Claudeの会話記録はこの観測開始時点の末尾から先だけを読む。過去turnのAPIエラー行を今回の
+  // 終了と誤認しないため。dispatch直後に待機を始める親（receiptのwait_process）を前提にする。
+  const transcriptFile = claudeSessionTranscriptPath(meta);
+  let transcriptCursor = transcriptFile ? safeStatSize(transcriptFile) : 0;
+  let transcriptCarry = "";
   const observation = (
     outcome: AgentWaitObservation["outcome"],
     ev: AgentDoneEvent | null = null,
     rateLimit: string | null = null,
+    apiError: ClaudeApiError | null = null,
   ): AgentWaitObservation => ({
     schema: "aiterm.agent-wait-result.v1",
     session_id: meta.aiterm_session,
@@ -2786,8 +2795,9 @@ export async function observeAgentDone(
     vendor_session_id: ev?.vendor_session_id ?? meta.vendor_session_id ?? null,
     turn_id: ev?.turn_id ?? null,
     malformed_events: malformedEvents,
-    at: ev?.at ?? null,
+    at: ev?.at ?? apiError?.at ?? null,
     rate_limit: rateLimit,
+    error: apiError?.text ?? null,
   });
   for (;;) {
     if (!fs.existsSync(metadataFile)) return observation("closed");
@@ -2810,6 +2820,23 @@ export async function observeAgentDone(
         throw new AitermError("agent event file に複数の vendor_session_id が混在しています。該当セッションを閉じて起動し直してください。", 2);
       }
       if (scanned.event) return observation("done", scanned.event);
+    }
+    if (transcriptFile && fs.existsSync(transcriptFile)) {
+      const transcriptSize = safeStatSize(transcriptFile);
+      if (transcriptSize < transcriptCursor) {
+        transcriptCursor = 0;
+        transcriptCarry = "";
+      }
+      if (transcriptSize > transcriptCursor) {
+        transcriptCarry += readFileRange(transcriptFile, transcriptCursor, transcriptSize).toString("utf8");
+        transcriptCursor = transcriptSize;
+        const lines = transcriptCarry.split("\n");
+        transcriptCarry = lines.pop() ?? "";
+        for (const line of lines) {
+          const apiError = claudeApiErrorFromLine(line);
+          if (apiError) return observation("error", null, null, apiError);
+        }
+      }
     }
     // timeout=0 は「待たずに一度だけ見る」照会＝未完了は失敗ではなく running。
     // 1秒以上を指定した待機の未完了は従来どおり timeout で、待ち方の意味は変えない。
