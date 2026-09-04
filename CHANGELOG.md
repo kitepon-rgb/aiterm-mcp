@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-09-04
+
 ### Added
 
 - `pty_send`（agent dispatch）、`agent_steer`、`agent_launch`に`image`（画像ファイルの絶対パスの配列）を追加した。aitermが本文末尾へ添付行を付け、Claude Code／Codex／Grok／Cursorはいずれも自分のfile読取toolでそのpathを画像として開く（実測 2026-09-04）。呼出し側が入力欄へパスを先打鍵する等のharness別手順を持つ必要を無くす。相対パス・未対応拡張子・不在fileは送信前にtyped errorで拒否し、通常PTY送信とforce送信では指定できない。
@@ -1544,7 +1546,8 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.31...HEAD
+[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.30.0...HEAD
+[0.30.0]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.31...v0.30.0
 [0.29.31]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.30...v0.29.31
 [0.29.30]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.29...v0.29.30
 [0.29.29]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.28...v0.29.29
