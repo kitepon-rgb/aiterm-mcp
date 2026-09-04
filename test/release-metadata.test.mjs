@@ -126,7 +126,10 @@ test('npm pack はbuild済みruntimeとREADMEが参照する現行文書を同�
     maxBuffer: 16 * 1024 * 1024,
     shell: process.platform === 'win32',
   });
-  const packed = new Set(JSON.parse(stdout)[0].files.map((f) => f.path));
+  // npm 12 は `npm pack --json` を package 名を key にした object で返す（npm 11 までは配列）。両方を受ける。
+  const packedJson = JSON.parse(stdout);
+  const packedEntry = Array.isArray(packedJson) ? packedJson[0] : Object.values(packedJson)[0];
+  const packed = new Set(packedEntry.files.map((f) => f.path));
   // 対象は tsc が生成する runtime dist（直下と harnesses/）だけ。dist/ に残り得る
   // MCPB staging 等の生成残骸は publish 対象ではないため見ない。
   const distJs = (await readdir(new URL('../dist', import.meta.url), { recursive: true }))
