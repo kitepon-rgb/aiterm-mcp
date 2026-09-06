@@ -39,6 +39,11 @@ Aitermのreleaseはこのrepositoryが所有する。`.github/workflows/product-
 公式npm packageを隔離またはglobal installし、変更に触れたharnessの起動、non-blocking dispatch、wait outcome、
 transcript回収、`pty_close`後の残骸ゼロを確認する。
 
+Grok／Composerのsandbox起動拒否を変更した場合は、対象環境のCLIが拒否する設定で初回prompt付き起動と
+通常dispatchの未送信エラーを確認する。`GROK_SANDBOX_STARTUP_FAILED`がCLIの原因を保持し、入力受付の
+timeoutや再送案内へ変わらないことを確認する。拒否を検証した結果は起動成功の証拠にはしない。
+設定の管理元による修理は別途確認し、smokeのためにsandbox解除やhookのコピーを行わない。
+
 ## 利用者の更新と巻き戻し
 
 global installはnpmの公開packageだけで完結する。

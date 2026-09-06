@@ -195,6 +195,8 @@ pty_read(id, { wait: true })       → 削減済みの出力を読む（完了�
 
 Grok／Composerがread-only sandboxの適用を拒否した場合、prompt送信時に`GROK_SANDBOX_STARTUP_FAILED`とCLIの原因を返す。例えばhookのパスにシンボリックリンクがあるとGrok CLIは起動を拒否する。設定の管理元で原因を修正し、対象sessionを`pty_close`して起動し直す。Aitermはsandboxを解除したりhookをコピーしたりしない。
 
+この判定はGrok専用アダプターが所有し、同じCLIを使うComposerにも適用する。初回prompt付きの`agent_launch`と通常の`pty_send`で、入力受付待ち中に拒否を検出すると未送信のエラーを返す。promptなしの`agent_launch`は起動要求を返すため、その応答だけでは入力受付済みと判断しない。実装の責務分担は[DESIGN](docs/DESIGN.md#failure-and-recovery)を参照。
+
 ```text
 agent_launch({ harness: "codex-cli", session_name: "codex1", cwd: "/repo",
               prompt: "port test/legacy.py to vitest",

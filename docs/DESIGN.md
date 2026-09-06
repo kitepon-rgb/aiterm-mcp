@@ -55,6 +55,16 @@ shell、接続先、各harnessの公式CLIが所有する。
 stale send lockは並行processとのABAを避けるため自動削除せず、公開APIでは対象sessionを`pty_close`して
 同じIDで再作成する。全session一括停止は公開しない。
 
+Grok／Composerのread-only sandbox起動拒否は、`src/harnesses/grok.ts`の
+`assertGrokSandboxNotRejected`がCLIのエラー表示から検出する。`src/core.ts`の共通入力受付待機は
+Grok／Composerの場合だけこの判定を呼び、`GROK_SANDBOX_STARTUP_FAILED`で原因と未送信を返す。
+初回prompt付き起動と通常dispatchに適用され、他harnessの入力受付判定には適用しない。
+promptなしの起動応答はPTYへの起動要求を示し、入力受付の確認は後続の送信時に行う。
+
+hookパスのシンボリックリンク等を拒否する判断はGrok CLIが所有する。AitermはCLIが出した拒否を伝え、
+hookのコピー、設定の置換、sandboxの解除は行わない。原因を設定の管理元で修正した後、対象sessionを
+閉じて起動し直す。検出の回帰試験は`test/grok-startup.test.mjs`に置く。
+
 ## Platform contract
 
 - macOS／Linux／WSL2: tmux。

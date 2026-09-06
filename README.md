@@ -217,6 +217,8 @@ The human-readable launch text is accompanied by an `aiterm.agent-launch-result.
 
 Grok／Composerがread-only sandboxの適用を拒否した場合、prompt送信時に`GROK_SANDBOX_STARTUP_FAILED`とCLIの原因を返す。hookパスのシンボリックリンクなど、CLIが示した原因を設定の管理元で修正し、対象sessionを`pty_close`して起動し直す。Aitermはsandboxを解除したりhookをコピーしたりしない。
 
+この判定はGrok専用アダプターが所有し、同じCLIを使うComposerにも適用する。初回prompt付きの`agent_launch`と通常の`pty_send`で、入力受付待ち中に拒否を検出すると未送信のエラーを返す。promptなしの`agent_launch`は起動要求を返すため、その応答だけでは入力受付済みと判断しない。実装の責務分担は[DESIGN](docs/DESIGN.md#failure-and-recovery)を参照。
+
 For a correlated Claude turn stopped at `Do you want to proceed?`, use `claude_approval(action: "inspect", ...)` to capture the active operation and SHA-256 screen digest, review the displayed command, then call `respond` with that exact digest and either `approve_once` or `deny`. The relay rechecks the operation and screen under the send lock, never exposes arbitrary input or permanent approval, keeps the active marker intact, and records a prompt-free owner-only receipt. `pty_send(force: true)` does not bypass this boundary.
 
 ```text

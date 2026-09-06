@@ -14,6 +14,9 @@ dotagentsは任意の工場統合を担うが、Aitermの製品正典や実行�
 - [benchmarks](https://github.com/kitepon/aiterm-mcp/blob/main/docs/benchmarks.md): 出力削減の実測根拠。
 - [CHANGELOG](../CHANGELOG.md): 版別変更履歴。
 
+Grok／Composerのsandbox起動拒否については、[DESIGNの失敗と復旧](DESIGN.md#failure-and-recovery)に
+検出の所有と適用範囲、[RELEASEの公開後smoke](RELEASE.md#公開後smoke)に検証条件を置く。
+
 ## 履歴と証拠
 
 - [`archive/`](https://github.com/kitepon/aiterm-mcp/tree/main/docs/archive): 完了・棄却・中断・失効・置換により現行制御から外れたsnapshot。
