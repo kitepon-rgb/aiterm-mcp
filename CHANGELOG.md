@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.1] - 2026-09-06
+
 ### Fixed
 
 - Grok／Composerがread-only sandboxの適用に失敗して終了した時、入力受付を待ち続けて再送を案内していた。初回promptと通常dispatchの入力受付確認で`GROK_SANDBOX_STARTUP_FAILED`を即時に返し、CLIの原因と未送信を明示する。設定とsandboxは変更しない。
@@ -1557,7 +1559,8 @@ prototype (preserved under `prototype/python/` as the porting source and referen
   `ubuntu-latest` for Node 18/20/22, publishing to npm on `v*` tags with
   provenance.
 
-[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.31.0...HEAD
+[Unreleased]: https://github.com/kitepon/aiterm-mcp/compare/v0.31.1...HEAD
+[0.31.1]: https://github.com/kitepon/aiterm-mcp/compare/v0.31.0...v0.31.1
 [0.31.0]: https://github.com/kitepon/aiterm-mcp/compare/v0.30.0...v0.31.0
 [0.30.0]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.31...v0.30.0
 [0.29.31]: https://github.com/kitepon/aiterm-mcp/compare/v0.29.30...v0.29.31
