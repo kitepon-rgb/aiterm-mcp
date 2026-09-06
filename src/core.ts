@@ -84,6 +84,7 @@ import {
   grokLaunchNote,
   grokEnvTokens,
   grokTuiReady,
+  assertGrokSandboxNotRejected,
   GROK_COMPOSER_MARKER_RE,
   grokFooterHasConfiguration,
   grokTranscriptText,
@@ -2935,6 +2936,7 @@ async function waitAgentTuiReadyImpl(
   for (;;) {
     lastScreen = sample();
     samples++;
+    if (kind === "grok" || kind === "composer") assertGrokSandboxNotRejected(lastScreen);
     if (isAgentTuiIdleReady(kind, lastScreen)) {
       readyStreak++;
       if (readyStreak >= stableSamples) return { ready: true, samples, lastScreen };

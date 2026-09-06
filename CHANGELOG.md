@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Grok／Composerがread-only sandboxの適用に失敗して終了した時、入力受付を待ち続けて再送を案内していた。初回promptと通常dispatchの入力受付確認で`GROK_SANDBOX_STARTUP_FAILED`を即時に返し、CLIの原因と未送信を明示する。設定とsandboxは変更しない。
+
 ## [0.31.0] - 2026-09-04
 
 ### Fixed

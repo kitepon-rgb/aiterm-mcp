@@ -193,6 +193,8 @@ pty_read(id, { wait: true })       → 削減済みの出力を読む（完了�
 
 `agent_launch`は任意の`write_scope`も受ける。Codex／Grokのread-onlyは`--sandbox read-only`、Cursorは公式`--mode ask`で実効化する。path説明は同等CLI引数がないためdeclaration-only。
 
+Grok／Composerがread-only sandboxの適用を拒否した場合、prompt送信時に`GROK_SANDBOX_STARTUP_FAILED`とCLIの原因を返す。例えばhookのパスにシンボリックリンクがあるとGrok CLIは起動を拒否する。設定の管理元で原因を修正し、対象sessionを`pty_close`して起動し直す。Aitermはsandboxを解除したりhookをコピーしたりしない。
+
 ```text
 agent_launch({ harness: "codex-cli", session_name: "codex1", cwd: "/repo",
               prompt: "port test/legacy.py to vitest",

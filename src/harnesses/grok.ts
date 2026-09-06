@@ -299,6 +299,20 @@ export function grokEnvTokens(meta: AgentMetadata): string[] {
   ];
 }
 
+export function assertGrokSandboxNotRejected(screen: string): void {
+  // Grok 1.0.13はsandboxを適用できないと入力欄を作らず終了する。
+  // CLIが確定した拒否だけを拾い、警告単独や入力欄の引用では判定しない。
+  const failure = screen.match(/^[ \t]*error: could not apply the 'read-only' sandbox profile;[^\n]*/m);
+  if (!failure) return;
+  const warning = screen.match(/^[ \t]*warning: sandbox could not be applied:[\s\S]*?(?=\n[ \t]*error:)/m);
+  throw new AitermError(
+    "GROK_SANDBOX_STARTUP_FAILED: Grok CLIがread-only sandboxを適用できず起動を拒否しました。文字列は送信していません。\n" +
+      `${warning?.[0] ?? ""}\n${failure[0]}\n` +
+      "CLIが示した設定の問題を、その設定の管理元で修正してください。修正後はpty_closeで対象sessionを閉じ、agent_launchで起動し直してください。",
+    2,
+  );
+}
+
 export function grokTuiReady(screen: string): boolean {
   // Grok Build 0.2.117 は起動完了後に製品名を消し、model footerだけを残す。
   // Composerも同じfrontendでmodel名だけが異なるため、両方をharness UIの根拠にする。
